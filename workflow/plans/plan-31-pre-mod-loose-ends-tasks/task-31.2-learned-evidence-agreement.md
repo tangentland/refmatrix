@@ -18,8 +18,13 @@ metadata:
 > Depends on: 29.5 released ([[task-29.5-split-giant-modules]]): the purge code is then in
 > `store_removal.py` and the replay in `store_replay.py`. Written against that layout
 > ([[#layout]]).
-> Closes: bug-107, bug-247 ([[bug_registry#registry]]). Carries 22.6 R4
-> ([[task-22.6-removal-entry-points#r4]]; [[freeze-triage-2026-11-15]] row 13).
+> Closes: bug-107, bug-247, bug-259, bug-260 ([[bug_registry#registry]]; the last two folded
+> in by ruling L132, [[plan-of-plans#rulings]]). Carries 22.6 R4
+> ([[task-22.6-removal-entry-points#r4]]; [[freeze-triage-2026-11-15]] row 13), stated without
+> 16.6's sidecar ([[#r3-source]]), and the learned-row halves of 22.6 R3 and R5 that
+> [[plan-31-pre-mod-loose-ends#t2]] names ([[#scope-22-6]]).
+> Decision: `plan-31 D14`, decided by the user in [[plan-of-plans#decisions]] ([[#r7]]).
+> Also takes bug-203, if the lead admits it ([[#r3-invalidate]]).
 > Grep learning stays off (`~/.refmatrix/learn.off`) until this is deployed; turning it on is
 > not this task.
 > Base for every measurement here: `f3a508f`, and a copy of the dev store's read snapshot
@@ -34,6 +39,8 @@ rel: depends-on -> [[bug_registry#registry]]
 rel: depends-on -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[measurement-learned-rows-cli-store-2026-11-14]]
 rel: depends-on -> [[orchestration#release]]
+rel: depends-on -> [[plan-of-plans#decisions]]
+rel: related-to -> [[task-22.2-repair-then-remove#r4]]
 rel: depends-on -> [[plan-31b-spec-census]]
 rel: reinforces -> [[feedback_decay_never_loses_knowledge]]
 rel: reinforces -> [[feedback_no_silent_failures]]
@@ -126,6 +133,21 @@ orphaned 1,967 more. Of the 30,131 learned orphans:
 - Fleet stores were not measured: each has its own orphans, and the same census runs on a
   copy of each before its store event ([[#r9]]). {#fact-fleet}
 
+`resolvable_split.py` applies [[#r7-rule]]'s match rule to the same copy (output
+`workflow/review-output/spec31b-resolvable-split-refmatrix.log`):
+
+| Class | Rows | Detail |
+|---|---|---|
+| **resolvable** (re-attached) | **30,078** (99.8%) | 2,717 `(concept, entity)` pairs on 409 files; 9 rows equal a row already attached to that entity |
+| not resolvable: the concept is gone | 11 | `cli.py` 9, `store.py` 2 |
+| not resolvable: no entity of the learner's kind and that name | 42 | `workflow/bullshit/last_run.log` 23, `pyproject.toml` 19 (files the ingest does not index) |
+| not resolvable: the file is not on disk | 0 | |
+| **deleted with a manifest** | **53** | |
+{#baseline-split-table}
+
+The POP row quotes the lead's count of 2026-11-14 (28,164 orphans); the split is taken on
+the copy of 2026-11-15, which holds 30,131. The store event re-counts ([[#r9]]). {#fact-split}
+
 ### What the order probe showed {#baseline-probe}
 
 The probe on the unmerged branch `spec-29-7-learned-rekey` (`a63d120`,
@@ -161,14 +183,15 @@ And one classification, the user's (d9o, d9p):
 | edited, re-ingested, or `--invalidate`d while it exists | purged and re-derived | **kept**, on the same entity, unverified ([[#r3]]) |
 | exists with an unsupported extension | purged | **kept** ([[#r3]]) |
 | deleted, or now ignored | purged | written to a manifest, then purged ([[#r4]]) |
-| already orphaned by the old code | dropped by `vacuum`, counted and logged ([[#r5]]) | `plan-31 D14` ([[#r7]]) |
+| already orphaned by the old code | dropped by `vacuum`, counted and logged ([[#r5]]) | re-attached when resolvable, else deleted with a manifest (`plan-31 D14`, [[#r7]]) |
 {#rule-table}
 
 ## Requirements {#requirements}
 
 ### R0: re-measure at base {#r0}
 
-At the task's base (after 29.5): run `orphan_census.py` on a fresh read-only copy; run the
+At the task's base (after 29.5): run `orphan_census.py` and `resolvable_split.py` on a fresh
+read-only copy; run the
 order probe's fixture; time [[#r5]]'s step 3 and [[#r7]]'s re-attach end to end, **with
 commit**, on a writable scratch copy of the dev store's snapshot, and record the store-lock
 hold it implies. Bands, stated now: under 30 s, as specified; 30 to 120 s, the step runs only
@@ -213,8 +236,25 @@ written for it. The kept rows are not re-verified: the read path judges them
 {#r3-sites}
 
 These are 22.6 R4's rules and its "two branches are not the same call"
-([[task-22.6-removal-entry-points#r4]]), without its sidecar rows: 16.6's sidecar is not built
-and stays post-mod. {#r3-source}
+([[task-22.6-removal-entry-points#r4]]), **stated without 16.6**. R4's text also keeps
+"sidecar rows" and its AC-5 reads `learned_verify.matching_lines`; both belong to 16.6's
+Wave-1 slice, which is post-mod and not built. Nothing in the keep rule needs them. It reads
+only what is on `master` today: the evidence `detail` prefix `learned from grep `, the
+`query/` concept namespace, `entity_links` and `entities.protected`. A sidecar row, when 16.6
+exists, is keyed by the entity id this rule keeps unchanged, so 16.6 adds its clause without
+changing this one. {#r3-source}
+
+- **Composition with the memory-anchor keep (26.2).** `purge_path` already keeps the anchors a
+  memory owns and raises `MemoryOwnershipError` before it deletes anything when ownership
+  cannot be read. The order is: read the rows at the path; the memory-anchor keep (which may
+  raise, leaving the path untouched and writing no manifest); the learned keep or the
+  [[#r4]] manifest; the purge of the rest. A memory-owned anchor is never purged and never
+  written to a manifest. {#r3-memory}
+- **`rmx sync -i` runs on the writer (bug-203).** With a daemon up, `-i` reaches a store proxy
+  that has no `purge_path` and falls through to the read replica. This requirement rewrites
+  what `-i` does, so it also routes it: through the daemon's sync op family when a daemon
+  answers, in-process otherwise, never the replica. The store review homed bug-203 on 22.6
+  R4. {#r3-invalidate}
 
 ### R4: a deleted or ignored file's learned rows leave through a manifest {#r4}
 
@@ -223,15 +263,23 @@ and stays post-mod. {#r3-source}
 when the path holds learned rows, a cleanup manifest is written and synced to disk **before**
 anything is deleted; then the purge runs as today, with [[#r2]]. {#r4-body}
 
-- **The manifest** is `.refmatrix/removal/<UTC stamp>-<n>.cleanup.jsonl`, format
-  `rmx-cleanup/1`: a header line (`format`, `reason` = `purge-path` or `vacuum`, `partition`,
-  `path`, `created`), then one line per row with every column by **name**, never by id
-  (`{"row": "entity", kind, name, path, protected}`,
-  `{"row": "link", linkage, c_kind, c, e_kind, e, weight}`,
-  `{"row": "evidence", linkage, c_kind, c, e_kind, e, file, line, span_end, detail}`), then a
-  closing line with the row count. It holds the learned file entity, its learned evidence and
-  its `query/` links. Ingest-derived rows are not in it: the file is gone and they cannot be
-  restored to anything. {#r4-manifest}
+- **The manifest** is `.refmatrix/removal/<id>.cleanup.jsonl`, the path and the record form
+  22.6 R2 and 22.2 R4 give a cleanup manifest ([[task-22.6-removal-entry-points#r2]],
+  [[task-22.2-repair-then-remove#r4]]), so that `removal_restore`, when it is built, reads
+  these files and no second form exists. One `intent` record per learned file entity, with
+  its before-state: the whole `entities` row with its id as `old_id` and its partition by
+  name; every learned evidence row (`linkage`, the concept end by partition, kind and name,
+  `file`, `line`, `span_end`, `detail`, multiplicity); every `query/` link (linkage, the other
+  end by name, weight); and `reason` (`purge-path` or `vacuum`) with the path. A `commit`
+  record follows once the delete has committed. Fields 22.2 lists that do not exist at base
+  are absent (`protect_source`, sidecar rows). Ingest-derived rows are not in it: the file is
+  gone and they cannot be restored to anything. {#r4-manifest}
+- **An orphan row** (no live entity to hang an `intent` record on) is one `orphan_evidence`
+  record: `{linkage, concept: {partition, kind, name, old_id} | null, dead_entity_id, file,
+  line, span_end, detail, multiplicity, reason}`. It mirrors 22.2's `evidence_row` record,
+  whose dead end is the concept; here the dead end is the entity. {#r4-orphan-record}
+- **No vectors file.** 22.2's manifest also saves the vector of each removed entity. The
+  vector of a file entity is derived from the file, and is not written here. {#r4-vectors}
 - **Logged:** one `learned_cleanup {partition, path, manifest, entities, links, evidence}`
   event, then the `tombstone`s. The replay needs only the `tombstone`s ([[#r6]]); the event is
   the record that the drop was audited. {#r4-event}
@@ -240,8 +288,8 @@ anything is deleted; then the purge runs as today, with [[#r2]]. {#r4-body}
   reported like a refused sync path. {#r4-fail}
 - **A file that comes back** (a branch switch) starts with no learned rows; rows learned after
   the purge are appended after the `tombstone` and survive live and in the replay. {#r4-back}
-- **No restore command.** 22.2's `removal_restore` is post-mod. The manifest is complete and
-  self-describing so that it, or a person, can re-apply it. {#r4-restore}
+- **No restore command.** 22.2's `removal_restore` is post-mod. The manifest is complete, in
+  22.2's form, so that it, or a person, can re-apply it. {#r4-restore}
 
 ### R5: `vacuum` says what it drops {#r5}
 
@@ -252,11 +300,12 @@ After [[#r2]] no new orphan is made, so this step only ever meets rows the old c
 - **Ingest-derived orphans** (1,238,430 here) are deleted. Before the delete a manifest
   records them **as counts** per `(file, linkage, kind of row)`, not row by row: each row
   points at nothing and is re-derived by the next ingest of its file. {#r5-derived}
-- **Learned orphans** follow `plan-31 D14` ([[#r7]]). {#r5-learned}
+- **Learned orphans** follow `plan-31 D14` as decided ([[#r7]]). {#r5-learned}
 - **Result and output.** `vacuum()` returns, and `rmx vacuum` prints,
   `evidence_dropped: {derived, rel, learned}`, `learned_reattached`, and the manifest path.
-  One `evidence_orphan_drop {partition, derived, rel, learned, manifest}` event is logged.
-  {#r5-report}
+  One `vacuum_evidence_drop {partition, derived, rel, learned, reattached, manifest}` event
+  is logged. It is a summary, and is named apart from 22.6 R5's per-key `evidence_orphan_drop`
+  so that op keeps its meaning for the day it is built. {#r5-report}
 - **`rmx vacuum --dry-run`** (and the op's `dry_run`) runs every step's selection and prints
   the same counts, writing nothing. It is the audited path's first half. {#r5-dry-run}
 - **Step 2** (dead tracked paths) goes through [[#r4]]. Step 1 (empty concepts) follows
@@ -271,7 +320,7 @@ After [[#r2]] no new orphan is made, so this step only ever meets rows the old c
   the `tombstone` attaches to the new incarnation. This is bug-247's fix; {#r6-tombstone}
 - `evidence_clear {kind, name, keep: "learned"}` drops every non-learned evidence event
   before it with that name at the entity end; {#r6-clear}
-- `learned_cleanup` and `evidence_orphan_drop` change nothing in the replay (their rows are
+- `learned_cleanup` and `vacuum_evidence_drop` change nothing in the replay (their rows are
   already ended by a `tombstone`, or were never in a state the replay rebuilds). {#r6-records}
 
 `_apply_event_body` (the incremental consumer, replica merge) applies `evidence_clear` the
@@ -279,30 +328,51 @@ same way; its `tombstone` already calls `purge_entity`, which now takes the evid
 ([[#r2]]). `dump_catalog_to_log` is unchanged: with I1 there is no orphan for it to leave
 out. {#r6-consumers}
 
-### R7: the rows already orphaned (`plan-31 D14`) {#r7}
+### R7: the rows already orphaned (`plan-31 D14`, decided) {#r7}
 
-Written for the recommended option (a). Under (a), `vacuum` step 3 treats a learned orphan
-whose concept and same-named `code` / `doc` entity both exist, in the concept's partition, as
-**re-attachable**: {#r7-body}
+Decided by the user on 2026-11-15, entered in [[plan-of-plans#decisions]] as `plan-31 D14`:
+"migrate them if they can be resolved, if not, delete them". Resolvable rows are re-attached
+to their current entity; the rest are deleted with a manifest, never silently. {#r7-body}
 
-- its evidence rows are re-pointed to the live entity's id, in one set-based statement;
-- the `mentions` link from the concept is restored if absent, and the entity is marked
-  `protected` if it is not (both logged by the existing `link` and `protect` events);
-- one `evidence` event per re-pointed row is appended, with the live names, so the replay
-  holds them after the old incarnation's `tombstone`;
-- a learned orphan that is not re-attachable (53 without an entity, 11 without a concept
-  here) goes to the manifest in full ([[#r4-manifest]]'s form) and is deleted.
+**The match rule.** A learned orphan is an evidence row whose `detail` is learned
+([[#r1]]) and whose `entity_id` names no entity. It is **resolvable** when all three hold:
+
+| # | Condition | Read from |
+|---|---|---|
+| C | its concept row exists and is a `query/` concept | `entities` by the row's `concept_id` |
+| E | exactly one entity has the concept's partition, the kind the learner gives the row's `file` (`code` for the learner's code suffixes, else `doc`) and `name` equal to the row's `file` | `entities`; the same `(kind, name)` a new learn of that file would write to |
+| F | the file is on disk | the row's `file`, against the project root unless absolute |
+{#r7-rule}
+
+A row that fails is **not resolvable**; its reason is the first failing condition in the
+order C, E, F. The line is not part of the rule: a resolvable row whose line no longer holds
+its pattern is re-attached and left for the read path, which serves a learned row only where
+the line still matches, exactly as it treats a row an edit kept ([[#r3]]). On the dev store
+copy 13,067 of the resolvable rows hold their pattern today ([[#fact-verifies]]). The split is
+[[#baseline-split-table]]: 30,078 resolvable, 53 not. {#r7-line}
+
+**What `vacuum` step 3 does with them**, after step 2 has purged the entities of files that
+are gone (so E is judged against what is left):
+
+- **Resolvable:** the row's `entity_id` is set to the matched entity's id, in one set-based
+  statement for the whole step; the `mentions` link from the concept is restored if absent
+  and the entity is marked `protected` if it is not (the existing `link` and `protect`
+  events); one `evidence` event per re-attached row is appended with the live names, so the
+  replay holds the row after the old incarnation's `tombstone`. Rows are moved as they are,
+  with their multiplicity: a row equal to one already attached (9 here) is still moved, as a
+  second learn of the same hit would have added it. {#r7-reattach}
+- **Not resolvable:** one `orphan_evidence` record per row ([[#r4-orphan-record]]) with its
+  reason, written and synced to disk before the delete; then the delete; then the `commit`
+  record. If the manifest cannot be written, no learned orphan is deleted and the step
+  reports the failure ([[#r4-fail]]). {#r7-delete}
+- **Counted:** `learned_reattached`, `learned_deleted` by reason, and the manifest id, in the
+  result, in `rmx vacuum`'s output and in the `vacuum_evidence_drop` event; the dry run
+  prints the same numbers and writes nothing. {#r7-counts}
 
 This leaves the store as [[#r3]] would have left it had the fix existed when the edits
-happened: the rows on their file, unverified, served only where the line still holds the
-pattern. {#r7-why}
-
-| Option | `vacuum` step 3 does, for a re-attachable learned orphan | Spec text that changes |
-|---|---|---|
-| (a) re-attach | as above | none |
-| (b) drop with a manifest | writes it to the manifest in full and deletes it | the four bullets above become one; AC-7 asserts the manifest and the delete |
-| (c) keep | leaves it in place and counts it (`learned_orphans_kept`) | I1 is then false for learned rows by decision; AC-7 asserts the count; [[#ac-9]] excludes them |
-{#r7-options}
+happened. "The audited removal path" is read here as the dry run, the manifest written
+first, the logged event and the lead's backed-up run ([[#r9]]): plan-22's engine and its
+`--confirm` are post-mod and not built. {#r7-why}
 
 ### R8: every path reports {#r8}
 
@@ -312,12 +382,29 @@ that could not be written is reported per [[#r4-fail]]. {#r8-body}
 
 ### R9: the store event {#r9}
 
-The code changes no row until a `vacuum` runs. For the dev store, in the release: copy the
-snapshot and run `orphan_census.py`; `rmx vacuum --dry-run`; the user's go; back up
-`catalog.read.duckdb`, `facts.log` and `active`; `rmx vacuum`; the census again on a fresh
-copy ([[#ac-9]]). Every other store is a separate user go, with its own census first
+The code changes no row until a `vacuum` runs. The store write is the lead's, announced and
+backed up, never an agent's. For the dev store, in the release: copy the snapshot and run
+`orphan_census.py` and `resolvable_split.py`; `rmx vacuum --dry-run`, whose counts must equal
+the split's; back up `catalog.read.duckdb`, `facts.log` and `active`; `rmx vacuum`; the
+census again on a fresh copy and a read of the manifest ([[#ac-9]]). D14 is the user's go
+for the dev store's orphans. Every other store is a separate user go, with its own census first
 ([[orchestration#release]] step 4). Until a store is vacuumed its orphans stay as they are.
 {#r9-body}
+
+## What this takes from 22.6, and what it leaves {#scope-22-6}
+
+| 22.6 | Here | Left for 22.6, post-mod |
+|---|---|---|
+| R4 (an edit keeps learned rows) | whole: both branches, the guard, the ingest twin, `--invalidate`, the existing-unsupported file ([[#r3]]) | the sidecar clause, once 16.6 exists |
+| R3 (a missing or ignored file) | the learned rows go to a manifest before the purge ([[#r4]]) | removal through 22.2's row primitives with one `evidence_remove` event per row; `removal_restore` |
+| R5 (`vacuum`'s orphan delete) | counted, logged as one summary event, learned orphans by D14, a manifest for the learned rows it deletes ([[#r5]], [[#r7]]) | the per-key `evidence_orphan_drop` events, the key timeline and the revivable predicate; a row-level manifest of ingest-derived orphans |
+| R1, R2, R6, R7, R9, R10 | nothing | all of it |
+{#scope-22-6-table}
+
+The freeze line names "22.6 R4". The plan's own text for this task
+([[plan-31-pre-mod-loose-ends#t2]]) also names the deleted file and `vacuum`'s log, which
+are the learned-row halves of R3 and R5; they are taken in the narrowed form above. Whether
+the freeze line should say so is the lead's. {#scope-22-6-body}
 
 ## Where the code is after 29.5 {#layout}
 
@@ -351,8 +438,9 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   unchanged `facts.log` tombstone count). **RED** at base (E lines: the anchor has a new id;
   B's edge is gone). {#ac-2}
 - **AC-3: a deleted file's learned rows are in a manifest before they go.** The fixture's
-  deleted file, and a file that became ignored: a `rmx-cleanup/1` manifest exists holding the
-  entity, the link and the evidence row by name; a `learned_cleanup` event names it; the rows
+  deleted file, and a file that became ignored: a cleanup manifest exists whose `intent` record
+  holds the entity, the link and the evidence row by name, with a `commit` record after it
+  ([[#r4-manifest]]); a `learned_cleanup` event names it; the rows
   are gone from the catalog; the sync report says `learned_manifested: 1`. **RED** at base
   (E line: no manifest; the rows are orphaned). {#ac-3}
 - **AC-4: the manifest fails closed.** With `.refmatrix/removal` made unwritable, the same
@@ -366,24 +454,39 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 - **AC-6: `vacuum` reports and logs.** A store seeded with orphans of the three kinds (by
   deleting entity rows directly, the state the old code left): `vacuum(dry_run=True)` returns
   the counts and changes nothing; `vacuum()` returns the same counts, the counts manifest
-  exists, one `evidence_orphan_drop` event is logged, and `rmx vacuum` prints the line. Rows
+  exists, one `vacuum_evidence_drop` event is logged, and `rmx vacuum` prints the line. Rows
   whose **concept** is gone are dropped too. **RED** at base (E lines: no such keys; the
   concept-side rows remain). {#ac-6}
-- **AC-7: the legacy learned orphans, per `plan-31 D14`.** On that seeded store, option (a):
-  a re-attachable row is on the live entity, the link and the flag are back, an `evidence`
-  event with the live names is logged; a row with no live entity is in the manifest and
-  gone. Options (b) and (c) change the assertions as [[#r7-options]] says. **RED** at base
-  (E line: the rows are deleted silently). {#ac-7}
+- **AC-7: resolvable rows are re-attached; the rest are in the manifest before they go
+  (`plan-31 D14`).** On that seeded store, with one learned orphan of each class of
+  [[#r7-rule]] (resolvable; concept gone; no entity of the learner's kind; file not on disk)
+  and one resolvable row equal to an attached row:
+  - the resolvable rows are on the matched entity, the `mentions` link and the `protected`
+    flag are back, and an `evidence` event with the live names is logged for each;
+  - each of the other three is gone from the catalog and is one `orphan_evidence` record in
+    the cleanup manifest, by name, with its reason and multiplicity; the manifest's record
+    count equals `learned_deleted`; its `commit` record is last;
+  - the manifest is on disk **before** the delete: with the delete made to fail after the
+    write, the manifest holds the three records and no `commit`, and the rows are still in
+    the catalog;
+  - with `.refmatrix/removal` unwritable, no learned orphan is deleted or re-attached and the
+    failure is reported;
+  - `vacuum(dry_run=True)` returns the same `learned_reattached` and `learned_deleted` and
+    changes nothing.
+
+  **RED** at base (E line: the rows are deleted with no manifest and no count). {#ac-7}
 - **AC-8: the replay agrees.** For each scenario of AC-1, AC-2, AC-3, AC-6 and AC-7, and for
   the order probe's Q3, the multiset of evidence rows by `(linkage, concept name, entity
   name, file, line, detail)`, the links and the `protected` flags are equal between the live
   store and a second store rebuilt from its `facts.log`, and equal again after
   `dump_catalog_to_log` and a rebuild. **RED** at base (E line: the changed file's purged row
   is back, 3 rows against 2, as in the probe). {#ac-8}
-- **AC-9: the dev store after its `vacuum`.** `orphan_census.py` on a fresh copy: evidence
-  with either end gone 0; under (a), learned rows attached ≥ 107,500 and `(concept, file)`
-  pairs linked ≥ 2,717 more than before; the counts printed by the run equal the dry run's.
-  **Measurement**, after the user's go. {#ac-9}
+- **AC-9: the dev store after its `vacuum`.** The run's `learned_reattached` and
+  `learned_deleted` equal the dry run's and `resolvable_split.py`'s on the copy taken just
+  before (30,078 and 53 on the copy of 2026-11-15). On a fresh copy afterwards: evidence with
+  either end gone 0; learned orphans 0; `(concept, file)` pairs linked up by the split's pair
+  count (2,717). The manifest holds one record per deleted row. **Measurement**, on the
+  lead's run. {#ac-9}
 - **AC-10: the lock hold is bounded.** R0's timing, against its bands. **Measurement.**
   {#ac-10}
 - **AC-11: one definition.** A static test over the string constants of `src/refmatrix/*.py`
@@ -394,7 +497,22 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   (`daemon.py:4581` and `:4610` hold the literal). {#ac-11}
 - **AC-12: the incremental consumer.** A replica that applies the log delta of AC-1's and
   AC-3's scenarios through `apply_log_delta` holds the same evidence as the writer. **RED**
-  at base (E line: the replica keeps the purged entity's evidence, or lacks the op). {#ac-12}
+  at base (E line: the replica keeps the purged entity's evidence, or lacks the op). The same
+  test carries bug-260's leg: a writer re-derives a doc's `rel:` lines
+  (`rel_evidence_clear`), and the replica must hold the writer's `rel:` evidence. The RED
+  **probes that first**: bug-260 was read, not run. If the replica already agrees, the leg is
+  kept as characterization and bug-260 is closed as not reproduced; if not, `_apply_event_body`
+  applies `rel_evidence_clear` as the rebuild does. {#ac-12}
+- **AC-13: the memory-anchor keep still wins.** A path that holds a memory-owned anchor and a
+  learned row: the anchor survives a purge with and without `keep_learned` and is in no
+  manifest; with the memory's metadata made unreadable, `purge_path` raises
+  `MemoryOwnershipError`, nothing at the path changes and no manifest is written.
+  **Characterization** for the anchor, **RED** for "no manifest" (no manifest exists at
+  base). {#ac-13}
+- **AC-14: `rmx sync -i` reaches the writer (bug-203).** With a throwaway daemon up,
+  `rmx sync -i <existing file>` keeps the file's learned rows and re-derives its ingest rows
+  on the writer store, and `-i <missing file>` writes the [[#r4]] manifest. **RED** at base
+  (E line: the purge goes to the replica, or the learned rows are gone). {#ac-14}
 
 ## Must-fail mutations {#mutations}
 
@@ -409,13 +527,18 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 | 7 | drop the evidence `DELETE` from `purge_entity` | AC-5 (the `purge_entity` callers), AC-8 |
 | 8 | drop it from `_bulk_purge_ids` | AC-5 (`untrack`, `forget`, `vacuum`) |
 | 9 | step 3 looks at the entity side only | AC-6's concept-side leg |
-| 10 | `vacuum` logs no `evidence_orphan_drop` | AC-6 |
+| 10 | `vacuum` logs no `vacuum_evidence_drop` | AC-6 |
 | 11 | `dry_run` deletes | AC-6 |
 | 12 | re-attach appends no `evidence` event | AC-8 (the AC-7 scenario) |
 | 13 | the replay ignores a `tombstone` for evidence | AC-8 (the probe's Q3) |
 | 14 | the replay ignores `evidence_clear` | AC-8 (the AC-1 scenario) |
 | 15 | `_apply_event_body` ignores `evidence_clear` | AC-12 |
 | 16 | re-attach binds to an entity of the same name in another partition | AC-7, with a two-partition leg |
+| 17 | condition C dropped (a row whose concept is gone is re-attached) | AC-7 |
+| 18 | condition E matches any `code` / `doc` entity of that name, not the learner's kind | AC-7, with a `doc` entity named like a `.py` file |
+| 19 | the delete of the non-resolvable rows runs before the manifest write | AC-7's failing-delete leg |
+| 20 | the learned keep runs before the memory-anchor keep | AC-13's unreadable-metadata leg (a manifest is written) |
+| 21 | `-i` calls `purge_path` on whatever store it is handed | AC-14 |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -434,7 +557,7 @@ The purge callers are [[#baseline-callers-table]]. Others:
 {#census-table}
 
 A consumer of `facts.log` that ignores an unknown op is safe for the three new ops
-(`evidence_clear`, `learned_cleanup`, `evidence_orphan_drop`); R0 lists every reader of the
+(`evidence_clear`, `learned_cleanup`, `vacuum_evidence_drop`); R0 lists every reader of the
 log by grep and the summary says which ignore, which fail and which were changed. {#census-ops}
 
 ## Files {#files}
@@ -446,9 +569,9 @@ writer), `src/refmatrix/sync.py` and `src/refmatrix/ingest.py` (R3's sites, R8),
 the `cli` module that holds `vacuum` and `_sync_in_process`. New
 `tests/test_bug107_learned_evidence.py`. `docs/SYSTEM.md` (the evidence lifecycle, the
 manifest format) and `docs/INTEGRATION.md` (`rmx vacuum --dry-run`). `workflow/bug_registry.md`
-(bug-107, bug-247, and the rows for [[#decisions-findings]]), the implementation summary.
-`task-22.6-removal-entry-points` gains one amends line saying its R4 is built here and its R3
-and R5 are narrowed by this task's manifest form; the lead adds it at the merge. {#files-list}
+(bug-107, bug-247, bug-203, bug-259, bug-260), the implementation summary.
+22.6's own note that its R4 is built here, and its R3 and R5 in part, is written by 22.6's
+freshness revision from [[#scope-22-6-table]]; this task does not edit 22.6. {#files-list}
 
 ## Risks {#risks}
 
@@ -461,8 +584,8 @@ and R5 are narrowed by this task's manifest form; the lead adds it at the merge.
   manifest and a `learned_cleanup` event for rows that were not deleted. The manifest then
   over-reports and loses nothing. Not fixed here. {#risk-rollback}
 - **Old logs.** The new `tombstone` rule applies to every log, including events written
-  before this task. For ingest-derived evidence that is the fix. For learned evidence under
-  (a), the re-attach appends fresh events; a store rebuilt from its log **before** its
+  before this task. For ingest-derived evidence that is the fix. For learned evidence, the
+  re-attach of D14 appends fresh events; a store rebuilt from its log **before** its
   `vacuum` would not have the legacy learned rows. The release note says: vacuum before any
   rebuild. {#risk-old-logs}
 - **Stale lines stay.** Kept and re-attached learned rows may name a line that no longer
@@ -488,35 +611,29 @@ and R5 are narrowed by this task's manifest form; the lead adds it at the merge.
 
 ## Decisions {#decisions}
 
-**For the user: `plan-31 D14`.** The 30,131 learned evidence rows already orphaned in the dev
-store (and their like in each other store):
+Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
+cites them and records none of its own. {#decisions-rule}
 
-- **(a) recommended: re-attach.** 30,078 of them (99.8%) have their file, a live entity of
-  the same name and their concept; re-attaching restores 2,717 `query → file` associations of
-  which 2 exist today, and 13,067 rows (43%) still hold their pattern on the recorded line
-  and are served again. The rest stay on their file unserved, exactly as an edit leaves a
-  learned row under the fixed code. It removes nothing, and it makes the store what the fix
-  would have left. The 53 rows that cannot re-attach go to a manifest.
-- (b) drop with a manifest. All 30,131 are written to a manifest and deleted; the 2,717
-  associations are a recorded loss, as L115 recorded the `cli.py` / `store.py` rows.
-- (c) keep. They stay as orphans, counted at each `vacuum`. No loss and no repair; the
-  catalog and a rebuild from the log then differ by these rows for good.
-{#d14}
+- **`plan-31 D14`, decided by the user (2026-11-15):** "migrate them if they can be resolved,
+  if not, delete them". Amended into [[#r7]], [[#r5-learned]], [[#ac-7]] and [[#ac-9]]. The
+  spec adds the match rule the decision needs ([[#r7-rule]]) and its measured split
+  ([[#baseline-split-table]]). {#d14}
+- **Ruling L132:** this task's two departures from approved text go to ch-bsd to judge:
+  ingest-derived orphans are recorded in the manifest as counts, not rows ([[#r5-derived]];
+  22.6 R5 asked for every row, 834,201 then and 1.24 million now, and a row that points at
+  nothing is re-derived by the next ingest of its file); and there is no restore command
+  ([[#r4-restore]]). A third of the same kind is added in this revision: no vectors file
+  ([[#r4-vectors]]). bug-259 and bug-260 fold in here by the same ruling. {#l132}
 
-**Taken in this spec** (for the lead to register): evidence follows its entity at every
-purge, with the `tombstone` as its event ([[#r2]], [[#r6-tombstone]]); a learned file entity
-is one with a learned row or the `protected` flag ([[#r1]]); 22.6 R4 is taken whole, without
-the sidecar ([[#r3-source]]); the manifest form `rmx-cleanup/1`, with no restore command
-([[#r4-manifest]], [[#r4-restore]]); ingest-derived orphans are recorded as counts, not rows
-([[#r5-derived]]): the ADR asks for a manifest before the change and does not fix its grain,
-and 22.6 R5's row-level streaming manifest (834,201 rows then, 1.24 million now) restores
-nothing a re-ingest does not; `vacuum` gains a dry run and is the store event ([[#r5-dry-run]],
-[[#r9]]); the manifest fails closed ([[#r4-fail]]). {#decisions-taken}
+**Design proposed by this spec, for review** (not ledger decisions): evidence follows its
+entity at every purge, with the `tombstone` as its event ([[#r2]], [[#r6-tombstone]]); a
+learned file entity is one with a learned row or the `protected` flag ([[#r1]]); the line is
+not part of D14's match rule ([[#r7-line]]); "the audited removal path" is the dry run, the
+manifest and the logged, backed-up run ([[#r7-why]]); `vacuum` gains a dry run and is the
+store event ([[#r5-dry-run]], [[#r9]]); the manifest fails closed ([[#r4-fail]]); bug-203 is
+taken because R3 rewrites the `-i` path ([[#r3-invalidate]]). {#decisions-proposed}
 
-**Findings for the lead's registry** (no ids allocated here): (1) the compaction
-(`dump_catalog_to_log`) is a third unlogged drop of orphan evidence
-([[#baseline-code-table]]); (2) `vacuum` step 3 never looked at the concept side: 34,451
-rows; (3) `_apply_event_body` does not apply `rel_evidence_clear`, so a replica keeps `rel:`
-evidence the writer cleared (read at `f3a508f`, not probed); (4) the orphan count grew from
-28,164 to 30,131 in a day with learning off: every edit of a learned file still orphans its
-rows. {#decisions-findings}
+**For the lead** (not this spec's to decide): whether the line of [[#r7-line]] is what the
+user meant by "resolved" (the other reading re-attaches only the 13,067 rows whose line still
+holds the pattern and deletes 17,011 more); whether the freeze line names R3 and R5 as well
+as R4 ([[#scope-22-6-body]]); whether bug-203 is admitted. {#decisions-open}

@@ -32,6 +32,7 @@ None opens a live store, starts a daemon or calls `rmx`. {#touches-rule}
 | `corpus_diff.py` | the same, plus the project root walked as the ingest walks it | nothing |
 | `resolver_landing.py` | a **copy** of `catalog.read.duckdb`, opened `read_only=True`, and `resolver_census.py`'s `--lines` output | nothing |
 | `orphan_census.py` | a **copy** of `catalog.read.duckdb`, opened `read_only=True`, and the project's files | nothing |
+| `resolvable_split.py` | the same copy, and a stat of each file a learned orphan names | nothing |
 {#touches-table}
 
 The catalog copy is made by hand first (`cp <project>/.refmatrix/catalog.read.duckdb
@@ -52,6 +53,7 @@ the working directory, with `scripts/lint-gmd.sh`'s scope.
 | `resolver_landing.py` | `C <the --lines output> P` | `spec31b-resolver-landing-refmatrix.log` | 31.6 |
 | `corpus_diff.py` | `P CLAUDE.md docs/ workflow/ eval/ .claude/PROJECT_PROFILE.md --memory-dir M` | `spec31b-corpus-diff-refmatrix.log` | 31.6 |
 | `orphan_census.py` | `C P` | `spec31b-orphan-census-refmatrix.log` | 31.2 |
+| `resolvable_split.py` (plan-31 D14's match rule) | `C P` | `spec31b-resolvable-split-refmatrix.log` | 31.2 |
 {#run-table}
 
 ## Limits {#limits}

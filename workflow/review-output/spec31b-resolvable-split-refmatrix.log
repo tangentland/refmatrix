@@ -1,0 +1,8 @@
+not: C (concept gone): 11
+not: E (no entity of the learner's kind and that name): 42
+orphans: 30131
+resolvable: 30078
+resolvable rows equal to a row already attached to that entity: 9
+resolvable: 2717 (concept, entity) pairs on 409 files
+not resolvable by C: 2 file(s): src/refmatrix/cli.py 9; src/refmatrix/store.py 2
+not resolvable by E: 2 file(s): workflow/bullshit/last_run.log 23; pyproject.toml 19

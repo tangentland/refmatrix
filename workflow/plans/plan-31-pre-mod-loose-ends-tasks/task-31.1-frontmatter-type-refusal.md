@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: task-31.1-frontmatter-type-refusal
-title: "Task 31.1: a non-string frontmatter id or title is refused per file, named on every route, and no longer fails the GMD batch (bug-244)"
-tags: [task, plan-31, gmd, ingest, frontmatter, batch-failure, bug-244]
+title: "Task 31.1: a non-string frontmatter id or title is refused per file by lint and ingest alike, named on every route, and no longer fails the GMD batch (bug-244, bug-255, bug-258)"
+tags: [task, plan-31, gmd, ingest, lint, parity, frontmatter, batch-failure, bug-244, bug-255, bug-258]
 metadata:
   node_type: task
   status: drafting
@@ -16,8 +16,11 @@ metadata:
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t1]])
 > Status: drafting (ch-architect on Fable, 2026-11-15; ch-bsd spec review next)
 > Depends on: 0.83.1 / 0.84.0 deployed (it changes the raising input of 0.83.1's S2 and M2
-> tests). Lands before [[task-31.6-one-wikilink-resolver]]: both edit `ingest_gmd.py`.
-> Closes: bug-244 ([[bug_registry#registry]]).
+> tests). Lands before [[task-31.6-one-wikilink-resolver]]: both edit `ingest_gmd.py` and the
+> upstream lint (ruling L132, [[plan-of-plans#rulings]]).
+> Closes: bug-244 (the ingest side), bug-255 (the lint side) and bug-258 (the skip that two
+> routes drop), all in [[bug_registry#registry]].
+> Decision: `plan-31 D11`, decided in [[plan-of-plans#decisions]] ([[#d11]]).
 > Base for every measurement here: `f3a508f` (2026-11-15).
 
 rel: part-of -> [[plan-31-pre-mod-loose-ends]]
@@ -25,6 +28,8 @@ rel: implements -> [[plan-31-pre-mod-loose-ends#t1]]
 rel: depends-on -> [[bug_registry#registry]]
 rel: depends-on -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[orchestration#planning]]
+rel: depends-on -> [[plan-of-plans#decisions]]
+rel: depends-on -> [[task-bug179-lint-ingest-anchor-parity]]
 rel: depends-on -> [[plan-31b-spec-census]]
 rel: reinforces -> [[feedback_no_silent_failures]]
 rel: reinforces -> [[feedback_errors_fail_loudly_on_the_console]]
@@ -68,7 +73,8 @@ short `/tmp` root; no live store was opened. {#baseline-how}
   existing guard and lands in `skipped_unparseable`. {#fact-other-shapes}
 - The lint has the same hole: `tools/gmd/lint.py` on a list `id:` exits 1 with a Python
   traceback that names no file (`key in docs` in `main._ingest`, outside its `try`), and
-  passes a list `title:` with 0 errors. {#fact-lint}
+  passes a list `title:` with 0 errors, which the ingester raises on. Registered as bug-255:
+  the two sides disagree on which frontmatter types are legal. {#fact-lint}
 
 ### Where a per-file skip is reported today {#baseline-report}
 
@@ -86,7 +92,8 @@ short `/tmp` root; no live store was opened. {#baseline-how}
 So on the two routes that carry edits, a file the guard skips (a non-UTF-8 file today, a
 refused file after this task) is dropped from the graph with nothing printed. On the sync
 route the batch call is not inside a `try` at all: a list `id:` in one edited file raises out
-of `_sync_paths` and rolls back the whole batch's transaction. {#fact-silent-routes}
+of `_sync_paths` and rolls back the whole batch's transaction. Registered as bug-258.
+{#fact-silent-routes}
 
 ### How many files have the shape {#baseline-fleet}
 
@@ -170,15 +177,28 @@ fails naming the files. {#r2-body}
   absent until it is fixed, and the `Error:` line says so. {#r2-row}
 - **Routes that already print it** keep their report and their exit status. {#r2-unchanged}
 
-Whether the two routes exit non-zero is `plan-31 D11` ([[#decisions]]). {#r2-decision}
+That the two routes exit non-zero is `plan-31 D11`, decided ([[#d11]]). {#r2-decision}
 
-### R3: the gate names the file {#r3}
+### R3: the lint refuses the same shapes (bug-255) {#r3}
 
-`scripts/check-gmd-parity.py` already reports a file either parser raises on
-(`[parity-parse-fail]`, exit 1). After R1 it names a refused file with the
-`GmdFrontmatterError` text. No change to the script: an AC proves it. The lint's own error for
-the shape is upstream work and rides [[task-31.6-one-wikilink-resolver#r7]]'s upstream commit,
-so that this task touches `src/` and `tests/` only. {#r3-body}
+`tools/gmd/lint.py`'s `parse_doc` reports a non-empty list `id:` or `title:` as an **error**
+on line 1, `bad-frontmatter-type`, with the key and the value: one issue line, exit 1, no
+traceback. The file's other checks still run, keyed by its filename stem, and it is left out
+of the id table that cross-doc links resolve against, so the `key in docs` lookup that
+crashes today never sees a list. {#r3-body}
+
+- **The same rule on both sides.** The lint errors on exactly the values `parse_gmd` refuses
+  ([[#r1]]): a non-empty list for `id` or `title`; an empty value is absent on both sides.
+  The table of [[#baseline-raise-table]] is the shared fixture ([[#ac-9]]). {#r3-same-rule}
+- **`name:`.** The lint still reads a legacy `name:` as the doc id when there is no `id:`
+  (until [[task-31.6-one-wikilink-resolver#r1-name]] removes that). A list `name:` gets the
+  same error. The ingester does not read `name:`, so this is lint-only and outside the
+  parity rule. {#r3-name}
+- **Upstream first.** `~/claude_tools/gmd/lint.py` is canonical and `tools/gmd/lint.py` is
+  its byte-identical vendored copy ([[task-bug179-lint-ingest-anchor-parity#f-canonical]],
+  [[task-bug179-lint-ingest-anchor-parity#d4]]): the change and its cases in
+  `scripts/test-lint-gates.py` land upstream, then the file is re-vendored from that sha.
+  {#r3-upstream}
 
 ### R4: the S2 and M2 tests get a registered patch {#r4}
 
@@ -206,6 +226,15 @@ of `ingest_gmd_paths`". This spec takes the patch. {#r4-body}
 - `BAD_MD` leaves those four tests and moves to this task's new tests ([[#ac-2]],
   [[#ac-3]]), where the same file must now be skipped and named. {#r4-bad-md}
 
+### R5: the gate checks the two sides agree {#r5}
+
+`scripts/check-gmd-parity.py`'s `scan()` compares, for every file in scope (before it skips a
+file the lint does not treat as GMD): the lint reported `bad-frontmatter-type` for `id` or
+`title`, against `parse_gmd` raised `GmdFrontmatterError`. When both refuse, the lint's error
+line is the report and the parity step adds nothing. When one refuses and the other does
+not, it is a `[frontmatter-parity]` error naming the file and which side refused. A raise of
+any other kind stays a `[parity-parse-fail]`. {#r5-body}
+
 ## Acceptance criteria {#acceptance}
 
 Each names its test and its kind. New tests live in `tests/test_bug244_frontmatter_refusal.py`
@@ -226,7 +255,7 @@ unless said otherwise. {#acceptance-intro}
   in-process (the two routes of the S2 test), the tree of AC-2: the op result's
   `gmd_files_skipped` names the bad path; `gmd_pass_failed` is 0; the good docs' anchors
   exist (asserted with `rmx query` or a snapshot read); the CLI prints one `Error:` line
-  naming the path and the count, and the exit status is the one `plan-31 D11` picks. The
+  naming the path and the count, and exits 1 (`plan-31 D11`). The
   agent route's job record carries the same sentence at its top level. **RED** at base (E
   line: `gmd_pass_failed > 0` and the "registered as plain docs" message, or the missing
   field). {#ac-3}
@@ -234,7 +263,7 @@ unless said otherwise. {#acceptance-intro}
   and one changed doc whose `title:` is now a list, through `_sync_paths`, through `rmx sync
   -f` in-process and through a real daemon: the two good docs are updated; the bad doc's
   previous doc row and anchors are unchanged; the report's `gmd_refused` names it; the CLI
-  prints the `refusal_summary` line; the daemon's watch route records a sync error that
+  prints the `refusal_summary` line and exits 1; the daemon's watch route records a sync error that
   `rmx daemon status` prints; the path is back on the dirty queue after a `flush_queue`.
   **RED** at base (E line: the `TypeError` out of `_sync_paths`). {#ac-4}
 - **AC-5: a file the guard already skipped is no longer silent.** The non-UTF-8 file of
@@ -245,12 +274,28 @@ unless said otherwise. {#acceptance-intro}
   tree, unpatched) pass. **Characterization.** The summary also records the old `BAD_MD`
   versions of the four failing at the GREEN commit: the proof that the old input is gone and
   that the re-point was needed. {#ac-6}
-- **AC-7: the repo gate names a refused file.** `check-gmd-parity.scan()` on a scratch dir
-  holding one list-`title` GMD doc returns a failure whose text holds the path and
-  `GmdFrontmatterError`. **RED** at base (E line: the failure list is empty: lint and the
-  ingester both parse it). {#ac-7}
+- **AC-7: the lint names the file.** `tools/gmd/lint.py` on a directory holding a good doc
+  and, in turn, each list shape of [[#baseline-raise-table]]: one `bad-frontmatter-type`
+  error on line 1 of the bad file naming the key, exit 1, no `Traceback` in the output, and
+  the good doc's own issues unchanged. A list `name:` with no `id:`: the same error. An empty
+  `id:` or `title:`: no such error. **RED** at base (E lines: the `TypeError` traceback for a
+  list `id:`; exit 0 with 0 errors for a list `title:`). The same cases are added to the
+  upstream `scripts/test-lint-gates.py`. {#ac-7}
 - **AC-8: the fleet has no such file.** R0's census output, zero in every column of
   [[#baseline-fleet-table]]. **Measurement.** {#ac-8}
+- **AC-9: lint and ingest refuse the same files.** One parametrised test over every row of
+  [[#baseline-raise-table]] and every shape of [[#fact-other-shapes]]: the lint reports
+  `bad-frontmatter-type` for `id` or `title` **if and only if** `parse_gmd` raises
+  `GmdFrontmatterError`, for the strict, lenient and `memory_ids` parses. **RED** at base (E
+  lines: for a list `title:` the lint says nothing and the ingester raises `TypeError` later;
+  for a list `id:` the lint crashes). {#ac-9}
+- **AC-10: the gate fails when the two sides differ.** `check-gmd-parity.scan()` on (i) a
+  scratch dir with a list-`title` doc: no parity finding (both refuse; the lint's error is
+  the report); (ii) the same dir with the lint's check disabled (a lint module loaded from a
+  fixture copy of `lint.py` without it): one `[frontmatter-parity]` finding naming the file
+  and "ingester only"; (iii) the repo scope: 0 findings. **RED** at base (E line: no such
+  finding kind; (ii) returns nothing). (ii) is the must-fail input that proves the check can
+  fail ([[feedback_clean_corpus_hides_a_dead_gate]]). {#ac-10}
 
 ## Must-fail mutations {#mutations}
 
@@ -266,7 +311,12 @@ Committed first, restored one at a time; each must make a test **fail**, not han
 | 6 | `_sync_paths` stops filling `gmd_refused` | AC-4, AC-5 |
 | 7 | the accessor of [[#r2-sync]] returns `memory_ownership_errors` only | AC-4 (the CLI line, the recorded error, the re-queue) |
 | 8 | the fixture script stops patching (calls the real function) | AC-6's four tests |
-| 9 | refuse an empty `id:` too | AC-1's empty rows (characterization) |
+| 9 | refuse an empty `id:` too | AC-1's empty rows (characterization), AC-9 |
+| 10 | the lint checks `id` only | AC-7 (list `title:`), AC-9 |
+| 11 | the lint reports the error and still adds the doc to its id table | AC-7 (the traceback returns) |
+| 12 | the lint also errors on an empty `title:` | AC-7's empty leg, AC-9 |
+| 13 | `scan()` compares only files the lint treats as GMD | AC-10, with a plain file whose `id:` is a list |
+| 14 | `scan()` reports nothing when one side refuses | AC-10 (ii) |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -279,7 +329,7 @@ Committed first, restored one at a time; each must make a test **fail**, not han
 | `ingest_gmd.py:1230` (`_parse_memory_walk`: the bridge and `--dry-run`) | caught, `skipped_unparseable` | the same |
 | `ingest_gmd.py:123` (`prestage_hashes`) | caught, counted `skipped` | the same |
 | `sync.py:59` (`_gmd_route_pending`) | caught, returns `False` | the same: the file is not forced onto the GMD route by this probe; the mtime gate still sends a changed file there |
-| `scripts/check-gmd-parity.py:94` | reported as `parity-parse-fail` | names the refused file ([[#r3]]) |
+| `scripts/check-gmd-parity.py:94` | reported as `parity-parse-fail` | compared with the lint's own refusal ([[#r5]]) |
 | `scripts/check-rel-landing.py:93` | listed under `parse failures`, not counted | the same |
 {#census-parse}
 
@@ -304,11 +354,20 @@ named in the summary ([[orchestration#task]] step 4). {#census-result}
   `tests/test_bug241_r2_l112.py` and `tests/test_bug241_r3_l114.py` (R4).
 - `workflow/test_mock_registry.md` (the R4 row), `workflow/bug_registry.md` (bug-244), the
   implementation summary. Registry ids are the lead's.
+- Upstream repo `~/claude_tools/gmd/` (first): `lint.py`, `scripts/test-lint-gates.py`,
+  `SPEC.md` §2 (`id` and `title` are strings; a list is an error).
+- `tools/gmd/lint.py` (re-vendored from that sha), `docs/gmd/SPEC.md`,
+  `scripts/check-gmd-parity.py` (R5).
 - `docs/INTEGRATION.md`'s ingest section: one sentence on a refused file.
 {#files-list}
 
 ## Risks {#risks}
 
+- **The upstream lint.** The lint change lands in `~/claude_tools/gmd` and is re-vendored.
+  31.4 and 31.6 change the same upstream file (31.4 by `plan-31 D10`); each re-vendors from
+  its own sha, in the plan's order, and a later task re-vendors on top of the earlier one.
+  viascope runs the upstream lint directly: no file there has the shape
+  ([[#baseline-fleet-table]]), so nothing new fails. {#risk-upstream}
 - **A louder sync.** A file that was silently skipped (non-UTF-8) now fails `rmx sync` and the
   post-commit hook's background sync records an error until the file is fixed or ignored.
   That is the intent of [[feedback_errors_fail_loudly_on_the_console]]; the count in the fleet
@@ -330,27 +389,26 @@ named in the summary ([[orchestration#task]] step 4). {#census-result}
 - A real YAML parser, or typing of other keys. `tags:` and `imports:` are already guarded.
 - Nested `metadata:` keys flattened onto top-level keys (one file fleet-wide, harmless there).
 - Hardening the env knobs of [[#risk-knob]].
-- The lint's error for the shape: [[task-31.6-one-wikilink-resolver#r7]].
 - Per-doc isolation of store-level failures inside the GMD pass. After this task no measured
   file shape fails the batch; the batch `except` stays as the backstop the R4 patch tests.
 {#out-of-scope-list}
 
 ## Decisions {#decisions}
 
-**For the user: `plan-31 D11`.** A refused markdown file on `rmx ingest` and `rmx sync`:
+Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
+cites them and records none of its own. {#decisions-rule}
 
-- **(a) recommended: the rest lands, then the command fails.** One `Error:` line naming each
-  file, exit 1; on the routes with no terminal, a recorded sync error and the job's top-level
-  `error`. It is what the same two commands do today for a failed GMD pass (L112 S2) and for a
-  refused memory path (26.2), and the user's rule for a sync that stops on an error. No file
-  in the fleet has the shape, so no command starts failing at the deploy.
-- (b) named on stderr, exit 0. Matches `rmx ingest-gmd`'s report, which prints the skip and
-  exits 0. A hook that discards stderr would then hide it.
-{#d11}
+- **`plan-31 D11`, decided** by ruling L125 on the recommendation (2026-11-15): a refused
+  markdown file on `rmx ingest` and `rmx sync` does not stop the batch; the rest lands, then
+  the command prints one `Error:` line naming each file and exits 1, as the same commands do
+  for a failed GMD pass (L112 S2) and a refused memory path (26.2). Amended into
+  [[#r2-ingest]], [[#r2-sync]], [[#ac-3]] and [[#ac-4]]. The option not taken was a line on
+  stderr and exit 0, as `rmx ingest-gmd`'s report does. {#d11}
+- **Ruling L132:** bug-258 folds in here; bug-255 was folded in by the lead with the lint
+  and ingest sides under one rule ([[#r3]], [[#r5]], [[#ac-9]], [[#ac-10]]). {#l132}
 
-**Taken in this spec** (for the lead to register): the check is in `parse_gmd`, not in
-`_parse_frontmatter` ([[#r1-where]]); an empty value stays absent ([[#r1-empty]]); R4 takes
-the registered patch, not another raising input ([[#risk-knob]]); the lint half rides 31.6's
-upstream commit ([[#r3]]); the pre-existing silent drop of `skipped_unparseable` on the
-ingest and sync routes is fixed here because the refusal would otherwise trade a loud batch
-failure for a silent per-file one ([[#fact-silent-routes]]). {#decisions-taken}
+**Design proposed by this spec, for review** (not ledger decisions): the check is in
+`parse_gmd`, not in `_parse_frontmatter` ([[#r1-where]]); an empty value stays absent on both
+sides ([[#r1-empty]]); R4 takes the registered patch, not another raising input
+([[#risk-knob]]); the parity check runs in the docs gate, beside the anchor parity
+([[#r5]]). {#decisions-proposed}

@@ -19,7 +19,9 @@ metadata:
 > Depends on: [[task-31.1-frontmatter-type-refusal]] merged first (both edit
 > `ingest_gmd.py`). Not on 29.5: it touches `tools/gmd/`, `ingest_gmd.py`, two scripts and one
 > method beside `clear_rel_evidence`.
-> Closes: bug-251 ([[bug_registry#registry]]).
+> Closes: bug-251 and bug-257 ([[bug_registry#registry]]; bug-257 folded into [[#r5]] by
+> ruling L132, [[plan-of-plans#rulings]]).
+> Decision: `plan-31 D12`, decided in [[plan-of-plans#decisions]] ([[#d12]]).
 > Base for every measurement here: `f3a508f`, and a copy of the dev store's read snapshot
 > taken 2026-11-15 02:34.
 
@@ -31,6 +33,7 @@ rel: depends-on -> [[refmatrix/gmd-spec#project-namespace]]
 rel: depends-on -> [[task-bug179-lint-ingest-anchor-parity]]
 rel: derives-from -> [[task-bug216-rule-docs-in-graph]]
 rel: depends-on -> [[orchestration#release]]
+rel: depends-on -> [[plan-of-plans#decisions]]
 rel: depends-on -> [[plan-31b-spec-census]]
 rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 rel: reinforces -> [[feedback_converge_repeated_shapes]]
@@ -182,7 +185,7 @@ filename stem. The first form that hits wins:
 - **Order.** Project before stem, where the lint has stem before project. It makes the
   ambiguity rule match the spec's "only", and no link changes its target: 106 links hit both
   forms and all 106 reach the same doc ([[#baseline-corpora-table]]). {#r1-order}
-- **Not a form: folding** (`plan-31 D12`, [[#decisions]]). Matching is exact, case included.
+- **Not a form: folding** (`plan-31 D12`, decided: [[#d12]]). Matching is exact, case included.
   A link that resolves today only by folding becomes `dangling-doc`, and the message names
   the exact id it would have folded to. {#r1-fold}
 - **Not a form: `name:`.** A doc with no `id:` is keyed by what its parser gives it (the
@@ -250,7 +253,8 @@ still supports it. The set is read from the evidence rows before `clear_rel_evid
 them; the unlink is the ordinary `Store.unlink`, so it is logged and a replay agrees. Without
 this, re-binding the 62 misbound lines leaves each old edge in place beside the new one
 ([[#fact-stale-edges]]). It also removes the edge of a `rel:` line an author deleted, which
-nothing removes today. {#r5-body}
+nothing removes today (bug-257). Ruling L132 keeps this requirement although it is beyond
+the plan's wording. {#r5-body}
 
 ### R6: the corpus is fixed in the same change {#r6}
 
@@ -259,13 +263,13 @@ under `plan-31 D12` (a) (11 in 9 repo files; the 35 in memory files are the lead
 the summary) and any ambiguous link R0 finds. `./scripts/lint-gmd.sh` is 0 errors after it.
 {#r6-body}
 
-### R7: the lint's frontmatter error (rider from 31.1) {#r7}
+### R7: one upstream lint, three tasks {#r7}
 
-In the same upstream commit: a list-valued `id:` or `title:` is a `bad-frontmatter-type`
-error on line 1 naming the key, and the file is left out of the resolution set. Today a list
-`id:` crashes the lint with a traceback that names no file, and a list `title:` passes
-([[task-31.1-frontmatter-type-refusal#fact-lint]]). One upstream commit, one re-vendor.
-{#r7-body}
+The lint's error for a list-valued `id:` or `title:` (bug-255) is
+[[task-31.1-frontmatter-type-refusal#r3]]'s, not this task's; 31.1 lands first. This task's
+upstream commit is made on top of 31.1's (and 31.4's, if it has landed), and the re-vendor
+takes all of them. `[ref-parity]` ([[#r8]]) is added beside 31.1's `[frontmatter-parity]`
+in the same script. {#r7-body}
 
 ### R8: the gate compares the two corpora {#r8}
 
@@ -340,11 +344,11 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   `src/refmatrix/gmd_resolve.py` and fails on any byte of difference; the summary records the
   upstream sha both were taken from and `diff` against the upstream file. **RED** at base
   (the files do not exist). {#ac-7}
-- **AC-8: the lint names a bad frontmatter type.** A list `id:` and a list `title:`:
-  `bad-frontmatter-type` on line 1, exit 1, no traceback. **RED** at base (E lines: the
-  traceback; exit 0). The upstream gate test `scripts/test-lint-gates.py` gains the same
-  cases and AC-2's and AC-3's. {#ac-8}
-- **AC-9: the recount.** After the dev store's forced reingest, `scripts/check-rel-landing.py`
+- **AC-8: the upstream gate test.** `scripts/test-lint-gates.py` in the upstream repo gains
+  AC-2's and AC-3's cases and passes there; the re-vendored `tools/gmd/lint.py` and
+  `tools/gmd/resolve.py` are byte-identical to the upstream files at the recorded sha, and
+  31.1's `bad-frontmatter-type` cases still pass. **Gate.** {#ac-8}
+- **AC-9: the recount, all three classes (ruling L132).** After the dev store's forced reingest, `scripts/check-rel-landing.py`
   over the lint scope: `target_unresolved` 0, `other_concept` 0 and `stale` 0 (37, 62 and 8
   at base), and `resolver_landing.py` on a fresh copy classes every line the lint resolves
   by stem or project as `doc_or_memory` or `anchor_node`. **Measurement**, on the live
@@ -405,10 +409,14 @@ This repo: `tools/gmd/lint.py` and `tools/gmd/resolve.py` (re-vendored);
 `src/refmatrix/store.py` or, after 29.5, `store_links.py` (one read beside
 `clear_rel_evidence`); `scripts/check-gmd-parity.py` (R8); `docs/gmd/SPEC.md`; the docs commit
 of [[#r6]]; new `tests/test_bug251_one_resolver.py`; `workflow/bug_registry.md` (bug-251, and
-the rows the lead opens for [[#decisions-findings]]); the implementation summary. {#files-list}
+bug-257); the implementation summary. {#files-list}
 
 ## Risks {#risks}
 
+- **The upstream file is shared.** 31.1, 31.4 and this task each change
+  `~/claude_tools/gmd/lint.py`. They land in the plan's order and each re-vendor is taken
+  from the sha that holds the earlier ones; a re-vendor from an older sha would drop a fix,
+  the bug-068 shape. AC-8 pins it. {#risk-upstream-order}
 - **Three copies of one file.** The identity check is the only thing keeping them one text; it
   runs in the docs gate and in the suite. A change made in the package copy fails both. A
   change made upstream reaches this repo only at a re-vendor, as `lint.py` does. {#risk-copies}
@@ -444,29 +452,27 @@ the rows the lead opens for [[#decisions-findings]]); the implementation summary
 
 ## Decisions {#decisions}
 
-**For the user: `plan-31 D12`.** Case and `-` / `_` folding:
+Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
+cites them and records none of its own. {#decisions-rule}
 
-- **(a) recommended: folding goes; the lint fails what it folded and names the exact id.**
-  The GMD spec names the id, the stem and the project prefix, not folding. A doc id is an
-  identifier; with folding, `foo-bar` and `foo_bar` are one address and nothing says so. The
-  cost is measured and one-time: 46 links here (11 in repo files, fixed in this task; 35 in
-  memory files), 110 in cliquedb and 3 in cliquet at their next re-vendor.
-- (b) folding stays as a fourth form on both sides. No link is edited. The ingest index then
-  also holds folded keys, and two ids that differ only by case or `-` / `_` become ambiguous
-  and are refused.
-{#d12}
+- **`plan-31 D12`, decided** by ruling L125 on the recommendation (2026-11-15): case and
+  `-` / `_` folding goes; the lint fails what it folded and names the exact id. Amended into
+  [[#r1-fold]], [[#r3]], [[#r6]] and [[#ac-2]]. The cost is the measured one: 46 links here
+  (11 in repo files, fixed in this task; 35 in memory files, the lead's edit), 110 in cliquedb
+  and 3 in cliquet at their next re-vendor. The option not taken was folding as a fourth
+  form on both sides. {#d12}
+- **Ruling L132:** [[#r5]] stays (bug-257); the recount AC is all three classes at 0
+  ([[#ac-9]]); 31.1 lands before this task; the re-bind reingest of each store is its own
+  user go ([[#r9]], and L125: a decision that changes a store on disk goes to the user).
+  {#l132}
 
-**Taken in this spec** (for the lead to register): the three forms and their order
-([[#r1-table]], [[#r1-order]]); an ambiguous stem is refused as an error on both sides, never
-bound and never pending ([[#r1-ambiguous]], [[#r4-ambiguous]]); `name:` is not an id source
-([[#r1-name]]); one text in three files, held together by an identity check, with upstream
-first ([[#r2]]); the ingest index holds authored GMD docs and memories only ([[#r4-index]]);
-re-binding unlinks the superseded edge ([[#r5]]); the gate compares the two corpora
-([[#r8]]); the dev store's reingest is this task's store event and every other store is its
-own go ([[#r9]]). {#decisions-taken}
+**Design proposed by this spec, for review** (not ledger decisions): the three forms and
+their order ([[#r1-table]], [[#r1-order]]); an ambiguous stem is refused as an error on both
+sides, never bound and never pending ([[#r1-ambiguous]], [[#r4-ambiguous]]); `name:` is not
+an id source ([[#r1-name]]); one text in three files, held together by an identity check,
+with upstream first ([[#r2]]); the ingest index holds authored GMD docs and memories only
+([[#r4-index]]); the gate compares the two corpora ([[#r8]]). {#decisions-proposed}
 
-**Findings for the lead's registry** (no ids allocated here): (1) bug-251's extent is 107
-lines, not 37: the recount's `other_concept` 62 and `stale` 8 are the same defect
-([[#fact-107]]); (2) a `rel:` edge is never unlinked when its line is re-targeted or deleted;
-114 such edges are in the dev store ([[#fact-stale-edges]]); (3) the lint crashes on a list
-`id:` and passes a list `title:` ([[#r7]]). {#decisions-findings}
+**Registered from this spec's measurements:** bug-251's extent is 107 lines
+([[#fact-107]]); bug-257 ([[#fact-stale-edges]]); bug-255, taken by 31.1.
+{#decisions-findings}
