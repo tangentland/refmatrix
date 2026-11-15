@@ -516,7 +516,7 @@ def _ingest_path_inner(
     tree_ran = source in ("auto", "tree") and n == 0
     if tree_ran:
         n = _ingest_tree(s, path, ignore_root=ign_root,   # routes markdown itself
-                         yield_lock=yield_lock, yield_every=yield_every)
+                         yield_lock=yield_lock)
     else:
         # A tldr cache answered (or `--source metadata|tldr|graphify` was
         # explicit): markdown still goes to the GMD pass (bug-241). `source`
@@ -525,8 +525,7 @@ def _ingest_path_inner(
         # `source` is, so the GMD routing does too -- skipping it under an
         # explicit source would be this bug again.
         _phase("code+docs: markdown/gmd")
-        n += _ingest_markdown_gmd(s, path, ignore_root=ign_root,
-                                  yield_lock=yield_lock, yield_every=yield_every)
+        n += _ingest_markdown_gmd(s, path, ignore_root=ign_root, yield_lock=yield_lock)
     # Graphify is additive — when source=auto and the cache is present, layer
     # its cross-modal edges (rationale_for, semantically_similar_to, etc.) on
     # top of whatever the primary source produced. source=graphify forces it
@@ -1371,12 +1370,12 @@ def _ingest_graphify(s: Store, project: Path, *, pre_tracked=None) -> int:
 
 
 def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None,
-                 yield_lock=None, yield_every: int = 200) -> int:
+                 yield_lock=None) -> int:
     """Walk the tree, batching entity upserts.
 
-    `yield_lock` / `yield_every` are the cooperative ingest's hook, passed on to the markdown
-    GMD pass at the end (ch-bsd r1 #s1, ruling L112): the walk itself is batched and short,
-    the GMD pass is not.
+    `yield_lock` is the cooperative ingest's hook, passed on to the markdown GMD pass at the
+    end (ch-bsd r1 #s1, ruling L112): the walk itself is batched and short, the GMD pass is
+    not. The GMD pass picks its own per-doc cadence (`gmd_doc_yield_every`, ruling L114).
 
     Per-row upsert_entity was O(N) cursor + (pre-transaction-wrap) commit
     calls. Batching via bulk_upsert_entity reduces it to a handful of
@@ -1424,12 +1423,39 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None,
         if len(batch) >= BATCH:
             _flush()
     _flush()
-    return n + _ingest_markdown_gmd(s, root, ignore_root=ignore_root,
-                                    yield_lock=yield_lock, yield_every=yield_every)
+    return n + _ingest_markdown_gmd(s, root, ignore_root=ignore_root, yield_lock=yield_lock)
+
+
+def gmd_doc_yield_every() -> int:
+    """THE GMD pass's lock-yield cadence, in DOCS: `RMX_INGEST_YIELD_EVERY`, default 1.
+
+    One knob for both GMD routes (ch-bsd r2 #m1, ruling L114, 2026-11-14): the daemon's
+    `ingest_gmd` job and the markdown pass inside a code+docs `ingest_path`. A GMD doc costs
+    ~0.5 s; the code passes' `yield_every` (200, `RMX_INGEST_YIELD_EVERY_UNITS`) counts cheap
+    per-file units, and inherited by the GMD pass it held the store lock up to 15.0 s (p95
+    9.9 s) on 211 docs, against 5.4 s (p95 1.3 s) per doc, same total time (bsd probe)."""
+    return max(1, int(os.environ.get("RMX_INGEST_YIELD_EVERY", "1") or "1"))
+
+
+def gmd_pass_failure_message(result: dict, path) -> "str | None":
+    """The one sentence for a failed markdown GMD pass, or None when it did not fail.
+
+    `result` carries `entities`, `gmd_pass_failed` and `gmd_pass_error` (the daemon's
+    `ingest_path` op result). The CLI renders it as its `Error:` line (exit 1) and the daemon's
+    `ingest_path_start` job as its `error` (ch-bsd r2 #m2, ruling L114): one condition, one
+    verdict and one wording on both routes."""
+    failed = int(result.get("gmd_pass_failed") or 0)
+    if not failed:
+        return None
+    err = result.get("gmd_pass_error")
+    why = " ".join(str(err).split()) if err else "cause in daemon.stderr.log"
+    return (f"GMD pass failed ({why}): {failed} markdown file(s) under {path} were "
+            f"registered as plain docs, not GMD-parsed; {result.get('entities', 0)} entities "
+            f"ingested otherwise. Fix the file(s) and re-run.")
 
 
 def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = None,
-                         yield_lock=None, yield_every: int = 10) -> int:
+                         yield_lock=None) -> int:
     """THE code+docs routing of markdown to the GMD pass; returns the docs it
     ingested. Every markdown file under `root` that `should_ignore` keeps
     (judged against `ignore_root`, the project root) goes to ONE batched
@@ -1459,8 +1485,9 @@ def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = N
     files are registered as plain docs, and the failure is printed and counted
     -- it is a memory path (CLAUDE.md #no-silent-failures).
 
-    Cooperative (ch-bsd r1 #s1, ruling L112, 2026-11-14): `yield_lock` / `yield_every` go to
-    `ingest_gmd_paths`, which yields every `yield_every` docs and every N node-ops inside a doc.
+    Cooperative (ch-bsd r1 #s1, ruling L112, 2026-11-14): `yield_lock` goes to
+    `ingest_gmd_paths`, which yields every `gmd_doc_yield_every()` docs (per doc by default,
+    ruling L114 -- never the caller's code-unit cadence) and every N node-ops inside a doc.
     On the daemon route the hook is `_CommitWindow.boundary`; without it the pass ran in ONE
     commit window holding the store lock throughout (733 docs in 1027.7 s measured on a
     repo-sized tree), the lock-holding wedge class of bug-085.
@@ -1486,7 +1513,8 @@ def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = N
     from refmatrix.ingest_gmd import ingest_gmd_paths
     try:
         return ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root,
-                                yield_lock=yield_lock, yield_every=yield_every).docs
+                                yield_lock=yield_lock,
+                                yield_every=gmd_doc_yield_every()).docs
     except Exception as exc:  # noqa: BLE001 — printed, counted, and the files kept
         print(f"rmx ingest: GMD pass failed ({type(exc).__name__}: {exc}); "
               f"registering {len(gmd_paths)} markdown file(s) as plain docs",

@@ -301,6 +301,7 @@ class _DaemonWriter:
         self._root = root
         self._partition = partition
         self._reader: Store | None = None
+        self.last_ingest_result: dict = {}
 
     # -- routing core --------------------------------------------------------
     def _call(self, op: str, args: dict, timeout: float = 60.0):
@@ -604,20 +605,17 @@ def _ingest(writer: "Store | _DaemonWriter", path, *,
         with _stream_ingest_progress(writer._root):
             n = writer.ingest_path(path, source=source, semantic=semantic)
         res = writer.last_ingest_result
-        failed = int(res.get("gmd_pass_failed") or 0)
-        err = res.get("gmd_pass_error")
     else:
         from refmatrix.ingest import ingest_path as _ip
         failed0 = getattr(writer, "gmd_pass_failures", 0)
         n = _ip(writer, Path(path), source=source, semantic=semantic)
         failed = getattr(writer, "gmd_pass_failures", 0) - failed0
-        err = getattr(writer, "gmd_pass_last_error", None)
-    if failed:
-        why = " ".join(str(err).split()) if err else "cause in daemon.stderr.log"
-        raise click.ClickException(
-            f"GMD pass failed ({why}): {failed} markdown file(s) under {path} were "
-            f"registered as plain docs, not GMD-parsed; {n} entities ingested otherwise. "
-            f"Fix the file(s) and re-run.")
+        res = {"entities": n, "gmd_pass_failed": failed,
+               "gmd_pass_error": getattr(writer, "gmd_pass_last_error", None)}
+    from refmatrix.ingest import gmd_pass_failure_message
+    why = gmd_pass_failure_message(res, path)
+    if why:
+        raise click.ClickException(why)
     return n
 
 

@@ -3712,9 +3712,10 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
     every `RMX_INGEST_SNAPSHOT_EVERY` yields so readers see partial
     progress instead of an end-of-ingest cliff.
     """
+    from refmatrix.ingest import gmd_doc_yield_every
     from refmatrix.ingest_gmd import ingest_gmd_paths
     job = d._ingest_jobs[job_id]
-    yield_every = int(os.environ.get("RMX_INGEST_YIELD_EVERY", "1") or "1")
+    yield_every = gmd_doc_yield_every()
     # Default sleep raised from 1ms to 5ms — paired with `_FairLock`,
     # 5ms gives the OS scheduler plenty of margin to wake a waiter
     # without measurably hurting ingest throughput on the bg side.
@@ -3925,19 +3926,28 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     }
 
 
-def _run_detached_job(d: Daemon, job_id: str, fn) -> None:
+def _run_detached_job(d: Daemon, job_id: str, fn, failure=None) -> None:
     """Run `fn()` on the bg pool under the ingest-job lifecycle: flip the job
     record to `done` (capturing the return as `result`) or `error`. The job
     record is otherwise progress-agnostic — `ingest_path`/`embed` emit their
     own `ingest-progress`/running-total log lines that the status op surfaces
-    via the daemon log; per-file event granularity is GMD-only."""
+    via the daemon log; per-file event granularity is GMD-only.
+
+    `failure(result) -> str | None`: a body that RETURNS but did not do what it
+    was asked (the ingest's failed GMD pass, ch-bsd r2 #m2) ends the job
+    `error` with that message, the `result` kept beside it."""
     job = d._ingest_jobs[job_id]
     try:
         result = fn()
+        why = failure(result) if failure is not None else None
         with d._ingest_jobs_lock:
-            job["status"] = "done"
+            job["status"] = "error" if why else "done"
             job["ended_at"] = time.time()
             job["result"] = result
+            if why:
+                job["error"] = why
+        if why:
+            d._log(f"detached job {job_id} failed: {why}")
     except Exception as exc:
         with d._ingest_jobs_lock:
             job["status"] = "error"
@@ -3956,11 +3966,16 @@ def _op_ingest_path_start(d: Daemon, args: dict) -> dict:
     A file target is refused HERE, before a job exists (bug-240): the job body's own check in
     `ingest_path` would only flip the job to `error` after this op had already answered
     `{job_id, status: running}` -- a success for a write that will never happen."""
-    from refmatrix.ingest import refuse_file_target
+    from refmatrix.ingest import gmd_pass_failure_message, refuse_file_target
     _refuse_filesystem_ingest(d, "ingest")
     refuse_file_target(args["path"])
     job_id = _register_ingest_job(d, files_total=0, args=args)
-    d._bg_pool.submit(lambda: _run_detached_job(d, job_id, lambda: _op_ingest_path(d, args)))
+    # A failed markdown GMD pass ends the job `error` (ch-bsd r2 #m2, ruling L114), not `done`
+    # with the count buried in `result`: the CLI exits 1 on the same condition, and an agent
+    # polling `rmx_ingest_status` must read the same verdict, in the same words.
+    d._bg_pool.submit(lambda: _run_detached_job(
+        d, job_id, lambda: _op_ingest_path(d, args),
+        failure=lambda r: gmd_pass_failure_message(r, r.get("path", args["path"]))))
     return {"job_id": job_id, "status": "running",
             "path": str(Path(args["path"]).resolve())}
 
