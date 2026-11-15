@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Task 31.1, ch-bsd r1 B1: does a refused GMD file keep its rows and stay refused on the
-SECOND sync flush?
+"""Task 31.1: (B1) does a refused GMD file keep its rows and stay refused on the SECOND sync
+flush, and (bug-264) does a plain edit of a synced GMD doc keep its anchors and their inbound
+`rel:` edges?
 
 Throwaway store under a short `/tmp` root, dev code from this checkout, no daemon, no live
 store. Nothing in `src/` is edited: the two designs are simulated at run time.
@@ -11,6 +12,8 @@ store. Nothing in `src/` is edited: the two designs are simulated at run time.
          check BEFORE the relpath-row guard's `purge_path`; a refused path is returned as
          refused, is never put on `gmd_paths`, so it is not in `touched_existing` (no semantic
          pass, no `mark_tracked`); the flush puts it back on the dirty queue.
+  arm C  arm B plus the bug-264 fix (`task-31.1` `#r6`): the GMD dispatch's guard purges
+         ONLY the relpath-named `doc` row, never the whole path.
 
 Each arm: sync a and b; edit a; turn a's title into a list; flush; flush again with no change.
 Printed per step: the ids of a's doc row and anchor, whether b's `rel:` edge to the anchor is
@@ -65,6 +68,16 @@ def parse_r1(path, **kw):
 
 
 REFUSED: list[list[str]] = []
+RELPATH_ONLY = [False]
+
+
+def purge_relpath_row_only(s, ap: Path, project_root: Path) -> int:
+    """The bug-264 rule: only the `doc` row named by the file's relpath goes."""
+    e = s.get_entity("doc", S._relpath(ap, project_root))
+    if e is None:
+        return 0
+    s.purge_entity(e.id)
+    return 1
 
 
 def sync_one_folded(s, ap, project_root, gmd_paths):
@@ -75,6 +88,13 @@ def sync_one_folded(s, ap, project_root, gmd_paths):
         if why:
             REFUSED.append([str(ap), why])
             return "gmd_refused"      # nothing purged, not on gmd_paths, not touched
+        if RELPATH_ONLY[0]:
+            # for an existing GMD file the guard's is the only `purge_path` call in `_sync_one`
+            s.purge_path = lambda _p: purge_relpath_row_only(s, ap, project_root)
+            try:
+                return _real_sync_one(s, ap, project_root, gmd_paths)
+            finally:
+                del s.purge_path
     return _real_sync_one(s, ap, project_root, gmd_paths)
 
 
@@ -106,8 +126,9 @@ def flush(s: Store, proj: Path, folded: bool) -> dict:
             if (s.root / S.QUEUE_FILE).exists() else []}
 
 
-def arm(name: str, folded: bool) -> None:
+def arm(name: str, folded: bool, relpath_only: bool = False) -> None:
     print(f"== arm {name}")
+    RELPATH_ONLY[0] = relpath_only
     proj = Path(tempfile.mkdtemp(prefix="b1p.", dir="/tmp")).resolve()
     try:
         (proj / "docs").mkdir()
@@ -139,3 +160,4 @@ def arm(name: str, folded: bool) -> None:
 if __name__ == "__main__":
     arm("A: R1 only (first draft; ch-bsd's B1)", folded=False)
     arm("B: R1 + the B1 fold", folded=True)
+    arm("C: R1 + the B1 fold + the bug-264 fix", folded=True, relpath_only=True)

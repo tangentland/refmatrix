@@ -326,7 +326,7 @@ Ruling L132 keeps this requirement. {#r5-body}
   | Producer | Writes | Stored sides (concept side, entity side) | Owner | Entry |
   |---|---|---|---|---|
   | `memory_link` (`daemon._op_memory_link`, the CLI's local path) | a caller-chosen linkage, no evidence | concept, memory | bug-218 | `("*", "concept", "memory", "bug-218")` |
-  | `Store.link_part_of` (`store.py:3125`; callers `cli.py:1904`, `consolidate.py:798`, `daemon.py:5534`) | `part-of`, no evidence | memory (the subject), memory (the leaf) | plan-26's organisation, open and pre-mod | `("part-of", "memory", "memory", <the id the lead allocates>)` |
+  | `Store.link_part_of` (`store.py:3125`; callers `cli.py:1904`, `consolidate.py:798`, `daemon.py:5534`) | `part-of`, no evidence | memory (the subject), memory (the leaf) | plan-26's organisation, open and pre-mod | `("part-of", "memory", "memory", "bug-265")` |
 
   `part-of` is a `rel:` verb (3,087 `rel:` evidence rows) and a `subject_*` memory is a GMD
   entity, so `link_part_of` meets both census conditions; 15,898 `part-of` edges have no
@@ -345,16 +345,15 @@ Ruling L132 keeps this requirement. {#r5-body}
   **collected in memory as the pass issues the keys**, never read back from `entity_links`:
   inside `_sync_paths` `link()` is buffered by `deferred_links`, and a read would miss this
   doc's own writes. {#r5-stated-calls}
-- **What R5 does on each route today.** A doc that has a relpath-named `doc` row (every doc
-  that was ever synced, [[task-31.2-learned-evidence-agreement#fact-relpath-remade]]) is
-  purged whole by the guard before pass 2, on the sync route (`sync.py:269-271`) and on the
-  code+docs route (`ingest.py:1508`). For such a doc the purge has already removed its old
-  edges, so R5's keys name dead ids and it unlinks nothing; the purge also took the anchors'
-  inbound edges, which is 31.2's defect and not this rule's. R5 does the work itself where
-  no purge runs: the bridge (`ingest-gmd --as-memory`), `ingest-gmd` on a doc with no
-  relpath row, and every route once 31.2's `purge_legacy_relpath_doc` lands. R10's sync leg
-  assumes "no relpath-named `doc` row", which a real sync never leaves; that is a fact for
-  bug-185's owner too. {#r5-routes}
+- **What R5 does on each route.** At `f3a508f` a doc with a relpath-named `doc` row (every
+  doc that was ever synced) is purged whole by the guard before pass 2, on the sync route
+  and on the code+docs route, so its old edges are already gone when R5 would run. That
+  purge is bug-264, and 31.1 removes it before this task starts
+  ([[task-31.1-frontmatter-type-refusal#r6]], ruling L144). At this task's base, then, no
+  route purges a GMD doc's nodes on an edit, and **R5 does the work on every route**: sync,
+  the code+docs pass, `ingest-gmd` and the bridge. R10's sync leg assumes "no relpath-named
+  `doc` row", which a real sync never leaves; after 31.1 its conclusion holds for another
+  reason, and that is a note for bug-185's owner. {#r5-routes}
 - **The write.** Each unlink is the ordinary `Store.unlink`, logged, so a replay agrees. The
   batched `Store.bulk_unlink` is bug-185's, with the rest of its bulk path. {#r5-write}
 - **"Stated" is every link write of the pass** (ch-bsd r1 S1; R10's own rule). The new write
@@ -521,12 +520,10 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   - an edge another producer wrote with no evidence on a key no `rel:` line ever stated
     (`Store.link("part-of", <node>, <external concept>)`) is kept: the evidence-keyed rule
     never sees it (bug-185 AC-11's external-producer leg);
-  - **the sync leg, written for what a sync does** ([[#r5-routes]]): the same re-target
-    through `_sync_paths`, run twice so the relpath row exists. Asserted: after the edit the
-    old edge is not in `entity_links` and the new one is, with one evidence row. Before 31.2
-    the guard's purge removes the old edge; after it, R5 does. The leg asserts the outcome
-    on both, and a bridge-route leg (`as_memory=True`, where no purge runs) is the one that
-    is RED for R5 itself;
+  - **the sync leg** ([[#r5-routes]]): the same re-target through the real `_sync_paths`, run
+    twice so the relpath row exists, and the same through `as_memory=True`. After the edit
+    the old edge is not in `entity_links`, the new one is, with one evidence row, and the
+    anchors kept their ids (31.1's rule), so the unlink is R5's own doing on both routes;
   - **per in-reach producer** the census finds (bug-185 AC-14 (a)): run on a throwaway
     store, its edge has an evidence row naming the producer; if the census finds none
     in reach, the summary says so and this leg is the census record;
@@ -574,8 +571,9 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   (37, 62 and 8 at base). `scripts/check-rel-landing.py`'s totals are recorded beside it. A
   stale or unresolved line that is not one of those lines is listed and is not this task's:
   the tree moves (on the copy of 02:34 read against a later tree, `stale` was 340 and
-  `target_unresolved` 355), and until 31.2 lands an edit of a doc drops the inbound edges of
-  its anchors ([[task-31.1-frontmatter-type-refusal#fact-inbound-edges]]). **Measurement**,
+  `target_unresolved` 355). The loss of inbound edges on every doc edit (bug-264) is fixed by
+  31.1 before this task ([[task-31.1-frontmatter-type-refusal#r6]]), so it no longer undoes
+  what the reingest binds. **Measurement**,
   on the live store's copy, after the user's go. {#ac-9}
 - **AC-10: the repo is clean under the new lint.** `./scripts/lint-gmd.sh` exits 0 after
   [[#r6]]'s docs commit. Its precondition is the lead's edit of the 35 folded links in the
@@ -619,9 +617,9 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
 | 8d | the unowned skip does not increment `rel_unlink_skipped_unowned` | AC-5's unowned leg (the count is 0) |
 | 8e | a signature is matched on its linkage alone | AC-5's unowned leg (the second edge is kept) |
 | 8f | ship `UNOWNED_REL_PRODUCERS` empty | AC-5's list assertion, and AC-15's second leg (unlinked, count 0) |
-| 8g | "stated" is read back from `entity_links` | AC-5's sync leg after 31.2, and a leg inside `deferred_links` (the doc's own buffered writes are missed and its `part-of` edge unlinked) |
+| 8g | "stated" is read back from `entity_links` | AC-5's sync leg (inside `deferred_links` the doc's own buffered writes are missed and its `part-of` edge is unlinked) |
 | 8h | per in-reach producer: remove its evidence write | that producer's AC-5 leg |
-| 8i | the rule is skipped when the pass runs under `_sync_paths` | AC-5's bridge-route and sync legs |
+| 8i | the rule is skipped when the pass runs under `_sync_paths` | AC-5's sync leg (the bridge leg stays green) |
 | 9 | the ingest index takes lenient plain docs too | AC-3's variant with a plain `README.md` beside one GMD `README` (the link must bind the GMD doc) |
 | 10 | edit one byte of `src/refmatrix/gmd_resolve.py` | AC-7, and `[ref-parity]`'s identity check |
 | 11 | `[ref-parity]` resolves the ingest side against the lint's docs | AC-6 (ii) |
@@ -735,6 +733,7 @@ The review read `a4d245a`; R5 had already been rewritten as bug-185 R10's rule a
 | Finding | Fold | Where |
 |---|---|---|
 | S7 (updated report) R5 is R10 in wording only | AC-14 (a) and (c), AC-15's list assertion, AC-11's sync and external-producer legs, and R10's two missing mutations are carried; `link_part_of` is a second unowned producer, so the list has two entries; "stated" is mapped onto the per-row calls and collected in memory; what R5 does on each route is stated | [[#r0-census]], [[#r5-producers]], [[#r5-two-entries]], [[#r5-stated-calls]], [[#r5-routes]], [[#ac-5]], mutations 8d-8i |
+| L144: bug-264 is fixed in 31.1, before this task | R5 does the work on every route; the sync leg is RED for R5 itself; AC-9's note; bug-265 cited | [[#r5-routes]], [[#ac-5]], [[#ac-9]], [[#r5-two-entries]], mutations 8g, 8i |
 | M10 (updated report) text after L136 and the queue | folded at `9637f17` | [[#r7]], [[#r5-whose]] |
 | S1 R5 can unlink another producer's edge on a shared verb; `part-of` left out of the count | "stated" is every link write of the pass; a pair the doc's structure writes is never unlinked; the count is redone with `part-of`; R10's producer census | [[#r5-stated]], [[#r5-producers]], [[#ac-5]] (the `part-of` leg), mutations 8b, 8c, [[#fact-stale-edges]] |
 | S2 `[ref-parity]` does not compare the corpus the ingester reads | the index counts a store row only when a file stands behind it | [[#r4-index-corpus]], [[#ac-6]] (iii), mutations 14, 15 |

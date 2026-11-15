@@ -18,8 +18,9 @@ metadata:
 > Depends on: 29.5 released ([[task-29.5-split-giant-modules]]): the purge code is then in
 > `store_removal.py` and the replay in `store_replay.py`. Written against that layout
 > ([[#layout]]).
-> Closes: bug-107, bug-247, bug-259, bug-260 ([[bug_registry#registry]]; the last two folded
-> in by ruling L132, [[plan-of-plans#rulings]]). Carries 22.6 R4
+> Closes: bug-107, bug-247, bug-259, bug-260, bug-262 ([[bug_registry#registry]]; bug-259 and
+> bug-260 folded in by ruling L132, bug-262 by L144, [[plan-of-plans#rulings]]). bug-264, the
+> GMD-dispatch half of R3, moved to 31.1 by L144 ([[#r3-gmd]]). Carries 22.6 R4
 > ([[task-22.6-removal-entry-points#r4]]; [[freeze-triage-2026-11-15]] row 13), stated without
 > 16.6's sidecar ([[#r3-source]]), and the learned-row halves of 22.6 R3 and R5 that
 > [[plan-31-pre-mod-loose-ends#t2]] names ([[#scope-22-6]]).
@@ -184,7 +185,8 @@ ch-bsd r1 S6, probed there and again here (`sync_refusal_probe.py`,
   inbound `rel:` edges of the anchors are deleted with them. The citing doc is unchanged, so
   nothing writes them back: in the probe `b`'s two edges to `adoc#sec` go to 0 on a plain
   edit of `a`. This happens today on every edit of every synced GMD doc, with learning off.
-  {#fact-inbound-lost}
+  It is registered as **bug-264** and, by ruling L144, fixed in 31.1
+  ([[task-31.1-frontmatter-type-refusal#r6]]), which ships before this task. {#fact-inbound-lost}
 - 22.6 R4 called the row legacy and built its guard on a `tracked_files` clause that is
   always true. [[#r3-gmd]] states the rule against what the code does. {#fact-guard-premise}
 
@@ -250,7 +252,7 @@ a `code` or `doc` entity with at least one learned evidence row, or one that is 
   itself is not changed here. {#r1-kind}
 - **A consequence that is already in the store:** all 8 `code` / `doc` pairs that share a
   name are `.sh` files, a protected learner `doc` twin beside the ingest's `code` row. The
-  twin is a defect of its own and gets a registry row; the lead allocates the id. Condition E
+  twin is a defect of its own, registered as bug-266 and not fixed here. Condition E
   matches the learner's twin, which is where a new learn of that file would write.
   {#r1-twin}
 
@@ -295,9 +297,14 @@ changing this one. {#r3-source}
   raise, leaving the path untouched and writing no manifest); the learned keep or the
   [[#r4]] manifest; the purge of the rest. A memory-owned anchor is never purged and never
   written to a manifest. {#r3-memory}
-- **The GMD dispatch (ch-bsd r1 S6).** The relpath-named `doc` row is the semantic pass's own
-  row for the file, made again by every sync ([[#fact-relpath-remade]]); 22.6's name for the
-  method is kept, the word "legacy" is not a premise. `purge_legacy_relpath_doc(rel, abs)`:
+- **The GMD dispatch (ch-bsd r1 S6; split by ruling L144).** The relpath-named `doc` row is
+  the semantic pass's own row for the file, made again by every sync
+  ([[#fact-relpath-remade]]); the word "legacy" in the method's name is not a premise.
+  **31.1 builds the method and the two call sites** (bug-264,
+  [[task-31.1-frontmatter-type-refusal#r6]]): there it purges the relpath row whole and
+  touches nothing else. **This task keeps the learned-row half:** it changes what the method
+  does to a relpath row that carries a learned row, and narrows the guard. After this task
+  `purge_legacy_relpath_doc(rel, abs)`:
   - touches only that one row: its non-learned links are unlinked and its non-learned
     evidence deleted (logged, with `evidence_clear`), so the semantic pass that follows
     writes this version's and none is doubled;
@@ -333,8 +340,8 @@ anything is deleted; then the purge runs as today, with [[#r2]]. {#r4-body}
 - **Retention.** No code deletes a manifest: it is the record of what was removed, and
   plan-22's manifests have no retention rule either. The file count is bounded by the
   number of batches that removed learned rows. A retention rule for `.refmatrix/removal/`
-  is not built here; the lead opens a registry row for it, marked post-mod, and
-  [[#risk-manifests]] points at it. {#r4-retention}
+  is not built here: it is **bug-263**, post-mod, and [[#risk-manifests]] points at it.
+  {#r4-retention}
 
 - **The manifest** is `.refmatrix/removal/<id>.cleanup.jsonl`, the path and the record form
   22.6 R2 and 22.2 R4 give a cleanup manifest ([[task-22.6-removal-entry-points#r2]],
@@ -413,8 +420,8 @@ are counted as `skipped_unresolved`. Reproduced by ch-bsd: after a `rel:` line i
 re-targeted the writer holds 2 `rel:` evidence rows and a replica that applied the delta
 holds 4 (`bsd31b-r1-bug260-probe.log`); a full rebuild agrees with the writer. Both events
 get a case in `_apply_event_body`, each with the predicate `rebuild_index_from_log` uses for
-it. `pending_refs_clear` is a second defect and gets its own registry row; the lead
-allocates the id. {#r6-replica-clears}
+it. `pending_refs_clear` is a second defect, registered as **bug-262** and fixed here.
+{#r6-replica-clears}
 
 ### R7: the rows already orphaned (`plan-31 D14`, decided) {#r7}
 
@@ -553,7 +560,11 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   twin). The first draft's last leg, "a relpath row that is all learned does not fire the
   guard", is dropped: that state cannot be reached through a sync
   ([[#fact-relpath-remade]]). **RED** at base (E lines: the anchor has a new id; B's edge is
-  gone), which is [[#fact-inbound-lost]]. {#ac-2}
+  gone) **only for the learned row**: after 31.1 the stable ids, B's live edge and the
+  untouched `tracked_files` row already hold at this task's base, and those assertions are
+  **characterization** here (31.1's AC-11 is their RED). What is RED here is that the
+  learned row, its `query/` link and the `protected` flag on the relpath row survive both
+  edits (E line: learned evidence 1 → 0). {#ac-2}
 - **AC-3: a deleted file's learned rows are in a manifest before they go.** The fixture's
   deleted file, and a file that became ignored: a cleanup manifest exists whose `intent` record
   holds the entity, the link and the evidence row by name and the marker
@@ -721,7 +732,7 @@ writer), `src/refmatrix/sync.py` and `src/refmatrix/ingest.py` (R3's sites, R8),
 the `cli` module that holds `vacuum` and `_sync_in_process`. New
 `tests/test_bug107_learned_evidence.py`. `docs/SYSTEM.md` (the evidence lifecycle, the
 manifest format) and `docs/INTEGRATION.md` (`rmx vacuum --dry-run`). `workflow/bug_registry.md`
-(bug-107, bug-247, bug-203, bug-259, bug-260), the implementation summary.
+(bug-107, bug-247, bug-203, bug-259, bug-260, bug-262), the implementation summary.
 22.6's own note that its R4 is built here, and its R3 and R5 in part, is written by 22.6's
 freshness revision from [[#scope-22-6-table]]; this task does not edit 22.6. {#files-list}
 
@@ -746,8 +757,8 @@ freshness revision from [[#scope-22-6-table]]; this task does not edit 22.6. {#f
 - **Protection widens the keep.** A file entity a user protected by hand is kept across
   edits like a learned one. None exists in the dev store today. {#risk-protected}
 - **Manifests accumulate** under `.refmatrix/removal/`: one per batch that removed learned
-  rows ([[#r4-scope]]), none otherwise. No code prunes them; the retention rule is the
-  registry row the lead opens, marked post-mod ([[#r4-retention]]). {#risk-manifests}
+  rows ([[#r4-scope]]), none otherwise. No code prunes them; the retention rule is bug-263,
+  post-mod ([[#r4-retention]]). {#risk-manifests}
 - **The rebuild guard reads the catalog it is about to wipe.** If that catalog is damaged
   the count is unknown and the rebuild needs `--force` ([[#r9]]). The daemon's repair path
   must pass it deliberately; R0 lists that caller and the summary says what it does.
@@ -785,6 +796,7 @@ The review read `a4d245a`; D14, the manifest form and bug-260's leg had already 
 | M13 the vectors departure, one condition | the `intent` record says the vector was not saved because it is derived | [[#r4-vectors]], [[#ac-3]], mutation 31 |
 | M14 Q39 withdrawn | folded at `9637f17` | [[#r3-invalidate]], [[#ac-14]] |
 | M16 the reason order | C, F, E in the rule and the script; AC-9 compares by reason | [[#r7-reason]], [[#ac-9]], mutation 30 |
+| L144: bug-264 moves to 31.1; bug-262, bug-263 registered | R3's GMD dispatch is split: 31.1 builds the method and the sites, this task keeps the learned-row half; AC-2's graph assertions become characterization; the ids are cited | [[#r3-gmd]], [[#ac-2]], [[#fact-inbound-lost]], [[#r6-replica-clears]], [[#r4-retention]] |
 | M1 decisions not written as decided | D14 cited as decided; closures updated | header, [[#d14]] |
 | L136 (2) | bug-203 unconditional | [[#r3-invalidate]], [[#ac-14]], mutation 21 |
 | L134 (2), (4), (5) | folded at `da184bd` | [[#scope-22-6-body]], [[#r7-why]], [[#r4-vectors]] |
@@ -807,6 +819,8 @@ cites them and records none of its own. {#decisions-rule}
   [[#r7-line-table]]. {#q38}
 - **Ruling L136 (2):** Q39 is withdrawn. This task routes `rmx sync -i` to the writer
   (bug-203), unconditionally ([[#r3-invalidate]], [[#ac-14]], mutation 21). {#l136}
+- **Ruling L144:** bug-264 is fixed in 31.1; this task keeps the learned-row halves of R3;
+  bug-262 is fixed here; bug-263 is post-mod. {#l144}
 - **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); "no restore command" is accepted on
   its two conditions ([[#ac-15]]; [[#r5-derived]] and [[#ac-6]]'s unwritable leg). {#l139}
 - **Ruling L132:** two departures from approved text go to ch-bsd to judge: ingest-derived

@@ -2,7 +2,7 @@
 gmd: "0.1"
 id: task-31.1-frontmatter-type-refusal
 title: "Task 31.1: a non-string frontmatter id or title is refused per file by lint and ingest alike, named on every route, and no longer fails the GMD batch (bug-244, bug-255, bug-258)"
-tags: [task, plan-31, gmd, ingest, lint, parity, frontmatter, batch-failure, bug-244, bug-255, bug-258]
+tags: [task, plan-31, gmd, ingest, sync, lint, parity, frontmatter, batch-failure, bug-244, bug-255, bug-258, bug-264]
 metadata:
   node_type: task
   status: drafting
@@ -19,8 +19,9 @@ metadata:
 > tests). Order, fixed by ruling L139 ([[plan-of-plans#rulings]]): 31.3 → 31.4 → **31.1** →
 > 31.6. It needs 31.3's shared gate-tree helper and lands its upstream lint commit on top of
 > 31.4's ([[#r3-upstream]]); it is never in flight together with 31.4 or 31.6.
-> Closes: bug-244 (the ingest side), bug-255 (the lint side) and bug-258 (the skip that two
-> routes drop), all in [[bug_registry#registry]].
+> Closes: bug-244 (the ingest side), bug-255 (the lint side), bug-258 (the skip that two
+> routes drop) and **bug-264** (a plain edit of a synced GMD doc drops its anchors' inbound
+> edges; live, moved here from 31.2 by ruling L144), all in [[bug_registry#registry]].
 > Decision: `plan-31 D11`, decided in [[plan-of-plans#decisions]] ([[#d11]]).
 > Base for every measurement here: `f3a508f` (2026-11-15).
 
@@ -109,13 +110,24 @@ given a list `title:`; doc `b` cites `adoc#sec`.
 | flush 2, nothing changed | 0 paths, 0 touched: the file is skipped and the refusal is silent | 1 path, **refused again**; ids unchanged; still queued |
 {#baseline-b1-table}
 
+| Step | Arms A and B (the guard as it is) | Arm C: arm B and [[#r6]] (the guard purges only the relpath row) |
+|---|---|---|
+| sync 1, `a` and `b` | `adoc` 1, `adoc#sec` 3; `b` has 2 edges to `adoc#sec` | the same |
+| sync 2, a plain edit of `a` | `adoc` 14, `adoc#sec` 16: **new ids**; `b`'s edges to `adoc#sec`: **0** | `adoc` 1, `adoc#sec` 3: unchanged; `b`'s edges: **2**; the relpath row is re-made (12 → 22) |
+| flush 1 and flush 2, the list title | as the table above | refused both times; `adoc` 1, `adoc#sec` 3, the relpath row 22 and `b`'s 2 edges all unchanged |
+{#baseline-bug264-table}
+
 This is ch-bsd r1's B1, reproduced (arm A) and its fold shown to hold on the second flush
 (arm B), as ruling L139 asks. {#fact-b1-probe}
 
-The same probe shows something that is not this task's: in both arms the plain edit of `a`
-(sync 2) drops `b`'s `rel:` edge to `adoc#sec` (2 edges before, 0 after), because the guard's
-`purge_path` takes the anchors with their inbound edges and `b` is not re-processed. That is
-the purge [[task-31.2-learned-evidence-agreement#r3]] replaces. {#fact-inbound-edges}
+The same probe shows **bug-264**, which ruling L144 admitted as live and moved into this
+task: in arms A and B the plain edit of `a` (sync 2) drops `b`'s `rel:` edges to `adoc#sec`
+(2 before, 0 after). The semantic pass re-creates the relpath-named `doc` row on every sync,
+so the guard at `sync.py:269-271` fires on every edit of every synced GMD doc; its
+`purge_path` takes the doc-id row and the anchors with their inbound edges; and the citing
+doc is unchanged, so nothing writes the edges back until a forced reingest. The code+docs
+route has the same guard (`ingest.py:1508`). Learning being off does not prevent it. Arm C
+shows the fix of [[#r6]] holding. {#fact-inbound-edges}
 
 ### How many files have the shape {#baseline-fleet}
 
@@ -286,6 +298,32 @@ line is the report and the parity step adds nothing. When one refuses and the ot
 not, it is a `[frontmatter-parity]` error naming the file and which side refused. A raise of
 any other kind stays a `[parity-parse-fail]`. {#r5-body}
 
+### R6: an edit of a GMD doc keeps its anchors and their inbound edges (bug-264) {#r6}
+
+The GMD dispatch never purges the whole path. At its two sites, `sync._sync_one`
+(`sync.py:269-271`) and the code+docs markdown pass (`ingest.py:1508-1509`), the call
+`purge_path(abs)` becomes `Store.purge_legacy_relpath_doc(rel, abs)`, which removes **only**
+the `doc` row named by the file's relpath, so that the semantic pass writes that row's links
+fresh. {#r6-body}
+
+- It never touches the doc-id row, an anchor, or an `entity_links` row that has one of them
+  at either end. The GMD pass then updates those rows in place, as it does for a doc that
+  has no relpath row. {#r6-not-touched}
+- It deletes no `tracked_files` row and logs no `untrack`: the path is the doc-id row's path
+  too, and the semantic pass stamps it. {#r6-tracked}
+- It is one `purge_entity` of one id, with that method's events (`unlink`, `tombstone`). A
+  path with no relpath row is a no-op, as the guard is today. {#r6-one-row}
+- **What stays 31.2's.** This is the GMD-dispatch half of
+  [[task-31.2-learned-evidence-agreement#r3]], moved by ruling L144 because it is live. A
+  learned row on the relpath row is still lost with that row here, exactly as it is today;
+  keeping it (the row survives when it carries a learned row, only its non-learned links and
+  evidence go, with an `evidence_clear` event, and the guard looks at non-learned rows)
+  is 31.2's refinement of the same method. The name is 22.6 R4's; the row is not legacy
+  ([[#fact-inbound-edges]]). {#r6-31-2}
+- **With [[#r2-sync-order]].** The refusal still comes first: a refused file's relpath row
+  is not purged either, so its semantic links stay those of its last good version.
+  {#r6-order}
+
 ## Acceptance criteria {#acceptance}
 
 Each names its test and its kind. New tests live in `tests/test_bug244_frontmatter_refusal.py`
@@ -313,8 +351,9 @@ unless said otherwise. {#acceptance-intro}
 - **AC-4: `rmx sync` names the file and keeps the rest.** A project with two changed GMD docs
   and one changed doc whose `title:` is now a list, through `_sync_paths`, through `rmx sync
   -f` in-process and through a real daemon: the two good docs are updated; the bad doc's
-  previous doc row and anchors are unchanged, **ids included**, and a `rel:` edge from another
-  doc to one of its anchors is still live; the report's `gmd_refused` names it; the CLI
+  previous doc row and anchors are unchanged, **ids included**, its relpath-named row is
+  unchanged too (same id, same semantic links), and a `rel:` edge from another doc to one of
+  its anchors is still live; the report's `gmd_refused` names it; the CLI
   prints the `refusal_summary` line and exits 1; the daemon's watch route records a sync
   error that `rmx daemon status` prints; the path is back on the dirty queue after a
   `flush_queue`. The bad doc was synced once before, so its relpath row exists and the guard
@@ -365,6 +404,16 @@ unless said otherwise. {#acceptance-intro}
   test double of the unit's dependency, and gets its own row in
   `workflow/test_mock_registry.md` beside [[#r4-registry]]'s; the lead allocates the id
   (ch-bsd r1 M15). {#ac-10}
+- **AC-11: an edit keeps the anchors and their inbound edges (bug-264).** The probe's shape,
+  through the real `_sync_paths` with its semantic pass: docs `a` (id `adoc`, anchor `sec`)
+  and `b` (a `rel:` line to `adoc#sec`) are synced; `a` is edited and synced; then edited
+  and synced again. After each edit: `adoc` and `adoc#sec` have the ids of the first sync;
+  `b`'s edges to `adoc#sec` are live, with their evidence rows; `a`'s own new body terms are
+  indexed; the relpath row exists (re-made) and its semantic links are this version's, none
+  doubled; no `untrack` event for the path is in `facts.log`. The same through
+  `rmx ingest <tree>` run twice with `a` edited between (the twin), and through a real
+  daemon's watch flush. **RED** at base (E lines: `adoc#sec` has a new id; `b`'s edges to it
+  are 0), which is [[#baseline-bug264-table]]'s middle column. {#ac-11}
 
 ## Must-fail mutations {#mutations}
 
@@ -386,7 +435,12 @@ Committed first, restored one at a time; each must make a test **fail**, not han
 | 12 | the lint also errors on an empty `title:` | AC-7's empty leg, AC-9 |
 | 13 | `scan()` compares only files the lint treats as GMD | AC-10, with a plain file whose `id:` is a list |
 | 14 | `scan()` reports nothing when one side refuses | AC-10 (ii) |
-| 15 | `_sync_one` asks `frontmatter_refusal` after the guard's purge | AC-4 (the ids change; the inbound edge is gone) |
+| 15 | `_sync_one` asks `frontmatter_refusal` after the guard's purge | AC-4 (the relpath row is gone and is not re-made, because the refused file is not touched) |
+| 19 | the sync site calls `purge_path` again | AC-11 (new anchor ids; `b`'s edges 0) |
+| 20 | the code+docs site (`ingest.py:1508`) calls `purge_path` again | AC-11's `rmx ingest` leg |
+| 21 | `purge_legacy_relpath_doc` also purges rows whose `path` is the file | AC-11 |
+| 22 | `purge_legacy_relpath_doc` does not purge the relpath row | AC-11 (the semantic links are doubled or stale after the second edit) |
+| 23 | `purge_legacy_relpath_doc` deletes the `tracked_files` row | AC-11 (an `untrack` event appears) |
 | 16 | a refused path stays in `touched_existing` | AC-4's second flush (0 paths touched, the error cleared) |
 | 17 | `flush_queue` does not put a GMD-refused path back | AC-4's second flush on the queue route |
 | 18 | step 2 of [[#r2-sync-order]] dropped (a path the pass skipped is still stamped) | AC-5's second leg |
@@ -419,6 +473,8 @@ named in the summary ([[orchestration#task]] step 4). {#census-result}
 - `src/refmatrix/ingest.py` (`_ingest_markdown_gmd` records the skips;
   `gmd_pass_failure_message`).
 - `src/refmatrix/daemon.py` (`ingest_path` op result; the watch and async-flush readers).
+- `src/refmatrix/store.py` (`purge_legacy_relpath_doc`, R6; after 29.5, the removal module),
+  and the two call sites in `sync.py` and `ingest.py`.
 - `src/refmatrix/sync.py` (`gmd_refused`, the accessor, `refusal_summary`,
   `raise_if_refused`, `flush_queue`).
 - `src/refmatrix/cli.py` (`_ingest`'s in-process result; the sync refusal line). If 29.5 has
@@ -494,6 +550,7 @@ The review read `a4d245a`; some findings were already folded at `d788602`.
 | M2 the non-UTF-8 count is measured; AC-5's fixture must sniff as GMD | the risk cites `unreadable` 0; the fixture's head is stated | [[#risk-louder]], [[#ac-5]] |
 | S3 / L139 the linter order | 31.4 → 31.1 → 31.6, each upstream commit on the previous | header, [[#r3-order]], [[#risk-upstream]] |
 | L133 M8 name 31.4's linter change | `--strict` and the `session/recall-state` enum line | [[#r3-order]] |
+| L144: bug-264 moves here from 31.2 | the GMD dispatch purges only the relpath row; a requirement, an AC in the probe's shape, five mutations; the probe's arm C | [[#r6]], [[#ac-11]], mutations 19-23, [[#baseline-bug264-table]] |
 | M15 (updated report) AC-10 (ii)'s lint double needs a mock-registry row | stated, for the lead to number | [[#ac-10]] |
 | L133 B2 the shared gate-tree helper | `tests/gmd_gate_tree.py`; no fourth copy | [[#tests-helper]], [[#ac-10]] |
 | bug-255, bug-258 (the lead; L132) | folded at `d788602` | [[#r3]], [[#r5]], [[#ac-7]], [[#ac-9]], [[#ac-10]] |
@@ -510,6 +567,8 @@ cites them and records none of its own. {#decisions-rule}
   for a failed GMD pass (L112 S2) and a refused memory path (26.2). Amended into
   [[#r2-ingest]], [[#r2-sync]], [[#ac-3]] and [[#ac-4]]. The option not taken was a line on
   stderr and exit 0, as `rmx ingest-gmd`'s report does. {#d11}
+- **Ruling L144:** bug-264 is live and is fixed here ([[#r6]]); 31.2 keeps the learned-row
+  halves of its R3. {#l144}
 - **Ruling L132:** bug-258 folds in here; bug-255 was folded in by the lead with the lint
   and ingest sides under one rule ([[#r3]], [[#r5]], [[#ac-9]], [[#ac-10]]). {#l132}
 
