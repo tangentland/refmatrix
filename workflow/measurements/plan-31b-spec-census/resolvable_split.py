@@ -15,9 +15,15 @@ RESOLVABLE when all three hold:
   F  the file is on disk (the row's `file`, relative to the tree root unless absolute).
 Every other learned orphan is NOT resolvable; the first failing condition, in the order
 C, E, F, is its reason.
+
+For question Q38 it also counts, among the resolvable rows, those whose recorded line still
+holds the pattern in the current file: as a literal substring, and (only when the literal
+fails) as a regex. That is the reading under which the line is a fourth condition.
 """
 from __future__ import annotations
 
+import ast
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -50,6 +56,7 @@ def main(argv: list[str]) -> int:
     cnt: Counter = Counter()
     why_files: dict[str, Counter] = {"C": Counter(), "E": Counter(), "F": Counter()}
     exists: dict[str, bool] = {}
+    text: dict[str, "list[str] | None"] = {}
     pairs_ok: set = set()
     files_ok: set = set()
     dup = 0
@@ -73,6 +80,32 @@ def main(argv: list[str]) -> int:
             why_files["F"][f] += 1
             continue
         cnt["resolvable"] += 1
+        if f not in text:
+            p = Path(f) if Path(f).is_absolute() else tree / f
+            try:
+                text[f] = p.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                text[f] = None
+        lines = text[f]
+        try:
+            pat = ast.literal_eval(detail[len("learned from grep "):])
+        except (ValueError, SyntaxError):
+            pat = None
+        held = False
+        if lines is not None and pat is not None and line and 0 < int(line) <= len(lines):
+            here = lines[int(line) - 1]
+            if pat in here:
+                cnt["resolvable, line holds the pattern (literal)"] += 1
+                held = True
+            else:
+                try:
+                    if re.search(pat, here):
+                        cnt["resolvable, line holds the pattern (regex only)"] += 1
+                        held = True
+                except re.error:
+                    pass
+        if not held:
+            cnt["resolvable, line no longer holds the pattern"] += 1
         pairs_ok.add((cid, ents[0]))
         files_ok.add(f)
         if (int(cid), int(ents[0]), f, line, detail) in attached:

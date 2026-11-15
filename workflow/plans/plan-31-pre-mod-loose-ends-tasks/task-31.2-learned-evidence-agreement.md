@@ -24,7 +24,9 @@ metadata:
 > 16.6's sidecar ([[#r3-source]]), and the learned-row halves of 22.6 R3 and R5 that
 > [[plan-31-pre-mod-loose-ends#t2]] names ([[#scope-22-6]]).
 > Decision: `plan-31 D14`, decided by the user in [[plan-of-plans#decisions]] ([[#r7]]).
-> Also takes bug-203, if the lead admits it ([[#r3-invalidate]]).
+> Open with the user: Q38 (what "resolved" means in D14, [[#r7-line]]) and Q39 (bug-203 into
+> this task, [[#r3-invalidate]]), both in [[plan-of-plans#questions]]. The text that depends on
+> either is marked conditional.
 > Grep learning stays off (`~/.refmatrix/learn.off`) until this is deployed; turning it on is
 > not this task.
 > Base for every measurement here: `f3a508f`, and a copy of the dev store's read snapshot
@@ -40,6 +42,7 @@ rel: depends-on -> [[plan-review-2026-11-13#lead]]
 rel: depends-on -> [[measurement-learned-rows-cli-store-2026-11-14]]
 rel: depends-on -> [[orchestration#release]]
 rel: depends-on -> [[plan-of-plans#decisions]]
+rel: depends-on -> [[plan-of-plans#questions]]
 rel: related-to -> [[task-22.2-repair-then-remove#r4]]
 rel: depends-on -> [[plan-31b-spec-census]]
 rel: reinforces -> [[feedback_decay_never_loses_knowledge]]
@@ -133,20 +136,28 @@ orphaned 1,967 more. Of the 30,131 learned orphans:
 - Fleet stores were not measured: each has its own orphans, and the same census runs on a
   copy of each before its store event ([[#r9]]). {#fact-fleet}
 
-`resolvable_split.py` applies [[#r7-rule]]'s match rule to the same copy (output
-`workflow/review-output/spec31b-resolvable-split-refmatrix.log`):
+`resolvable_split.py` applies [[#r7-rule]]'s match rule to the same copy, against the dev
+tree as it stands when the script runs (output
+`workflow/review-output/spec31b-resolvable-split-refmatrix.log`). Run twice on 2026-11-15:
 
-| Class | Rows | Detail |
-|---|---|---|
-| **resolvable** (re-attached) | **30,078** (99.8%) | 2,717 `(concept, entity)` pairs on 409 files; 9 rows equal a row already attached to that entity |
-| not resolvable: the concept is gone | 11 | `cli.py` 9, `store.py` 2 |
-| not resolvable: no entity of the learner's kind and that name | 42 | `workflow/bullshit/last_run.log` 23, `pyproject.toml` 19 (files the ingest does not index) |
-| not resolvable: the file is not on disk | 0 | |
-| **deleted with a manifest** | **53** | |
+| Class | First run | Second run | Detail (second run) |
+|---|---|---|---|
+| **resolvable** (re-attached) | 30,078 | **29,824** (99.0%) | 2,697 `(concept, entity)` pairs on 407 files; 9 rows equal a row already attached to that entity |
+| not resolvable: the concept is gone (C) | 11 | 11 | `cli.py` 9, `store.py` 2 |
+| not resolvable: no entity of the learner's kind and that name (E) | 42 | 42 | `workflow/bullshit/last_run.log` 23, `pyproject.toml` 19 (files the ingest does not index) |
+| not resolvable: the file is not on disk (F) | 0 | 254 | `workflow/plan-review-2026-10-14.md` 207, `workflow/plan-review-2026-10-07.md` 47 |
+| **deleted with a manifest** | 53 | **307** | |
+| of the resolvable: the recorded line still holds the pattern | not split | 12,645 (literal 9,634, regex only 3,011) | the rest, 17,179, no longer hold it |
 {#baseline-split-table}
 
-The POP row quotes the lead's count of 2026-11-14 (28,164 orphans); the split is taken on
-the copy of 2026-11-15, which holds 30,131. The store event re-counts ([[#r9]]). {#fact-split}
+- **The split moves with the tree.** Between the two runs the dev tree's `master` removed
+  the two plan-review files (commit `903f7f5`, archived). The catalog copy is the same; 254
+  rows that named a file on disk in the morning name none now. That is the rule working: a
+  file that is gone takes its learned rows to the manifest ([[#r4]]). The numbers in the POP
+  (30,078 and 53) are the first run's. The store event counts again, and the dry run's count
+  is the one that binds ([[#r9]]). {#fact-split-moves}
+- The POP's D14 row also quotes the lead's count of 2026-11-14, 28,164 orphans; the copy of
+  2026-11-15 holds 30,131. {#fact-split}
 
 ### What the order probe showed {#baseline-probe}
 
@@ -250,7 +261,10 @@ changing this one. {#r3-source}
   raise, leaving the path untouched and writing no manifest); the learned keep or the
   [[#r4]] manifest; the purge of the rest. A memory-owned anchor is never purged and never
   written to a manifest. {#r3-memory}
-- **`rmx sync -i` runs on the writer (bug-203).** With a daemon up, `-i` reaches a store proxy
+- **`rmx sync -i` runs on the writer (bug-203). Conditional on Q39**
+  ([[plan-of-plans#questions]], open with the user; the lead recommends admitting it). If
+  Q39 is (b), this bullet, [[#ac-14]] and mutation 21 are struck, bug-203 stays post-mod, and
+  the `-i` row of [[#r3-sites]] applies to the in-process route only. With a daemon up, `-i` reaches a store proxy
   that has no `purge_path` and falls through to the read replica. This requirement rewrites
   what `-i` does, so it also routes it: through the daemon's sync op family when a daemon
   answers, in-process otherwise, never the replica. The store review homed bug-203 on 22.6
@@ -345,11 +359,23 @@ to their current entity; the rest are deleted with a manifest, never silently. {
 {#r7-rule}
 
 A row that fails is **not resolvable**; its reason is the first failing condition in the
-order C, E, F. The line is not part of the rule: a resolvable row whose line no longer holds
-its pattern is re-attached and left for the read path, which serves a learned row only where
-the line still matches, exactly as it treats a row an edit kept ([[#r3]]). On the dev store
-copy 13,067 of the resolvable rows hold their pattern today ([[#fact-verifies]]). The split is
-[[#baseline-split-table]]: 30,078 resolvable, 53 not. {#r7-line}
+order C, E, F. {#r7-reason}
+
+**Conditional on Q38** ([[plan-of-plans#questions]], open with the user): whether the line
+is part of "resolved". Both readings are written; the answer selects one and the other is
+struck. {#r7-line}
+
+| | Q38 (a): matched to the current entity (the lead's recommendation) | Q38 (b): the line still holds the pattern |
+|---|---|---|
+| The rule | C, E, F | C, E, F and **L**: the recorded line of the current file holds the row's pattern, by the read path's own test (`store.verify_evidence_rows`) |
+| A resolvable row whose line moved | re-attached, and left for the read path, which serves a learned row only where the line still matches, as it treats a row an edit kept ([[#r3]]) | not resolvable, reason L: to the manifest, then deleted |
+| Split on the second run | 29,824 re-attached, 307 deleted | 12,645 re-attached, 17,486 deleted |
+| `(concept, entity)` pairs restored | 2,697 | counted at R0 (not split here) |
+| What else changes | nothing | [[#r7-rule]] gains row L; AC-7 gains a row of class L; mutation "condition L dropped" is added; [[#r3]] is unchanged (an edit still keeps a learned row whose line moved, and the two rules then differ on purpose) |
+{#r7-line-table}
+
+Until Q38 is answered, [[#r7-reattach]], [[#ac-7]] and [[#ac-9]] below are written for (a).
+{#r7-line-default}
 
 **What `vacuum` step 3 does with them**, after step 2 has purged the entities of files that
 are gone (so E is judged against what is left):
@@ -369,10 +395,11 @@ are gone (so E is judged against what is left):
   result, in `rmx vacuum`'s output and in the `vacuum_evidence_drop` event; the dry run
   prints the same numbers and writes nothing. {#r7-counts}
 
-This leaves the store as [[#r3]] would have left it had the fix existed when the edits
-happened. "The audited removal path" is read here as the dry run, the manifest written
-first, the logged event and the lead's backed-up run ([[#r9]]): plan-22's engine and its
-`--confirm` are post-mod and not built. {#r7-why}
+Under Q38 (a) this leaves the store as [[#r3]] would have left it had the fix existed when
+the edits happened. "The audited removal path" in the POP's D14 row is defined by ruling L134
+(4): a dry run whose counts equal the measured split, the manifest written first in 22.6
+R2's path and 22.2 R4's record form, a logged event, and the lead's backed-up run
+([[#r9]]). plan-22's engine and its `--confirm` stay post-mod. {#r7-why}
 
 ### R8: every path reports {#r8}
 
@@ -401,10 +428,10 @@ for the dev store's orphans. Every other store is a separate user go, with its o
 | R1, R2, R6, R7, R9, R10 | nothing | all of it |
 {#scope-22-6-table}
 
-The freeze line names "22.6 R4". The plan's own text for this task
-([[plan-31-pre-mod-loose-ends#t2]]) also names the deleted file and `vacuum`'s log, which
-are the learned-row halves of R3 and R5; they are taken in the narrowed form above. Whether
-the freeze line should say so is the lead's. {#scope-22-6-body}
+The plan's own text for this task ([[plan-31-pre-mod-loose-ends#t2]]) names the deleted
+file and `vacuum`'s log, which are the learned-row halves of R3 and R5; they are taken in
+the narrowed form above. Ruling L134 (2): that is within `#t2`'s scope and not a new
+admission, and the freeze line now says so ([[plan-of-plans#freeze]]). {#scope-22-6-body}
 
 ## Where the code is after 29.5 {#layout}
 
@@ -483,9 +510,10 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   is back, 3 rows against 2, as in the probe). {#ac-8}
 - **AC-9: the dev store after its `vacuum`.** The run's `learned_reattached` and
   `learned_deleted` equal the dry run's and `resolvable_split.py`'s on the copy taken just
-  before (30,078 and 53 on the copy of 2026-11-15). On a fresh copy afterwards: evidence with
-  either end gone 0; learned orphans 0; `(concept, file)` pairs linked up by the split's pair
-  count (2,717). The manifest holds one record per deleted row. **Measurement**, on the
+  before (29,824 and 307 on the second run of 2026-11-15, under Q38 (a); the tree will have
+  moved again). On a fresh copy afterwards: evidence with either end gone 0; learned orphans
+  0; `(concept, file)` pairs linked up by the split's pair count (2,697 on that run). The
+  manifest holds one record per deleted row. **Measurement**, on the
   lead's run. {#ac-9}
 - **AC-10: the lock hold is bounded.** R0's timing, against its bands. **Measurement.**
   {#ac-10}
@@ -509,7 +537,8 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   `MemoryOwnershipError`, nothing at the path changes and no manifest is written.
   **Characterization** for the anchor, **RED** for "no manifest" (no manifest exists at
   base). {#ac-13}
-- **AC-14: `rmx sync -i` reaches the writer (bug-203).** With a throwaway daemon up,
+- **AC-14: `rmx sync -i` reaches the writer (bug-203). Conditional on Q39 = admit.** With a
+  throwaway daemon up,
   `rmx sync -i <existing file>` keeps the file's learned rows and re-derives its ingest rows
   on the writer store, and `-i <missing file>` writes the [[#r4]] manifest. **RED** at base
   (E line: the purge goes to the replica, or the learned rows are gone). {#ac-14}
@@ -538,7 +567,7 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 | 18 | condition E matches any `code` / `doc` entity of that name, not the learner's kind | AC-7, with a `doc` entity named like a `.py` file |
 | 19 | the delete of the non-resolvable rows runs before the manifest write | AC-7's failing-delete leg |
 | 20 | the learned keep runs before the memory-anchor keep | AC-13's unreadable-metadata leg (a manifest is written) |
-| 21 | `-i` calls `purge_path` on whatever store it is handed | AC-14 |
+| 21 | `-i` calls `purge_path` on whatever store it is handed (only if Q39 admits bug-203) | AC-14 |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -618,22 +647,26 @@ cites them and records none of its own. {#decisions-rule}
   if not, delete them". Amended into [[#r7]], [[#r5-learned]], [[#ac-7]] and [[#ac-9]]. The
   spec adds the match rule the decision needs ([[#r7-rule]]) and its measured split
   ([[#baseline-split-table]]). {#d14}
-- **Ruling L132:** this task's two departures from approved text go to ch-bsd to judge:
-  ingest-derived orphans are recorded in the manifest as counts, not rows ([[#r5-derived]];
-  22.6 R5 asked for every row, 834,201 then and 1.24 million now, and a row that points at
-  nothing is re-derived by the next ingest of its file); and there is no restore command
-  ([[#r4-restore]]). A third of the same kind is added in this revision: no vectors file
-  ([[#r4-vectors]]). bug-259 and bug-260 fold in here by the same ruling. {#l132}
+- **Q38, open with the user** ([[plan-of-plans#questions]]): what "resolved" means. (a)
+  matched to the current entity: 29,824 re-attached and 307 deleted on the second run
+  (30,078 and 53 on the first, the numbers the question quotes). (b) the line must still hold
+  the pattern: 12,645 re-attached and 17,486 deleted (the question quotes 13,067 and 17,064,
+  taken before the line count was split by resolvable row). Both are written at
+  [[#r7-line-table]]. {#q38}
+- **Q39, open with the user:** admitting bug-203. Written as conditional at
+  [[#r3-invalidate]], [[#ac-14]] and mutation 21. {#q39}
+- **Ruling L132:** two departures from approved text go to ch-bsd to judge: ingest-derived
+  orphans are recorded in the manifest as counts, not rows ([[#r5-derived]]; 22.6 R5 asked for
+  every row, 834,201 then and 1.24 million now, and a row that points at nothing is
+  re-derived by the next ingest of its file); and there is no restore command
+  ([[#r4-restore]]). bug-259 and bug-260 fold in here by the same ruling. {#l132}
+- **Ruling L134:** (2) the learned-row halves of 22.6 R3 and R5 are within `#t2`
+  ([[#scope-22-6-body]]); (4) "the audited removal path" is defined ([[#r7-why]]); (5) the
+  missing vectors file is a third departure for ch-bsd ([[#r4-vectors]]). {#l134}
 
 **Design proposed by this spec, for review** (not ledger decisions): evidence follows its
 entity at every purge, with the `tombstone` as its event ([[#r2]], [[#r6-tombstone]]); a
-learned file entity is one with a learned row or the `protected` flag ([[#r1]]); the line is
-not part of D14's match rule ([[#r7-line]]); "the audited removal path" is the dry run, the
-manifest and the logged, backed-up run ([[#r7-why]]); `vacuum` gains a dry run and is the
-store event ([[#r5-dry-run]], [[#r9]]); the manifest fails closed ([[#r4-fail]]); bug-203 is
-taken because R3 rewrites the `-i` path ([[#r3-invalidate]]). {#decisions-proposed}
+learned file entity is one with a learned row or the `protected` flag ([[#r1]]); conditions
+C, E and F of the match rule ([[#r7-rule]]); `vacuum` gains a dry run and is the store event
+([[#r5-dry-run]], [[#r9]]); the manifest fails closed ([[#r4-fail]]). {#decisions-proposed}
 
-**For the lead** (not this spec's to decide): whether the line of [[#r7-line]] is what the
-user meant by "resolved" (the other reading re-attaches only the 13,067 rows whose line still
-holds the pattern and deletes 17,011 more); whether the freeze line names R3 and R5 as well
-as R4 ([[#scope-22-6-body]]); whether bug-203 is admitted. {#decisions-open}
