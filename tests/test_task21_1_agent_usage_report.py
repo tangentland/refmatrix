@@ -515,9 +515,14 @@ def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
     and their `ts` can differ: `log_query` exits inside `main()` and `cli_entry` stamps the end
     row afterwards, in its `finally`, so the end row can land one second later. One paired
     call here does (query.log 10-05T10:01:00, cli.log end row :01). The query.log leg already
-    counts the
-    query.log rows per channel (`memory_recall <channel>: n`, `outcomes:`), so R8.1's per-channel
-    cli.log leg counts only the calls query.log does not hold.
+    counts the query.log rows per channel (`memory_recall <channel>: n`, `outcomes:`), so
+    R8.1's per-channel cli.log leg counts only the calls query.log does not hold (ruling L130).
+
+    First, AC-8.1 on the frozen fixture (ruling L130; the AC-6 tests stay as they are, R8.3):
+    its cli.log holds 244 recall end rows and its query.log no `kind=recall` row, so the
+    cli.log leg prints one line per channel, 201 prompt_recall, 6 session_start, 3 precompact
+    and 34 recall (recomputed with `recall_channel` from the argv flag names and `source` at
+    c4b44d0; hook 210, unknown 34). M8.1 (one channel for every cli.log recall) fails here.
 
     The store mixes three kinds of call, each in the window:
       - pre-21.1, cli.log only (10-01): 2 prompt_recall, 2 session_start, 1 precompact,
@@ -532,6 +537,23 @@ def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
     the paired calls twice prints the cli.log leg as 5 / 3 / 3 / 4 (mutation M8.2); every one
     of those numbers is absent from the correct report for that channel. Each phase=start
     row is never counted (21.1 R7)."""
+    def chan(out: str, name: str, n: int) -> list:
+        word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+        return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)
+                and "commands=" not in ln]
+
+    # AC-8.1: the frozen fixture, one line per channel, summing to the old 244
+    assert (FIXTURE / "cli.log").is_file() and (FIXTURE / "query.log").is_file(), FIXTURE
+    for name in ("query.log", "cli.log"):
+        (R / name).write_bytes((FIXTURE / name).read_bytes())
+    code, fx = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+    assert code == 0, fx
+    assert chan(fx, "prompt_recall", 201), fx
+    assert chan(fx, "session_start", 6), fx
+    assert chan(fx, "precompact", 3), fx
+    assert chan(fx, "recall", 34), fx
+
+    # AC-8.2: the synthetic store below replaces both logs
     def pair(ts, argv, source, end_ts=None):
         return [_cli_row(ts, argv, phase="start", source=source),
                 {**_cli_row(end_ts or ts, argv, source=source), "cwd": str(R.parent)}]
@@ -575,21 +597,16 @@ def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
     _write_jsonl(R / "cli.log", cli)
     code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
     assert code == 0, out
-
-    def chan(name: str, n: int) -> list:
-        word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
-        return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)
-                and "commands=" not in ln]
     # the cli.log leg, per channel, holds only the calls query.log does not
-    assert chan("prompt_recall", 3), out
-    assert chan("session_start", 2), out
-    assert chan("precompact", 1), out
-    assert chan("recall", 1), out
+    assert chan(out, "prompt_recall", 3), out
+    assert chan(out, "session_start", 2), out
+    assert chan(out, "precompact", 1), out
+    assert chan(out, "recall", 1), out
     # the query.log leg is unchanged
-    assert chan("prompt_recall", 2), out
-    assert chan("recall", 3), out
+    assert chan(out, "prompt_recall", 2), out
+    assert chan(out, "recall", 3), out
     # no channel counts a paired call twice
-    assert not chan("prompt_recall", 5), out
-    assert not chan("session_start", 3), out
-    assert not chan("precompact", 3), out
-    assert not chan("recall", 4), out
+    assert not chan(out, "prompt_recall", 5), out
+    assert not chan(out, "session_start", 3), out
+    assert not chan(out, "precompact", 3), out
+    assert not chan(out, "recall", 4), out
