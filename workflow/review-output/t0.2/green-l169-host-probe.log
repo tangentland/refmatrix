@@ -1,0 +1,44 @@
+# self-audit Q1 at 087d942: PYTHONPATH=<clone>/src .venv-eval/bin/python host_probe.py <throwaway root> (RMX_HOME and REFMATRIX_ROOT throwaway); process exit 7
+# --- host_probe.py ---
+"""Self-audit Q1: a plain host process (no test framework, no doubles) serves a real Daemon on a
+thread, stops it through the `stop` op over its socket, and must survive with its own exit code."""
+import os
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+from refmatrix import daemon as dm
+from refmatrix.store import Store
+
+base = Path(tempfile.mkdtemp(prefix="hp-", dir=sys.argv[1])).resolve()
+root = base / "proj" / ".refmatrix"
+root.parent.mkdir()
+s = Store(root)
+s.init()
+s.close()
+d = dm.Daemon(root)
+t = threading.Thread(target=d.serve_forever, name="host-probe-serve")
+t.start()
+deadline = time.monotonic() + 120
+while not dm.ping(root, retries=0) and time.monotonic() < deadline and t.is_alive():
+    time.sleep(0.2)
+print("pinged:", dm.ping(root, retries=0), "pid file:", dm.read_pid(root), "host pid:", os.getpid())
+t0 = time.monotonic()
+print("stop op:", dm.call(root, "stop", {}, retries=0))
+t.join(120)
+print(f"serve thread alive after stop: {t.is_alive()} ({time.monotonic() - t0:.1f}s)")
+print("socket answers after stop:", dm.ping(root, timeout=0.5, retries=0))
+print("non-daemon threads left:", [x.name for x in threading.enumerate()
+                                   if x is not threading.main_thread() and not x.daemon])
+print("host continues; exiting with 7")
+sys.exit(7)
+# --- output ---
+=== 2026-11-15T13:30:34 daemon starting pid=49545 ===
+pinged: True pid file: 49545 host pid: 49545
+stop op: {'ok': True, 'result': {'stopping': True}}
+serve thread alive after stop: False (1.0s)
+socket answers after stop: False
+non-daemon threads left: []
+host continues; exiting with 7

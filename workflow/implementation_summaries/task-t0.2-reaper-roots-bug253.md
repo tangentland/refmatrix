@@ -2,7 +2,7 @@
 gmd: "0.1"
 id: impl-task-t0-2-reaper-roots-bug253
 title: "T0.2 + 29.4b GREEN: the spawn ledger and the reaper (bug-229), test roots under the sandbox, the dev-rmx helper (bug-253), bug-170/168/127"
-tags: [implementation-summary, t0, task-29.4, reaper, sandbox, bug-229, bug-253, bug-170, bug-168, bug-127]
+tags: [implementation-summary, t0, task-29.4, reaper, sandbox, bug-229, bug-253, bug-267, bug-170, bug-168, bug-127]
 metadata:
   node_type: implementation-summary
   status: green
@@ -20,10 +20,14 @@ rel: derives-from -> [[t02-red-report]]
 
 Plan-29 task 29.4, stage 2 (T0.2 + 29.4b). Branch `task-t0.2-reaper-roots-bug253` in
 `/Volumes/littlebig/refmatrix-t02-green` (symlinked `.venv-eval`). RED tip `860fce8`. GREEN code
-commit `78489af`. Rulings followed: L142, L146 (and L121, L122, L123 through the spec). No
-`src/` file changed. No test assertion was edited; the edits to test files are the ones the RED
+commit `78489af`. Rulings followed: L142, L146 (and L121, L122, L123 through the spec), then
+L151 and L154 (bug-267 and the resource tracker, `1121b4e`) and L169 (the ch-bsd r1 fold, `workflow/bullshit/2026-11-15-2009-t02-r1-1121b4e.md` on dev master;
+`6bf0082`, census fix `087d942`). **One `src/` file changed: `src/refmatrix/daemon.py`** (bug-267,
+[[#changes-bug267]]). No test assertion was edited. The edits to test files are the ones the RED
 report's `#green-work` assigns to GREEN (lookups, env, skip conditions, roots, two helper
-bodies). Mutations are the reviewer's and are not recorded here.
+bodies), plus L169's: the three in-process cases drop their `signal.signal` double, and the
+census accepts load-by-path. The mutations of the `daemon.py` change are in
+[[#mutations]]; the test-code mutations are the reviewer's.
 
 ## What changed {#changes}
 
@@ -89,11 +93,30 @@ bodies). Mutations are the reviewer's and are not recorded here.
   `workflow/review-output/leaked-processes.log`. `claim_session(config) -> bool` makes the
   outermost session the one that reaps.
 
+### bug-267: an in-process daemon's stop returns to its host (`src/refmatrix/daemon.py`) {#changes-bug267}
+
+- `Daemon.serve_forever` decides once, at its top, whether it is served inside a host process:
+  `in_host` is true off the main thread (L151, L169). The daemon process (`_run_detached`,
+  `serve_foreground`, rmxd) serves on its main thread.
+- In a host it installs no SIGTERM/SIGINT handlers. The host owns its signals, and Python
+  refuses them off the main thread. At `1121b4e` that `ValueError` fired before the serve
+  loop's `try`, so the in-host path ran only under the cases' `signal.signal` double (ch-bsd r1
+  B1).
+- At the end of its shutdown, a daemon process still calls `os._exit(0)`. In a host it returns
+  0. Its pools were already shut down by `_drain_pool` within `_StopDeadline` (bug-051). The
+  second, unbudgeted join of `1121b4e` (`_join_pool_workers_for_host`) is deleted (S3).
+
 ### conftest: the hooks and the retired pins {#changes-conftest}
 
 `tests/conftest.py`:
 - **`Daemon.__init__` is wrapped** (`_track_daemon_instances`) to record each instance and do
-  nothing else. `_serve_thread(d)` finds a running `serve_forever` frame for the instance.
+  nothing else. `_in_process_serving(d)` is R4.6's "still serving". It is true when the
+  instance's `serve_forever` frame is running (`_serve_thread`), or when its root's socket is
+  bound in this process (`_socket_bound`: the root's `rmxd.pid` names this process and a connect
+  succeeds), unless another tracked instance serves that root.
+- **`_stop_in_process(d, emit)`** stops it through the registry: `OPS["stop"]` (the op the
+  socket would dispatch), then a join of the serve thread bounded by `stop_grace_s()`. There is
+  no signal and no pid file (L142). The line `serve loop ended` or `STILL RUNNING` is printed.
 - **`pytest_sessionstart`** claims the session and runs the sweep. `pytest_report_header`
   returns `rmx sandbox: <n> orphan process(es) swept from killed runs`.
 - **`pytest_runtest_makereport`**, at teardown, checks the registered spawns that are due and
@@ -158,7 +181,9 @@ Logs are under `workflow/review-output/t0.2/`. The `own` log is `green-verify-ow
 | AC-5 clean daemon | `test_ac5_a_daemon_stopped_by_its_test_is_no_leak` | pass | own |
 | AC-5 reused pid | `test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so` | pass | own |
 | AC-5 killed run | `test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start` | pass | own |
-| AC-5 in-process daemon | `test_ac5_an_in_process_daemon_left_serving_fails_the_session` | pass (reported, session failed; NOT stopped in-session, [[#gaps]] 1) | own |
+| AC-5 in-process daemon | `test_ac5_an_in_process_daemon_left_serving_fails_the_session` | pass: reported, stopped through the registry ("serve loop ended", red's S1 assertion), session failed | own, `green-l169-red-nodes.log` |
+| bug-267 / B1 | `test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status` (real `serve_forever` on a thread, no double), both force-exit guards | pass | `green-l169-red-final.log` |
+| L154 | the resource-tracker nodes (a real tracker is exempt; a grandchild with its argv leaks) | pass | `green-l169-red-nodes.log` |
 | L142 own-pid | `test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session` | pass | own |
 | AC-5 SIGSTOPped | `test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session` | pass | own |
 | AC-5 register_spawn | `…_its_fixture_does_not_stop_fails_its_own_test`, `…_its_fixture_stops_passes` | pass | own |
@@ -223,40 +248,105 @@ the branch. On the branch they collect 2294 tests.
 - one skip, the hooks pin, reported as pinned (exit 0);
 - the files that errored or failed at stage 0 (127 errors and 1 failure, `test_bug241_r3_l114.py`
   included) all pass.
+After the L151/L154 build (`1121b4e`) and the L169 fold (merge `be7ddb2`, then `087d942`):
+
+| run | sha | collected | result | exit | log |
+|---|---|---|---|---|---|
+| own set + the bug-267 file | `1121b4e` | 436 | 435 passed, 1 pinned skip | 0 | `green-l151-verify-own.log` |
+| tier (b) | `1121b4e` | 2294 | 2292 passed, 2 failed (AC-6) | 1 | `green-l151-verify-tierb.log` |
+| red-t02's L169 files + the fold's | `be7ddb2` | 260 | 259 passed, 1 failed: bug-267 node (1), whose `E`-line filter took the case's deliberate `E assert False`. red-t02 fixed it at `a6f0e09` | 1 | `green-l169-red-nodes.log` |
+| verify set: the 168 importers of `daemon.py` (direct or via a tests/ helper, AST) + red's L169 files, 176 files (`green-l169-verify-files.txt`) | `be7ddb2` | 3012 | 3009 passed, 3 failed: the same node (1), and the 2 AC-6 nodes | 1 | `green-l169-verify.log` |
+| red's nodes after `a6f0e09` / `10d3309` + the census fix | `087d942` | 38 | 38 passed | 0 | `green-l169-red-final.log` |
+{#verify-l169}
+
+- The AC-6 failures' 45 `E` lines are identical to `release-0.84.0-full.log` in both runs, so
+  they are pre-existing (they pass on master after T0.8, `e997154`).
+- In the 176-file run the reaper printed one L154 exemption: `pid=16992 exempt, not reaped: the
+  stdlib multiprocessing resource tracker, a direct child of this session (spawned in
+  tests/test_daemon_subproc_embed.py::test_spawn_failure_falls_back_to_in_process)`, then `0
+  leaks; 1 exempt process(es)`. Nothing leaked.
+
 {#verify-body}
+
+## Mutations of the `src` change {#mutations}
+
+Run inside the L169 lane hold at `be7ddb2` (`green-l169-mut-<id>.log`). Each mutation was
+applied by an exact-string edit and restored with `git checkout -- src/refmatrix/daemon.py` in
+its own command; `__pycache__` was cleared after each, and each log ends `restored clean`. The
+nodes: `tests/test_bug267_inprocess_stop.py` (3), and the two reaper in-process nodes.
+
+| id | mutation | result |
+|---|---|---|
+| MB1 | the signal handlers installed even `in_host` (B1 undone) | FAIL: `test_ac5_an_in_process_daemon_left_serving_fails_the_session`, `test_l142_…`; node (1) on `ValueError: signal only works in main thread` |
+| X3 | always `os._exit(0)` | FAIL: `test_ac5_an_in_process…`, `test_l142_…` (no summary, exit 0), node (1) |
+| MB4 | `in_host` inverted | FAIL: the same three |
+| X4 | `in_host = True` (daemon processes no longer force-exit) | known survivor: only node (1) failed, and that was its own filter defect. No guard leaks a pool worker; red-t02 narrowed the docstring instead (MEH-2, L169) |
+{#mutations-table}
 
 ## Gaps and choices for the lead {#gaps}
 
-1. **R4 item 6, "stopped": not met (flagged to the lead).** `Daemon.serve_forever` ends every
-   shutdown in `os._exit(0)` (`src/refmatrix/daemon.py`, the force-exit after "daemon
-   stopped"). A stop through the weak registry therefore ends the pytest session with exit 0
-   before its summary. The first build did that: the in-process case exited 0 with no summary
-   (`green-wip-reaper-1.log`). The build now REPORTS the in-process daemon and FAILS the
-   session, and does not stop it in-session; it ends with the process. A non-daemon serve
-   thread would make interpreter shutdown wait on it. Fixing this needs a `src/` change (its
-   own RED) or a ruling. The L142 node passes. Under mutation R4.6b it still fails either
-   way: a stop by the pid file SIGTERMs the session, and a stop by `stop_daemon(root)` sends the
-   stop op, which ends the session through `os._exit(0)` (exit 0, not 1). Not run here:
-   mutations are the reviewer's.
-2. **The resource tracker in tier (b)** ([[#verify-body]]): ruling requested. The options
-   (a) stop the session's own stdlib helpers first, (b) a named exemption, (c) move the test
-   are in the message to the lead.
+1. **R4 item 6, "stopped": met since L151** ([[#changes-bug267]]). The reaper stops an
+   in-process daemon through the registry and the session keeps its own exit status. The L169
+   fold made the path run without a double. Superseded: the `78489af` gap text.
+2. **The resource tracker: L154's named exemption**, built at `1121b4e`, fired once in the
+   176-file run ([[#verify-l169]]).
 3. **R4.2 `stop_daemon(root)`** is called only when the root's `rmxd.pid` names the ledger pid
-   (RED `#not-followable` 2, L142 (2)). Otherwise the pid is signalled.
-4. **Live descendants.** The finish reaper also takes the session's live descendants that
-   have no ledger line. A child Popen'd in a test's last line can outrun its own sitecustomize:
-   the plain-child case's session finished in 0.09 s, before its child wrote its line
-   (`green-wip-reaper-2.log`). A descendant with no ledger line is reported as `spawned in <no
-   ledger line: a live descendant of this session>`; its test is not guessed.
-5. **`failures.jsonl`** is written only when `RMX_FAILURES_OUT` is set (R2's runner is not
-   built yet). The durable record is `workflow/review-output/leaked-processes.log`, which gets
-   orphans and leaks only, never zero counts. The R4.4 line prints only when n ≥ 1, which
-   L146 allows. The R4.3 header line prints every session, and pytest's `-q` hides headers.
-6. **`tests/test_grep_learning_replay.py`** imports `dev_rmx` but does not use it (`# noqa:
-   F401`). `test_each_of_the_eleven_uses_the_helper` requires the import, and the file's only
-   lookup was its venv skip, now gone. The harness is what uses the helper.
-7. **`tests/task3_7_helpers.py::short_root`** moved as well ([[#changes-r5]]). Twelve
-   task-3.7 files use it.
-8. **Not done here:** `workflow/bug_registry.md` rows (170, 168, 127, 229, 253; the lead
-   allocates and records); mutations (the reviewer's).
+   (accepted). Otherwise the pid is signalled.
+4. **Live descendants with no ledger line** are reaped by the finish reaper (accepted).
+5. **`failures.jsonl`** is written only under `RMX_FAILURES_OUT` (accepted). The R4.4 line
+   prints when n ≥ 1, and the R4.3 header line prints every session (`-q` hides headers).
+6. **The census accepts load-by-path** (L169 MEH-3). A test file passes when it imports a
+   harness whose `spec_from_file_location` call's own path argument ends in `devbin.py`.
+   red-t02's must-fail node holds six cases (`087d942`).
+7. **`tests/task3_7_helpers.py::short_root`** moved too ([[#changes-r5]]).
+8. **Left to others** (L169): S4 (each R4.7 adopter's spec names `register_spawn` when it is
+   specced) and MEH-4 (the allow list shrinks under T1 (3)) are the lead's. The bug registry
+   rows (170, 168, 127, 229, 253, 267) are the lead's to record.
 {#gaps-list}
+
+## Self-audit {#self-audit}
+
+The questions are `workflow/SELF_AUDIT.md` `#questions` (dev master; not on this branch).
+
+```
+1 real:     a plain host process (no test framework, no double) serves a real Daemon on a
+            non-daemon thread and stops it through the stop op over its socket →
+            "stop op: {'ok': True, …} / serve thread alive after stop: False (1.0s) /
+            socket answers after stop: False / non-daemon threads left: [] / host continues;
+            exiting with 7", process exit 7. The daemon processes: test_bug267 guards run
+            `rmx daemon start` (detached) and `--no-detach` for real; both exit on the stop op.
+            Log: green-l169-host-probe.log.
+2 wiring:   test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status runs
+            the REAL serve_forever on a thread in a child session (no signal.signal double) and
+            stops it through the `stop` op over the socket and through `_stop`;
+            test_ac5_an_in_process_daemon_left_serving_fails_the_session reaches the reaper
+            through a real pytest session's sessionfinish.
+3 census:   serve_forever call sites: daemon.py `_run_detached` (.serve_forever() in the fork
+            child) and `serve_foreground` (main thread: in_host False, unchanged); tests:
+            test_bug112 / test_bug113 child scripts (main thread, unchanged), the three
+            suite_health cases (thread: in_host). Sibling signal installs: hub.py:992 and
+            watch.py:202 already catch ValueError off the main thread. Left: none.
+4 bound:    the accept loop sees the stop flag within its 1 s socket timeout; the shutdown then
+            spends at most stop_grace_s() (_StopDeadline, bug-051; _drain_pool budgets inside
+            it); conftest's join of the serve thread starts at the stop and is bounded by
+            stop_grace_s(). Worst case ≈ stop_grace_s() + 1 s, then "STILL RUNNING" and a
+            failed session. The second pool join and the 30 s slack are deleted (S3).
+5 busy:     busy → `_drain_pool` cancels queued work and joins within the deadline; a worker
+            stuck in a call nothing can preempt is logged ("pool drain …: timed out … still
+            running") and LEAKED: the serve thread returns, and the host's exit then waits on
+            that worker (concurrent.futures' atexit join) -- the residue S3's ruling accepts in
+            exchange for one budget. down → the serving check is false (no frame, no bound
+            socket) and nothing is stopped.
+6 guard:    `if not in_host` (signals) fires on a main-thread serve (daemon process, reached by
+            `rmx daemon start`; guards green) and its else on a thread serve (node (1), no
+            double); `if not in_host` (os._exit) the same pair. Mutations MB1, X3, MB4 each fail
+            named nodes ([[#mutations]]); X4 is a known survivor.
+7 loud:     forced: an in-process daemon left serving → the child session exits 1 and prints
+            "LEAKED IN-PROCESS DAEMON root=… built in …", "stop op sent through the Daemon
+            registry (no signal)", "serve loop ended". Under MB1 the case's own E line is
+            "serve_forever off the main thread raised ValueError: signal only works in main
+            thread …". A pool worker that outlives the drain is named in rmxd.log.
+8 handoff:  S4 → the lead (each R4.7 adopter's spec, when specced); MEH-4 → T1 (3) (L169);
+            registry rows → the lead. Every stated count cites its log above.
+```
+{#self-audit-body}
