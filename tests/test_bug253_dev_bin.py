@@ -86,7 +86,11 @@ def _consecutive(nodes) -> bool:
 
 def venv_bin_lookups(src: str) -> list:
     """Line numbers where `src` builds a path into a checkout's `.venv-eval/bin`."""
-    tree = ast.parse(src)
+    import warnings
+    with warnings.catch_warnings():
+        # another file's invalid escape in a plain string is not this scan's finding
+        warnings.simplefilter("ignore", SyntaxWarning)
+        tree = ast.parse(src)
     docstrings = {id(n.value) for n in ast.walk(tree)
                   if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
     hits = set()
