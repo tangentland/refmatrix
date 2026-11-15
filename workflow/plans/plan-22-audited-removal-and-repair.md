@@ -8,13 +8,17 @@ metadata:
   status: approved
   created: 2026-10-07
   revised: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 22: audited removal and repair {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting — revision round 16 (2026-10-15) for ch-bsd r13 s-1, s-2 and d9cj (the
+**Status:** APPROVED 2026-10-15 for implementation (d9cm; ch-bsd r15 CLEAN `8fbfb0c`,
+[[plan-review-2026-10-14#t12-approvals]]); revision round 17 (2026-11-13) is the 2026-11-13 plan
+review's: 22.1a reports the dead-entity evidence side, 22.4 and the two merge entry points are
+deferral rows, and this line replaces the body's stale "Drafting" (CD-9; [[#rev-round-17]]).
+Earlier rounds: revision round 16 (2026-10-15) for ch-bsd r13 s-1, s-2 and d9cj (the
 absorb mark keyed per manifest; the vacuum scan judges the absorbing copy; a dangling
 re-insert's sidecar rows are catalog-only through `add_learned_provenance(rows, log=False)`;
 [[#rev-round-16]]); revision round 15 (2026-10-15) for d9ci (a restore re-logs every
@@ -104,7 +108,10 @@ for the user's explicit removal commands:
   owners of bug-111's deferral and of what every purge leaves behind; audited store-wide by
   22.1a ([[task-22.1a-provenance-free-classes#r1-dangling]]) and removed replay-safely by 22.2
   (tombstone and `unlink` by NAME, never an id-keyed event; d9aq;
-  [[task-22.2-repair-then-remove#r9-dangling]]);
+  [[task-22.2-repair-then-remove#r9-dangling]]); an evidence row whose ENTITY is dead
+  (`orphan-evidence`) is REPORTED by 22.1a since round 17 and removed only by `vacuum` step 3
+  (22.6 R5, table below), so bug-219's stale rows have one census and one remover per row
+  ([[task-22.1a-provenance-free-classes#r1-orphan-evidence]]);
 - **the selector entry points (d9k): `rmx forget`, `rmx memory forget`, `rmx memory bulk-forget`**
   build a plan manifest and need `--confirm <hash>`; restorable (task 22.6 R1).
 
@@ -116,6 +123,7 @@ for the user's explicit removal commands:
 | `purge_path` on a deleted or ignored file (sync; `vacuum` step 2) | derived cleanup WITH a manifest; learned rows go to it | 22.6 R3 |
 | sync's GMD legacy purge on a `.md` edit (and the non-GMD purge-before-re-add, the same act) | a BUG (bug-107), fixed to keep learned rows; 16.6's verifier judges them | 22.6 R4 |
 | `vacuum`'s orphan-evidence delete | derived cleanup with a manifest AND a `facts.log` event | 22.6 R5 |
+| `vacuum`'s stale-evidence delete (both ends live, edge gone; learned-grep rows excluded; round 17) | derived cleanup with a manifest AND `evidence_stale_drop` events keyed on the row's own appends | 22.6 R10 |
 | `unprotect` | not removal; its `protect` event carries `source` | 22.6 R6 |
 | `fold_concept_dups` (`rmx memory dedup`, MCP `rmx_memory` `dedup`) | a merge; plan-22 entry point owned with merge writes by the helix plan | 22.4 R5 (handed over, d9j) |
 | `merge_partition` | a merge; plan-22 entry point owned by the helix plan; dropped fragment bits go to the bug-105 hotfix's manifest (d9ac) | 22.4 R5; 22.6 R7 |
@@ -152,7 +160,8 @@ Out of scope, stated so the wording matches the ADR (#m-7):
    content hash. Apply takes that manifest id AND `--confirm <manifest-hash>`, refuses a manifest
    from another store, and refuses any store root not named on its own command line (22 #b-8).
    Every apply writes an intent-logged manifest (before/after of every repaired and moved row, the
-   full row of every removal) and row-level `facts.log` events that both replay paths apply (#b-3).
+   full row of every removal) and row-level `facts.log` events that the one replay path (`rebuild_index_from_log`; d9bu) applies
+   (#b-3; round 18).
    `restore` reverts repairs and re-inserts removals, checked by NAME (#b-3, DL #s-7).
 5. **Never touch what ingest owns.** Only learned evidence rows, learned-only entities and the named
    concept classes are in scope. The apply never clears `protected` on an entity that survives it;
@@ -184,12 +193,12 @@ concept classes do not live under `rmx learn` (#m-6).
 
 | task | wave | what | acceptance (summary) |
 |---|---|---|---|
-| 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`, `home-readable`, `unverifiable`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`, `dangling-link` and `dangling-evidence` (store scope, dead end named from `facts.log`); the `removal_audit` verb | fixture row per class; the recovered probe re-run on a global copy with a churn-bounded `reproduced`/`drift` verdict beside the applied split; independent recount equals audit count; one liveness predicate shared with `repair_fragments` (AST check); audit writes nothing |
-| 22.2 | 1 | the engine: repair/move/remove primitives, row-level `facts.log` events in both replay paths, manifest + intent log + restore, `bind` + recorder, ablation gate on a copy of THIS store, `removal_apply`/`removal_restore`; dangling-row removal; with 22.6 R6 in its slice | rebuild reproduces post-apply; a rebuild after a dangling removal resurrects no dead endpoint; restore equal by name incl. evidence, protection, vectors, dangling rows; two-partition AC; gate refuses on a masked delta and on a store lacking the candidates |
+| 22.1a | 1 | provenance-free classes: `orphan-root` (incl. root-`ambiguous`, `home-readable`, `unverifiable`), `missing-file`, `duplicate`, `orphan-alias`, `stale-subject`, `dangling-link` and `dangling-evidence` (store scope, dead end named from `facts.log`); `orphan-evidence` REPORT ONLY and the `stale-evidence` count (round 17, L6); the `removal_audit` verb | fixture row per class; the recovered probe re-run on a global copy with a churn-bounded `reproduced`/`drift` verdict beside the applied split; independent recount equals audit count; one liveness predicate shared with `repair_fragments` (AST check); audit writes nothing |
+| 22.2 | 1 | the engine: repair/move/remove primitives, row-level `facts.log` events in the one replay path (`rebuild_index_from_log`; d9bu), manifest + intent log + restore, `bind` + recorder, ablation gate on a copy of THIS store, `removal_apply`/`removal_restore`; dangling-row removal; with 22.6 R6 in its slice | rebuild reproduces post-apply; a rebuild after a dangling removal resurrects no dead endpoint; restore equal by name incl. evidence, protection, vectors, dangling rows; two-partition AC; gate refuses on a masked delta and on a store lacking the candidates |
 | 22.5 | 1 | cross-store move: copy → verify → forget across two daemons, manifest-backed, idempotent, sidecar rows travelling with their evidence; the no-owner buckets reported and held until the user rules (d9b) | crash at each step leaves no loss and no duplicate; collision merges; only named store roots; nothing applied to a `pending` no-owner bucket |
 | 22.3 | 1 | first apply, live global store: `orphan-root:unresolved` removed (`orphan-root:unverifiable` kept) (measured; 563 was the probe's no-verifying-file count, which included rows still readable today), 48 kept ambiguous, the 1,655 pytest-tmp entities' learned rows removed (the entities kept as user-asserted under d9ab; removing them is the user's selector step); learned-only members that a `cli.log` grep record attributes to the learner purged whole (≤ 90; the count printed and shown to the user before the apply, d9aw); resolved and `home-readable` entities handed to 22.5 (the no-owner ones held for the user's ruling, d9b) | total global `unreadable` over a pre-registered pattern set drops to the residual explained by class; memory count unchanged |
 | 22.1 | 2 | flag-sensitive classes: `ok`, `moved` (per `(concept, file)` set), `grown`/`shrunk`, `stale-line`, `out-of-range`, `unverifiable`, `empty-learned`; every row decided by 16.6's `learned_verify` (no matcher here); 16.6's read-time marks read for ordering and reporting | two-hit shift ends re-pointed with 0 `ambiguous`; BRE, POSIX-class and `\<…\>` rows `ok`; exit 2 `unverifiable`; pre-provenance `-i` row stays `ok`; marked rows listed; `empty-learned` recount exact |
-| 22.4 | blocked; handed over on close (d9j) | merge writes into the alias map; `fold_concept_dups` as a merge entry point (d9o) | blocked until ADR-0004's helix plan defines the alias map and plan-20 supplies the rule; that plan takes it over |
+| 22.4 | blocked; handed over on close (d9j); a deferral row since round 17 (L22) | merge writes into the alias map; `fold_concept_dups` as a merge entry point (d9o) | blocked until ADR-0004's helix plan defines the alias map and plan-20 (`drafting`, waiting on the user's 20.1 labels) supplies the rule; that plan takes it over. No host plan exists: tracked in [[deferral_registry#registry]] with `fold_concept_dups` and `merge_partition` |
 | 22.6 | 1 (after 22.2; parallel to 22.5) | entry points (`forget`, `memory forget`, `memory bulk-forget` with `--confirm`; `untrack`, `prune-noise --drop` manifest first) and the bug-107 paths (deleted/ignored-file purge with manifest; sync edits keep learned rows; `vacuum` orphan drop with manifest + event; `unprotect` source) | `forget` without `--confirm` writes nothing; bulk-forget restores bodies; edit keeps learned rows and a rebuild agrees; vacuum drops are logged and replayable |
 
 Task specs: `workflow/plans/plan-22-audited-removal-and-repair-tasks/`.
@@ -265,7 +274,7 @@ rel: depends-on -> [[task-21.1-context-usage-telemetry]]
 | d-29 | the rebuild is the ONE replay path: the uncalled incremental path (`apply_log_delta` → `_apply_one_event` → `_apply_event_body`, and `_replay_concept`) is deleted by 16.6 R1f, no plan-22 op gets a branch there, and bug-120 closes by removal | d9bu; r9 s-2 |
 | d-30 | every vacuum orphan drop, live or dead concept, is keyed on the orphan's OWN revivable appends from the one log scan (lookup key `(linkage, file, line, detail)`, distinct keys loaded), one drop per distinct `(partition field, c_kind, c, e_kind, e)`, keyed on the matched append's entity end too (the rebuild matches the full `row_key` plus `detail`), a legacy append's kind through `edge_records.resolve_c_kind` over the logged kinds; a copy whose tombstones a restore reversed is not collected, counted `orphan_drop_reattached` (d9cf, superseding d9cc (ii)'s `L > N` count guard, which superseded d9cb(b); r11 s-1, r12 s-1); `names_from_log` and `_row_op_c_kinds` are not on the vacuum path; an unresolved legacy append is counted `orphan_drop_unresolved`, an orphan key with no revivable append `orphan_drop_unlogged` (REWORDED in round 10: round 9's `names_from_log` naming could not name a purged concept; AMENDED in round 11) | r9 s-1, m-4; r10 s-1, m-1; d9bz; r11 s-1; d9cc; r12 s-1; d9cf |
 | d-31 | a live primitive's extra row op is the constant `LEGACY_PREFERRED_KIND` (not the legacy rule over live kinds) whenever the catalog kind differs and the live concept of that name IN THE ROW'S PARTITION holds 0 or 1 identical copies, carrying `keep = n`; `legacy_misresolved` only for `n >= 2`; the helper takes only rows with a live, named entity end | r9 m-1, m-2; r10 m-2 |
-| d-32 | every new `facts.log` op plans 16/22 add carries a STATED fold rule in 17.4's `FOLD_OPS` (`evidence_remove` reduces to `keep`; `evidence_orphan_drop` removes what d-28 selects; `evidence_repoint`, `learned_provenance`, `learned_provenance_move` count-neutral, named as ignored; `entity_rename` renames; on a merge, evidence moves while links and entities follow their own `unlink` / `link` / `tombstone` events, AMENDED in round 11), and 22.6 AC-6d proves the fold's counts equal the rebuild's, over 22.2 AC-3's and AC-7's logs and 22.6 AC-6e's too (AMENDED in round 12: AC-6d's "round 10's merge rule" mutation is deleted, vacuous under the set fold) | r10 s-3; r11 s-2; d9cc; r12 s-2; d9cf |
+| d-32 | every new `facts.log` op plans 16/22 add carries a STATED fold rule in `edge_records.FOLD_RULES` (16.6 r15 defines it with `BASE_FOLD_OPS`, and 17.4 imports both; repointed 2026-11-14 from 17.4's own `FOLD_OPS`) (`evidence_remove` reduces to `keep`; `evidence_orphan_drop` removes what d-28 selects; `evidence_repoint`, `learned_provenance`, `learned_provenance_move` count-neutral, named as ignored; `entity_rename` renames; on a merge, evidence moves while links and entities follow their own `unlink` / `link` / `tombstone` events, AMENDED in round 11), and 22.6 AC-6d proves the fold's counts equal the rebuild's, over 22.2 AC-3's and AC-7's logs and 22.6 AC-6e's too (AMENDED in round 12: AC-6d's "round 10's merge rule" mutation is deleted, vacuous under the set fold) | r10 s-3; r11 s-2; d9cc; r12 s-2; d9cf |
 | d-33 | revival is decided by REVERSAL, never by a count: every `tombstone` a manifest-writing purge logs carries `manifest: <apply_id>`, every `entity` event a restore logs for an `id_map` key carries `restored_from: <apply_id>` (both spelled and read only through `edge_records.reversal_fields` / `reversal_of`), and a tombstone of the same entity key that such an event follows is reversed; ONE function, `edge_records.revivable`, decides revival for the vacuum scan, the rebuild's row pass and 17.4's fold, and an AST test (22.6 AC-6f) holds the three callers to it | d9cf (supersedes d9cc (ii)); r12 s-1 |
 | d-34 | a restore never re-attaches an evidence row silently: for every row 22.2 R4's `id_map` re-attaches in place it logs one `restored_from`-tagged `evidence` append (built by `edge_records.edge_event`, with `c_kind`, both ends by name, `partition`), always, so a rebuild of a log compacted between the purge and the restore holds what live holds; the append RESTATES the purged incarnation's copy: ONE function, `edge_records.restated_copy`, absorbs it into that copy when still held (same `row_key` plus `detail`, appended before the `M` tombstone, every tombstone between reversed) and adds a copy otherwise, called by `revivable`'s three callers; idempotence by row key rejected (multiplicity, other incarnations); 22.2 AC-4e; a copy is absorbed at most once per manifest (r13 s-1) | d9cg (supersedes round 7's no-event rule for evidence); round 13 |
 | d-35 | no row type is re-attached silently: for every LINK 22.2 R4's `id_map` re-attaches in place the restore logs one `link` event (`edge_records.edge_event`, with `weight`, `c_kind`, `partition`; a set member, so count-neutral with no absorb rule), and for every 16.6 sidecar row of a re-attached evidence identity one `learned_provenance` event (`row_event`, after its restating append, same `ts`; a no-op on the sidecar's primary key when the original still resolves), because 16.6 R1d's dump skips dead-end sidecar rows (stated, counted `provenance_not_dumped`); at HEAD no purge leaves an in-place link (both columns deleted), so the link half covers rows another route puts there; 22.2 AC-4e link and sidecar legs | d9ch; round 14 |
@@ -313,6 +322,24 @@ earlier links still resolve.
    source, which attributes 217 of this repo's and 90 of the global store's learned-only
    protections to the learner; those are purgeable whole when they are class members, and 22.3
    prints its count before the live apply ([[task-22.3-bug-086-global-repair#r3]]).
+
+## Revision round 17 (2026-11-13) {#rev-round-17}
+
+Applies the 2026-11-13 plan review's rows for plan-22 ([[plan-review-2026-11-13#lead]] L2, L6,
+L22; contra-d CD-6, CD-9; spec-wave G21, [[plan-review-2026-11-13#spec-gaps]]). The plan stays
+APPROVED; the task-level changes are 22.1a round 9 and 22.4's deferral note. `src/` unchanged.
+
+| finding / decision | answered in |
+|---|---|
+| CD-9 (body "Drafting" vs frontmatter `approved`, POP "APPROVED d9cm") | [[#root]] status line |
+| L6 / CD-6 (bug-219's delete half is census input; widen 22.1a to a dead entity side) | [[task-22.1a-provenance-free-classes#rev-round-9]]: the widening is the audit's (`orphan-evidence`, report only), because 22.6 R5 already removes that side; [[#scope]] dangling bullet; [[#tasks]] 22.1a row |
+| ch-bsd `bsd-spec-t56-r1-fecda59` B1 (step 3b's own row op), M7 (the retired incremental replay path still named), M8 | [[task-22.6-removal-entry-points#rev-round-18]]; [[#principles]] and the 22.2 row of [[#tasks]] say "the one replay path (`rebuild_index_from_log`; d9bu)"; [[#scope]] table row; ADR-0004 [[refmatrix/adr-0004-unified-location-space-index#d-2026-11-13-t56]] |
+| lead rulings 2026-11-13 (L6 read as report-only, confirmed; the stale-evidence remover is option (a)) | [[task-22.6-removal-entry-points#r10]] (`vacuum` step 3b), [[#scope]] table row; 22.1a [[task-22.1a-provenance-free-classes#r1-stale-evidence]] |
+| L22 (22.4 and the two merge entry points become deferral rows under T6: "no host plan; plan-20 drafting", d9j) | [[deferral_registry#registry]] three rows; [[#tasks]] 22.4 row; [[task-22.4-merge-writes#rev-2026-11-13]] |
+| L2 (plan-22 after 16.6's Wave-1 slice and 17.1, the order of record) | no change: [[#dependencies]] already says so; the 2026-11-13 queue (item 9) now matches it |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
 
 ## Revision round 16 (2026-10-15) {#rev-round-16}
 
@@ -624,3 +651,11 @@ rel: derives-from -> [[plan-review-2026-10-14#t9]]
 | #t8 22 #b-8 clause | [[task-22.2-repair-then-remove#r8]] |
 | #t8-wave1 | [[#tasks]], [[#dependencies]] |
 | DL #b-1, #b-3, #b-4, #s-5, #s-7, #m-6 (decision-log review) | [[#scope]]; [[#dependencies]]; [[task-22.5-cross-store-move#root]]; [[#interface]]; [[task-22.2-repair-then-remove#r4]]; this table |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

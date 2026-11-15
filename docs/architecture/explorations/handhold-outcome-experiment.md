@@ -12,7 +12,11 @@ metadata:
 # Exploration: an outcome experiment for refmatrix's handholds {#root}
 
 **Date:** 2026-11-13
-**Status:** Proposed. Runs after the user's decision on task 21.5; nothing is built yet.
+**Status:** Planned as [[plan-28-handhold-outcome-experiment]] (approved 2026-11-14; spec wave
+G17), which supersedes this document's design where they differ. **Since L83 (the user,
+2026-11-14, Q14: "drop the live part"), plan-28 has ONE leg, the paired re-entry series; the
+session-level randomisation below is history.** Runs after the m1 confirm (L36)
+and 21.5 rev 4's re-measure (D-Q4, L35); nothing is built yet.
 **Motivation:** The user, 2026-11-13, after the 21.5 measurements: asked: does phase 1 debunk the premise?. The answer was no: the
 measurements refute one delivery mechanism (ambient push injection) and one measurement method
 (attribution by term or clique overlap), not the charter. The user: asked for the exploration. This
@@ -27,6 +31,7 @@ rel: derives-from -> [[measurement-task-21.5-usage-weight-2026-11-13]]
 rel: related-to -> [[task-21.5-tool-used-signal]]
 rel: related-to -> [[exploration-session-phased-context]]
 rel: related-to -> [[plan-25-cliquedb-field-report]]
+rel: specified-by -> [[plan-28-handhold-outcome-experiment]]
 
 ## The question, in one sentence {#question}
 
@@ -70,20 +75,32 @@ not the claim; it is one weak proxy for it. {#question-note}
 | B: no push | off | on | on |
 | C: bare | off | off | pull tools available, no primer, no hooks |
 
-A vs B tests ambient injection. B vs C tests the handholds the charter names. A full off-switch
-for push already exists in the hook layer's budget gates; arm C needs a hook-less settings
-profile, never hand-edited (generated, per [[constitution#no-workarounds]] and the hook rules).
+A vs B tests ambient injection. B vs C tests the handholds the charter names. ~~A full
+off-switch for push already exists in the hook layer's budget gates~~ (struck 2026-11-13, L20 /
+contra-b CB-15: no such switch exists, and 25.1 R8 makes the pack "never empty"; arm B's switch is
+specified on 10.2's arm table by [[task-28.1-session-arms-and-push-switch]]). Arm C needs a
+hook-less settings profile, never hand-edited (generated, per [[constitution#no-workarounds]] and
+the hook rules); it runs in paired runs ([[task-28.2-paired-reentry-runner]]), where, since L83,
+every cell runs.
 {#arms-note}
+
+**10.2's A/B is nested (L20, 2026-11-13).** Arm A splits into `A+dedupe` / `A+full` (10.2 R7). B
+has no dedupe factor. 10.2 is built before the experiment starts, and its A/B is read from this
+experiment, not run as a serial step ([[plan-28-handhold-outcome-experiment#arms]]). Since L83 it
+is read from the paired series (`A+dedupe` vs `A+full`, paired by task). L79's 3-day session
+period was removed with the live leg.
+{#arms-nested}
 
 ### Units and assignment {#assignment}
 
-- **Session-level randomisation for a fixed period** (user decision, Q4: randomised, not opt-in)
-  across real work sessions in refmatrix and cliquedb (Q5), arm drawn at SessionStart and
-  recorded in the session's telemetry, so the comparison is within the same projects and weeks.
-- **Paired re-entry tasks** as a second, controlled leg: a task that a prior session left
-  mid-flight (a real handoff), resumed after `/clear` under each arm by fresh agents on isolated
-  clones. Same task, same starting commit, different arm. This isolates continuity, which
-  session-level randomisation dilutes.
+- ~~**Session-level randomisation**~~ of real work sessions **is dropped (L83; the user,
+  2026-11-14, Q14: "drop the live part")**. The measured session rates (refmatrix ~0.5/day,
+  cliquedb ~0.1/day) left every live reading underpowered. The user's own sessions are never
+  assigned to an arm. (History: Q4 chose randomised over opt-in; L79 set a 3-day period.)
+- **Paired re-entry tasks, the ONLY leg since L83:** a task that a prior session left
+  mid-flight (a real handoff), resumed after `/clear` AND in a new session (Q3 folded fully, L20)
+  under each arm by fresh agents on isolated clones. Same task, same starting commit, different
+  arm and trigger. This isolates continuity, which session-level randomisation dilutes.
 
 ### Outcome measures (pre-registered before any run) {#outcomes}
 
@@ -101,8 +118,10 @@ Each is a proxy for the backtrack-to-rebuild tax, read from transcripts and tele
 5. **Cost of the handholds themselves:** injected bytes per prompt, hook latency, and the share of
    hook output budget consumed (plan-25's byte budget).
 
-Primary outcome: (1) on the paired re-entry leg. Secondary: (2)-(4) on the session leg; (5) is a
-baseline, not a gate ([[feedback_measurable_benefit_is_not_the_reason]]).
+Primary outcome: (1) on the paired re-entry leg, both triggers pooled (Q3, L20). Secondary:
+(2)-(4), read from the paired runs since L83; (5) is a baseline, not a gate
+([[feedback_measurable_benefit_is_not_the_reason]]). "Used" counts only R12 explicit uses plus
+`cited_in_answer` (L18, L27).
 
 ### Labels and blinding {#labels}
 
@@ -144,3 +163,24 @@ period; the projects are refmatrix and cliquedb.
 After the user's decision on 21.5 (ch-bsd over the four 21.5 measurements first). bug-216's fix
 should land before arm A's baseline is taken, so the graph the handholds draw from is the one
 authors wrote.
+
+**Revised 2026-11-13 (plan-review queue item 7; CB-12 resolved by the user's D-Q4):** m1 r2-lite
+confirm (L36) → 21.5 rev 4 with its R12 re-measure (D-Q4, L35) → this experiment, user-gated
+start, with 10.2 built before it (L20). The order is carried by
+[[plan-28-handhold-outcome-experiment#ordering]]. {#sequence-rev}
+
+## Approval of the L79/L80/L82 amendment (2026-11-14, d9co) {#approval-l79-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
+
+rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Approval of the L83/L86/L87/L89 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The paired-only design (L83, Q14 "drop the live part"), the arms contract with 10.2 and the paired minima (L86), the paired-run units and the non-inferiority rule for shrink (L87) and the first-match push verdict (L89) are approved by the lead on the user's pattern (d9co) after the L86+L87 confirm-lite MEH-only (0B/0S/3M), folded at `224aac7` per L89 with no further round | `workflow/bullshit/2026-11-14-0225-spec-t3c-r8-l87-1a219cb.md` (r6 and r7 in the same ledger, over `spec-wave-t3c` `1e89050..1a219cb`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3c-r8-l87-1a219cb]]

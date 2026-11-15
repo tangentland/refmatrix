@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 22.6: removal entry points and the bug-107 paths {#root}
@@ -17,8 +17,10 @@ metadata:
 > round 6, 2026-10-15, [[#rev-round-6]], round 7, 2026-10-15, [[#rev-round-7]], round 8,
 > 2026-10-15, [[#rev-round-8]], round 9, 2026-10-15, [[#rev-round-9]], round 10,
 > 2026-10-15, [[#rev-round-10]], round 11, 2026-10-15, [[#rev-round-11]], round 12,
-> 2026-10-15, [[#rev-round-12]], round 13, 2026-10-15, [[#rev-round-13]], and round 14,
-> 2026-10-15, [[#rev-round-14]])
+> 2026-10-15, [[#rev-round-12]], round 13, 2026-10-15, [[#rev-round-13]], round 14,
+> 2026-10-15, [[#rev-round-14]], round 17, 2026-11-13: R10, the stale-evidence cleanup,
+> [[#rev-round-17]], round 18, 2026-11-13: R10's own row op, [[#rev-round-18]], round 19:
+> r2's S1/M1/M2, [[#rev-round-19]], and round 20, 2026-11-14: r3's M7, [[#rev-round-20]])
 > Wave: 1, after 22.2 (it needs the engine, the intent-record form and restore); parallel to
 > 22.5. R4 (the sync edit fix) needs only 16.6's Wave-1 slice and may land first.
 > Depends on: 22.2 (engine, primitives, R4 intent-record form, `removal_restore`), 22.1a
@@ -490,6 +492,65 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    before its own purges ([[task-22.2-repair-then-remove#r2]]); for the purges of paths outside
    the engine, (b) is drained by the `dangling-evidence` class
    ([[task-22.1a-provenance-free-classes#r1-dangling]]), never silently.
+10. **R10 Stale evidence: derived cleanup with a manifest (round 17; lead ruling 2026-11-13 on
+    bug-219).** {#r10} A STALE evidence row is a `linkage_evidence` row whose entity and concept
+    are both alive under `LinkLiveness` ([[task-22.1a-provenance-free-classes#r1-dangling]]) and
+    which has no `entity_links` row with the same `(entity_id, linkage_id, concept_id)`: the edge
+    it annotated is gone, both ends remain (22.1a counts them,
+    [[task-22.1a-provenance-free-classes#r1-stale-evidence]]). It is derived cleanup under
+    [[refmatrix/adr-0004-unified-location-space-index#a14-removal-scope]] (decision-log line
+    [[refmatrix/adr-0004-unified-location-space-index#d-2026-11-13-t56]]): an ingest evidence row
+    is re-derived by re-ingesting its file, and a row whose edge is gone (a `memory link:` row
+    from bug-218 R1 included) annotates nothing, so removing it loses nothing.
+    - **Learned-grep rows are excluded.** A row whose `detail` starts `learned from grep` is
+      knowledge under plan-22 (its classes and 16.6's verifier judge it): R10 never selects it,
+      and counts it `stale_evidence_kept_learned`.
+    - **Where it runs:** `vacuum` step 3b, after R5's step 3, in the same `d._store_lock` hold.
+      Step 3 owns every row with a dead entity; step 3b selects only rows with both ends live,
+      so no row has two removers.
+    - **Manifest first:** R2's cleanup-manifest form, written streaming, of every selected row
+      (identity `(entity_id, linkage, concept_id, file, line, detail)`, both ends by name and
+      kind, weight), then the delete; a manifest write failure aborts step 3b before any row
+      changes (R8).
+    - **Its own row op, keyed on the row's OWN appends (round 18, B1).** {#r10-op} Step 3b logs
+      `evidence_stale_drop{linkage, c_kind, c, e_kind, e, file, line, detail, keep, manifest}`, built
+      by `edge_records.row_event` with `c_kind` and added to `edge_records.ROW_OPS` (d9bl: one
+      format, one resolver). It does NOT log 22.2 R3's `evidence_remove` and never calls
+      `remove_evidence`: that op's learned guard and its two `ingest_ok` callers stay as 22.2
+      states them ([[task-22.2-repair-then-remove#r2]]; 22.2 AC-3c's two-caller pin stands).
+      - **Keying, R5's rule ([[#r5-own-appends]]; d9bz, d9cc).** A drop names the key a rebuild
+        holds the copy under, read off the copy's own `evidence` appends, never the catalog's
+        current kinds. R5's ONE scan ([[#r5-scan]]) also loads step 3b's DISTINCT keys
+        `(linkage, file, line, detail)` and collects every `evidence` append matching one whose
+        end NAMES equal the stale row's live ends' names. Per stale key it logs ONE drop per
+        DISTINCT `(partition field, c_kind, c, e_kind, e)` among them. A legacy append (no
+        `c_kind`) takes `edge_records.resolve_c_kind(None, c, p, kinds_by_name)` over the kinds
+        LOGGED for `c` in `p`, as R5 and the rebuild's Pass 2b do, so a name logged as both
+        `doc` and `concept` (bug-216's misbound case) yields the kind the rebuild re-attaches
+        the copy to, not the catalog's.
+      - **A live holder is never dropped; keys are compared RESOLVED (round 19, r2 M2).** The
+        guard compares the drop's resolved key with the resolved keys of the live (non-stale)
+        rows' OWN appends, which R5's one scan already collects for the same
+        `(linkage, file, line, detail)`. The catalog's current kind is never used, because the
+        rebuild places a copy where its append resolves. `keep` is the number of live rows whose
+        appends resolve to the drop's key. The drop is logged with that `keep`, and when
+        `keep > 0` the key is counted `stale_drop_live_holder`. Replay then leaves `keep` copies
+        (below), so the rebuild holds exactly the live holders' copies at that key, the same as
+        the catalog: no extra copy and no lost one. A legacy append that resolves to None logs
+        nothing and is counted `stale_drop_unresolved`. A stale key with no append at all is
+        counted `stale_drop_unlogged`. In each case the catalog row is still deleted with its
+        manifest entry.
+      - **Replay.** In the rebuild's ONE timestamp-ordered row pass (`rebuild_index_from_log`;
+        d9av, d9bu), `evidence_stale_drop` at `T` deletes the copies appended at or before `T`
+        whose `edge_records.row_key` and `detail` match the op's, except `keep` of them (the
+        copies are identical by `row_key` and `detail`, so which ones stay does not matter; the
+        same count semantics as 22.2 R3's `keep`). No tombstone condition: both
+        ends were live when it was logged. A copy appended after `T` (the line re-ingested later)
+        is untouched. `edge_records.FOLD_RULES` (which 17.4 imports) gains the same fold rule, in
+        the same commit as the replay branch.
+    - **Counted and printed** by `vacuum`: `stale_evidence_dropped` split by `detail` prefix
+      (`rel:`, `memory link:`, other), `stale_evidence_kept_learned`, and the three
+      `stale_drop_*` counters.
 
 ## Acceptance criteria {#acceptance}
 
@@ -614,7 +675,8 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    fold, run over the facts logs of 22.2 AC-3d, 22.2 AC-3f (all three runs), AC-6b (base,
    swapped and partition variants), 22.2 AC-3's replay fixture (re-point,
    `learned_provenance_move`, rename), 22.2 AC-7's merge (r11 s-2), AC-6e (base and both
-   variants; r12 s-1) and 22.2 AC-4e (every variant; d9cg, round 13), reports `entities` / `links` / `evidence` counts EQUAL to
+   variants; r12 s-1), 22.2 AC-4e (every variant; d9cg, round 13) and AC-10 (base, legacy and
+   legacy-holder variants; round 19, r2 M1), reports `entities` / `links` / `evidence` counts EQUAL to
    `rebuild_index_from_log`'s on a copy of each. Mutations, each FAILS it: "the fold ignores
    `evidence_remove`" (AC-3d's evidence count differs); "the fold ignores
    `evidence_orphan_drop`" (AC-6b's evidence count is one higher); "the fold drops on
@@ -625,7 +687,9 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    `e: E` removes both `a(-1)` and `a0`, so its `evidence` count is one lower than the
    rebuild's; AC-6f fails too); "the fold ignores `restored_from` on an `evidence` append"
    (22.2 AC-4e's uncompacted control: the fold counts the restating append as a second copy,
-   2 against the rebuild's 1; AC-6f fails too). Round 10's merge rule (drop the old key, move its links) is
+   2 against the rebuild's 1; AC-6f fails too); "the fold ignores `evidence_stale_drop`" (AC-10's
+   evidence count is one higher than the rebuild's); "the fold ignores `keep`" (AC-10's
+   legacy-holder variant is one lower). Round 10's merge rule (drop the old key, move its links) is
    count-equivalent to the rule above under 17.4's set fold (the old key's `tombstone` and the
    rename's `link` events reach the same state), so it is not a mutation (r12 s-2). A fold that ignores the rename's `link` / `unlink` pair is not a
    distinct mutation: the fold applies those events generically, by edge key. The missing
@@ -765,6 +829,37 @@ The requirements cite by symbol; `purge_entity` and `_bulk_purge_ids` still dele
    d9cg, which requires that event and makes it count-neutral by absorption). The compaction
    case of this fixture is 22.2 AC-4e's concept-end variant.
 
+10. **Stale evidence (R10; round 17).** {#ac-10} A sandbox store holds four `linkage_evidence`
+    rows: (a) a `rel:` row whose ends are live and whose `entity_links` row was unlinked; (b) a
+    `learned from grep` row in the same state; (c) a `rel:` row with its edge present; (d) a row
+    whose entity is dead (R5's). After `vacuum`: (a) is in step 3b's manifest and gone, with one
+    `evidence_stale_drop` event (`keep: 0`) and no `evidence_remove` event; (b) remains, counted `stale_evidence_kept_learned: 1`; (c) is
+    untouched; (d) is in step 3's manifest only, never step 3b's. A rebuild from a copy's
+    `facts.log` holds (b) and (c) and neither (a) nor (d). **Legacy variant (round 18, B1):** row
+    (e) is a stale `rel:` row on the DOC `X`, whose only `evidence` append is LEGACY (no
+    `c_kind`), and `X` is logged as both `doc` and `concept` (`resolve_c_kind` resolves the
+    append to `concept`). Row (f) has (e)'s `linkage`, `file`, `line` and `detail` and the same
+    end NAMES, but its target entity is of another kind (so its `(entity_id, linkage_id,
+    concept_id)` differs from (e)'s), its own append carries `c_kind: doc`, and its edge is
+    present: (e) is stale while (f) is live. The scan collects both appends. The test asserts
+    the resulting keys: `concept X` dropped (`keep: 0`), and `doc X` with `keep: 1`, counted
+    `stale_drop_live_holder: 1`. `rebuild_index_from_log` on a copy holds no copy of (e) under
+    `doc X` or `concept X`, holds exactly one copy of (f), and so equals the catalog's evidence
+    rows at that `(linkage, file, line, detail)` (r2 M2: no extra copy). **Legacy live holder
+    (r2 M2; r3 M7):** a variant where (f)'s own append is LEGACY and resolves to `concept X`.
+    By [[#r10-op]]'s rule (one drop per DISTINCT `(partition field, c_kind, c, e_kind, e)`),
+    the scan then yields TWO drops at `concept X`, told apart by `e_kind`. The drop with (f)'s
+    `e_kind` (its target's kind) carries `keep: 1`, and the drop with (e)'s `e_kind` carries
+    `keep: 0`. The rebuild again holds exactly one copy, (f)'s. Mutations, each FAILS it: "drop the learned exclusion" ((b) removed);
+    "skip the `evidence_stale_drop` event" (the rebuild resurrects (a)); "key the drop on the
+    catalog's kind" (the rebuild resurrects (e) under `concept X`); "drop a live holder's key"
+    (the rebuild loses (f)); "guard on the catalog's key instead of the resolved one" (the
+    legacy-holder variant's rebuild loses (f)'s only copy); "log no drop for a guarded key"
+    (the rebuild holds one copy more than the catalog); "log `evidence_remove` instead" (replay's learned guard skips it and
+    (a) is resurrected; 22.2 AC-3c also fails); "select rows whose edge is present" ((c)
+    removed); "select rows with a dead end" ((d) in both manifests); "write the manifest after
+    the delete" (the manifest-failure injection leaves (a) deleted).
+
 ## Test strategy {#test-strategy}
 
 All tests run inside task 23.0's sandbox (d1a/d1b): redirected `$HOME`/global root/registry/
@@ -782,7 +877,7 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/verbs.py` | `memory_forget`, `memory_bulk_forget`: the same plan/confirm contract (MCP parity) |
 | `src/refmatrix/store.py` | `purge_path(..., keep_learned=)`; R3 manifest + row-level removal of learned rows; `vacuum` steps 2-3: the streaming cleanup manifest; the ONE read-only streaming `facts.log` scan over the DISTINCT orphan keys `(linkage, file, line, detail)` ([[#r5-scan]]); `evidence_orphan_drop` (with `c_kind`, through `row_event`) keyed on each orphan's OWN revivable appends, one per distinct `(partition field, c_kind, c, e_kind, e)` (the entity end from the append; d9cc, r11 s-1), an append whose every later tombstone a restore reversed is not collected, counted `orphan_drop_reattached` ([[#r5-reattach-guard]]; d9cf, r12 s-1: no `L > N` count guard, no catalog count read), a legacy append's kind through `edge_records.resolve_c_kind` over the scan's logged `kinds_by_name`; `orphan_drop_unresolved` and `orphan_drop_unlogged` counted and printed; no `names_from_log` or `_row_op_c_kinds` call ([[#r5-own-appends]]; r10 s-1, m-1; d9bz); `protect` events carry `source`; replay of `evidence_orphan_drop` in the one pass under the revivable predicate (a tombstone of the copy's entity key after the copy and at or before `T`, not reversed at or before `T`) through `edge_records.revivable` on per-key `edge_records.KeyTimeline`s, the scan calling the same function ([[#r5-revivable-fn]]; d9cf), `orphan_drop_skipped_live` per op ([[#r5-timeline]]; r10 s-2); the row pass and the scan resolve a `restored_from`-tagged `evidence` append through `edge_records.restated_copy` ([[#r5-restated-fn]]; d9cg) |
 | `src/refmatrix/edge_records.py` | `evidence_orphan_drop` added to 16.6's `ROW_OPS`; `KeyTimeline` (with `before(pos)`) and `revivable`, the ONE revivable predicate the vacuum scan, the rebuild and 17.4's fold call ([[#r5-revivable-fn]]; d9cf, r12 s-1), and `restated_copy`, the ONE absorb-or-add rule for a restore's restating `evidence` append, called by the same three ([[#r5-restated-fn]]; d9cg), reading `manifest` / `restored_from` through 22.2's `reversal_of` ([[task-22.2-repair-then-remove#r4-reversal]]) |
-| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `evidence_orphan_drop` added to `FOLD_OPS` with its fold rule (r10 s-3): it removes from the evidence count the copies matching its key (`row_key`: `linkage`, `c_kind`, `c`, `e_kind`, `e`, `file`, `line`; plus `detail` and its `partition` field; d9cc) appended at or before it for which `edge_records.revivable` holds at the op (a `tombstone` of the copy's entity key after the copy and at or before the op, not reversed by then; the fold keeps one `KeyTimeline` per entity key and never re-implements the test; d9cf, r12 s-1; AC-6f), folded in the same `(ts, log position)` order as the rebuild; a `restored_from`-tagged `evidence` append is folded through `edge_records.restated_copy` (absorbed or added; [[#r5-restated-fn]]; d9cg, round 13); AC-6d proves fold == rebuild. In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
+| `src/refmatrix/edge_records.py` `FOLD_RULES` (16.6 r15, on `spec-wave-t4`, defines it with `BASE_FOLD_OPS`; 17.4's `scripts/factslog-restore.py` imports both) | `evidence_orphan_drop` added to `FOLD_RULES` with its fold rule (r10 s-3): it removes from the evidence count the copies matching its key (`row_key`: `linkage`, `c_kind`, `c`, `e_kind`, `e`, `file`, `line`; plus `detail` and its `partition` field; d9cc) appended at or before it for which `edge_records.revivable` holds at the op (a `tombstone` of the copy's entity key after the copy and at or before the op, not reversed by then; the fold keeps one `KeyTimeline` per entity key and never re-implements the test; d9cf, r12 s-1; AC-6f), folded in the same `(ts, log position)` order as the rebuild; a `restored_from`-tagged `evidence` append is folded through `edge_records.restated_copy` (absorbed or added; [[#r5-restated-fn]]; d9cg, round 13); AC-6d proves fold == rebuild. In the same commit as the replay branch: 16.6's unit test asserts `rebuild_index_from_log`'s dispatch set equals `BASE_FOLD_OPS` ∪ `FOLD_RULES`' keys, and an op missing from 17.4's imported table fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
 | `src/refmatrix/sync.py` | non-GMD edit and existing-unsupported branches call `purge_path(..., keep_learned=True)`; the GMD branch calls `purge_legacy_relpath_doc` behind the narrowed guard (R4) |
 | `src/refmatrix/ingest.py` | the GMD legacy purge twin (`:1179-1180`): R4's GMD rule and guard |
 | `src/refmatrix/ingest_gmd.py` | `--as-memory`: the raw DELETE becomes `purge_entity` with an R2-form manifest for learned rows (R9) |
@@ -790,6 +885,10 @@ mutation is pre-registered and must turn its test RED.
 | `src/refmatrix/cli.py` (also) | `sync --invalidate` as a re-ingest (R4); `memory forget` without the `_store()` fallback (R1) |
 | `src/refmatrix/store.py` (also) | `entities.protect_source` column + `protect_source` keyword on the protect writers; `dump_catalog_to_log` emits `source` (R6); `purge_legacy_relpath_doc` (R4) |
 | `tests/test_removal_entry_points.py` (new) | AC-1..AC-9, AC-6b (base, swapped, today's-shape and partition variants), AC-6c (and its kind variant), AC-6d (fold == rebuild over 22.2 AC-3, AC-3d/3f, AC-7 and AC-6b's logs), AC-6d also over AC-6e's logs, AC-6e (base, variants 1, 2 and 3, compacted variant), AC-6f (the AST check of the one predicate and of `restated_copy`), AC-9b, AC-9c, and 22.2 AC-4e (purge, compact, restore, rebuild; built on `untrack`, so it lands here; d9cg) |
+| `src/refmatrix/store.py` (also, rounds 17-18) | `vacuum` step 3b (R10): streaming manifest of stale non-learned evidence rows, delete, `evidence_stale_drop` per distinct appended key through `edge_records.row_event` ([[#r10-op]]); R5's scan loads step 3b's keys too; the replay branch for `evidence_stale_drop` in `rebuild_index_from_log`'s row pass; the counters |
+| `src/refmatrix/edge_records.py` (also, round 18) | `evidence_stale_drop` added to `ROW_OPS` |
+| `src/refmatrix/edge_records.py` `FOLD_RULES` (also, rounds 18-20) | `evidence_stale_drop` in `FOLD_RULES` with its fold rule (the matching copies at or before the op except `keep`; no tombstone condition), same commit as the replay branch; AC-6d covers it |
+| `tests/test_removal_entry_points.py` (also, rounds 17-19) | AC-10 (base, legacy and legacy-holder variants); AC-6d over AC-10's logs |
 | `tests/test_learned_evidence.py` (16.6's) | 16.6 AC-11's test is REWRITTEN by this task (r4 m-5): from R3/R5 on, `purge_path` of a missing file and `vacuum` move the sidecar row into a manifest (AC-4, AC-6) instead of leaving it; AC-11 keeps only its `orphaned_provenance` count for paths this task does not route |
 
 ## Revision round 3 (2026-10-14) {#rev-round-3}
@@ -986,6 +1085,56 @@ unchanged. No requirement of this task changes: the rule is 22.2's restore.
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: depends-on -> [[task-22.2-repair-then-remove#r4-relink]]
 
+## Revision round 17 (2026-11-13) {#rev-round-17}
+
+Lead ruling of 2026-11-13 on the spec wave's open item 3 (bug-219's stale evidence rows: both
+ends live, the edge gone; [[plan-review-2026-11-13#lead]] L6): option (a), a 22.6-style
+derived-cleanup entry with a manifest, the `detail` split excluding learned-grep rows. Code
+claims re-read at `1cf3b9f`. `src/` unchanged.
+
+| finding / decision | answered in |
+|---|---|
+| stale-evidence remover (no class or task owned it; 22.1a round 9 counted it) | [[#r10]]; [[#ac-10]]; [[#files-to-modify]] two rows; [[task-22.1a-provenance-free-classes#rev-round-9]] last row now names this |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-22.1a-provenance-free-classes#r1-stale-evidence]]
+
+## Revision round 20 (2026-11-14) {#rev-round-20}
+
+Answers `bsd-spec-t56-r3` M7 (lead ruling L61).
+
+| finding | answered in |
+|---|---|
+| M7 (the legacy live-holder variant yields two drops at `concept X`; the AC did not say which keeps 1) | [[#ac-10]]: the drop with (f)'s `e_kind` carries `keep: 1`, the one with (e)'s carries `keep: 0`, from [[#r10-op]]'s per-distinct-key rule |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Revision round 19 (2026-11-13) {#rev-round-19}
+
+Answers `bsd-spec-t56-r2` S1, M1 and M2 under the lead's rulings.
+
+| finding / ruling | answered in |
+|---|---|
+| S1 (AC-10 still asserted `evidence_remove`; (f) not specified, so the live-holder mutation could not fail) | [[#ac-10]]: (a) logs `evidence_stale_drop` (`keep: 0`) and no `evidence_remove`; (f) spelled out (same `linkage`/`file`/`line`/`detail` and end names, target of another kind, `c_kind: doc`, edge present); the asserted keys |
+| M1 (no fold == rebuild check for the new op) | AC-6d now runs over AC-10's logs; mutations "the fold ignores `evidence_stale_drop`" and "the fold ignores `keep`"; [[#files-to-modify]] |
+| M2 (the guard compared catalog keys; the guarded case left an extra rebuilt copy) | [[#r10-op]]: the guard compares RESOLVED keys of the live rows' own appends; the drop carries `keep`, so the rebuild holds exactly the live holders' copies; AC-10 legacy-holder variant + two mutations |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Revision round 18 (2026-11-13) {#rev-round-18}
+
+Answers `bsd-spec-t56-r1-fecda59` B1 under the lead's ruling: R10 gets its own row op, mirroring
+R5's, with R5's own-appends keying; it does not reuse 22.2's `evidence_remove`, and 22.2 AC-3c
+stays two callers.
+
+| finding / ruling | answered in |
+|---|---|
+| B1 (R10 logged `evidence_remove` for ingest rows, which 22.2's learned guard and AC-3c pin forbid; and it keyed the drop on the catalog's kind) | [[#r10-op]]: `evidence_stale_drop`, own-appends keying, live-holder guard, replay rule; [[#ac-10]] legacy variant + four new mutations; [[#files-to-modify]] three rows |
+| M8 (ADR-0004 lists step 3b) | [[refmatrix/adr-0004-unified-location-space-index#d-2026-11-13-t56]] |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-22.2-repair-then-remove#r2]]
+
 ## Revision round 16 (2026-10-15) {#rev-round-16}
 
 Applies [[bsd-plan16-22-spec-diffcheck-r13-be965bb]] s-1 and s-2 under d9cj
@@ -999,3 +1148,11 @@ report's replacement text verbatim. `src/` unchanged. Later rows win.
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: derives-from -> [[bsd-plan16-22-spec-diffcheck-r13-be965bb]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

@@ -1,0 +1,55 @@
+# base sha 9a5a98a872431c03df199e894c8353f270f393d6 + uncommitted RED edits to existing test files; cwd /Volumes/littlebig/refmatrix-t01 layout=symlinked .venv-eval
+pyc-guard: recompiled 7 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+........F............................................................... [ 51%]
+...................................................................      [100%]
+=================================== FAILURES ===================================
+_____________ test_the_repo_scope_is_clean_under_the_stricter_gate _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1794/test_the_repo_scope_is_clean_u0')
+
+    def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
+        """The gate is only worth having if the tree it guards passes it. Runs the
+        real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
+        root = Path(__file__).resolve().parents[1]
+        # 23.0 R6: the script adds a curated memory dir to its scope (the ledger cites memory ids).
+        # The child gets a DECOY home holding a COPY of exactly that one memory dir -- never the real
+        # `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home was a documented way out
+        # of the sandbox).
+        # T0.1' R1.4 (bug-155's residual): WHICH dir is decided by the one resolver the script also
+        # calls, read in-process against the real home (a read-only existence check). This test kept
+        # its own copy of the slug + one-hop origin logic, and so did the script; in a clone of a
+        # clone both stopped at the first origin and every memory id dangled (1,235 dangling-doc,
+        # workflow/review-output/t0.1/base-ac1.5-case1-script-clone-of-clone.log). The decoy gets the
+        # chosen dir under the slug of the checkout that owns it; the child walks the same origins,
+        # finds nothing at the slugs before it, and resolves the same content.
+        import shutil
+>       gm = load_gmd_memdir()
+             ^^^^^^^^^^^^^^^^^
+
+tests/test_gmd_lint_requires_version.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_gmd_memdir():
+        """`scripts/gmd_memdir.py`, the ONE resolver of the memory dir `scripts/lint-gmd.sh` scans
+        (T0.1' R1.4, bug-155's residual). Loaded from the checkout under test by path, so the tests
+        exercise this tree's copy. Interface the tests pin:
+    
+        - `resolve_memdir(root, home) -> (Path | None, str)`: the chosen memory dir (or None) and the
+          one stderr line the script prints (falsy when the own-slug dir is the one used);
+        - `slug(path) -> str`: the `~/.claude/projects/<slug>` name of a checkout path, so no test
+          keeps a copy of the slug rule to build its decoy home (a third copy is what R1.4 removes).
+        """
+>       assert GMD_MEMDIR.is_file(), (
+            f"{GMD_MEMDIR} does not exist: there is no single memory-dir resolver; the slug and "
+            "origin logic still lives in two copies, scripts/lint-gmd.sh and this test file "
+            "(T0.1' R1.4)")
+E       AssertionError: /Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py does not exist: there is no single memory-dir resolver; the slug and origin logic still lives in two copies, scripts/lint-gmd.sh and this test file (T0.1' R1.4)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t01/scripts/gmd_memdir.py').is_file
+
+tests/test_gmd_lint_requires_version.py:128: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+1 failed, 138 passed in 21.10s
+EXIT=1

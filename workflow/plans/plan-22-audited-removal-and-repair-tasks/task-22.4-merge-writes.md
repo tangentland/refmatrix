@@ -8,6 +8,7 @@ metadata:
   status: blocked
   created: 2026-10-07
   revised: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 22.4: merge writes (blocked) {#root}
@@ -19,6 +20,9 @@ metadata:
 > **Hand-over (d9j, user 2026-10-14):** plan-22 may close with this task handed to the future
 > ADR-0004 helix implementation plan; when that plan is written it takes this spec as its merge
 > task, and plan-22's engine (22.2) is its only removal/repair path.
+> **Deferral (2026-11-13, L22):** no host plan exists and plan-20 is `drafting` (waiting on the
+> user's 20.1 labels), not dormant. This task and its two merge entry points are tracked as
+> deferral rows ([[#rev-2026-11-13]]), outside the 2026-11-13 goal.
 
 rel: part-of -> [[plan-22-audited-removal-and-repair]]
 rel: depends-on -> [[plan-20-concept-similarity-eval]]
@@ -83,3 +87,19 @@ Owner of ADR-0004 `#rule-no-delete`'s "merge" path. {#owner}
 
 rel: amends -> [[bsd-plan16-22-spec-rereview-r4-878647c]]
 rel: derives-from -> [[plan-review-2026-10-14#t11-approvals]]
+
+## Revision (2026-11-13 plan review) {#rev-2026-11-13}
+
+| finding / decision | answered in |
+|---|---|
+| L22 / Cc-8 / CD-9 (22.4 and the two merge entry points as deferral rows under T6; plan-20 is drafting, not dormant; d9j) | [[#root]] deferral note; three rows in [[deferral_registry#registry]]: this task, `fold_concept_dups` and `merge_partition`, each naming its graduation trigger (the helix plan written and taking this spec, after plan-20's rule) and THIS task as owner (ch-bsd `bsd-spec-t56-r1-fecda59` S5: the helix plan does not exist, so it cannot own a row); `fold_concept_dups` is classified `live-unrouted`, not `scaffold-no-caller` |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `blocked`; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

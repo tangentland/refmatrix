@@ -8,18 +8,22 @@ metadata:
   status: pending
   created: 2026-10-06
   revised: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 16.1: the argv-faithful learner {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (revision round 5, 2026-10-14, answering the r4 re-review
+> Status: Pending (revision round 7, 2026-11-13: M4, [[#rev-round-7]]; revision round 6,
+> 2026-11-13: R1b and R3 over bug-216's one predicate, L5, [[#rev-round-6]]; revision round 5, 2026-10-14, answering the r4 re-review
 > `bsd-plan16-22-spec-rereview-r4-878647c`, [[#rev-round-5]]; revision round 3, answering the r3 re-review
 > `bsd-plan16-22-spec-rereview-r3-6091648`, [[#rev-round-3]]; revision 6 answered spec review r5
 > `bsd-plan16-spec-review-r5-cd7c923`)
 > **Wave:** 2 (plan-16's chain 16.1 → 16.2 ∥ 16.3 → 16.5; [[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.6-learned-row-validation]]'s Wave-1 slice (the `learned_evidence` table and
-> `Store.add_learned_provenance`, which R10 writes through), and through it plan-23's 23.1 queue.
+> `Store.add_learned_provenance`, which R10 writes through), and through it plan-23's 23.1 queue;
+> bug-216 merged (its `should_ignore`, `INGEST_IGNORE_DIRS` and re-include rules are R1b's and R3's
+> predicate, round 6).
 > Tests run in plan-23 task 23.0's sandbox.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
@@ -35,6 +39,41 @@ rel: derives-from -> [[plan-review-2026-10-14#t9]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-32dde06]]
 rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: related-to -> [[task-16.5-explicit-grep-hands-off#r0]]
+rel: depends-on -> [[task-bug216-rule-docs-in-graph#r2]]
+rel: depends-on -> [[task-bug216-rule-docs-in-graph#r12]]
+
+## Revision round 7 (2026-11-13) {#rev-round-7}
+
+Answers `bsd-spec-t56-r1-fecda59` M4 (lead ruling: point the `base=` note at bug-216 AC-17, rev 6
+`4b4b96e`; `SUPPORTED_EXTS` lives in `watch.py`).
+
+| finding | answered in |
+|---|---|
+| M4 (the watcher's missing `base=` is now bug-216's AC-17; `SUPPORTED_EXTS` is not in `ingest.py`) | [[#r3-predicate]] `base` bullet and `SUPPORTED_EXTS` bullet; AC-5d; [[#files-to-modify]] |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Revision round 6 (2026-11-13) {#rev-round-6}
+
+Applies L5 of [[plan-review-2026-11-13#lead]] (contra-d CD-5; spec-wave G23,
+[[plan-review-2026-11-13#spec-gaps]]): bug-216 wins over 16.1. `corpus.is_relevant` delegates to
+`should_ignore`, and the hidden-dir prune keeps `!path` re-includes. Code claims re-read on the
+bug-216 branch (`task-bug216-rule-docs-in-graph` at `37d99a0`): `watch.is_relevant` already
+delegates to `ingest.should_ignore`, `watch.IGNORE_DIRS` is gone, and `INGEST_IGNORE_DIRS` holds
+`node_modules venv __pycache__ dist build`. Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| CD-5 / L5 (a second home for the ignore rule; `watch.IGNORE_DIRS` no longer exists) | [[#r3-predicate]]: `corpus.is_relevant` is the suffix gate plus `should_ignore`, with no list or hidden-dir rule of its own; `watch.is_relevant` re-exports it; AC-5d |
+| CD-5 / L5 (the prune drops re-included rule docs, so "faithful by construction" fails) | [[#r1b-reincludes]]: re-included files below a pruned dot-dir are searched when the caller's own run searched them; AC-5c rows and mutations; AC-6 variant |
+| the relative-path rule (AC-5's third bullet) under `should_ignore` | [[#r3-predicate]]: `base=project_root`, bug-216's existing keyword, gives the same reading; a relative `rel` passed as `p` would be resolved against the learner's cwd |
+| R1b's `IGNORE_DIRS` | [[#r1b]] flags: one `--exclude-dir` / `-g '!<d>/'` per `INGEST_IGNORE_DIRS` entry |
+
+**Q8 note** {#q8-b}: if Q8 b puts `workflow/` in the ignore spec, `should_ignore` excludes it and
+this task follows with no text change.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
 
 ## Revision round 5 (2026-10-14) {#rev-round-5}
 
@@ -235,8 +274,9 @@ and no narrower. {#why-lead}
   PAT a.py nosuch` exits 0 instead of 2. So a non-recursive re-run keeps grep's own exit status,
   and R1's exit-status rules and 16.2 AC-4b hold as written. rg always walks, so its `-g`
   exclusions are added on every rg re-run (rg ignores `-g` on a named file).
-  - grep: `--exclude-dir='.[A-Za-z0-9_-]*'`, plus one `--exclude-dir=<d>` per `IGNORE_DIRS` entry.
-    The `.?*` form was measured to exclude the `.` operand itself.
+  - grep: `--exclude-dir='.[A-Za-z0-9_-]*'`, plus one `--exclude-dir=<d>` per
+    `INGEST_IGNORE_DIRS` entry (round 6: bug-216 R12 made it the one list; `watch.IGNORE_DIRS` is
+    gone). The `.?*` form was measured to exclude the `.` operand itself.
   - grep: `--include=*<ext>` AND `--include=*<EXT>` (upper case) per corpus extension, ONLY when
     the caller passed no `--include`. BSD grep ORs repeated `--include`s, so adding ours would
     widen the caller's filter.
@@ -245,13 +285,34 @@ and no narrower. {#why-lead}
     globs cover all-caps suffixes. A mixed-case suffix (`.Py`) is still pruned from the re-run: a
     recall-only loss (never an over-teach, because R3 still filters), with 0 such files in this repo
     today; named in the summary.
-  - rg: `-g '!<d>/'` per `IGNORE_DIRS` entry. rg already skips hidden dirs unless the caller passed
-    `--hidden` or `-u`. When the caller did, `-g '!.*/'` is added, because R3 drops those hits
-    anyway.
+  - rg: `-g '!<d>/'` per `INGEST_IGNORE_DIRS` entry. rg already skips hidden dirs unless the
+    caller passed `--hidden` or `-u`. When the caller did, `-g '!.*/'` is added, because R3 drops
+    those hits anyway, except the re-included files below ([[#r1b-reincludes]]).
+  - **Re-included files below a pruned dot-dir (round 6, L5).** {#r1b-reincludes} The hidden-dir
+    prune would drop files bug-216 puts IN the corpus: a `!path` line in the store's
+    `.refmatrix_ignore` ([[task-bug216-rule-docs-in-graph#r1]]) and the built-in includes
+    `CLAUDE.md` / `.claude/PROJECT_PROFILE.md` ([[task-bug216-rule-docs-in-graph#r11]]). The
+    re-run therefore also searches `REINC`: every existing file below `project_root` that has a
+    hidden-directory segment below `project_root` and that R3's predicate includes (the spec's
+    re-include lines expanded as globs relative to `project_root`, plus `BUILTIN_INCLUDES`),
+    restricted to files the CALLER's own run searched:
+    - below one of the caller's recursive directory operands (the cwd for a path-less `-r`);
+    - not excluded by the caller's own `--include`, `--exclude`, `--exclude-dir`, rg `-g`/`--glob`
+      or `-t`/`-T` filters;
+    - for rg, only when the caller passed `--hidden` or `-u…`: without it the caller's rg never
+      searched a dot-dir, and teaching its lines would teach what the caller never saw.
+
+    L5's example mechanism is to append each `REINC` file as an explicit operand. It is probed on
+    BSD grep 2.6.0 and rg before RED (does `--exclude-dir` drop a named operand below a dot-dir;
+    does a caller `--include` filter a named operand; rg ignores `-g` on a named file, as above),
+    and the probe log is cited in the summary. Whatever mechanism is built, AC-5c is the
+    contract. The cost is bounded by `REINC`'s size (two files on this repo under bug-216 R4's
+    configuration), never by the size of the dot-dirs.
 - **The pruning flags go BEFORE the caller's tokens (#s-r3-1).** BSD grep lets the LAST matching
   `--include`/`--exclude` win (probed), so appended `--include`s re-included files the caller had
   `--exclude`d. Placed first, every caller filter overrides ours.
-- This is faithful by construction: it removes only files R3 would discard.
+- This is faithful by construction: it removes only files R3 would discard, and (round 6) adds
+  back only re-included files the caller's own run searched.
 - Probed on BSD 2.6.0 (spec review r3): `--exclude-dir='.[A-Za-z0-9_-]*'` excludes neither `.`,
   `..`, `./src` nor a path-less `-r`. The pruned whole-tree grep takes 0.08–0.13 s on this repo,
   against 103 s unpruned.
@@ -265,16 +326,33 @@ and no narrower. {#why-lead}
   is kept.
 
 **R3. Keep only CORPUS hits, before the cap (#b-1, #m-n6).**
-- A hit is taught only if the path is under `project_root` AND `corpus.is_relevant(rel,
-  project_root)` holds, where `rel` is the path RELATIVE to `project_root`.
-  `is_relevant` tests path parts, so testing the absolute path would reject every hit in a
-  project under a dot-dir or `build/` ancestor.
-- `src/refmatrix/corpus.py` (new) holds the watcher's predicate and everything it needs:
-  `is_relevant`, `IGNORE_DIRS`, `SUPPORTED_EXTS` (from `watch.py`), and `load_ignore_spec`,
-  `IgnoreSpec`, `IGNORE_FILE`, `CODE_EXTS`, `DOC_EXTS` (from `ingest.py`).
-  - Both modules re-export these, so there is ONE predicate.
-  - The predicate is the WATCHER's: it decides what is synced, and so what is ingested. The
-    differences from ingest's directory rules (`build/`, `dist/`, `.gmd`) are listed in the summary.
+- A hit is taught only if the path is under `project_root` AND `corpus.is_relevant(path,
+  project_root, base=project_root)` holds (round 6). `base` is bug-216's keyword on
+  `should_ignore`: the segment rules (`INGEST_IGNORE_DIRS`, hidden directories) read only the
+  parts BELOW `base`, while the spec and its re-includes match the path relative to `root`. That is
+  this rule's relative-path reading: testing every absolute part would reject every hit in a
+  project under a dot-dir or `build/` ancestor, and passing a RELATIVE path as `p` would resolve it
+  against the learner's cwd.
+- **One predicate (round 6, L5).** {#r3-predicate} `src/refmatrix/corpus.py` (new) holds
+  `is_relevant(p, root=None, *, base=None)`: the suffix gate (`SUPPORTED_EXTS`) and
+  `not ingest.should_ignore(p, root, base=base)`, nothing else
+  ([[task-bug216-rule-docs-in-graph#r2]]: `should_ignore` is THE predicate; R12: one list).
+  - `corpus.py` keeps no ignore list, no glob and no hidden-directory test of its own. It
+    DEFINES `SUPPORTED_EXTS = CODE_EXTS | DOC_EXTS` (moved from `watch.py:26`, where bug-216's
+    branch keeps it; `ingest.py` has no such name) and re-exports `CODE_EXTS`, `DOC_EXTS`,
+    `INGEST_IGNORE_DIRS`, `BUILTIN_INCLUDES`, `load_ignore_spec`, `IgnoreSpec` and `IGNORE_FILE`
+    from `ingest.py`, so R1b's flags and `REINC` read the same names. `corpus` imports only
+    `ingest`; `watch` imports `corpus` (never the reverse, `watch` imports `Store`).
+  - `watch.is_relevant` and `watch.SUPPORTED_EXTS` are re-exports of `corpus`'s (bug-216's branch
+    already made `is_relevant` a delegate), so the watcher, ingest and the learner call one
+    function.
+  - **`base` is the same for every caller (round 7, M4).** bug-216 rev 6 (`4b4b96e`, its
+    AC-17 and `#r2-base`, on the `task-bug216-rule-docs-in-graph` branch; cited as text until that
+    spec revision merges, bug-217's lesson) makes the watcher and sync pass
+    `base=` too, so the segment rules apply only below the project root on every route, and a
+    project below a hidden or `build/` ancestor syncs, ingests and teaches alike (AC-5's third
+    bullet). Round 6's "the one difference is `base`" is withdrawn; this task depends on that
+    AC.
 - Drops are counted as `out_of_corpus`.
 
 **R4. Bounded on every leg, the store included (#b-5, #s-n7, #s-n8).**
@@ -413,9 +491,32 @@ for a case-sensitive `rmx grep`.
    - A 300-hit `.venv-eval/` file walked FIRST does not displace `src/a.py`.
    - A project whose ancestor directory is named `build` still teaches (the relative-path rule).
    - **5b.** A path-less `grep -rn PAT` re-run with R1b's pruning teaches `src/C.PY` (m-r4-8).
+   - **5c (round 6, L5) Re-includes.** A fixture project whose `.refmatrix/.refmatrix_ignore`
+     holds `.notes` and `!.notes/keep.md`, with PAT in `.claude/PROJECT_PROFILE.md` (GMD
+     frontmatter: bug-216's built-in include), `.claude/agents/x.md`, `.notes/keep.md`,
+     `.notes/drop.md` and `src/a.py`. Each taught set equals the caller's own argv run unmodified
+     on the fixture, corpus-filtered (AC-1(b)'s rule):
+     - (i) `grep -rn PAT .` teaches the profile, `.notes/keep.md` and `src/a.py`;
+     - (ii) `grep -rn PAT src` teaches only `src/a.py`;
+     - (iii) `grep -rn --include='*.py' PAT .` teaches only `src/a.py`;
+     - (iv) `grep -rn --exclude-dir=.claude PAT .` teaches `.notes/keep.md` and `src/a.py`;
+     - (v) `rg -n PAT` teaches only `src/a.py`; `rg -n --hidden PAT` teaches the three of (i).
+     Mutations, each FAILS it: "no re-include handling" ((i) and (v)-hidden lose two files);
+     "append every re-include unconditionally" ((ii) and (v)-plain over-teach whatever the
+     probe finds; (iii) and (iv) too when grep does not filter a named operand);
+     "`corpus.is_relevant` keeps a hidden-dir rule of its own" ((i) loses the profile at R3 even
+     though the re-run found it).
+   - **5d (round 6) One predicate, mechanical.** A check asserts `corpus.is_relevant` calls
+     `ingest.should_ignore`, `corpus.py` holds no `startswith(".")` test, no set or tuple literal
+     of directory names and no `fnmatch`, `watch.is_relevant is corpus.is_relevant`, and
+     `watch.SUPPORTED_EXTS is corpus.SUPPORTED_EXTS` (round 7).
+     Mutation: re-implement the hidden-dir rule in `corpus.py`: FAILS.
 6. **Pruned re-run (#s-n1).** A 20,000-file out-of-corpus tree placed ahead of `src/` gives a
    path-less `grep -rn PAT` that teaches `src/` hits within the timeout. Without R1b the same
-   fixture times out, and that is the RED.
+   fixture times out, and that is the RED. **Round 6 variant:** with AC-5c's re-include config
+   and the 20,000 files placed under `.claude/big/`, the same call still teaches within the
+   timeout and teaches the profile. Mutation "drop the hidden-dir prune whenever a re-include
+   exists": the variant times out.
 7. **Identity (#s-7, #s-n8).** The taught entity id equals the id `ingest` gave the same file, for
    a `.py`, a `.sh` and a `.tsx` file. Checked with the cwd reached directly and through a
    symlinked directory. A symlinked FILE and its target are two entities.
@@ -464,7 +565,8 @@ for a case-sensitive `rmx grep`.
 | File | Change |
 |------|--------|
 | `src/refmatrix/grep_learn.py` (new) | detach, slot dirs, tables, classify, pruning flags, re-run, stream-parse, corpus filter, enqueue, log, stamp pruning |
-| `src/refmatrix/corpus.py` (new) | predicate + `IGNORE_DIRS`, `SUPPORTED_EXTS`, `load_ignore_spec`, `IgnoreSpec`, `IGNORE_FILE`, `CODE_EXTS`, `DOC_EXTS`, moved from `watch.py` and `ingest.py` (both re-export) |
+| `src/refmatrix/corpus.py` (new) | round 6: `is_relevant(p, root=None, *, base=None)` = suffix gate + `ingest.should_ignore`; round 7: defines `SUPPORTED_EXTS`; re-exports `CODE_EXTS`, `DOC_EXTS`, `INGEST_IGNORE_DIRS`, `BUILTIN_INCLUDES`, `load_ignore_spec`, `IgnoreSpec`, `IGNORE_FILE` from `ingest.py`; no list or rule of its own |
+| `src/refmatrix/watch.py` | round 6: `is_relevant` re-exported from `corpus` (bug-216 already delegates); round 7: `SUPPORTED_EXTS` re-exported from `corpus` |
 | `src/refmatrix/daemon.py` | `_learn_grep_hits`: all-present short-circuit (evidence + sidecar) before any write; missing-only evidence; `kind` from `CODE_EXTS`; R10 sidecar write replacing 16.6 R1b's legacy call; the context backstop's provenance |
 | `src/refmatrix/cli.py` | hidden `grep-learn`; `learn status` counts |
 | `workflow/bug_registry.md` | `cli.log` has no rotation (R9). bug-102 is closed by 16.5 R8 when 16.5 R4 deletes `_GREP_VALUE_FLAGS`; this table is its fix |
@@ -498,6 +600,10 @@ for a case-sensitive `rmx grep`.
 | remove a space-form long value row (`--include G`) | AC-1c (`unknown-flag:--include`) |
 | add the pruning flags on a non-recursive re-run | AC-4b (`no-hits`, exit 1, instead of `tool-error`) |
 | give AC-4's missing operand no corpus extension and always add `--include`s | AC-4 (exit 0, not 2) |
+| no re-include handling in the pruned re-run (round 6) | AC-5c (i), (v)-hidden |
+| append every re-include unconditionally (round 6) | AC-5c (ii), (v)-plain |
+| a hidden-dir rule kept in `corpus.py` (round 6) | AC-5c (i), AC-5d |
+| drop the hidden-dir prune whenever a re-include exists (round 6) | AC-6 round-6 variant |
 | omit the sidecar write in `_learn_grep_hits` | AC-15 (rows without provenance) |
 | hash the `file:line:` prefix instead of the TEXT | AC-15 (`line_hash` mismatch) |
 | record the pruning flags in `match_argv` | AC-15 (`match_argv=[]`) |
@@ -508,3 +614,11 @@ for a case-sensitive `rmx grep`.
 | ignore `GREP_OPTIONS` | AC-15 (`-i` hits taught under recorded rules without `-i`) |
 
 {#tests}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

@@ -65,5 +65,7 @@ implementer first violates this contract.
   stores under a short `mkdtemp()` root) — none skipped.
 - RED is proven by reading the E lines at base (the intended reason), and mutations are recorded
   ([[orchestration#task]]).
+- A recorded run (RED, GREEN, suite) quotes the pytest exit code and the collected count; counts
+  without the exit code are not a record (T0.1' R1.5, the second half of bug-215's fix column).
 - A criterion whose stated signature/return type diverges from the live implementation is stale
   ground truth — reconcile before writing the test.

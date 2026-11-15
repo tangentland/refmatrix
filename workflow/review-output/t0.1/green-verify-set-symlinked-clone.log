@@ -1,0 +1,87 @@
+sha=de4531c clone=/Volumes/littlebig/refmatrix-t01-green (symlinked .venv-eval)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t01-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 267 items
+
+tests/test_brief_real_daemon.py ...F                                     [  1%]
+tests/test_grep_argv_order_e2e.py .....                                  [  3%]
+tests/test_grep_count_rows_e2e.py .......                                [  5%]
+tests/test_grep_evidence_verified.py .....................               [ 13%]
+tests/test_grep_learning_replay.py .....                                 [ 15%]
+tests/test_grep_no_flag_bundle.py ....                                   [ 17%]
+tests/test_repo_hooks_in_sync.py s                                       [ 17%]
+tests/test_t0_skip_gate.py ................                              [ 23%]
+tests/test_lint_gmd_memdir_fallback.py ..................                [ 30%]
+tests/test_gmd_lint_requires_version.py .........                        [ 33%]
+tests/test_sandbox_checkout_guard.py .                                   [ 34%]
+tests/test_sandbox_child_extensions.py ..........                        [ 37%]
+tests/test_sandbox_children.py ...                                       [ 38%]
+tests/test_sandbox_hardening.py ..............................           [ 50%]
+tests/test_sandbox_proof_script.py .....                                 [ 52%]
+tests/test_sandbox_redirect.py ........                                  [ 55%]
+tests/test_sandbox_refusal.py .....                                      [ 56%]
+tests/test_bug179_anchor_parity.py ..................................... [ 70%]
+........                                                                 [ 73%]
+tests/test_bug216_rev4.py ........................                       [ 82%]
+tests/test_bug216_scope_parity.py ........                               [ 85%]
+tests/test_bug230_repo_scope_gate.py .........................           [ 95%]
+tests/test_plan7_10_remedy_r4.py .............                           [100%]
+
+=================================== FAILURES ===================================
+____________ test_an_unknown_class_fails_loudly_through_the_daemon _____________
+
+daemon_root = (PosixPath('/tmp/bd.9es9v8cu/.refmatrix'), {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...})
+
+    def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
+        """#m-17: the MCP schema has no enum, so this path is reachable."""
+        root, env = daemon_root
+        # click.Choice already rejects this, so exit!=0 proved nothing about the
+        # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+        from refmatrix import brief as brief_mod
+        from refmatrix.store import Store
+        s = Store(root)
+>       with s.with_partition(root.parent.name):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_brief_real_daemon.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/refmatrix/store.py:2362: in _scope
+    self._connect()
+src/refmatrix/store.py:1587: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/bd.9es9v8cu/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/bd.9es9v8cu/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/bd.9es9v8cu/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 64297) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+=========================== short test summary info ============================
+FAILED tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:22: hooks belong to another checkout of this commit
+============= 1 failed, 265 passed, 1 skipped in 111.01s (0:01:51) =============
+pytest exit=1

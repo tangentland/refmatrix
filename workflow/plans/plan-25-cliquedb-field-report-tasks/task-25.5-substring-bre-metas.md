@@ -5,18 +5,19 @@ title: "Task 25.5: an unescaped BRE metacharacter (. * [ ^ $) is read the way gr
 tags: [task, plan-25, bug-174, grep, bre, drop-in, substring, measurement]
 metadata:
   node_type: task
-  status: pending
+  status: superseded
   plan: plan-25-cliquedb-field-report
   created: 2026-11-09
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 25.5: substring mode and unescaped BRE metas {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
-> Status: Pending (spec drafted 2026-11-09 in revision round 2, [[#rev-round-2]]; first reviewed
-> in r3 and revised in [[#rev-round-3]]; r4-lite confirm folded in [[#rev-round-4]]; plan approval
-> pending the user's bug-181 decision)
+> Status: **SUPERSEDED 2026-11-13 by task 16.5; not built** ([[#closed]]). Former status: Pending
+> (spec drafted 2026-11-09 in revision round 2, [[#rev-round-2]]; first reviewed in r3 and revised
+> in [[#rev-round-3]]; r4-lite confirm folded in [[#rev-round-4]]; plan approval pending the
+> user's bug-181 decision). The text below is kept as history.
 > Bug: bug-174 (logged 2026-11-09 from [[bsd-plan25-spec-r1-2f4a1df#m8]])
 > Depends on: [[task-25.4-grep-bre-translation]] merged (it builds `grep_dialect.bre_to_py`,
 > `UntranslatableBRE`, the `grep_first` delegation and the grouped `-w` / `-x` this task reuses).
@@ -31,6 +32,38 @@ rel: amends -> [[task-25.4-grep-bre-translation#acceptance]]
 rel: depends-on -> [[project_grep_surface_defect_family]]
 rel: depends-on -> [[feedback_go_no_go_ranges_not_predrop]]
 rel: related-to -> [[plan-14-grep-learning-measurement]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#decisions]]
+rel: related-to -> [[task-16.5-explicit-grep-hands-off#rev-round-7]]
+
+## Closed: superseded by task 16.5 (2026-11-13) {#closed}
+
+The 2026-11-13 plan review closed this task (D-Q7, L32, L42; contra-d CD-1). On the drop-in legs
+(R2) task 16.5 execs the platform grep, whose BRE reads `. * [ ] ^ $` natively
+([[task-16.5-explicit-grep-hands-off#r3]]); on the path-less index leg the lead decided, on the
+user's pattern, to keep 16.5 R3's floor for BRE metas (L32), so R4's GO branch is not taken and no
+translator is built. bug-174 closes when 16.5 lands, as a 16.5 R8 row (`fixed by task-16.5
+R1-R3`). {#closed-body}
+
+**The R4 re-measure (L42), re-hosted on 16.4 (lead ruling, 2026-11-13).** L42 keeps R4's
+re-measure as the trigger that would reopen the path-less question as a user decision. As written,
+its data were the `bre_meta_literal: true` `query.log` rows that only R4's NO-GO branch writes,
+and that branch is not built; after 16.5 a path-less BRE call goes to the floor and writes no such
+row. The trigger now lives in task 16.4's report: [[task-16.4-measurement#r4-reopen]] fires once,
+on the first run with N ≥ 30 taught concepts carrying a BRE meta or the first run on or after
+2026-12-31, whichever comes first, and the question goes to the user with the measured
+`bre_concept_share`. The `plan-of-plans` queue line that pointed at R4 is the lead's to repoint.
+{#closed-remeasure}
+
+rel: related-to -> [[task-16.4-measurement#r4-reopen]]
+
+**Premise correction (L24, CD-8).** This spec's urgency rested on "`rmx grep` … which agents and
+the PreToolUse rewrite reach directly". Since 2026-10-15 that is false: `~/.refmatrix/learn.off`
+exists, and with learning off the rewrite does not happen at all
+(`~/.claude/hooks/rmxgrep-rewrite.py`; [[plan-16-invisible-grep-shim#today-learn-off]]). Only
+explicit `rmx grep` calls reach it, and after plan-16 the rewrite feeds the passive shim, never
+`rmx grep` ([[plan-16-invisible-grep-shim#d-1]]). {#closed-premise}
+
 
 ## Why {#why}
 
@@ -243,3 +276,11 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 |---|---|---|
 | N3 join "by pid and ts", but `query.log` grep rows have no `pid` | key = `ts` second + pattern in argv + `root` from `cwd` + path-less argv; ambiguous matches excluded and counted as a third class; measured 20 unique / 15 ambiguous / 0 unmatched on the current 35 path-less rows | [[#r3]], [[#files]] |
 | N4 re-measure trigger not an event, count has no reader | M ≥ 30 or 2026-12-31, queued in [[plan-of-plans#queue-bug174-remeasure]] and the plan-25 row; `rmx telemetry --agent-usage` prints the `bre_meta_literal` count (`telemetry.py:1799`); AC-4 asserts the line; f4 updated | [[#r4]], AC-4, [[#files]], f4 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `superseded`; the closing records above are approved |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

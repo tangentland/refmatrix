@@ -7,13 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-14
 ---
 
 # Task 19.3: subject-tiered, value-ranked MEMORY.md {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13: built by 26.7**
+> ([[#rev-2026-11-13]]); not built here.
 > Depends on: 19.2 (scores) only; 23.0 (sandbox). It is built and tested on a STATIC catalog copy
 > carrying compiled subjects, so it does not wait for 19.4 (19 #s-6). No dependency on plan-22's
 > protection source (d8b).
@@ -207,3 +208,20 @@ rel: derives-from -> [[bsd-plan19-21-spec-rereview-r8-23ad703]]
 | finding / decision | answered at |
 |---|---|
 | round-8 #nm-7 (`daemon.py:5180-5193` / `:5191`, `:2693`, `:1782`, `:2451-2460`) | R5 (`:5265-5278` / `:5276`, `:2741`, `:1816`, `:2499-2508`) |
+
+## Revision (2026-11-13, the plan review: L14) {#rev-2026-11-13}
+
+Record only. [[task-26.7-memory-index-by-subject]] builds this task (its `#plan-19-delta`), with
+19.3 R7's virtual scores until 19.2 lands. 19.2 is frozen (D-Q3), so the real score source stays
+open. 26.7 amends R6: hooks are keyed by memory id. {#rev-2026-11-13-body}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: related-to -> [[task-26.7-memory-index-by-subject]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

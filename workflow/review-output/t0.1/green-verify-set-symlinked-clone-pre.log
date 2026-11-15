@@ -1,0 +1,331 @@
+pyc-guard: recompiled 6 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01-green/src/refmatrix as checked-hash (bug-037)
+...F..........................................s......................... [ 26%]
+........................................................................ [ 53%]
+...........................................FFFF....................F.... [ 80%]
+............FF.......................F.............                      [100%]
+=================================== FAILURES ===================================
+____________ test_an_unknown_class_fails_loudly_through_the_daemon _____________
+
+daemon_root = (PosixPath('/tmp/bd.67e3wzqg/.refmatrix'), {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...})
+
+    def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
+        """#m-17: the MCP schema has no enum, so this path is reachable."""
+        root, env = daemon_root
+        # click.Choice already rejects this, so exit!=0 proved nothing about the
+        # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+        from refmatrix import brief as brief_mod
+        from refmatrix.store import Store
+        s = Store(root)
+>       with s.with_partition(root.parent.name):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_brief_real_daemon.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/refmatrix/store.py:2362: in _scope
+    self._connect()
+src/refmatrix/store.py:1587: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/bd.67e3wzqg/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/bd.67e3wzqg/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/bd.67e3wzqg/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 62427) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+__________ test_ac10_the_gate_catches_a_divergence_lint_alone_misses ___________
+
+gate_roots = [PosixPath('/tmp/b179xbmjfveh')]
+
+    def test_ac10_the_gate_catches_a_divergence_lint_alone_misses(gate_roots):
+        """The planted lint is the base linter: it registers rel:-line ids and
+        raises no error for them, so ONLY the parity step can fail this ROOT."""
+        root = _gate_root(lint_src=_base_lint_src(), doc=PLANTED)
+        gate_roots.append(root)
+        lint_alone = subprocess.run(
+            [sys.executable, str(root / "tools/gmd/lint.py"), "docs/planted.md"],
+            capture_output=True, text=True, cwd=root)
+        assert lint_alone.returncode == 0, "precondition: the planted lint must pass alone"
+        code, out = _run_gate(root)
+        assert code != 0, f"gate passed a lint/ingest divergence:\n{out}"
+>       assert "planted.md" in out and "on-rel" in out, out
+E       AssertionError: Traceback (most recent call last):
+E           File "/tmp/b179xbmjfveh/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/tmp/b179xbmjfveh/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tmp/b179xbmjfveh/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/tmp/b179xbmjfveh/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b179xbmjfveh (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /tmp/b179xbmjfveh/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E       assert ('planted.md' in 'Traceback (most recent call last):\n  File "/tmp/b179xbmjfveh/scripts/gmd_memdir.py", line 193, in <module>\n    sys....): .git\nlint-gmd: memory-dir resolver /tmp/b179xbmjfveh/scripts/gmd_memdir.py failed (exit 1); the gate did not run\n')
+
+tests/test_bug179_anchor_parity.py:612: AssertionError
+______ test_ac10_the_gate_passes_when_the_planted_id_is_on_its_paragraph _______
+
+gate_roots = [PosixPath('/tmp/b179sq_fzqq3')]
+
+    def test_ac10_the_gate_passes_when_the_planted_id_is_on_its_paragraph(gate_roots):
+        root = _gate_root(lint_src=_base_lint_src(), doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        code, out = _run_gate(root)
+>       assert code == 0, out
+E       AssertionError: Traceback (most recent call last):
+E           File "/tmp/b179sq_fzqq3/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/tmp/b179sq_fzqq3/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tmp/b179sq_fzqq3/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/tmp/b179sq_fzqq3/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b179sq_fzqq3 (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /tmp/b179sq_fzqq3/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E       assert 2 == 0
+
+tests/test_bug179_anchor_parity.py:619: AssertionError
+_______________ test_ac10_the_unmutated_gate_passes_a_clean_root _______________
+
+gate_roots = [PosixPath('/tmp/b179y12kuohu')]
+
+    def test_ac10_the_unmutated_gate_passes_a_clean_root(gate_roots):
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        code, out = _run_gate(root)
+>       assert code == 0, out
+E       AssertionError: Traceback (most recent call last):
+E           File "/tmp/b179y12kuohu/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/tmp/b179y12kuohu/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tmp/b179y12kuohu/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/tmp/b179y12kuohu/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b179y12kuohu (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /tmp/b179y12kuohu/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E       assert 2 == 0
+
+tests/test_bug179_anchor_parity.py:626: AssertionError
+______________ test_ac10_lint_and_parity_both_run_when_both_fail _______________
+
+gate_roots = [PosixPath('/tmp/b179w859ifou')]
+
+    def test_ac10_lint_and_parity_both_run_when_both_fail(gate_roots):
+        """One failure must not hide the other (R5: both are always run)."""
+        doc = PLANTED + "\nSee [[#nowhere]].\n"
+        root = _gate_root(lint_src=_base_lint_src(), doc=doc)
+        gate_roots.append(root)
+        code, out = _run_gate(root)
+        assert code != 0, out
+>       assert "dangling-local" in out, f"lint output missing:\n{out}"
+E       AssertionError: lint output missing:
+E         Traceback (most recent call last):
+E           File "/tmp/b179w859ifou/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/tmp/b179w859ifou/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tmp/b179w859ifou/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/tmp/b179w859ifou/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b179w859ifou (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /tmp/b179w859ifou/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E       assert 'dangling-local' in 'Traceback (most recent call last):\n  File "/tmp/b179w859ifou/scripts/gmd_memdir.py", line 193, in <module>\n    sys....): .git\nlint-gmd: memory-dir resolver /tmp/b179w859ifou/scripts/gmd_memdir.py failed (exit 1); the gate did not run\n'
+
+tests/test_bug179_anchor_parity.py:636: AssertionError
+___________ test_ac12_the_gate_passes_a_checkout_with_no_ignore_file ___________
+
+    def test_ac12_the_gate_passes_a_checkout_with_no_ignore_file():
+        """R11's point: a fresh clone / CI has no `.refmatrix/` at all, and the R3 gate must pass.
+        Green at HEAD (no scope check yet) — a guard against R3 landing without R11."""
+        import subprocess
+        root = _gate_root()
+        try:
+            assert not (root / ".refmatrix").exists()
+            env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+            p = subprocess.run(["bash", str(root / "scripts" / "lint-gmd.sh")], capture_output=True,
+                               text=True, cwd=root, env=env, timeout=600)
+>           assert p.returncode == 0, p.stdout + p.stderr
+E           AssertionError: Traceback (most recent call last):
+E               File "/private/tmp/b216gw7nokqqh/scripts/gmd_memdir.py", line 193, in <module>
+E                 sys.exit(main(sys.argv[1:]))
+E                          ~~~~^^^^^^^^^^^^^^
+E               File "/private/tmp/b216gw7nokqqh/scripts/gmd_memdir.py", line 184, in main
+E                 chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                                ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               File "/private/tmp/b216gw7nokqqh/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E                 url = _origin_url(current)
+E               File "/private/tmp/b216gw7nokqqh/scripts/gmd_memdir.py", line 97, in _origin_url
+E                 raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                    f"(exit {r.returncode}): {r.stderr.strip()}")
+E             RuntimeError: git remote get-url origin failed in /private/tmp/b216gw7nokqqh (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E             lint-gmd: memory-dir resolver /private/tmp/b216gw7nokqqh/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E             
+E           assert 2 == 0
+E            +  where 2 = CompletedProcess(args=['bash', '/private/tmp/b216gw7nokqqh/scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='Tra...int-gmd: memory-dir resolver /private/tmp/b216gw7nokqqh/scripts/gmd_memdir.py failed (exit 1); the gate did not run\n').returncode
+
+tests/test_bug216_rev4.py:316: AssertionError
+________________ test_ac4_lint_gmd_sh_fails_on_the_excluded_doc ________________
+
+roots = [PosixPath('/private/tmp/b216pgxgur_5t')]
+
+    def test_ac4_lint_gmd_sh_fails_on_the_excluded_doc(roots):
+        """The scope check runs where the anchor check runs: `scripts/lint-gmd.sh` exits non-zero
+        on the must-fail fixture although lint itself is clean."""
+        root = _root()
+        roots.append(root)
+        _small_repo(root)
+        _spec(root, ["*-private.md", "!.claude/PROJECT_PROFILE.md"])
+        prefix = Path(sys.prefix)
+        assert (prefix / "bin" / "python").exists(), f"no venv python under {prefix}"
+        (root / ".venv-eval").symlink_to(prefix)
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        lint_alone = subprocess.run([sys.executable, str(root / "tools/gmd/lint.py"), *SCOPE],
+                                    capture_output=True, text=True, cwd=root, env=env)
+        assert lint_alone.returncode == 0, f"precondition: lint passes alone\n{lint_alone.stdout}"
+        p = subprocess.run(["bash", str(root / "scripts" / "lint-gmd.sh")], capture_output=True,
+                           text=True, cwd=root, env=env, timeout=600)
+        out = p.stdout + p.stderr
+        assert p.returncode != 0, out
+>       assert "docs/notes-private.md" in out, out
+E       AssertionError: Traceback (most recent call last):
+E           File "/private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b216pgxgur_5t (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E       assert 'docs/notes-private.md' in 'Traceback (most recent call last):\n  File "/private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py", line 193, in <module>\...lint-gmd: memory-dir resolver /private/tmp/b216pgxgur_5t/scripts/gmd_memdir.py failed (exit 1); the gate did not run\n'
+
+tests/test_bug216_scope_parity.py:262: AssertionError
+_____ test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict _____
+
+gate_roots = [PosixPath('/tmp/b179rikcal9q')]
+
+    def test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict(gate_roots):
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        (root / "scripts" / "check-gmd-parity.py").write_text(
+            "import os, sys\nsys.stderr.write('killed like the sandbox kills a child\\n')\n"
+            "os._exit(86)\n")
+        r = _run_gate(root)
+        out = r.stdout + r.stderr
+>       assert r.returncode == 86, f"precondition: the gate exits 86 when its parity step does:\n{out}"
+E       AssertionError: precondition: the gate exits 86 when its parity step does:
+E         Traceback (most recent call last):
+E           File "/tmp/b179rikcal9q/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/tmp/b179rikcal9q/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tmp/b179rikcal9q/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/tmp/b179rikcal9q/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b179rikcal9q (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /tmp/b179rikcal9q/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E       assert 2 == 86
+E        +  where 2 = CompletedProcess(args=['bash', '/tmp/b179rikcal9q/scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='Traceback (m...: .git\nlint-gmd: memory-dir resolver /tmp/b179rikcal9q/scripts/gmd_memdir.py failed (exit 1); the gate did not run\n').returncode
+
+tests/test_bug230_repo_scope_gate.py:82: AssertionError
+___ test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox ____
+
+gate_roots = [PosixPath('/tmp/b179xu3a6g53'), PosixPath('/private/tmp/b230sicxtq84b')]
+
+    def test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox(gate_roots):
+        """The bug-230 repro: lint-gmd.sh on a checkout that HAS `.refmatrix/.refmatrix_ignore`,
+        under a deny set naming that checkout's store (its own sandbox root). The parity step reads
+        the spec; the gate must run to exit 0. Pre-fix the child is killed with exit 86."""
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        (root / ".refmatrix").mkdir()
+        (root / IGNORE_REL).write_text(R4_SPEC)
+        sb = Path(tempfile.mkdtemp(prefix="b230s", dir="/tmp")).resolve()
+        gate_roots.append(sb)
+        session = rmx_sandbox._STATE["deny"]
+        deny = dict(session,
+                    paths=sorted(set(session["paths"]) | rmx_sandbox._variants(root / ".refmatrix")),
+                    read_allow=sorted(rmx_sandbox._variants(root / IGNORE_REL)),
+                    touches=str(sb / "touches.log"))
+        (sb / rmx_sandbox.DENY_FILE).write_text(json.dumps(deny, indent=1))
+        env = dict(os.environ, RMX_SANDBOX_ROOT=str(sb))
+        r = _run_gate(root, env)
+        out = r.stdout + r.stderr
+        touches = (sb / "touches.log").read_text() if (sb / "touches.log").exists() else ""
+>       assert r.returncode == 0, (
+            f"lint-gmd.sh exited {r.returncode} on a checkout with .refmatrix/.refmatrix_ignore "
+            f"under the sandbox:\n{out[-2000:]}\ntouches: {touches[-800:]}")
+E       AssertionError: lint-gmd.sh exited 2 on a checkout with .refmatrix/.refmatrix_ignore under the sandbox:
+E         Traceback (most recent call last):
+E           File "/tmp/b179xu3a6g53/scripts/gmd_memdir.py", line 193, in <module>
+E             sys.exit(main(sys.argv[1:]))
+E                      ~~~~^^^^^^^^^^^^^^
+E           File "/tmp/b179xu3a6g53/scripts/gmd_memdir.py", line 184, in main
+E             chosen, note = resolve_memdir(Path(argv[0]), Path(argv[1]))
+E                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tmp/b179xu3a6g53/scripts/gmd_memdir.py", line 152, in resolve_memdir
+E             url = _origin_url(current)
+E           File "/tmp/b179xu3a6g53/scripts/gmd_memdir.py", line 97, in _origin_url
+E             raise RuntimeError(f"git remote get-url origin failed in {checkout} "
+E                                f"(exit {r.returncode}): {r.stderr.strip()}")
+E         RuntimeError: git remote get-url origin failed in /private/tmp/b179xu3a6g53 (exit 128): fatal: not a git repository (or any of the parent directories): .git
+E         lint-gmd: memory-dir resolver /tmp/b179xu3a6g53/scripts/gmd_memdir.py failed (exit 1); the gate did not run
+E         
+E         touches: 
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['bash', '/tmp/b179xu3a6g53/scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='Traceback (m...: .git\nlint-gmd: memory-dir resolver /tmp/b179xu3a6g53/scripts/gmd_memdir.py failed (exit 1); the gate did not run\n').returncode
+
+tests/test_bug230_repo_scope_gate.py:202: AssertionError
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:22: hooks belong to another checkout of this commit
+9 failed, 257 passed, 1 skipped in 69.27s (0:01:09)

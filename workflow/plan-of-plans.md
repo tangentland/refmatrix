@@ -9,7 +9,7 @@ metadata:
 
 # Plan of Plans — sequenced execution order + status {#root}
 
-**Single source of truth for what to implement next, and the status of every plan.** All plans
+**Single source of truth for what to implement next, and the status of every plan** (the user, 2026-11-15: "the source of truth must be the POP"; every state change updates this file in the same commit, [[orchestration#pop-truth]]). All plans
 live in `workflow/plans/` and never move — a plan's lifecycle is tracked by the `status` field in
 its GMD frontmatter (`metadata.status`), mirrored in the table below. `@ch-gap-master` keeps this
 current.
@@ -30,7 +30,7 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 7 | plan-7-longmemeval | in-progress (symbolic reported; bug-030 fixed 2026-09-16, dense/fused re-run is W2-c; deferrals W4-a) | yes (4) | `workflow/plans/plan-7-longmemeval.md` | — |
 | 8 | plan-8-derived-coverage-notes | in-progress (ch-bsd r5 may NOT flip; remedy W2-b, deferrals W3-b) | yes (4) | `workflow/plans/plan-8-derived-coverage-notes.md` | plan 7 (measures it) |
 | 9 | plan-9-context-cost-telemetry | in-progress (built; ch-bsd r5 at e0b7df6: paperwork only — 9.2/9.3 summaries written in W1-d; r5 #m-11 and #s-5 ride 21.1's close-out = W1-c) | yes (3) | `workflow/plans/plan-9-context-cost-telemetry.md` | — |
-| 10 | plan-10-injection-dedup | in-progress (negative result; ch-bsd r5 #b-1: measured on `--format json`, which omits the composite; re-measure after 19.6 = W3-a, plan-10 closes into 19.6) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument) |
+| 10 | plan-10-injection-dedup | drafting (reopened 2026-11-13: 48.0% of delivered items already held; names-only dedupe of the per-prompt payloads, Q13; no non-human gate, Q10; 10.4 predicate + curator silent, Q9; 10.3 builds 19.6 R8a's marker; 10.5 replay PASSED, read-back probe to run; 19.6 block diff not used for these payloads, Q11; ch-bsd spec review next. 10.1's 2026-09 negative result is history) | yes (3) | `workflow/plans/plan-10-injection-dedup.md` | plan 9 (its instrument); 25.1 (10.2, 10.4); 19.6 R8a ([[task-19.6-phased-context-and-topic-cache#split-plan-10]]) |
 | 11 | plan-11-helix-phase2-versioned-graph | superseded (user 2026-10-07: "helix's design supersedes plan 11's" — ADR-0004's helix half replaces the prolly store; never built) |
 | 12 | plan-12-open-bug-remediation | completed (@ch-bsd CLEAN; deployed 0.72.0; bug-025 acceptance 20/20 reranked) | yes (6) | `workflow/plans/plan-12-open-bug-remediation.md` | — |
 | 13 | plan-13-cross-partition-sweep | DORMANT (C9 re-scope corrected by d4b 2026-10-14: 21.4's gold set is code+docs only; the sessions question waits for its own gold set) | yes | `workflow/plans/plan-13-cross-partition-sweep.md` | 21.4 |
@@ -48,9 +48,9 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 25 | plan-25-cliquedb-field-report | approved 2026-11-09 (bug-181 folded into 25.1 R10 by the user, revision round 5; not started) (plan + task specs 25.1-25.4 written 2026-11-08, session 8d9a255f: bug-164 recall byte budget (builds 19.1 + 19.5 R1), bug-165 thin-prompt gate, bug-166 STM ref admission (builds 19.0 R1) + helix once-per-session, bug-167 BRE translation; task 25.5 added 2026-11-09 in revision round 2 (`cba1745`): bug-174 substring-mode `a.b` read as BRE via 25.4's translator, follows 25.4; spec reviews r1+r2+r3 folded (r3 DIRTY 0B/4S/9M: bug-id collision renumbered bug-173 → bug-180 in `9bcf464`, MCP silent cwd fallback logged as bug-181); r4-lite confirm (DIRTY 0B/1S/5M) folded in revision round 4; bug-181 folded into 25.1 per [[#goal-2026-11-09-scope]] in revision round 5, then `approved` ([[plan-25-cliquedb-field-report#approval]]); bug-174 re-measure queued at M ≥ 30 or 2026-12-31; after plan-26/27 and before plan-24 per [[#override-2026-11-08b]]) | yes (5) | `workflow/plans/plan-25-cliquedb-field-report.md` | 3.7 merged; plan-26 (26.4, 26.7); plan-27; 23.0; 21.1 |
 | 26 | plan-26-memory-organisation | approved 2026-11-09 (ch-bsd r1-r5 folded; r6-lite confirm at `d396317` MEH-only 0B/0S/2M, n1/n2 folded into 26.2; earlier: r1 `8af766a`, r2 `696c3cb`; 10 task specs 26.0-26.9; 26.6/26.7 BUILD approved 19.4/19.3; 19.4 AC-4 recall leg → 25.1) | yes (10) | `workflow/plans/plan-26-memory-organisation.md` | 3.7 |
 | 27 | plan-27-memory-fleet-rollout | approved 2026-11-09 (ch-bsd r1-r5 folded; r6-lite confirm at `d396317` MEH-only; r1 `8af766a`, r2 `696c3cb`; 8 task specs 27.0-27.6 + 27.2a) | yes (8) | `workflow/plans/plan-27-memory-fleet-rollout.md` | plan-26 deployed |
-| 29 | plan-29-code-quality | approved 2026-11-14 (ch-bsd spec r1-r3 folded; r4 confirm-lite MEH-only 0B/0S/4M GO, MEHs folded before merge per L111; spec branches merged `33d85bb` + `d227cc6`; 6 task specs 29.1-29.6 on Fable 5.2; rulings L104-L111; plan-29 D23 open for the user at 29.5's store event; runs FIRST after 0.83.1, L104) | yes (6) | `workflow/plans/plan-29-code-quality.md` | 0.83.1 deployed (bug-241 + bug-240); `.venv-eval` duckdb 1.5.3 before any 29.4/29.5 baseline (L106) |
+| 29 | plan-29-code-quality | in-progress 2026-11-15: 29.4 runs first (L118, Q29 a). Stage 0 (R0 durations) merged `3b930e4` (L121: 8 shards, tier (d) breach → R3). T0 spec merged `0e55687` (L122, L123). **Stage 1 T0.1' merged at this commit** (skip gate exact-reason + one memory-dir resolver; bug-155 residual, bug-254, bug-215 R1.5; ch-bsd r1 MEH-only GO, 12 mutations killed, L124, L126). Next: stage 2 (T0.2 + 29.4b ∥ T0.3 + 29.4c ∥ T0.8; bug-253 helper), then stage 3 T0.4 → T0.5, stage 4 29.4a, stage 5 T0.7 + 29.4d; then 29.1 → 29.5 → 29.2 ∥ 29.3 → 29.6. Ships in the next minor release with its full-suite gate | yes (6) | `workflow/plans/plan-29-code-quality.md` | 0.83.1 deployed (bug-241 + bug-240); `.venv-eval` duckdb 1.5.3 before any 29.4/29.5 baseline (L106) |
 | 30 | plan-30-materialisation | approved 2026-11-15 (L117; D1-D3 user-decided) 2026-11-14 (plan + 6 task specs 30.0-30.5 written by ch-architect on Fable 5.2 from the bitmap-materialisation measurement report; ch-bsd spec r1 at `a169c17` DIRTY 0B/3S/5M NO-GO, all eight folded in revision round 2 per ruling L116; confirm-lite r2 at `5914997` MEH-only 0B/0S/4M GO, its four folded; plan-30 D12 accepted; fixes bug-243; plan-30 D1-D3 open for the user; three releases, release B re-derives the `pagerank` pass fleet-wide) | yes (6), in review | `workflow/plans/plan-30-materialisation.md` | plan-29 released (module split, census kit, derive digest); 30.4 also 23.0's sandbox |
-| 31 | plan-31-pre-mod-loose-ends | drafting 2026-11-15 (admitted under the pre-mod freeze, [[#freeze]]; five items — 31.1 bug-244, 31.2 bug-107 + bug-247, 31.3 bug-242 guard, 31.4 retire standing lint warnings, 31.5 scan-prompt per-block measure + cut (Q27 = b); specs written when it reaches the head of the queue) |
+| 31 | plan-31-pre-mod-loose-ends | drafting 2026-11-15 (admitted under the pre-mod freeze, [[#freeze]]); six items — 31.1 bug-244 + bug-255 (lint/ingest parity on frontmatter types), 31.2 bug-107 + bug-247 (+ 22.6 R4), 31.3 bug-242 guard, 31.4 retire standing lint warnings, 31.5 scan-prompt per-block measure + cut (Q27 = b), 31.6 bug-251 one wikilink resolver (Q30 = a); task specs in flight on Fable: 31.5/31.3/31.4 (branch `spec-plan31a`, decisions D1-D10), 31.1/31.6/31.2 (branch `spec-plan31b`, D11+); then ch-bsd spec review; approved on bsd MEH-only GO (L125) | specs in flight | `workflow/plans/plan-31-pre-mod-loose-ends.md` | 31.1 after 0.84.0; 31.2 after 29.5 |
 
 ## Pre-mod freeze (user, 2026-11-15) {#freeze}
 
@@ -67,6 +67,8 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
    T2 memory organisation (26.5 → 26.7 → 26.6 R3 → 26.8 → 26.9 ∥ plan-27); bug-218; 25.2, 25.3,
    10.3; T4 bounded writes (bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5); T3 injection dedup (10.5 → 10.6
    → 10.4 → 10.2; 21.2 → 21.4), after 31.5; 21.5 phase M; 22.6 R4 folded into 31.2.
+
+**Specs on master (2026-11-15).** The approved frozen spec branches are merged as they stand (the user: "although they are stale, they should be actionable still"): `spec-wave-t2` (26.5-26.9, plan-27) `3be7676`, `spec-wave-t4` (bug-185, plan-17/18 records) `327703d`, `spec-wave-t3b` (plan-10 10.2-10.6) `e2010bd`, `spec-wave-t3c` (21.5, plan-28 record) `b1be2e4`, `spec-wave-t56` (bug-218, 22.6 with R4; plan-16 / rest of plan-22 as post-mod records) `0a40f4b`, `spec-wave-t3a` (plan-19, 25.1b record, 25.2/25.3 inputs) at this commit. Stale citations are reconciled by RED and GREEN at build time (TDD_GOVERNANCE: stale ground truth is reconciled before the test). Every freeze item except 30.6 and plan-31 now has an approved spec on master.
 
 **The rule.** Nothing else is admitted before the mod except a bug that breaks something live
 (a crash, data loss, a wrong answer on the production path, a wedge). Everything else — new ideas,
@@ -178,6 +180,58 @@ drafting → approved → in-progress → completed
 
 Set the stage by editing `metadata.status` in the plan's frontmatter **and** the Status column
 above. Files stay put; links never rot.
+
+## Ledgers: rulings, decisions, questions {#ledgers}
+
+The user, 2026-11-15: "any L, D, or Q must be placed in the POP before being amended to a plan".
+A ruling (`L<n>`), a plan decision (`plan-N D<n>`) or a question to the user (`Q<n>`) is entered
+here first, with its state; only then is it amended into a plan, spec or task file, which cites
+the row here ([[orchestration#pop-truth]]). A row that is resolved and applied is appended to
+[[pop-finished]] and then deleted here, in one commit. Earlier rows: L1-L124 in
+[[plan-review-2026-11-13#lead]], Q1-Q22 in [[open-questions]], Q23 on in [[pop-finished]].
+
+### Rulings (L125 on) {#rulings}
+
+| L | date | source | ruling | applied to |
+|---|---|---|---|---|
+| L125 | 2026-11-15 | the user: "for p31, once bsd is happy they are approved" | plan-31's plan and task specs are **approved on ch-bsd MEH-only GO**, the MEHs folded before the merge; no separate user approval. Their `plan-31 D<n>` decisions are entered in [[#decisions]] first and take the architect's recommendation, **except** a decision that changes a store on disk (31.2's fate for the existing orphaned learned rows; any fleet re-derive or reingest 31.6 needs), which goes to the user ([[orchestration#release]] step 4) | plan-31 row; `plan-31-pre-mod-loose-ends.md` at merge |
+| L126 | 2026-11-15 | ch-bsd r1 of T0.1' (MEH-only 5, GO; [[bsd-t01-r1-fff91a8]]) | GO; mutations M1.1-M1.11 recorded by the reviewer. MEH-1: RED adds a chained-clone case run with `GIT_DIR`/`GIT_WORK_TREE` exported at an unrelated repo, plus M1.12 'drop the scrub' (must turn it red). MEH-2: the three gate-root helpers copy the resolver unconditionally, stale comment dropped. MEH-3: the mock-registry row states the current clone behaviour. MEH-4: the summary keeps `task-t0.1-skip-gate-memdir.md`; `#t0-1-files` is amended. MEH-5: anchored to stage 2, no fold now. The lead checks the fold (small MEHs, [[orchestration#task]] step 5); then merge `--no-ff` | T0.1' branch; `task-t0-suite-trust-sweep#t0-1-files` |
+{#rulings-table}
+
+### Plan decisions {#decisions}
+
+Open decisions first; a decided row keeps its answer and the plan anchor it was amended into.
+Allocated ranges in flight: plan-31 D1-D10 (specs 31.5 / 31.3 / 31.4, branch `spec-plan31a`),
+plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet.
+
+| D | plan | decision | options (recommendation first) | state | amended into |
+|---|---|---|---|---|---|
+| plan-31 D14 | plan-31 (31.2) | What happens to the existing orphaned learned evidence rows (28,164 on the refmatrix store, 26%, `measurement-learned-rows-cli-store-2026-11-14`)? | — | **decided by the user, 2026-11-15:** "migrate them if they can be resolved, if not, delete them". Resolvable rows are re-attached to their current entity; the rest are deleted through the audited removal path with a manifest (never a silent drop; `feedback_decay_never_loses_knowledge`). The store write is the lead's, announced and backed up | to be amended into `task-31.2` by arch-31b |
+{#decisions-table}
+
+### Questions to the user {#questions}
+
+Next id: **Q37**. Open: Q32, Q33, Q34, Q35, Q36. Each reply that asks anything ends with the ids still open.
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q32 | 2026-11-15 | plan-10's dedupe (10.5, 10.6, 10.4, 10.2) requires 25.1b merged; 25.1b is post-mod (contradiction in the freeze, freeze-triage-3) | (a) the four go post-mod with 25.1b; 10.3 and 31.5 stay pre-mod; (b) admit 25.1b; (c) re-spec plan-10 without 25.1b | open |
+| Q33 | 2026-11-15 | What triggers the plan-24 re-plan, now that plan-28 (the charter experiment D-Q5 waited on) is post-mod? Plan-24 is `drafting`, last bsd round DIRTY (2026-10-20), nine of ten specs stale | (a) the freeze's last step is a plan-24 freshness revision to approval, with 31.5, 21.5 phase M and 30.6 as its evidence; (b) run plan-28 before the mod | open |
+| Q34 | 2026-11-15 | 24.6 R4 calls `stm.tool_event_fields`, which is in 21.5's frozen build phase and not in `src/`: who builds it? | (a) the plan-24 revision moves the builder into 24.6; (b) un-freeze 21.5 R1 alone, pre-mod | open |
+| Q35 | 2026-11-15 | G22 (operational content out of the skew) and G30 (the `denotes` fold evaluation): the first triage's table kept them 'with step 10', its summary and the freeze line omit them | (a) admit both: G22 after plan-30 release C, G30 folded into 30.6; (b) both post-mod; (c) G30 only | open |
+| Q36 | 2026-11-15 | The rest of the un-triaged list (U3-U17 in freeze-triage-3): admit G32 and the cross-partition `rel:` probe (25.2, 21.5 phase M and 26.5 wait on them); post-mod 19.0 rest, 19.2, 19.5/19.6 frozen parts, 21.3, 21.5 phase B, 21.6, 21.7, plan-20, plan-7 W4-a rows, linked-readonly-store, `legs_ms`; bug-182, bug-224, bug-167/174 follow their post-mod hosts | (a) apply as proposed; (b) item by item | open |
+{#questions-table}
+
+## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
+
+The user, 2026-11-15: "the source of truth must be the POP" and "archive any other doc that acts
+as an alternate source of truth". In flight: the POP rewrite (corrected `#plans` rows; one
+`#queue` to mod start), compiled by arch-triage from the agreed decisions. When it lands, in the
+same commit: `plan-review-2026-10-07`, `plan-review-2026-10-14`, [[plan-review-2026-11-13]], the
+three `plan-review-fable-2026-11-14-*` reviews, both freeze triages, triage-3 and
+`workflow-practice-review-2026-11-15` move to `workflow/archive/` with an ARCHIVED banner and
+`status: archived` (ids unchanged, so links hold); `handoff.md`'s queue becomes a pointer to
+`#queue`. [[open-questions]] (Q1-Q22, history) is archived with them. Rulings, decisions and questions live in [[#ledgers]]. {#pending-bookkeeping-body}
 
 ## Notes {#notes}
 
