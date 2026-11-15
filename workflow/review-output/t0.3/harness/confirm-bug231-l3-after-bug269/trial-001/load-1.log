@@ -1,0 +1,6 @@
+pyc-guard: recompiled 1 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t03-green/src/refmatrix as checked-hash (bug-037)
+.......................
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Volumes/littlebig/refmatrix-t03-green/tests/task21_1_support.py:379: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+23 passed in 39.68s

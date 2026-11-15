@@ -1,0 +1,39 @@
+{
+ "status": "counted",
+ "wall_s": 42.253079875023104,
+ "outcomes": {
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 3.607136416947469
+  }
+ }
+}
+trial 1: {"status": "counted", "wall_s": 42.253079875023104, "wall_clock_s": 42.253692865371704, "cap_hit": false, "loadavg_start": [6.62255859375, 7.5087890625, 7.27197265625], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "pass"}}
+{
+ "level": 3,
+ "mode": "fix",
+ "targets": [
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "voids": 0,
+ "noisy": false,
+ "trials_run": 1,
+ "rows": {
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "sequence": [
+    "pass"
+   ],
+   "band": {
+    "held": null,
+    "passes": 1
+   },
+   "e_lines": [],
+   "walls_s": [
+    42.3
+   ],
+   "wall_clocks_s": [
+    42.3
+   ]
+  }
+ }
+}

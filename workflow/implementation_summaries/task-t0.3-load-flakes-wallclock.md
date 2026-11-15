@@ -62,7 +62,7 @@ bug-269) are merged at `401e351`.
 | Finding | At `c4b44d0` | Now |
 |---|---|---|
 | bug-130, `test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs` indexes `rewrite_bytes_all` with no `failed` check | holds (`:323`) | `failed == 0` asserted first, message carries every failed store's error (R3.1) |
-| bug-190, `test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning` `wall < 0.3 and spawns == 0` | holds (`:282`) | wall dropped (class C), spawn stacks in the message (R3.4) |
+| bug-190, `test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning` `wall < 0.3 and spawns == 0` | holds (`:282`) | wall dropped (class C); L164 fix: no spawn on the caller's thread, client retired, every spawn's thread and stack in the message |
 | bug-091, `test_watch.py::test_run_watcher_picks_up_new_file` one `wait(timeout=3.0)` after a 0.2 s sleep | holds (`:89-93`) | 30 s module deadline, re-written while polling (R3.3, L141) |
 | bug-228, `test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row` | holds (`:195`) | see [[#bug228]] |
 | bug-231, `test_plan4_remedy.py:129` `< 8.0` on `grace=10.0` | holds | class A under `HANG_GUARD_S` |
@@ -81,7 +81,7 @@ trial is one trial at the reproducer's level, per the lead's brief (not the 45-p
 | Row | Base, L3 / L5 / L8 (failures) | Band | E lines at base | Fix / outcome |
 |---|---|---|---|---|
 | bug-130 | 1/9, 1/9, 0/8 | not reproduced | `IndexError: tuple index out of range` captured as the store's error (bug-270), read as `KeyError: 'rewrite_bytes_all'` | R3.1 diagnostic only; bug-270 fixed by RED; row reads `deferred: diagnosed-loud` |
-| bug-190 | 0/9, 0/9, 0/8 | not reproduced | none | R3.4 diagnostic only; [[#bug190]] |
+| bug-190 | 0/9, 0/9, 0/8 | not reproduced | none | test-side fix by ruling L164 (no band run, L164 (b)); [[#bug190]] |
 | bug-091 | 0/9, 0/9, 0/8 | not reproduced | none | R3.3 deadline + R3.4 message; `deferred: diagnosed-loud` |
 | bug-228 | 5/9 (L3) | reproducer, L3 | `AssertionError: {... 'outcome': 'skipped_budget', 'latency_ms': 5018 ...}` | [[#bug228]] |
 | bug-231 | 6/9 (L3), 9/9, 3/8 | reproducer, L3 (L157 (2)) | `assert (733208.75… - 733200.72…) < 8.0` once; `assert False is True` (graceful_stop False at 10.0 s) the rest = bug-269 | class A replacement; confirm trial pass ([[#confirm]]) |
@@ -218,7 +218,7 @@ cold-private rerank rows, task25_1, task3_7_r4, bug-212) are the ones to check f
 | 59 | `test_read_path_partition_and_budget.py:254` | `test_a_busy_worker_costs_at_most_the_budget` | `time.time() - t0 < 1.0` | B | stays (legacy): a 0.5 s rerank budget against a 3 s busy worker |
 | 60 | `test_rerank_budget_real_clients.py:242` | `test_a_busy_private_worker_is_skipped_not_waited_on` | `wall < 1.2` | B | stays (legacy): a 0.8 s budget against a busy private worker |
 | 61 | `test_rerank_budget_real_clients.py:220` | `test_a_cold_hub_worker_is_skipped_not_loaded_inside_the_budget` | `wall < 0.5` | C | **replaced**: the cold load is held by the test; budget 10x the hang guard; the call returns `cold` while held |
-| 62 | `test_rerank_budget_real_clients.py:282` | `test_a_cold_private_worker_is_skipped_without_spawning` | `wall < 0.3 and stub.spawns() == 0` | C | **replaced**: bug-190: deleted wall bound; `spawns == 0` stays, its message now carries every spawn's stack (R3.4) |
+| 62 | `test_rerank_budget_real_clients.py:282` | `test_a_cold_private_worker_is_skipped_without_spawning` | `wall < 0.3 and stub.spawns() == 0` | C | **replaced**: bug-190 (L164): no spawn on the caller's thread (each spawn recorded with its thread), client retired at the end; message carries every spawn's thread and stack |
 | 63 | `test_rerank_budget_real_clients.py:269` | `test_a_slow_private_rerank_finishes_and_keeps_the_worker` | `out2 == 'scored' and wall2 < 0.6` | C | **replaced**: deleted wall2 bound; the single load (`loads() == 1`) it stood for stays asserted |
 | 64 | `test_rerank_budget_real_clients.py:836` | `test_a_warming_worker_is_skipped_at_once` | `'warming' in out and wall < 0.2` | C | **replaced**: the warm thread's load is held; a far-budget call returns `warming` while held |
 | 65 | `test_rerank_budget_real_clients.py:300` | `test_an_evicted_private_worker_reads_as_cold` | `wall < 0.3 and stub.loads() == 1` | C | **replaced**: a respawn's load is held by the test; budget 10x the hang guard; returns `cold` with the worker still cold |
@@ -245,10 +245,14 @@ stack: `_warm <- info <- call <- _call_once <- _ensure <- _spawn`, the backgroun
 skip starts by design (r11 #b-1), in trials where the test PASSED. The test reads the stub's
 `spawns` file right after `wc.close()`; `close()` does not retire the client, so the warm thread
 can spawn after it, and the read races the stub recording its pid. That is a test-side race on
-the evidence, not reproduced as a failure (0/26), so by the band only the diagnostic is added
-and the assertion is unchanged. Proposed for the lead (not built): assert that no spawn ran on
-the CALLER's thread (the recorded stacks give the thread) and end with `wc.retire()`, so the
-designed background warm neither fails the test nor leaves a stub process behind.
+the evidence, not reproduced as a failure (0/26). **Fixed test-side by ruling L164** (commit
+`f4262e8`): each spawn is recorded with its thread and stack, the assertion is "no spawn on the
+caller's thread" (the budgeted call itself), and the client ends with `wc.retire()`, so the
+designed background warm can neither race the check nor leave a stub process behind. The forced
+RED child (`_t03_forced_spawn` spawns on the caller's thread) still fails, naming that frame.
+Registry-row text for the lead: "the test raced the cold skip's designed background warm (22/26
+passing trials spawned from `_warm`); fixed test-side at `f4262e8`: no spawn on the caller's
+thread, client retired; the assertion's old `spawns == 0` read was the race".
 
 {#bug190-body}
 
@@ -357,6 +361,17 @@ in-process fallback, and the lock broke a unit test whose Daemon has no `_worker
 What remains is the narrow race the code already had: a reranker client created in the instant
 between the warm thread's `_stop_began()` check and `_close_workers` reading the attribute.
 
+Not charged to `_StopDeadline`: the worker stage is bounded by its own 2.0 s lock wait plus the
+kill instead (the bound in the Self-audit, Q4).
+
+**RED proven at the pre-fix tree.** With `401e351`'s `subproc.py` and `daemon.py` checked out
+(then restored, `__pycache__` cleared), the node fails on its own E line:
+`AssertionError: bug-269: the stop waited out the warm-up: the embed worker's load was released
+(after the 20 s hold) before the daemon exited (rc=0)` (`green-bug269-red-at-prefix-401e351.log`,
+1 failed); that daemon's log stops at 12:07:58 after `embedder warm in 22.4s`
+(`bug269-evidence/prefix-rmxd.log`). After the fix the stop takes 12:08:31 to 12:08:33 and the log
+shows each guard firing (`bug269-evidence/postfix-rmxd.log`, quoted under Q1 below).
+
 Result: `tests/test_bug269_stop_during_warmup.py::test_bug269_a_stop_during_warmup_does_not_wait_
 out_the_warmup` (RED `9270f58`: a 20 s held embed load) passes in `green-bug269-fix.log` (exit 0,
 155 passed), with the retire tests of `test_rerank_budget_real_clients.py` (a retired client
@@ -374,6 +389,7 @@ One trial per reproduced row, `until-target`, under `caffeinate -i`, the lane lo
 |---|---|---|---|---|---|---|
 | bug-231 | 3 | `83c2711` | pass (stop 5.37 s, grace 60) | 76.9 s | 76.9 s | load average 5.0 at the start; 1 leaked load-process daemon swept by the harness; `harness/confirm-bug231-l3/` |
 | bug-228 | 3 | `b9d15fa` | pass (boot 0.41 s, warm wait, hook 0.74 s) | 41.6 s | 41.6 s | load average 4.2 at the start, below the base sweep's 9-18; `harness/confirm-bug228-l3/` |
+| bug-231, after the bug-269 fix (L164 (b)) | 3 | `f4262e8` | pass (stop 3.01 s, grace 60) | 42.3 s | 42.3 s | load average 6.6 at the start; `harness/confirm-bug231-l3-after-bug269/` |
 
 {#confirm-table}
 
@@ -399,6 +415,12 @@ edited, and every importer of an edited test module (found per module with
 | bug-269 RED node + stop/retire/census files | tree of `e8277d4` | 0 | 155 | 155 / 0 / 0 | `green-bug269-fix.log` |
 | verify 1 (all but `test_task21_1_recall_skip.py`) | `83c2711` | 1 | 718 | 714 / 4 / 0 | `green-verify-1.log` |
 | bug-228 file + budget census + mechanisms | `b9d15fa` | 0 | 25 | 25 / 0 / 0 | `green-bug228-provisional.log` |
+| bug-269 RED node at the pre-fix src (`401e351`) | `401e351` src on `e8277d4` tests | 1 | 1 | 0 / 1 / 0 | `green-bug269-red-at-prefix-401e351.log` |
+| bug-190 (L164) file + every RED node (bug-269, flake diagnostics, censuses, mechanisms, timing) | `f4262e8` | 0 | 108 | 108 / 0 / 0 | `green-bug190-l164-and-red-nodes.log` |
+
+Verify 2 was run on the src fix itself; the only later code change is the bug-190 test
+(`f4262e8`, no `src/`), re-run in the last row with every RED node, so the 159-file set was not
+run a third time.
 
 {#verify-table}
 
@@ -433,10 +455,94 @@ the absent-socket recorders, and the held locate straggler.
 
 - Mutations are the reviewer's (brief). AC-3.2's M3.1-M3.4 and 29.4's census mutations map to
   nodes in [[t0-3-red-report#mutation-table]].
-- The 45-pass fix bands for bug-228 and bug-231 were not run (the brief asks one confirm trial
-  per row).
+- No fix-proof bands of any length (L164 (b); Q42 is with the user). The proof is one confirm
+  trial per reproduced row, bug-231's re-run after the bug-269 fix.
 - Registry rows 130, 190, 091, 228, 231, 269 are not edited here: their text and status are the
   lead's at the merge (AC-6 needs the merged sha).
-- bug-269's fix is not re-measured under the harness; the RED node is its proof (a 20 s held load).
 
 {#flags-list}
+
+## Self-audit {#self-audit}
+
+For the bug-269 `src/` fix and the T0.3 test changes (ruling L166), against the eight questions
+of `workflow/SELF_AUDIT.md` on dev master (not yet on this branch, so not linked).
+
+1 **real**: the RED node runs a real `rmx daemon start --no-detach` child (`SandboxDaemon`) and
+sends the real `stop` op (`daemon.call`); the daemon's own log after the fix
+(`bug269-evidence/postfix-rmxd.log`): `12:08:30 worker[embed] spawned` → `12:08:33 worker[embed]
+retire: the lock is still held after 2.0s (a call or the warm-up's load in flight); abandoning
+it, killing pid=81122` → `died on op=info (EOFError('worker closed')); respawning` → `subprocess
+embedder unavailable (WorkerError('embed worker retired ... not respawning'))` → `embedder warmup
+failed: RuntimeError('daemon stopping: no in-process embedder fallback')` → `reranker warmup
+skipped: the daemon is stopping` → `12:08:33 daemon stopped`. Pre-fix, the same node: stopped at
+12:07:58 after `embedder warm in 22.4s` (`prefix-rmxd.log`). Through the hub's path:
+`hub.graceful_stop` on a spawned daemon at L3 took 3.01 s (confirm trial at `f4262e8`; 5.37 s
+before the fix).
+{#sa-1}
+
+2 **wiring**: `test_bug269_stop_during_warmup.py::test_bug269_a_stop_during_warmup_does_not_wait_
+out_the_warmup` enters through the daemon's `stop` op over its socket; nothing in the daemon or
+`WorkerClient` is patched (the hold is a preload in the embed worker process). bug-190's test
+drives the real `RemoteReranker.with_budget` over a real `WorkerClient` and stub process; the
+recorder calls the real `_spawn`. The T0.3 tests replaced in [[#sites]] keep their entry points
+(CLI via `CliRunner`, verbs, daemon ops, real daemons).
+{#sa-2}
+
+3 **census**: `grep -n 'retire(' src/refmatrix/*.py` and the `getattr(w, "retire", w.close)`
+form: `daemon.py:1174` `_close_workers` (shutdown; passes `abandon_in_flight=True`),
+`daemon.py:1046` `_maybe_adopt_shared` and `recall.py:644` the embed swap (adoption; default,
+waits, so an in-flight ingest batch finishes: deliberate). `_stop_began()`: `daemon.py:938`
+(`_embedder` fallback) and `:1250` (warm-up's reranker step). Left: the hub's shared clients
+(`modelsrv`) close without `retire` and hold no warm lock in the daemon; `_fast_exit`
+(`os._exit(2)` on a lost writer) skips `_close_workers` entirely, unchanged; the narrow race in
+[[#bug269-fix]] (a reranker client made between `_stop_began()` and `_close_workers` reading the
+attribute) is pre-existing and stays.
+{#sa-3}
+
+4 **bound**, stop op to exit. Caller (`daemon.graceful_stop`): `ping` 0.5 s, retries 0; `call
+stop` 2.0 s, retries 0; then polls the pid for `grace`. Daemon: `_op_stop` sets `_stop`; the
+accept loop wakes within `srv.settimeout(1.0)`; `shutdown.started` touch; `_StopDeadline(
+stop_grace_s())` = 45 s − 2 s margin starts here. `_close_workers`, per private worker: lock wait
+≤ 2.0 s, then either `close(2.0)` (EOF wait 2.0 + terminate wait 2.0 + kill wait 2.0) or SIGKILL
++ wait ≤ 2.0 s: ≤ 8 s per worker, ≤ 16 s for two (before: the remaining cold loads, unbounded;
+measured 22.4 s here). Then watcher join `budget(3.0)`, three pool drains `budget(10)` each,
+flush/repair/replica joins `budget(3.0)` each, `_final_flush` capped by what is left, store close
+`budget(5.0)`: every one of these asks the same deadline, so they shrink by what the workers
+spent. The worker stage itself is not charged to the deadline, so the worst case is max(16 s +
+5 s store close, 43 s) = 43 s at the default grace. No `daemon.call` with default retries is on
+the path.
+{#sa-4}
+
+5 **busy**: worker busy (a held cold load) → the lock wait times out at 2.0 s, the process is
+killed, the holder fails with `WorkerError` (the RED node; log above). Worker idle → the lock is
+taken at once and the old close runs (`test_shutdown_retires_the_workers`). Worker down while a
+call holds the lock → the branch logs `retired while a call held the lock past 2.0s; no live
+process to stop` and returns; no test reaches it (named, not covered). Daemon down: not on this
+path (a stop with no daemon is `graceful_stop`'s `skipped: no daemon`, unchanged, seen in every
+confirm trial's second stop). A busy ADOPTION swap still waits for the in-flight op (default).
+{#sa-5}
+
+6 **guard**: (a) the abandon branch fires on "lock still held after `timeout`", the state a
+warm-up's cold load produces; reached by `_close_workers` at a stop during warm-up; test: the
+bug-269 node, which holds the load in the worker process without patching the lock or the
+client. (b) `_stop_began()` in the warm-up and (c) the `_embedder` fallback refusal fire on
+`_shutdown_event` set by `serve_forever`'s `finally`; both reached in the same node (their log
+lines above). (d) the "no live process" branch and (e) the post-SIGKILL "still alive" log are
+not reached by any test. bug-190's guard (a spawn on the caller's thread) fires on the forced
+RED child (`_t03_forced_spawn`), `test_r3_4_bug190_a_spawn_on_the_skip_path_names_its_stack`.
+{#sa-6}
+
+7 **loud**: forced bug-269 at the pre-fix tree → pytest exit 1, `E AssertionError: bug-269: the
+stop waited out the warm-up ...` (`green-bug269-red-at-prefix-401e351.log`). An abandoned call is
+loud to its caller (`WorkerError: embed worker retired ... not respawning`) and in `rmxd.log`
+(the `retire: ... abandoning it, killing pid=` line). No `except: pass` added:
+`git diff 401e351 -- src/ | grep -E '^\+.*(except|raise)'` lists one handler, `except
+subprocess.TimeoutExpired:` (it logs the pid still alive after SIGKILL), and one `raise
+RuntimeError("daemon stopping: no in-process embedder fallback")`.
+{#sa-7}
+
+8 **handoff**: bug-269's and bug-190's registry rows (text above, ids/status the lead's at the
+merge); the remainder row for the 41 legacy bounds (text in [[#sites]]); the untested branches
+in Q5/Q6 (d)(e) and the pre-existing race in Q3 are named here, not filed. Fix-proof bands: none,
+by L164 (b) / Q42.
+{#sa-8}
