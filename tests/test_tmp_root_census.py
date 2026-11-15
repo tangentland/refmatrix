@@ -34,6 +34,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import warnings
 from collections import Counter
 from pathlib import Path
 
@@ -107,7 +108,10 @@ def census_sites(root: Path) -> Counter:
         rel = f.relative_to(root).as_posix()
         if "__pycache__" in rel or any(rel.startswith(d) for d in EXEMPT_DIRS):
             continue
-        tree = ast.parse(f.read_text(), filename=str(f))
+        with warnings.catch_warnings():
+            # another file's invalid escape in a plain string is not this census's finding
+            warnings.simplefilter("ignore", SyntaxWarning)
+            tree = ast.parse(f.read_text(), filename=str(f))
         fd = _Finder(rel)
         fd.visit(tree)
         out.update(fd.keys)

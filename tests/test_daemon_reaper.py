@@ -504,7 +504,11 @@ def test_r4_an_exec_child_and_its_forked_grandchild_each_write_one_ledger_line(r
 def test_r4_a_fork_of_the_pytest_process_writes_a_ledger_line():
     """`#r4` item 1: `enter()` registers the at-fork callback in the pytest process too (an
     in-process `spawn_daemon` forks from here)."""
-    pid = os.fork()
+    import warnings
+    with warnings.catch_warnings():
+        # the pytest process has threads; the child only runs the at-fork hook and exits
+        warnings.simplefilter("ignore", DeprecationWarning)
+        pid = os.fork()
     if pid == 0:
         os._exit(0)
     os.waitpid(pid, 0)
