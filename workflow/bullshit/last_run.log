@@ -113,3 +113,4 @@
 2026-11-14T21:50:00Z commit=70f4cd3+37c0719 verdict=DIRTY findings=8 (0B/3S/5M) report=2026-11-14-2150-plan29-spec-r3.md
 2026-11-14T22:00:00Z commit=8ce8aba+73848e2 verdict=MEH-only findings=4 (0B/0S/4M) GO report=2026-11-14-2200-plan29-spec-r4.md
 2026-11-14T23:24:29Z commit=13ffd77 verdict=DIRTY findings=4 (0B/2S/2M) report=2026-11-14-2324-bug241-bug240-r1-13ffd77.md
+2026-11-15T01:52:45Z commit=bba7313 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-15-0152-bug241-bug240-r2-bba7313.md
