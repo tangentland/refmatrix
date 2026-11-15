@@ -94,7 +94,8 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
    mutation must make a test FAIL, not hang. The table goes in the summary.
 4. **Verify** — the task's files + the family + every test that imports a changed module
    (until 29.4 R6 derives families, list them by grep and say how). **No branch full suite**:
-   exactly one full suite per release, on merged `master` ([[#release]]); failures compared **by
+   the full suite runs once per minor release, on merged `master`; a patch release gates on the
+   narrower set ([[#release]]); failures compared **by
    E line** with the last release's full-suite log, never by test name. (The user, 2026-11-15:
    "it's taken most of the day to get one patch release out" — 0.83.1 ran four full suites;
    Q29 = a.)
@@ -110,10 +111,19 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 ## 4. Release and deploy path {#release}
 
 1. **Release commit** on `master`: bump `pyproject.toml` and `src/refmatrix/__init__.py` only.
-2. **The gating full suite runs on merged `master`**, compared by E line with the previous
-   release's log. A clone cannot see failures that need the dev tree's live `.refmatrix/`, so a
-   green branch suite is evidence, not the gate. A second branch suite after a small fold may be
-   skipped when the master suite follows.
+   **Pick the version by scope** (the user, 2026-11-15): a change that alters behaviour on a
+   shared path — ingest, the store, the daemon ops, a hook's output, the CLI's contract — or
+   whose changed modules are imported by most of the suite is a **minor** release (`0.N.0`); a
+   fix confined to a few modules with no such change is a **patch** (`0.N.x`). When unsure, it is
+   minor.
+2. **The gate on merged `master`, by release kind:**
+   - **minor (`0.N.0`): the full suite**, compared by E line with the previous release's log.
+     A clone cannot see failures that need the dev tree's live `.refmatrix/`, so a green branch
+     run is evidence, not the gate.
+   - **patch (`0.N.x`): the narrower set** — the task's tests, its family, and every test that
+     imports a changed module (until 29.4 R6 derives families, listed by grep and named in the
+     release commit), run on merged `master`, compared by E line.
+   - Never a branch full suite ([[#task]]).
 3. **Deploy:** `git -C ~/refmatrix pull --ff-only origin master`; `rmx daemon restart --relaunch`;
    `rmx version -v` (no `[DEV TREE]`); `rmx hub relaunch-fleet`; a STALE hub gets `rmx hub stop`
    plus ONE `launchctl kickstart`; `rmx install-hooks --check`, re-installing only when out of sync.
