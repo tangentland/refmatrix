@@ -12,7 +12,7 @@ metadata:
 
 # Task bug-218: reinforcement reads its edges in one orientation {#root}
 
-> Status: Drafting (2026-11-13, spec wave G20; revision 1 the same day folds the lead's rulings:
+> Status: Approved (L69, L74; drafted 2026-11-13, spec wave G20; revision 1 the same day folds the lead's rulings:
 > O-1 = A, O-2 = (a), bug-223 hosted as [[#r7]], [[#rev-1]]; revision 2 answers ch-bsd
 > `bsd-spec-t56-r1-fecda59` S1-S4, M1-M3 with the lead's rulings, [[#rev-2]]).
 > Track: T6 (graph integrity), queue item 9, first ([[plan-review-2026-11-13#queue]]; L8 puts

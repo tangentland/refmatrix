@@ -5,7 +5,7 @@ title: "Task bug-179: lint and ingester agree on block anchors"
 tags: [task, bug-179, gmd, lint, ingest, anchors]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   created: 2026-11-09
   updated: 2026-11-09
 ---

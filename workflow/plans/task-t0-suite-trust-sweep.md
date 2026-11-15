@@ -5,7 +5,7 @@ title: "Task T0: the suite-trust sweep: nine instrument bugs and the plan-6/7/8/
 tags: [task, t0, tests, instrument, skipgate, flaky, plan-6, plan-7, plan-8, plan-15, plan-29, task-29.4, bug-215, bug-170, bug-168, bug-155, bug-127, bug-130, bug-190, bug-091, bug-196, bug-228, bug-229, bug-231, bug-253]
 metadata:
   node_type: task
-  status: approved
+  status: in-progress
   created: 2026-11-13
   updated: 2026-11-15
 ---

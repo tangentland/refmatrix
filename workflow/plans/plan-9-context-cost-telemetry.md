@@ -5,7 +5,7 @@ title: "Context cost is measured: injected bytes per surface, and who asked"
 tags: [plan, telemetry, observability, context]
 metadata:
   node_type: plan
-  status: in-progress
+  status: completed
   created: 2026-09-15
 ---
 

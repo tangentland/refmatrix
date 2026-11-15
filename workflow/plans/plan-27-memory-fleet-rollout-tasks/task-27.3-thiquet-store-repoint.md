@@ -19,6 +19,7 @@ metadata:
 rel: part-of -> [[plan-27-memory-fleet-rollout]]
 rel: reinforces -> [[feedback_launchd_install_force_leaves_it_unloaded]]
 rel: reinforces -> [[feedback_hub_restart_via_launchctl]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-27 · 27.3"}
 
 ## Requirements {#requirements}
 

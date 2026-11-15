@@ -13,7 +13,8 @@ metadata:
 
 > Status: drafting (2026-11-14). Decided by the user as Q15 option 2 ("q15 - 1 and 2"); option 1
 > (read-only refmatrix MCP tools in every `ch-*` agent and `gmd-curator`) shipped the same day as a
-> config change. Queue slot: after 0.83.0 ships; a ch-bsd spec round precedes approval.
+> config change. Queue slot: **post-mod** (Q28 = a; re-evaluated against the mod first, L127 and L129;
+> [[plan-of-plans#post-mod]]); a ch-bsd spec round precedes approval.
 
 rel: derives-from -> [[open-questions#answered-37b7498f]]
 rel: related-to -> [[plan-review-2026-11-13#lead]]

@@ -82,6 +82,7 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 rel: related-to -> [[refmatrix/adr-0004-unified-location-space-index#rule-no-delete]]
 rel: derives-from -> [[bsd-plan18-r2-spec-diffcheck-cb7bf5b]]
 rel: derives-from -> [[bsd-plan18-task18-1-measurement-r2-34ac5cd]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-18 · Q-A, Q-E"}
 
 ## Why {#why}
 

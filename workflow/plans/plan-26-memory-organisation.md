@@ -5,7 +5,7 @@ title: "Plan 26: the curated memory dir is organised by type in folders; topic c
 tags: [plan, memory, memory-dir, save-state, recall-state, bridge, compile, subjects, memory-index]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-11-08
   updated: 2026-11-13
 ---

@@ -11,7 +11,7 @@ metadata:
 
 # Plan 31: pre-mod loose ends {#root}
 
-**Date:** 2026-11-15. **Status:** drafting — the five items are admitted and registered; each
+**Date:** 2026-11-15. **Status:** drafting — its six tasks (31.1-31.6) are admitted and registered; each
 task spec is written (ch-architect on Fable) and reviewed (ch-bsd) when the plan reaches the head
 of the queue, per [[orchestration#planning]]. **Origin:** the user, 2026-11-15: "write the freeze
 line and register the five", after the lead's GMD assessment. The fifth item is plan-30's task 30.6. 31.6 (bug-251) admitted by the user, Q30 = a, 2026-11-15.
@@ -26,8 +26,8 @@ rel: related-to -> [[plan-10-injection-dedup]]
 
 The goal before the mod transition: the core concept/graph representation more useful, context
 succinct and relevant, performance improved, busywork removed, loose ends tied up (the user,
-2026-11-15). These four are the graph-correctness and GMD-hardening items that serve that goal and
-survive the transition; GMD tooling that only adds features went to the post-mod list
+2026-11-15). Tasks 31.1-31.4 and 31.6 are the graph-correctness and GMD-hardening items that serve that goal
+and survive the transition, and 31.5 is the injection measurement (Q27 = b); GMD tooling that only adds features went to the post-mod list
 ([[plan-of-plans#post-mod]]).
 
 ## Tasks {#tasks}

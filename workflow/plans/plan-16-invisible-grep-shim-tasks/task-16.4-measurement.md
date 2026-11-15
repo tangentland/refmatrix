@@ -33,6 +33,7 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-16 · 16.4 R4"}
 
 ## Revision round 10 (2026-11-13) {#rev-round-10}
 

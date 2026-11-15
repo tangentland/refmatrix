@@ -43,6 +43,7 @@ rel: amends -> [[bsd-plan16-22-spec-rereview-r3-6091648]]
 rel: depends-on -> [[task-16.6-learned-row-validation]]
 rel: amends -> [[project_global_relative_rows_repair]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-22 · d9b (R4)"}
 
 ## Requirements {#requirements}
 

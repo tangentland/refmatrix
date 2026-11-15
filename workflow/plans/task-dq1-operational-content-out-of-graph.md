@@ -13,12 +13,12 @@ metadata:
 
 # Task D-Q1: operational content stays in the partition, out of the skew {#root}
 
-> Status: Drafting. Revision 8 (2026-11-14) answers ch-bsd `bsd-spec-t56-r6` under L71 ([[#rev-8]]);
+> Status: Approved (L74); admitted before the mod (L128). Revision 8 (2026-11-14) answers ch-bsd `bsd-spec-t56-r6` under L71 ([[#rev-8]]);
 > revision 7 answered `bsd-spec-t56-r5` under L69 ([[#rev-7]]).
 > Revision 6 answered `bsd-spec-t56-r4` under the lead's L67 ruling, which amends L61 S3
 > ([[#rev-6]]); revision 5 answered r3 under L61 ([[#rev-5]]);
 > earlier revisions are in [[#history]].
-> Track: T6. Queue slot after bug-216; the lead places it in the POP rewrite (L61 M6).
+> Track: T6. Queue slot: after plan-30 release C and before 30.6 ([[plan-of-plans#queue]] step 10; L128).
 > Depends on: bug-216 merged and live (a bare doc id binds the doc, so a `workflow/` doc and its
 > anchors are found by name). Nothing here depends on plan-22.
 > Nothing is excluded at ingest and nothing is deleted.
