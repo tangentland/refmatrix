@@ -84,6 +84,18 @@ value, it's worth considering taking action." {#t5-ask}
    touches an item that was only in a dropped block)? That separates "the content is useless"
    from "the useful content was the part being cut". The capture must not log raw prompt text
    into the repo ([[feedback_no_raw_prompts_in_public_repo]]).
+0b. **The primary score: discovery calls avoided** (the user, 2026-11-15: "one way for us to
+   score context relevance is if it reduces your usage of grep & other similar commands").
+   From the transcripts, every discovery call after a prompt — the Grep and Glob tools, Read,
+   and Bash `grep` / `rg` / `find` / `sed -n` / `cat` / `rmx grep` / `rmx context` — with its
+   target (pattern, symbol, path), classified against that prompt's injection:
+   - **redundant** — the target was in the DELIVERED payload: shown, not used or not trusted;
+   - **avoidable** — the target was only in a DROPPED block (step 0's capture): the cap's cost;
+   - **uncovered** — in neither: a relevance or coverage gap (input to 30.6);
+   - and the outcome, **discovery calls per prompt**, compared before and after 0.84.0's
+     ordering fix (a natural experiment on its deploy date), by prompt kind, and by an on/off
+     alternation only if the before/after is confounded. A block earns its bytes when it moves
+     calls out of `avoidable` and `uncovered` without growing `redundant`.
 1. **Measure per block kind** (STM topic composite, content matches, symbol context, memory
    recall), from what is already logged: bytes per prompt, repetition across consecutive prompts
    (ch-bsd measured the composite at 59% of scan-prompt bytes and 100% repeated), and **use** by
