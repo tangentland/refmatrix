@@ -935,6 +935,10 @@ class Daemon:
         from refmatrix import recall as recall_mod
 
         def _drop_private_worker() -> None:
+            if self._stop_began():
+                # bug-269: the stop abandoned the worker's load (`_close_workers`);
+                # loading the model in-process now would put it in a stopping daemon.
+                raise RuntimeError("daemon stopping: no in-process embedder fallback")
             # Only the embed worker: a live rerank worker is unrelated and killing it
             # would cost a needless model reload.
             w, self._embed_worker = self._embed_worker, None
@@ -1140,9 +1144,24 @@ class Daemon:
         want = args.get("rerank")
         return rerank_enabled() if want is None else bool(want)
 
+    def _stop_began(self) -> bool:
+        """True once `serve_forever`'s shutdown set `_shutdown_event` (bug-269). Read
+        with getattr: `__init__` always sets it, but a Daemon assembled without
+        `__init__` (unit tests driving the warm-up or the embedder alone) has no stop
+        to honour, and must not raise from a warm thread."""
+        ev = getattr(self, "_shutdown_event", None)
+        return ev is not None and ev.is_set()
+
     def _close_workers(self) -> None:
         """Terminate model workers. Called on shutdown so a daemon exit
-        never strands a child holding ~610 MB (or its pipes)."""
+        never strands a child holding ~610 MB (or its pipes).
+
+        bug-269 (ruling L161, 2026-11-15): a private worker is retired with
+        `abandon_in_flight=True`, so a stop sent during the startup warm-up no
+        longer waits out the cold loads: each retire is bounded by its timeout plus
+        the kill. The warm thread it abandons then stops too (`_start_embedder_
+        warmup`: no reranker load into a stopping daemon; `_embedder`: no in-process
+        fallback once the stop began)."""
         for attr in ("_embed_worker", "_rerank_worker"):
             w = getattr(self, attr, None)
             if w is None:
@@ -1150,7 +1169,11 @@ class Daemon:
             try:
                 # Retired: an in-flight op's warmup must not respawn a worker
                 # after shutdown (ch-bsd r12 #s-1).
-                getattr(w, "retire", w.close)(timeout=2.0)
+                retire = getattr(w, "retire", None)
+                if retire is not None:
+                    retire(timeout=2.0, abandon_in_flight=True)
+                else:
+                    w.close(timeout=2.0)
             except Exception as exc:
                 self._log(f"worker close failed ({attr}): {exc!r}")
             setattr(self, attr, None)
@@ -1223,6 +1246,11 @@ class Daemon:
             # exactly the way the cold embedder used to.
             from refmatrix.reranker import rerank_enabled
             if not rerank_enabled():
+                return
+            if self._stop_began():
+                # bug-269: a stop abandoned the embed load above; do not start the
+                # second load into a stopping daemon.
+                self._log("reranker warmup skipped: the daemon is stopping")
                 return
             t1 = time.time()
             try:
