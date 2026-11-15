@@ -110,3 +110,34 @@ None added. The new node patches nothing; it uses the file's existing autouse `_
    rows) cannot pair historical rows and would need the fixture amended. That is a RED change,
    to be raised before GREEN builds it.
 4. Logs force-added under `workflow/review-output/t0.8/` (the directory is gitignored).
+
+## Ruling L130 addition {#l130}
+
+The new node now opens with AC-8.1 on the frozen fixture: it copies `tests/fixtures/agent_usage/`
+`query.log` + `cli.log` into the sandbox store and asserts one line per channel, 201
+`prompt_recall`, 6 `session_start`, 3 `precompact`, 34 `recall`. The same `chan` matcher is used,
+and `commands=` lines are excluded. Then the synthetic AC-8.2 store replaces both logs. The AC-6
+tests are untouched (R8.3). Commit `099f90d`.
+
+rel: amends -> [[#nodes]] {ruling: "L130"}
+
+| Run (file only, `lockf`-wrapped) | Log | Exit | Collected | Result | New node's E line |
+|------|-----|------|-----------|--------|-------------------|
+| base (src = `c4b44d0`) | `red-base-l130.log` | 1 | 34 | 31 passed / 3 failed / 0 skipped | `:551` `assert chan(fx, "prompt_recall", 201)` → `E assert []` |
+| sketch, tolerant key | `sketch-good-l130.log` | 0 | 34 | 34 passed | none |
+| sketch M8.1 | `sketch-m81-l130.log` | 1 | 34 | 31 passed / 3 failed | `:551` (fixture block), plus AC-6 `:392`, `:434` |
+| sketch M8.2 | `sketch-m82-l130.log` | 1 | 34 | 33 passed / 1 failed | `:601` `chan(out, "prompt_recall", 3)` → `E assert []` |
+
+**Why it fails at base, and that this is the intended reason.** The base report over the fixture
+prints the single total `cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0`
+(in the node's failure output, `red-base-l130.log`). It prints no per-channel line, and the
+fixture's query.log holds no `kind=recall` row, so no `outcomes:` or `memory_recall <channel>`
+line exists either. The `commands=` line is excluded by the matcher, so `chan(fx,
+"prompt_recall", 201)` is `[]`.
+
+**What the fixture-first order costs.** At base the node now stops at the fixture block, so its
+synthetic AC-8.2 assertions are not reached at base. Their base E line (`chan('prompt_recall', 3)`
+`assert []`) is recorded by the previous tip `b490810` (`red-base.log`), and that part of the test
+is unchanged. The M8.2 run shows the synthetic block still fails on its own when the fixture
+block passes. Revised mutation map: M8.1 → both AC-6 nodes + the new node at `:551`; M8.2 → the
+new node at `:601`.
