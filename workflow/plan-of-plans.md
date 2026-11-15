@@ -443,7 +443,6 @@ reason. {#pending-status}
 | `plan-24-mod-transport.md` | dated amends notes for D-Q5 and L128 on `#decisions`, `#phase-now` and `#phase-held`, and the citation of its `plan-24 · D1` row | **stays:** the plan-24 freshness revision writes them ([[#queue]] step 16) | L38, L128; [[#flags]] |
 | `plan-31-pre-mod-loose-ends.md` | `status: drafting` → `approved` | **stays:** set in the commit that merges its specs after a ch-bsd MEH-only GO | L125 |
 | `task-26.5-memory-organise-verb.md` | cite the `plan-26 · 26.5 split` row | **stays:** the split is a proposal with no ruling, and no text in the spec holds it yet | [[#decisions]] |
-| `.claude/PROJECT_PROFILE.md` `#corpus` | "unverified until a Claude Code restart" → verified: spawned agents are offered the read-only MCP tools | **stays:** an agent-instruction file that `CLAUDE.md` imports; left for the lead or the user to edit, not a subagent | [[plan-review-fable-2026-11-14-queue#st-3]] |
 | `bug_registry.md` rows 164, 181, 167, 174 and the suite figures in `CLAUDE.md` | not edited by hand | **stays:** 29.1 owns them ([[#queue]] step 6) | [[task-29.1-registry-triage#root]] |
 
 ## Notes {#notes}

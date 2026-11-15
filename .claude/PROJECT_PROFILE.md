@@ -95,9 +95,9 @@ Mirrored into `.claude/hooks/hooks.env` (`CORPUS_PATHS`, `SRC_DIR`, `ADR_DIR`).
   cwd). Writes to a live store are the lead's, announced and backed up. Test suites run against
   throwaway stores under a short `mkdtemp()` root only. The `ch-*` agents and
   `gmd-curator` also list the read-only refmatrix MCP tools (`rmx_context`, `rmx_query`,
-  `rmx_search`, `rmx_memory_recall`, `rmx_graph`, `rmx_locate`, `rmx_where`); whether a spawned
-  agent is actually offered them is unverified until a Claude Code restart (a probe before the
-  restart got none). Agents get no prompt-scan or SessionStart injection; a generated agent-start
+  `rmx_search`, `rmx_memory_recall`, `rmx_graph`, `rmx_locate`, `rmx_where`); spawned agents are
+  offered them (verified 2026-11-14: a review agent was offered and used
+  `mcp__refmatrix__rmx_memory_recall`; L85). Agents get no prompt-scan or SessionStart injection; a generated agent-start
   hook is planned (`task-agent-start-context`).
 
 ## Architectural primitives {#primitives}

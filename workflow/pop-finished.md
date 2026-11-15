@@ -272,3 +272,12 @@ their row; plan-24's and 26.5's wait).
 | `task-compaction-as-handoff.md`, `task-agent-start-context.md`, `task-linked-readonly-store.md` | "queued right after 0.83.0" → "post-mod" | Q28 = a; L128 |
 | `task-10.2-…`, `task-10.4-…`, `task-10.5-…`, `task-10.6-…` | header line: post-mod with 25.1b | L128 |
 {#pending-status-applied-table}
+
+### Pending status applied by the lead (2026-11-15) {#pending-status-lead-2026-11-15}
+
+| file | edit | evidence | why it stayed |
+|---|---|---|---|
+| `.claude/PROJECT_PROFILE.md` `#corpus` | "unverified until a Claude Code restart" → verified: spawned agents are offered the read-only MCP tools | **stays:** an agent-instruction file that `CLAUDE.md` imports; left for the lead or the user to edit, not a subagent | [[plan-review-fable-2026-11-14-queue#st-3]] |
+{#pending-status-lead-2026-11-15-table}
+
+Applied: `.claude/PROJECT_PROFILE.md` `#corpus` now states the read-only MCP tools are offered to spawned agents (verified 2026-11-14, L85).
