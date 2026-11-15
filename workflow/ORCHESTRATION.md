@@ -50,7 +50,8 @@ rel: depends-on -> [[plan-of-plans#ledgers]]
 ## 3. Task and bug path {#task}
 
 **Small** (one module, a test-side fix, or under ~100 `src` lines, no change to a shared path):
-one agent writes the test and the fix, shows the test failing before the fix by its E line,
+one **isolated** agent (`scripts/agent-isolated.sh`, a headless Claude as a local `rmxtestN` user, L174)
+writes the test and the fix, shows the test failing before the fix by its E line,
 runs the verify set below, and reports. The summary answers [[self-audit]]. The lead reads the diff and merges. No mutations, no
 ch-bsd. {#task-small}
 
