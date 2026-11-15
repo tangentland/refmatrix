@@ -1074,6 +1074,10 @@ def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
     control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
     assert control.returncode == 0 and control.stdout, (
         f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+    # The control arm delivers the composite and commits its sent marker; reset it so the
+    # capture-on arm starts from the same state (as AC-0.4 does). `--no-composite` would hide
+    # the composite path from this check (L178 GREEN verify, lead ruling).
+    _reset_composite_marker(c)
     if fault == "dir-0o300":
         os.chmod(d, 0o300)
     try:
@@ -1091,6 +1095,69 @@ def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
         f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
     assert r.stdout == control.stdout, f"bug-276: {route} with {fault} changed the payload"
     assert line_err is None, f"bug-276: the capture: line is lost: {line_err[:600]}"
+    # Not merely survived: the capture still works. The surrogate prompt is hashed (no
+    # `capture_failed`), and a dir it cannot list is counted `list_failed` while the record is
+    # still appended (0o300 can create and append, not list).
+    qid = _last_qid(c["root"], kind="scan" if route == "scan_prompt" else "recall")
+    _record_for(c["root"], qid)
+    reasons = [e.get("reason") for e in _errors(c["root"])]
+    assert "capture_failed" not in reasons, f"the capture failed on {fault}: {_errors(c['root'])}"
+    if fault == "dir-0o300":
+        assert "list_failed" in reasons, f"an unlistable dir is not counted: {reasons}"
+
+
+# A non-I/O failure inside the capture (L178 S1; SELF_AUDIT Q7 "force one non-I/O failure
+# class too"). With the surrogate encode fixed no real input reaches the guard with a non-I/O
+# class, so the guarded body `telemetry._write_capture` is replaced, IN A CHILD PROCESS ONLY,
+# by one that raises ValueError; `write_capture`'s guard and the real `cli_entry` run.
+# Registered in workflow/test_mock_registry.md.
+_CAPTURE_RAISES_RUN = r"""
+import sys
+from refmatrix import telemetry
+def _raise(*a, **kw):
+    raise ValueError("injected non-I/O capture failure (bug-276)")
+telemetry._write_capture = _raise
+from refmatrix.cli import cli_entry
+sys.argv = ["rmx", *sys.argv[1:]]
+cli_entry()
+"""
+
+
+@pytest.mark.parametrize("route", ["scan_prompt", "session_start"])
+def test_a_capture_failure_of_any_class_is_counted_and_keeps_the_exit(request, route):
+    """bug-276 (L178 S1): ONE guard around the whole capture at both call sites. A capture
+    that raises a non-I/O exception (ValueError here) leaves the payload and the exit status
+    as they are with the capture off, writes no record, and is one `capture_failed` line in
+    errors.jsonl naming the class."""
+    import sys as _sys
+    c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+    args = (["scan-prompt", "--text", PROMPT, "--composite-every", "1", "--max-tokens",
+             "100000"] if route == "scan_prompt"
+            else ["memory", "recall", "--session-start", "--pack", "--k", "12"])
+    _capture_dir_with_ignore(c["root"])
+
+    def call(patched: bool, **env):
+        env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+        env.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+        argv = ([_sys.executable, "-c", _CAPTURE_RAISES_RUN, *args] if patched
+                else [h.rmx_bin(), *args])
+        return subprocess.run(argv, input=b"", env=h.rmx_env(c["root"], **env),
+                              cwd=str(c["proj"]), capture_output=True, timeout=300)
+
+    control = call(False, RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+    assert control.returncode == 0 and control.stdout, f"fixture: {control.stderr[-400:]!r}"
+    _reset_composite_marker(c)
+    r = call(True)
+    err = r.stderr.decode("utf-8", "replace")
+    assert r.returncode == 0 and "Traceback" not in err, (
+        f"bug-276: a non-I/O capture failure exited {r.returncode}: {err[-700:]}")
+    assert r.stdout == control.stdout, "a non-I/O capture failure changed the payload"
+    errs = _errors(c["root"])
+    assert [e.get("reason") for e in errs] == ["capture_failed"], f"errors.jsonl: {errs}"
+    assert "ValueError" in (errs[0].get("error") or ""), errs[0]
+    qid = _last_qid(c["root"], kind="scan" if route == "scan_prompt" else "recall")
+    assert not [x for x in _records(c["root"]) if x.get("query_id") == qid], (
+        "a record was written by a capture that failed")
 
 
 # ---- AC-0.11 (characterization) ---------------------------------------------------------------
@@ -1478,3 +1545,55 @@ def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape)
     _assert_survived(again, "the next focus hook")
     assert not _fault_lines(again.stderr), (
         f"the corruption is sticky: {_fault_lines(again.stderr)}")
+
+
+def test_a_corrupt_snapshot_graph_falls_back_to_the_live_state(store):
+    """bug-268 (L178, GREEN self-audit Q6: the guard it named as untested). A
+    `<session>.pre.json` that names this prompt and is fresh, but whose `graph` is the wrong
+    shape, is corrupt like a live graph: said once, counted as the call's `stm_error`, and the
+    live state is read instead, so `scan-prompt` exits 0 with its payload."""
+    from refmatrix import stm as stm_mod
+    import time as _time
+    s = stm_mod.Stm(store["root"], SESSION)
+    good = json.loads((store["root"] / "stm" / f"{SESSION}.focus.json").read_text())
+    assert stm_mod.focus_graph_problem(good) is None, "fixture: the live graph is not good"
+    control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                          RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+    s._pre_path().write_text(json.dumps({
+        "prompt_sha": stm_mod.prompt_sha(PROMPT), "wall": _time.time(), "turn": 2,
+        "events_n": 2, "graph": {"turn": 2, "nodes": {"x": 1}, "edges": {}},
+        "topic_cache": {}, "topic_match": {}}), encoding="utf-8")
+    envl = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+            "cwd": str(store["proj"]), "transcript_path": ""}
+    r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--max-tokens", "100000",
+                        "--no-composite"], input=json.dumps(envl).encode(),
+                       env=h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook",
+                                     RMX_SESSION=SESSION),
+                       cwd=str(store["proj"]), capture_output=True, timeout=300)
+    _assert_survived(r, "scan-prompt with a corrupt pre.json graph")
+    assert r.stdout == control.stdout, "a corrupt snapshot graph changed the payload"
+    said = _fault_lines(r.stderr.decode("utf-8", "replace"))
+    assert len(said) == 1 and ".pre.json" in said[0], f"the corrupt snapshot said: {said}"
+    rec = _record_for(store["root"], _last_qid(store["root"]))
+    assert ".pre.json" in (rec.get("stm_error") or ""), (
+        f"the corrupt snapshot is not the call's stm_error: {rec.get('stm_error')!r}")
+
+
+def test_a_surrogate_prompt_never_crashes_the_prompt_hooks_with_the_capture_off(store):
+    """bug-276's class outside the capture (L178 GREEN's real run): `stm.prompt_sha` encoded
+    the prompt strictly. A lone surrogate in the envelope made the UserPromptSubmit focus hook
+    (`snapshot_pre_prompt`) exit 1, and with a `<session>.pre.json` present made
+    `scan-prompt` exit 1, with the capture OFF. Both exit 0 now; the hook writes its
+    snapshot, and the scan prints what it prints for any prompt."""
+    envl = _surrogate_envelope(store).encode("utf-8")
+    off = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_INJECTION_CAPTURE="0")
+    hook = subprocess.run([h.rmx_bin(), "focus", "hook", "--event", "input"], input=envl,
+                          env=off, cwd=str(store["proj"]), capture_output=True, timeout=300)
+    _assert_survived(hook, "focus hook --event input with a surrogate prompt")
+    pre = store["root"] / "stm" / f"{SESSION}.pre.json"
+    assert pre.exists(), "the focus hook wrote no pre-prompt snapshot"
+    r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--max-tokens", "100000"],
+                       input=envl, env=off, cwd=str(store["proj"]), capture_output=True,
+                       timeout=300)
+    _assert_survived(r, "scan-prompt with a surrogate prompt and a pre.json, capture off")
+    assert r.stdout, "scan-prompt printed nothing"
