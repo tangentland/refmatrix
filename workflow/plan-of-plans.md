@@ -66,10 +66,47 @@ Q28 = a, and L128 and L129 (Q32-Q36 = a). Nothing outside this list is built bef
 | 15 | **21.5 phase M:** the R12 re-measure on the revised matcher; no `src/` | M | M3; 14 (31.5 feeds it) | the local transcript archive is announced (L53) | approved (rev 4); phase B is frozen | L35, L36, L53, L56; D-Q4; [[task-21.5-tool-used-signal#r14]] |
 | 16 | **The plan-24 freshness revision, to approval** — the last pre-mod step. Its evidence is 31.5, 21.5 phase M and 30.6. It records D1 as superseded (D-Q5), moves the tool-event builder into 24.6, adds the 24.8 R5 rows, and re-probes on the current Claude Code | P, then ch-bsd spec rounds | 10, 14, 15; and the tree is final (8, 10) | the user's decisions on what the rounds leave open | not started; plan-24 is `drafting` | L128, L129; [[#flags]]; [[plan-24-mod-transport]] |
 | 17 | **Mod start:** 24.0 ∥ 24.1, when plan-24 is approved | T | 16 | — | — | L128 |
+| 18 | **After the mod's initial work: re-evaluate every post-mod item** against the mod as built. Each gets keep, re-spec onto the mod's surface, merge or drop, with a one-line reason entered in [[plan-of-plans#rulings]] first. No post-mod item is built before this step | P | the mod's initial work finished | the user's decisions on the verdicts | — | L127, L129; [[plan-of-plans#post-mod]] |
 
 **After the mod's initial work** (not part of this queue): every post-mod item is re-evaluated
 against the mod as built (keep, re-spec, merge or drop) before any is built (L127, L129).
 {#queue-after}
+
+### What sequences around 29.5 {#queue-quiet}
+
+29.5 needs `cli.py`, `store.py`, `daemon.py` and `verbs.py` quiet. Read from each spec's Files
+section. {#queue-quiet-lead}
+
+| group | tasks | rule |
+|---|---|---|
+| **Free of the four modules:** may run beside plan-29 at any time, 29.5's window included | M lane: T0.6, G32, the `rel:` probe, 25.2's R0 replay (after G32), bug-218's R0. Build: 31.3 (scripts, `lint-gmd.sh`), 31.4 (`tools/gmd/lint.py`, docs), T0.2 (`conftest.py`, scripts), T0.3 (tests, `eval/`), T0.8 (`telemetry.py`), 29.1 (docs and a checker). P lane: plan-31's spec reviews, 30.6's spec, plan-24's amends notes | no ordering against 29.5 |
+| **Edit the four modules and are scheduled before 29.5:** merged before its window opens, or held until after it | T0.4 (`cli.py`, `daemon.py`, `store.py`), T0.5 (`cli.py`, `verbs.py`), T0.7 (`daemon.py`), 31.5 step 0 (`cli.py`, `verbs.py`, with `scan.py`, `hooks.py`), 31.1 (`cli.py`, `daemon.py`, with `ingest_gmd.py`), 31.6 (one method in `store.py`, with `ingest_gmd.py`; after 31.1) | all on `master` at step 4's sha, which is 29.5's baseline |
+| **Edit the four modules and come after 29.5:** built on the split tree | 29.3, 29.2; 31.2 (`daemon.py`, and `store_removal.py`, which exists only after the split); 30.4 (`store.py`, `daemon.py`); G22 (`cli.py`, `store.py`, `verbs.py`); 26.5, 26.7, the 26.6 R3 residual, 26.9, 27.0; 10.3, 25.2, 25.3; bug-185, 23.1, 23.3, 23.5; bug-218 R1-R7; 21.2, 21.4; 31.5's cut | none starts its RED before 29.5 merges; 29.6 re-points their citations |
+| **No `src/` at all** | 30.0, 30.6 with G30, 21.5 phase M, 26.8, 27.1 to 27.6 except 27.0 | live steps and measurements; they wait only on what they measure or roll out |
+
+### Releases {#queue-releases}
+
+Adopted by L135 (lead, 2026-11-15) as the release plan; the kind of each release (major / minor) is restated in its release commit (L131).
+
+One test lane, and a major release (`0.N.0`) costs one full suite of about an hour on merged
+`master` (L118, L119, L131). Every task below changes a shared path, so each group is a major
+release. The grouping is the fewest gates the fixed points allow; the fixed points are in the
+last column. {#queue-releases-lead}
+
+| release | holds | fixed by |
+|---|---|---|
+| R1 | 29.4 stages 2-5 (T0.2 to T0.8), with plan-31's early items: 31.5 step 0, 31.3, 31.4, 31.1, 31.6 | 29.4 has one release point, after stage 5 ([[task-29.4-suite-health#r10]]). 31.5's capture count starts at this deploy |
+| R2 | 29.5, alone | L105: released alone; its merge is a store event |
+| R3 | 29.3, 29.2 (deploy A, then deploy B), 29.4f; 29.6 is docs | L107, L109: one announced window, two deploys; the pass-file edits ship with 29.2 R7 |
+| R4 | plan-30 release A (30.5), with 31.2 | [[plan-30-materialisation#releases]]; 31.2's store write (plan-31 D14) runs after the deploy, on its own go |
+| R5 | plan-30 release B (30.1-30.3), with T2's code: 26.5, 27.0, 26.7, the 26.6 R3 residual | release B's fleet `pagerank` re-derive is one announced window; 26.8's rollout and plan-27's migrations follow as live steps |
+| R6 | plan-30 release C (30.4), with 10.3, 25.2, 25.3 and 26.9 | one install window for 10.3's PreCompact entry; bug-182's overruns are re-counted after C (L128) |
+| R7 | G22, with T4: bug-185, 23.2, 23.1b, 23.1a, 23.1c, 23.3, 23.5 | G22 is after release C (L128); its per-store re-derives and bug-185's index build each have their own go; 23.5's R9 needs R5's residual (L1) |
+| R8 | bug-218 R1-R7, with 31.5's cut, 21.2 and 21.4 | bug-218 needs bug-185 merged; one install window for 21.4 R4; bug-218's re-orientation has its own go |
+
+Eight full-suite gates. 30.6 (with G30), 21.5 phase M and the plan-24 freshness revision ship no
+`src/` and need no release. A store-changing step runs one at a time, announced and backed up,
+after its release deploys ([[orchestration#release]]). {#queue-releases-body}
 
 ### Standing notes on the queue {#queue-notes}
 
@@ -344,6 +381,7 @@ the row here ([[orchestration#pop-truth]]). A row that is resolved and applied i
 | L132 | 2026-11-15 | arch-31b's specs 31.1 / 31.6 / 31.2 (`spec-plan31b` `a4d245a`) | Scope accepted for ch-bsd: **31.6 R5** (unlink the superseded edge on re-bind) stays although beyond the plan's wording, because without it the 62 misbound edges remain; 31.6's AC is all three classes at 0 (unresolved 37, misbound 62, stale 8 = bug-251's real extent of 107 lines). 31.2's two departures (ingest-derived orphans recorded as counts in the manifest, not rows; no restore command, 22.2 being post-mod) go to ch-bsd to judge. Folds: bug-257 → 31.6 R5; bug-258 → 31.1; bug-259 and bug-260 → 31.2 (its invariant catalog == rebuild). Order: 31.1 before 31.6 (both edit `ingest_gmd.py`). The 31.6 re-bind reingest of each store is its own user go | `task-31.1`, `task-31.6`, `task-31.2`; plan-31 `#t6`, `#order` at merge |
 | L133 | 2026-11-15 | ch-bsd spec r1 of 31.5 / 31.3 / 31.4 (DIRTY 3B/8S/11M; report held with `spec-plan31a` until its merge) | All 22 fold; arch-31a revises on Fable, then a bsd confirm-lite r2. **B1:** the POP's D1 row mis-described the capture as "prompt sha256 only" (the lead's error); D1 stands with the fold: the capture dir writes its own `.gitignore` (`*`), proven by a test, because atlftpd ignores nothing under `.refmatrix/` and three repos' default branches lack the line while `save-state --commit` runs `git add -A` (bug-261). **B2:** 31.3 builds the shared gate-tree helper itself (the copy-the-lint-script edit has hit the same helpers three times: T0.1, 31.3, 31.6); no deferral to 29.3. **B3:** bug-256 gets a requirement, an AC and a mutation in 31.5; the failure is counted in the capture record, not only on the stderr the hook discards. **S1:** the cost band is measured on a copy of the live catalog in fresh processes (bsd measured 140-370 ms for four builds; the token stop fired on 53% of past prompts). **S2:** the capture outcome goes in the capture record, not the already-written `query.log` row. **S3:** a capture-only switch, with an AC. **S4-S7, M2-M11:** as the report proposes. **S8:** moot, Q37 = (a). **M1:** labels are D1-D10 already (`3f6de0b`). **M3:** D7's ledger edit lands before 31.3's GREEN starts. **M8:** 31.4 and 31.6 each name the other's linter change and the order (31.1 → 31.6; 31.4 never in flight with 31.6) | `spec-plan31a`; POP D1 row |
 | L134 | 2026-11-15 | arch-31b's revision of 31.1 / 31.6 / 31.2 (`spec-plan31b` `d788602`) | (2) 31.2 takes the learned-row halves of 22.6 R3 and R5 in a narrowed form beside R4: within plan-31 `#t2`'s own scope (the deleted file, vacuum's log), not a new admission; the freeze line says so. (4) "The audited removal path" in the POP's D14 row is the lead's wording, not the user's: it means dry run whose counts equal the measured split, manifest first (22.6 R2's path, 22.2 R4's record form), a logged event, and the lead's backed-up run; plan-22's engine and `--confirm` stay post-mod. (5) The manifest writes no vectors file (22.2 R4 asks for one): a third departure for ch-bsd to judge, with L132's two. (1) and (3) go to the user as Q38 and Q39 | `task-31.2`; [[#freeze]] |
+| L135 | 2026-11-15 | arch-triage's queue additions (`triage-3` `b817f62`) | Applied to [[#queue]]: row 18 (the L127 re-evaluation after the mod's initial work, L129), [[#queue-quiet]] (which admitted tasks edit `cli.py` / `store.py` / `daemon.py` / `verbs.py`, so sequence around 29.5) and [[#queue-releases]]. The release grouping was a proposal; the lead adopts it as the plan (sequencing is the lead's): eight major releases R1-R8, 31.5's capture riding R1 (its 400-prompt window starts at R1's deploy). Plan-31's placement was read before the L133 / L134 folds and is re-checked when its specs merge | [[#queue]] |
 {#rulings-table}
 
 ### Plan decisions {#decisions}
