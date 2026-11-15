@@ -324,8 +324,10 @@ _MEDIAN_BYTES_STEPS = (0, 100, 300)
 
 
 def _median_bytes_hook(ix: int, b: int) -> int:
-    """The median test's size offsets, one per rehearsal run index `ix`."""
-    return b + _MEDIAN_BYTES_STEPS[ix]
+    """The median test's size offsets by rehearsal run index. A noisy batch is rerun (run
+    indexes 3-5, `measure_catalogs._measure_copy`), so the offsets repeat per batch rather than
+    run out (bug-270)."""
+    return b + _MEDIAN_BYTES_STEPS[ix % len(_MEDIAN_BYTES_STEPS)]
 
 
 def test_rewrite_bytes_is_the_median_of_the_runs(tmp_path, scratch):
@@ -335,7 +337,9 @@ def test_rewrite_bytes_is_the_median_of_the_runs(tmp_path, scratch):
                            bytes_hook=_median_bytes_hook)
     (row,) = rows
     base = row["rewrite_bytes_all"][0]
-    assert code == 0 and row["rewrite_bytes_all"] == [base, base + 100, base + 300]
+    # A rerun batch (noisy timings under load) repeats the offsets; the median is unchanged.
+    assert code == 0 and row["rewrite_bytes_all"] == (
+        [base, base + 100, base + 300] * (1 + row["rehearsal_reruns"]))
     assert row["rewrite_bytes"] == base + 100
 
 

@@ -1,0 +1,29 @@
+...............................F                                         [100%]
+=================================== FAILURES ===================================
+_____ test_r3_1_bug130_a_failed_store_fails_on_its_error_not_on_a_keyerror _____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2278/test_r3_1_bug130_a_failed_stor0')
+
+    def test_r3_1_bug130_a_failed_store_fails_on_its_error_not_on_a_keyerror(tmp_path):
+        code, out = _force(tmp_path, "bug130", BUG130)
+        assert code == 1, f"the forced failure did not fail the test (exit {code}):\n{out[-3000:]}"
+        e = "\n".join(_e_lines(out))
+>       assert "KeyError: 'rewrite_bytes_all'" not in out, (
+            f"R3.1/M3.1: the test indexed rewrite_bytes_all before checking `failed`:\n{e}")
+E       AssertionError: R3.1/M3.1: the test indexed rewrite_bytes_all before checking `failed`:
+E         E       KeyError: 'rewrite_bytes_all'
+E       assert "KeyError: '...e_bytes_all'" not in 'F          ...d in 0.54s\n'
+E         
+E         "KeyError: 'rewrite_bytes_all'" is contained here:
+E           ^
+E           E       KeyError: 'rewrite_bytes_all'
+E           
+E           tests/test_catalog_measure.py:339: KeyError
+E           ----------------------------- Captured stdout call -----------------------------...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_t03_flake_diagnostics.py:137: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_t03_flake_diagnostics.py::test_r3_1_bug130_a_failed_store_fails_on_its_error_not_on_a_keyerror
+1 failed, 31 passed in 29.87s
