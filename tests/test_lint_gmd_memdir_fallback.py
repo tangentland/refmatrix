@@ -239,6 +239,32 @@ def test_a_chain_names_an_empty_intermediate_dir_as_empty(tmp_path, home):
     assert "empty" in reason_text(_segment(note, str(clone_a), str(clone_b))), note
 
 
+def test_a_chain_resolves_under_an_exported_git_dir_of_an_unrelated_repo(tmp_path, home,
+                                                                         monkeypatch):
+    """ch-bsd T0.1' r1 MEH-1 (L126): the gate can run from inside a git hook, where git exports
+    `GIT_DIR` / `GIT_WORK_TREE` for the repo being committed (the bug-212 E1 class). Every
+    `git -C <checkout>` the walk makes must still read THAT checkout, not the exported repo:
+    the resolver strips git's locating variables. Here they name an unrelated repo whose origin
+    is non-local, so a resolver that keeps them reads that origin for every hop and stops on
+    `non-local origin` with no dir (mutation M1.12, "drop the scrub")."""
+    gm = load_gmd_memdir()
+    clone_b = _checkout(tmp_path / "clone_b")
+    used = _populate(home, clone_b)
+    clone_a = _checkout(tmp_path / "clone_a", origin=str(clone_b))
+    root = _checkout(tmp_path / "chk_chain", origin=str(clone_a))
+    unrelated = _checkout(tmp_path / "unrelated_repo",
+                          origin="git@example.invalid:owner/unrelated.git")
+    monkeypatch.setenv("GIT_DIR", str(unrelated / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(unrelated))
+    chosen, note = _resolve(gm, root, home)
+    assert chosen == used.resolve(), (
+        f"with GIT_DIR/GIT_WORK_TREE exported for {unrelated}, the chain {root} -> {clone_a} -> "
+        f"{clone_b} must still resolve to clone B's dir: chosen={chosen} note={note!r}")
+    _one_line(note)
+    assert "absent" in reason_text(_segment(note, str(clone_a), str(clone_b))), note
+    assert str(unrelated) not in note, f"the walk read the exported repo: {note!r}"
+
+
 _CYCLE_CHILD = r'''
 import importlib.util, json, sys
 from pathlib import Path
