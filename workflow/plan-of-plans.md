@@ -103,6 +103,14 @@ Admitted after the mod transition, not before (each with why it waits):
   term gets the top scan-prompt tier and a fuller associative bundle (neighbours, defining docs,
   memories, depth 2 for that term only); interactive descent in the hub graph view / the mod. An
   explicit pull that replaces scan-prompt's guess at which words matter. A UX feature: the mod.
+  **Extension (the user, 2026-11-15):** `w1...w2` / `w1...w2...w3` name seeds whose connecting
+  subgraph to explore (a steered multi-seed walk: paths / connector set between the named terms,
+  the opposite of the unconstrained degree-2 walk that retrieved ~5x worse); three terms read as
+  waypoints. `..` (two dots) walks the type/instance axis instead (`is_a` / kind / instance-of:
+  `function..` = instances, `Store..parse` = the instance's type or siblings). Open: telling it
+  apart from prose ellipsis, Rust/Swift ranges and dotted paths (operators only when glued to
+  tokens, ignored inside code spans); the gestures compile to the `rmx query` DSL, not a second
+  engine.
 - **From the L106 queue (Q28 = a):** compaction-as-handoff, agent-start context, 25.1b (new hook
   features; the mod replaces the hook surface); plan-28 (paired series); 23.4, the 16.6 slice and
   plan-17 (nightly maintenance); plan-22 except 22.6 R4; plan-16 (grep shim; learning stays off
