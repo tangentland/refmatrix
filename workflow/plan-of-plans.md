@@ -50,7 +50,7 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 27 | plan-27-memory-fleet-rollout | approved 2026-11-09 (ch-bsd r1-r5 folded; r6-lite confirm at `d396317` MEH-only; r1 `8af766a`, r2 `696c3cb`; 8 task specs 27.0-27.6 + 27.2a) | yes (8) | `workflow/plans/plan-27-memory-fleet-rollout.md` | plan-26 deployed |
 | 29 | plan-29-code-quality | approved 2026-11-14 (ch-bsd spec r1-r3 folded; r4 confirm-lite MEH-only 0B/0S/4M GO, MEHs folded before merge per L111; spec branches merged `33d85bb` + `d227cc6`; 6 task specs 29.1-29.6 on Fable 5.2; rulings L104-L111; plan-29 D23 open for the user at 29.5's store event; runs FIRST after 0.83.1, L104) | yes (6) | `workflow/plans/plan-29-code-quality.md` | 0.83.1 deployed (bug-241 + bug-240); `.venv-eval` duckdb 1.5.3 before any 29.4/29.5 baseline (L106) |
 | 30 | plan-30-materialisation | approved 2026-11-15 (L117; D1-D3 user-decided) 2026-11-14 (plan + 6 task specs 30.0-30.5 written by ch-architect on Fable 5.2 from the bitmap-materialisation measurement report; ch-bsd spec r1 at `a169c17` DIRTY 0B/3S/5M NO-GO, all eight folded in revision round 2 per ruling L116; confirm-lite r2 at `5914997` MEH-only 0B/0S/4M GO, its four folded; plan-30 D12 accepted; fixes bug-243; plan-30 D1-D3 open for the user; three releases, release B re-derives the `pagerank` pass fleet-wide) | yes (6), in review | `workflow/plans/plan-30-materialisation.md` | plan-29 released (module split, census kit, derive digest); 30.4 also 23.0's sandbox |
-| 31 | plan-31-pre-mod-loose-ends | drafting 2026-11-15 (admitted under the pre-mod freeze, [[#freeze]]; four items registered — 31.1 bug-244, 31.2 bug-107 + bug-247, 31.3 bug-242 guard, 31.4 retire standing lint warnings; specs written when it reaches the head of the queue) |
+| 31 | plan-31-pre-mod-loose-ends | drafting 2026-11-15 (admitted under the pre-mod freeze, [[#freeze]]; five items — 31.1 bug-244, 31.2 bug-107 + bug-247, 31.3 bug-242 guard, 31.4 retire standing lint warnings, 31.5 scan-prompt per-block measure + cut (Q27 = b); specs written when it reaches the head of the queue) |
 
 ## Pre-mod freeze (user, 2026-11-15) {#freeze}
 
@@ -61,7 +61,10 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 3. **Plan-30** adjacency + bitmap materialisation (30.0-30.5), plus **30.6** edge-type value
    measurement ([[plan-30-materialisation#t6]]).
 4. **Plan-31** pre-mod loose ends ([[plan-31-pre-mod-loose-ends]]): 31.1 bug-244, 31.2 bug-107 +
-   bug-247, 31.3 the bug-242 ledger-anchor guard, 31.4 retire the standing lint warnings.
+   bug-247, 31.3 the bug-242 ledger-anchor guard, 31.4 retire the standing lint warnings, 31.5 the
+   scan-prompt injection measured per block, then cut and tightened (Q27 = b).
+5. **Pending Q28:** which steps 6-15 of the L106 queue stay before the mod
+   ([[freeze-triage-2026-11-15]]); until answered they keep their L106 order.
 
 **The rule.** Nothing else is admitted before the mod except a bug that breaks something live
 (a crash, data loss, a wrong answer on the production path, a wedge). Everything else — new ideas,
@@ -85,7 +88,8 @@ Admitted after the mod transition, not before (each with why it waits):
   the code-span-then-wikilink workaround is cheap and rare.
 - **Generated frontmatter / heading anchors** — new tooling; reduces ceremony but adds a feature.
 - **A before/after node check on GMD edits** (an edit is a graph mutation) — new machinery.
-- **Injection presentation work** — the mod changes how context is delivered.
+- **Injection presentation work beyond plan-31 31.5** — the mod changes how context is delivered;
+  tool-keyed rules are its design input ([[design-note-tool-keyed-context-2026-11-15]]).
 - **bug-248** (transaction rollback leaves log events and bitmap bits) — a design change; nothing
   live is known to roll back mid-write today.
 - **bug-250** (a missing path is not refused on the verb/op ingest routes) — validation; the

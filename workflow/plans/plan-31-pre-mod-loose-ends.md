@@ -11,7 +11,7 @@ metadata:
 
 # Plan 31: pre-mod loose ends {#root}
 
-**Date:** 2026-11-15. **Status:** drafting — the four items are admitted and registered; each
+**Date:** 2026-11-15. **Status:** drafting — the five items are admitted and registered; each
 task spec is written (ch-architect on Fable) and reviewed (ch-bsd) when the plan reaches the head
 of the queue, per [[orchestration#planning]]. **Origin:** the user, 2026-11-15: "write the freeze
 line and register the five", after the lead's GMD assessment. The fifth item is plan-30's task 30.6.
@@ -19,6 +19,8 @@ line and register the five", after the lead's GMD assessment. The fifth item is 
 rel: part-of -> [[plan-of-plans#freeze]]
 rel: related-to -> [[plan-30-materialisation]]
 rel: depends-on -> [[orchestration]]
+rel: related-to -> [[task-21.5-tool-used-signal]]
+rel: related-to -> [[plan-10-injection-dedup]]
 
 ## Why {#why}
 
@@ -63,12 +65,33 @@ instances fixed) or retired from the linter, with the reason recorded; the targe
 warnings, so a new warning is read. Busywork removed, not added: no per-warning fixing of a class
 that is retired. {#t4-body}
 
+### 31.5 Scan-prompt injection: measure each block's use, then cut and tighten (Q27 = b) {#t5}
+
+The user, 2026-11-15: reduce the scan-prompt injection before the dedup (plan-10) lands, tighten
+what it injects, do not remove it, and "evaluate the STM impact — if it really doesn't provide
+value, it's worth considering taking action." {#t5-ask}
+
+1. **Measure per block kind** (STM topic composite, content matches, symbol context, memory
+   recall), from what is already logged: bytes per prompt, repetition across consecutive prompts
+   (ch-bsd measured the composite at 59% of scan-prompt bytes and 100% repeated), and **use** by
+   the 21.5 used-signal method (a later tool call or the reply touches an injected item; the
+   2026-11-13 pilot found 7% caused, 19% caused + informed across all blocks, but did not split
+   by block). Go/no-go bands are written before the run: a block used on under 5% of prompts is
+   cut to on-change-only or dropped; 5-15% is shrunk; over 15% is kept and tightened.
+2. **Cut and tighten** by the bands. Already clear without measuring: no stopword or typo tokens
+   as STM topic members; no topic without a real symbol or file member; no repeat of an unchanged
+   block ([[feedback_injection_presentation_rules]]); most relevant first under the cap.
+3. **Ablation only if a band is ambiguous:** replay real prompts with the block removed and
+   compare the agent's actions (task 21.7's method).
+
+Runs right after 0.83.1, ahead of plan-10's dedup; feeds 21.5 phase M and 30.6. {#t5-body}
+
 ## Order {#order}
 
 31.3 and 31.4 are small and may run at any point after 0.83.1. 31.1 after 0.83.1 (it changes
-0.83.1's S2 test input). 31.2 after 29.5. All before the mod transition. {#order-list}
+0.83.1's S2 test input). 31.5 right after 0.83.1. 31.2 after 29.5. All before the mod transition. {#order-list}
 
 ## Out of scope {#out-of-scope}
 
 Branch-aware lint, generated frontmatter / anchors, a before/after node check on edits, and any
-injection-presentation work: post-mod list ([[plan-of-plans#post-mod]]). {#out-of-scope-body}
+injection-presentation work beyond 31.5: post-mod list ([[plan-of-plans#post-mod]]). {#out-of-scope-body}
