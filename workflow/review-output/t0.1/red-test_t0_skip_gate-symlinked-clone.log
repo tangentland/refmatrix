@@ -1,0 +1,605 @@
+# base sha 9a5a98a872431c03df199e894c8353f270f393d6 + uncommitted RED tests; cwd /Volumes/littlebig/refmatrix-t01 layout=symlinked .venv-eval
+pyc-guard: recompiled 6 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFF                                                         [100%]
+=================================== FAILURES ===================================
+________ test_the_allowed_set_follows_each_skips_own_condition[no-venv] ________
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e0')
+venv = 'none', hooks = 'self'
+expected = {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev rmx not built', 'tests...', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon': 'dev rmx not built', ...}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_______ test_the_allowed_set_follows_each_skips_own_condition[real-venv] _______
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e1')
+venv = 'real', hooks = 'self', expected = {}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+__ test_the_allowed_set_follows_each_skips_own_condition[half-built-venv-dir] __
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e2')
+venv = 'half-built', hooks = 'self'
+expected = {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev rmx not built', 'tests...', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon': 'dev rmx not built', ...}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-foreign-hooks] _
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e3')
+venv = 'symlink', hooks = 'foreign'
+expected = {'tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated': 'hooks belong to another checkout of this commit'}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-own-hooks] _
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e4')
+venv = 'symlink', hooks = 'self', expected = {}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-without-rmx] _
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e5')
+venv = 'symlink-empty', hooks = 'self'
+expected = {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev rmx not built', 'tests...', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon': 'dev rmx not built', ...}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-real-venv] _
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e6')
+venv = 'real', hooks = 'foreign'
+expected = {'tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated': 'hooks belong to another checkout of this commit'}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-no-venv] _
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e7')
+venv = 'none', hooks = 'foreign'
+expected = {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev rmx not built', 'tests...', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon': 'dev rmx not built', ...}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_ test_the_allowed_set_follows_each_skips_own_condition[no-hooks-file-no-venv] _
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_allowed_set_follows_e8')
+venv = 'none', hooks = 'none'
+expected = {'tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon': 'dev rmx not built', 'tests...', 'tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon': 'dev rmx not built', ...}
+
+    @pytest.mark.parametrize("venv,hooks,expected", [l[1:] for l in _LAYOUTS],
+                             ids=[l[0] for l in _LAYOUTS])
+    def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
+                                                              expected):
+        """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
+        resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
+        single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_______ test_the_hooks_pin_is_decided_the_way_the_hooks_test_decides_it ________
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_the_hooks_pin_is_decided_0')
+
+    def test_the_hooks_pin_is_decided_the_way_the_hooks_test_decides_it(pytestconfig, tmp_path):
+        """R1.1: the hooks pin is allowed exactly when `installed_root(checkout)` is not None and is
+        not the checkout -- the condition `tests/test_repo_hooks_in_sync.py` skips on."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+_______________ test_every_pin_is_its_tests_own_reason_verbatim ________________
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_every_pin_is_its_tests_ow0')
+
+    def test_every_pin_is_its_tests_own_reason_verbatim(pytestconfig, tmp_path):
+        """R1.2: with every condition true, the builder pins exactly the 19 nodeids, and each value
+        is a `reason="…"` string literal in that test's own file. A test whose reason changes must
+        change its pin in the same commit; this goes red when only one of them moved."""
+>       build = _builder(pytestconfig)
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_t0_skip_gate.py:200: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+config = <_pytest.config.Config object at 0x102848440>
+
+    def _builder(config):
+        build = getattr(_conftest(config), "allowed_skips", None)
+>       assert callable(build), (
+            "tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one "
+            "`(_REPO / \".venv-eval\").is_dir()` switch over all 19 pins, so a symlinked .venv-eval "
+            "drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)")
+E       AssertionError: tests/conftest.py defines no `allowed_skips(checkout)`: ALLOWED_SKIPS is still one `(_REPO / ".venv-eval").is_dir()` switch over all 19 pins, so a symlinked .venv-eval drops every pin and a half-built venv keeps none (T0.1' R1.1, bug-215)
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_t0_skip_gate.py:102: AssertionError
+________ test_this_sessions_allowed_set_is_the_builder_on_this_checkout ________
+
+pytestconfig = <_pytest.config.Config object at 0x102848440>
+
+    def test_this_sessions_allowed_set_is_the_builder_on_this_checkout(pytestconfig):
+        """AC-1.1, from inside the session: the pins this run allows are what each pin's own
+        condition says about THIS checkout. In a littlebig clone with a symlinked `.venv-eval` that
+        is exactly the hooks pin (the venv rmx exists through the symlink; the committed
+        `.claude/settings.json` names the main tree), and at T0.1's base it was empty."""
+        mod = _conftest(pytestconfig)
+        expected = {}
+        if not (_REPO / ".venv-eval" / "bin" / "rmx").exists():
+            expected.update(VENV_PINS)
+        owner = hooks_mod.installed_root(_REPO)
+        if owner is not None and owner != _REPO:
+            expected.update(HOOKS_PINS)
+>       assert dict(mod.ALLOWED_SKIPS) == expected, (
+            f"ALLOWED_SKIPS for {_REPO} (venv rmx exists: "
+            f"{(_REPO / '.venv-eval' / 'bin' / 'rmx').exists()}, hooks owner: {owner}) is "
+            f"{dict(mod.ALLOWED_SKIPS)!r}; each pin's own condition gives {expected!r}")
+E       AssertionError: ALLOWED_SKIPS for /Volumes/littlebig/refmatrix-t01 (venv rmx exists: True, hooks owner: /Users/tholley/claude_tools/refmatrix) is {}; each pin's own condition gives {'tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated': 'hooks belong to another checkout of this commit'}
+E       assert {} == {'tests/test_... this commit'}
+E         
+E         Right contains 1 more item:
+E         {'tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated': 'hooks '
+E                                                                                    'belong '
+E                                                                                    'to '
+E                                                                                    'another '
+E                                                                                    'checkout '...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_t0_skip_gate.py:225: AssertionError
+______ test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session ______
+
+pytester = <Pytester PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session0')>
+
+    def test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session(pytester):
+        """AC-1.3: a pinned nodeid that skips with a DIFFERENT reason fails the session, and the
+        report names both reasons; a pinned nodeid that skips with its exact reason (pytest adds
+        `Skipped: `) passes, in both the mark and the call form. Mutation M1.2 (nodeid only) passes
+        the first half."""
+        pytester.makepyfile(test_inner_reason=_INNER)
+        pin = "the pinned reason"
+        allowed = {f"test_inner_reason.py::{n}": pin
+                   for n in ("test_mark_exact", "test_call_exact", "test_other_reason",
+                             "test_mark_other_reason")}
+        gate = rmx_sandbox.SkipGate(allowed)
+        result = pytester.runpytest("-p", "no:cacheprovider", plugins=[gate])
+        out = result.stdout.str()
+>       assert result.ret == pytest.ExitCode.TESTS_FAILED, (
+            "two pinned nodeids skipped for reasons that are not their pinned reason, and the "
+            f"session passed (exit {result.ret}): the gate matched by nodeid only.\n" + out[-3000:])
+E       AssertionError: two pinned nodeids skipped for reasons that are not their pinned reason, and the session passed (exit 0): the gate matched by nodeid only.
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session0
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 5 items
+E         
+E         test_inner_reason.py ssss.                                               [100%]
+E         
+E         ========================= 1 passed, 4 skipped in 0.00s =========================
+E       assert <ExitCode.OK: 0> == <ExitCode.TESTS_FAILED: 1>
+E        +  where <ExitCode.OK: 0> = <RunResult ret=0 len(stdout.lines)=9 len(stderr.lines)=0 duration=0.02s>.ret
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+/Volumes/littlebig/refmatrix-t01/tests/test_t0_skip_gate.py:281: AssertionError
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session0
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 5 items
+
+test_inner_reason.py ssss.                                               [100%]
+
+========================= 1 passed, 4 skipped in 0.00s =========================
+_ test_a_substring_or_near_match_is_not_a_pinned_reason[test_pin_inside_the_reason-rmx not built] _
+
+pytester = <Pytester PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason0')>
+name = 'test_pin_inside_the_reason', pin = 'rmx not built'
+
+    @pytest.mark.parametrize("name,pin", [
+        ("test_pin_inside_the_reason", "rmx not built"),
+        ("test_reason_inside_the_pin", "dev rmx not built yet"),
+        ("test_case_differs", "dev rmx not built"),
+    ])
+    def test_a_substring_or_near_match_is_not_a_pinned_reason(pytester, name, pin):
+        """AC-1.3 / R1.2: the reason is EQUAL to the pin, not contained in it, not containing it,
+        not equal ignoring case (mutation M1.2's substring form)."""
+        pytester.makepyfile(test_inner_sub=_INNER_SUB)
+        nodeid = f"test_inner_sub.py::{name}"
+        others = {f"test_inner_sub.py::{n}": r for n, r in (
+            ("test_pin_inside_the_reason", "dev venv rmx not built"),
+            ("test_reason_inside_the_pin", "dev rmx not built"),
+            ("test_case_differs", "Dev Rmx Not Built")) if n != name}
+        gate = rmx_sandbox.SkipGate({nodeid: pin, **others})
+        result = pytester.runpytest("-p", "no:cacheprovider", plugins=[gate])
+        out = result.stdout.str()
+>       assert result.ret == pytest.ExitCode.TESTS_FAILED, (
+            f"{nodeid} skipped with a reason that is not EQUAL to its pin {pin!r}, and the session "
+            f"passed (exit {result.ret}).\n" + out[-3000:])
+E       AssertionError: test_inner_sub.py::test_pin_inside_the_reason skipped with a reason that is not EQUAL to its pin 'rmx not built', and the session passed (exit 0).
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason0
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 3 items
+E         
+E         test_inner_sub.py sss                                                    [100%]
+E         
+E         ============================== 3 skipped in 0.00s ==============================
+E       assert <ExitCode.OK: 0> == <ExitCode.TESTS_FAILED: 1>
+E        +  where <ExitCode.OK: 0> = <RunResult ret=0 len(stdout.lines)=9 len(stderr.lines)=0 duration=0.02s>.ret
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+/Volumes/littlebig/refmatrix-t01/tests/test_t0_skip_gate.py:333: AssertionError
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason0
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 3 items
+
+test_inner_sub.py sss                                                    [100%]
+
+============================== 3 skipped in 0.00s ==============================
+_ test_a_substring_or_near_match_is_not_a_pinned_reason[test_reason_inside_the_pin-dev rmx not built yet] _
+
+pytester = <Pytester PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason1')>
+name = 'test_reason_inside_the_pin', pin = 'dev rmx not built yet'
+
+    @pytest.mark.parametrize("name,pin", [
+        ("test_pin_inside_the_reason", "rmx not built"),
+        ("test_reason_inside_the_pin", "dev rmx not built yet"),
+        ("test_case_differs", "dev rmx not built"),
+    ])
+    def test_a_substring_or_near_match_is_not_a_pinned_reason(pytester, name, pin):
+        """AC-1.3 / R1.2: the reason is EQUAL to the pin, not contained in it, not containing it,
+        not equal ignoring case (mutation M1.2's substring form)."""
+        pytester.makepyfile(test_inner_sub=_INNER_SUB)
+        nodeid = f"test_inner_sub.py::{name}"
+        others = {f"test_inner_sub.py::{n}": r for n, r in (
+            ("test_pin_inside_the_reason", "dev venv rmx not built"),
+            ("test_reason_inside_the_pin", "dev rmx not built"),
+            ("test_case_differs", "Dev Rmx Not Built")) if n != name}
+        gate = rmx_sandbox.SkipGate({nodeid: pin, **others})
+        result = pytester.runpytest("-p", "no:cacheprovider", plugins=[gate])
+        out = result.stdout.str()
+>       assert result.ret == pytest.ExitCode.TESTS_FAILED, (
+            f"{nodeid} skipped with a reason that is not EQUAL to its pin {pin!r}, and the session "
+            f"passed (exit {result.ret}).\n" + out[-3000:])
+E       AssertionError: test_inner_sub.py::test_reason_inside_the_pin skipped with a reason that is not EQUAL to its pin 'dev rmx not built yet', and the session passed (exit 0).
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason1
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 3 items
+E         
+E         test_inner_sub.py sss                                                    [100%]
+E         
+E         ============================== 3 skipped in 0.00s ==============================
+E       assert <ExitCode.OK: 0> == <ExitCode.TESTS_FAILED: 1>
+E        +  where <ExitCode.OK: 0> = <RunResult ret=0 len(stdout.lines)=9 len(stderr.lines)=0 duration=0.02s>.ret
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+/Volumes/littlebig/refmatrix-t01/tests/test_t0_skip_gate.py:333: AssertionError
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason1
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 3 items
+
+test_inner_sub.py sss                                                    [100%]
+
+============================== 3 skipped in 0.00s ==============================
+_ test_a_substring_or_near_match_is_not_a_pinned_reason[test_case_differs-dev rmx not built] _
+
+pytester = <Pytester PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason2')>
+name = 'test_case_differs', pin = 'dev rmx not built'
+
+    @pytest.mark.parametrize("name,pin", [
+        ("test_pin_inside_the_reason", "rmx not built"),
+        ("test_reason_inside_the_pin", "dev rmx not built yet"),
+        ("test_case_differs", "dev rmx not built"),
+    ])
+    def test_a_substring_or_near_match_is_not_a_pinned_reason(pytester, name, pin):
+        """AC-1.3 / R1.2: the reason is EQUAL to the pin, not contained in it, not containing it,
+        not equal ignoring case (mutation M1.2's substring form)."""
+        pytester.makepyfile(test_inner_sub=_INNER_SUB)
+        nodeid = f"test_inner_sub.py::{name}"
+        others = {f"test_inner_sub.py::{n}": r for n, r in (
+            ("test_pin_inside_the_reason", "dev venv rmx not built"),
+            ("test_reason_inside_the_pin", "dev rmx not built"),
+            ("test_case_differs", "Dev Rmx Not Built")) if n != name}
+        gate = rmx_sandbox.SkipGate({nodeid: pin, **others})
+        result = pytester.runpytest("-p", "no:cacheprovider", plugins=[gate])
+        out = result.stdout.str()
+>       assert result.ret == pytest.ExitCode.TESTS_FAILED, (
+            f"{nodeid} skipped with a reason that is not EQUAL to its pin {pin!r}, and the session "
+            f"passed (exit {result.ret}).\n" + out[-3000:])
+E       AssertionError: test_inner_sub.py::test_case_differs skipped with a reason that is not EQUAL to its pin 'dev rmx not built', and the session passed (exit 0).
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason2
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 3 items
+E         
+E         test_inner_sub.py sss                                                    [100%]
+E         
+E         ============================== 3 skipped in 0.00s ==============================
+E       assert <ExitCode.OK: 0> == <ExitCode.TESTS_FAILED: 1>
+E        +  where <ExitCode.OK: 0> = <RunResult ret=0 len(stdout.lines)=9 len(stderr.lines)=0 duration=0.02s>.ret
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+/Volumes/littlebig/refmatrix-t01/tests/test_t0_skip_gate.py:333: AssertionError
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1766/test_a_substring_or_near_match_is_not_a_pinned_reason2
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 3 items
+
+test_inner_sub.py sss                                                    [100%]
+
+============================== 3 skipped in 0.00s ==============================
+=========================== short test summary info ============================
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[no-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[real-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[half-built-venv-dir]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-foreign-hooks]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-own-hooks]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[symlinked-venv-without-rmx]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-real-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[foreign-hooks-no-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_allowed_set_follows_each_skips_own_condition[no-hooks-file-no-venv]
+FAILED tests/test_t0_skip_gate.py::test_the_hooks_pin_is_decided_the_way_the_hooks_test_decides_it
+FAILED tests/test_t0_skip_gate.py::test_every_pin_is_its_tests_own_reason_verbatim
+FAILED tests/test_t0_skip_gate.py::test_this_sessions_allowed_set_is_the_builder_on_this_checkout
+FAILED tests/test_t0_skip_gate.py::test_a_pinned_nodeid_skipping_for_another_reason_fails_the_session
+FAILED tests/test_t0_skip_gate.py::test_a_substring_or_near_match_is_not_a_pinned_reason[test_pin_inside_the_reason-rmx not built]
+FAILED tests/test_t0_skip_gate.py::test_a_substring_or_near_match_is_not_a_pinned_reason[test_reason_inside_the_pin-dev rmx not built yet]
+FAILED tests/test_t0_skip_gate.py::test_a_substring_or_near_match_is_not_a_pinned_reason[test_case_differs-dev rmx not built]
+16 failed in 0.83s
+EXIT=1

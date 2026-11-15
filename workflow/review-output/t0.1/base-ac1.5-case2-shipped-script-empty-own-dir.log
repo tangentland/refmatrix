@@ -1,0 +1,15 @@
+# sha 9a5a98a872431c03df199e894c8353f270f393d6 cwd /Volumes/littlebig/refmatrix-t01 origin=/Users/tholley/claude_tools/refmatrix layout=symlinked .venv-eval; real scripts/lint-gmd.sh at T0.1 base
+# decoy HOME=/tmp/t01e.9rKb/home: EMPTY /tmp/t01e.9rKb/home/.claude/projects/-Volumes-littlebig-refmatrix-t01/memory (0 files) + copy of the main tree's memory dir at /tmp/t01e.9rKb/home/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory (327 entries, read-only copy of the real one)
+EXIT=1
+--- stderr lines that are not lint errors or the summary (a fallback line would be here)
+lint-gmd: lint exit 1, anchor parity exit 0
+(lint-gmd: lines on stderr: 1)
+--- counts
+error lines: 1235
+dangling-doc: 1235
+--- first 2 E lines
+docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-queued-work]] — no doc with id `project-queued-work` in scanned set
+docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-daemon-arch]] — no doc with id `project-daemon-arch` in scanned set
+--- summaries
+gmd lint: 744 files, 742 GMD docs, 1235 errors, 37 warnings [phase 2 cross-doc]
+gmd parity: 0 divergent doc(s), 0 parse failure(s), 0 doc(s) outside the ingest scope

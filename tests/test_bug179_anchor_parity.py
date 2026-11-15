@@ -505,6 +505,10 @@ def _gate_root(*, lint_src: str | None, doc: str, venv: bool = True) -> Path:
     shutil.copy2(LINT_GMD_SH, root / "scripts" / "lint-gmd.sh")
     if PARITY.is_file():
         shutil.copy2(PARITY, root / "scripts" / "check-gmd-parity.py")
+    # T0.1' R1.4: lint-gmd.sh asks scripts/gmd_memdir.py for its memory dir; a gate root that
+    # copies the script copies its resolver (present once GREEN lands; absent at the base).
+    if (REPO / "scripts" / "gmd_memdir.py").is_file():
+        shutil.copy2(REPO / "scripts" / "gmd_memdir.py", root / "scripts" / "gmd_memdir.py")
     (root / "tools" / "gmd").mkdir(parents=True)
     (root / "tools" / "gmd" / "lint.py").write_text(
         lint_src if lint_src is not None else LINT.read_text())
