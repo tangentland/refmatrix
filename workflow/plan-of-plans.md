@@ -97,6 +97,12 @@ Admitted after the mod transition, not before (each with why it waits):
 - **bug-250** (a missing path is not refused on the verb/op ingest routes) — validation; the
   daemon's ingest errors on a missing path anyway.
 - **Pre-split rows / filter bitmaps** — already deferred with a trigger ([[plan-30-materialisation#deferred]]).
+- **Inline term introspection (`term...`)** (the user, 2026-11-15: "the ability to inline access
+  the metadata of a word/term/concept using something like adding an ellipsis… making every
+  word/term introspectable (descend into its associative network)"): an ellipsis-marked prompt
+  term gets the top scan-prompt tier and a fuller associative bundle (neighbours, defining docs,
+  memories, depth 2 for that term only); interactive descent in the hub graph view / the mod. An
+  explicit pull that replaces scan-prompt's guess at which words matter. A UX feature: the mod.
 - **From the L106 queue (Q28 = a):** compaction-as-handoff, agent-start context, 25.1b (new hook
   features; the mod replaces the hook surface); plan-28 (paired series); 23.4, the 16.6 slice and
   plan-17 (nightly maintenance); plan-22 except 22.6 R4; plan-16 (grep shim; learning stays off
