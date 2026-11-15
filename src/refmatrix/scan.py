@@ -139,6 +139,43 @@ def _token_shape_score(token: str) -> float:
     return score
 
 
+def is_identifier_shaped(token: str) -> bool:
+    """True when `token` has identifier STRUCTURE, the way an author cites code or a doc on
+    purpose: a path (`/`), a qualified name (`::`), an interior `_`, an interior `-` between word
+    characters (`scan-prompt`, `bug-241`), CamelCase (`KeyError`), an acronym (`MCP`), a digit
+    beside letters (`p20`), or a dotted name whose every part has 2+ characters (`os.path`,
+    `stm.py`). Plain words are not, however long (`implementation`); neither are one- or
+    two-letter dotted fragments (`e.g`, `t.repla`).
+
+    Why (ch-bsd scan-order r1 #s1, 2026-11-15): tier-1 placement and the composite's grounded
+    filter used `_token_shape_score > 0`, a RANKING score whose 12+-character bonus made
+    `implementation` and `architecture` "identifiers". One structural classifier, shared by
+    both, with no length term."""
+    t = token.strip().strip(".,;:!?()[]{}<>\"'`")
+    if len(t) < 2:
+        return False
+    if "/" in t or "::" in t:
+        return True
+    if t.startswith("_") and len(t) > 2 and t.lstrip("_")[:1].isalpha():
+        return True                                   # a private name (`_finish`, `__init__`)
+    core = t.strip("_-")
+    if "_" in core:
+        return True
+    if re.search(r"[A-Za-z0-9]-[A-Za-z0-9]", core):
+        return True
+    if re.search(r"[a-z][A-Z]", core) or re.match(r"[A-Z][a-z]+[A-Z]", core):
+        return True                                   # CamelCase / mixedCase
+    if core.isupper() and len(core) >= 2 and core.isalpha():
+        return True                                   # acronym
+    if any(c.isdigit() for c in core) and any(c.isalpha() for c in core):
+        return True
+    if "." in core:
+        parts = core.split(".")
+        if len(parts) >= 2 and all(len(x) >= 2 for x in parts):
+            return True
+    return False
+
+
 def _concept_signal(
     s: Store, con, name: str,
 ) -> tuple[int | None, int, int, float]:
@@ -895,15 +932,19 @@ def scan_prompt(
     carry. scan-prompt reached 11,555 B on its own live (`--max-tokens` is a token estimate,
     not a byte cap), and Claude Code previews any hook output over 10,000 UTF-16 units."""
 
+    _comp_commit: list = []          # the composite's "sent" marker, committed on delivery
+
     def _composite_text() -> str:
         if not composite or composite_root is None or fmt == "json":
             return ""
         try:
-            from .composite import build_topic_composite
-            comp = build_topic_composite(
+            from .composite import build_topic_composite_pending
+            comp, commit = build_topic_composite_pending(
                 s, composite_root, k=composite_k,
                 expand=composite_expand, max_tokens=composite_max_tokens,
                 every=composite_every, intra_edges=composite_intra_edges)
+            if comp:
+                _comp_commit.append(commit)
         except Exception:
             comp = ""
         return comp or ""
@@ -914,6 +955,12 @@ def scan_prompt(
         exclude_namespaces=exclude_namespaces,
         include_noise=include_noise,
     )
+    # Named identifiers get their slots BEFORE the rerank and the `max_concepts` cut (ch-bsd
+    # scan-order r1 #s2, 2026-11-15): on the real hook prompt PPR kept five PageRank-central
+    # plain words and cut the `scan-prompt` the prompt named, so tier 1 was empty.
+    _named_lc = {c.lower() for c in cands}
+    named_ids = [m for m in matches
+                 if m.lower() in _named_lc and is_identifier_shaped(m)][:max_concepts]
     if matches and rank == "ppr":
         matches = _ppr_rerank(s, matches, max_concepts=max_concepts)
     elif matches and rank == "enrich":
@@ -926,7 +973,8 @@ def scan_prompt(
         matches = _assoc_rerank(s, matches, max_concepts=max_concepts)
     # Rerankers can reintroduce a twin the salience pass already collapsed
     # (PPR expansion returns raw graph names); dedup again before the trim.
-    matches = _dedup_twin_concepts(matches)[:max_concepts]
+    matches = _dedup_twin_concepts(matches)
+    matches = (named_ids + [m for m in matches if m not in named_ids])[:max_concepts]
 
     # ---- content-ranked view over the WHOLE candidate bag ------------------
     # The per-concept bundles below answer "what neighbours this term", once
@@ -1020,6 +1068,11 @@ def scan_prompt(
             text, kept = f.text, f.kept
         else:
             text = "".join(blocks)
+        # Mark the composite sent only when its block (the last) survived the fit (ch-bsd
+        # scan-order r1 #s3): marking a dropped block made the next prompt suppress it as
+        # "unchanged", so it was never delivered.
+        if comp and _comp_commit and kept == len(blocks):
+            _comp_commit[0]()
         if trace is None:
             return text
         _set_retrieved()
@@ -1042,9 +1095,16 @@ def scan_prompt(
 
     if fmt == "json":
         out = []
-        blist = ([cbundle] if cbundle is not None else []) + [
-            build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
-                          degree=degree) for name in matches]
+        _named = {c.lower() for c in cands}
+        _first = [n for n in matches if n.lower() in _named and is_identifier_shaped(n)]
+        _rest = [n for n in matches if n not in _first]
+
+        def _bc(name):
+            return build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                                 degree=degree)
+        # Same section order as the text path (named identifiers, content, the rest).
+        blist = ([_bc(n) for n in _first] + ([cbundle] if cbundle is not None else [])
+                 + [_bc(n) for n in _rest])
         for b in blist:
             _retrieve(b)
             out.append(json.loads(render_json(b)))
@@ -1061,55 +1121,98 @@ def scan_prompt(
     used = 0
     # Rows already rendered by an earlier section (keyed via `_render_key`).
     # The content bundle and the per-symbol bundles pull from the same graph,
-    # so without this the symbol bundle for the prompt's main term re-prints
-    # the exact memories the content section just showed — measured on a live
-    # prompt, ~30-40% of the spent budget was duplicate rows.
+    # so without this a later bundle re-prints the exact memories an earlier
+    # section just showed — measured on a live prompt, ~30-40% of the spent
+    # budget was duplicate rows.
     shown: set[str] = set()
-    if cbundle is not None:
-        header = (f"# refmatrix content matches for prompt: "
-                  f"{', '.join(cands[:8])}")
-        _retrieve(cbundle)
-        rendered, ritems = render_text_spans(cbundle)
-        parts.append(header)
-        parts.append("")
-        parts.append(rendered)
-        marks.append((len(parts) - 1, ritems))
-        used += (len(header) + len(rendered)) // 4
-        for entries in cbundle.groups.values():
-            for e in entries:
-                shown.add(_render_key(e.entity.name))
-    if not matches:
-        return _finish()
-    parts.append("")
-    parts.append(
-        f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
-    used += len(parts[-1]) // 4
-    for name in matches:
-        b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
-                          degree=degree)
-        if b.anchor is None or not b.groups:
-            continue
-        _retrieve(b)
+
+    # Section order (the user, 2026-11-15: "fix the scan-prompt ordering right now").
+    # `_finish` fits WHOLE blocks in order and drops the tail, so the order is the ranking.
+    # Measured in session 070141d0: nearly every output ended `[+N block(s) omitted]`, having
+    # kept the keyword content bundle (built from every prompt word) and the bare header of
+    # the symbol section, and dropped the bundles for the identifiers the prompt named. Now:
+    #   1. bundles for identifier-shaped tokens the prompt NAMES (`widget_registry`, `bug-241`,
+    #      `task-29.5`, a path) — the author cited them deliberately (`_token_shape_score`);
+    #   2. the content-ranked bundle over the prompt's terms;
+    #   3. the other matched concepts: plain words and PPR expansions;
+    #   4. the composite (appended by `_finish`).
+    # A section's header is part of its block, so the cap never keeps a header without its
+    # body.
+    named = {c.lower() for c in cands}
+
+    def _is_named_identifier(name: str) -> bool:
+        return name.lower() in named and is_identifier_shaped(name)
+
+    first = [n for n in matches if _is_named_identifier(n)]
+    rest = [n for n in matches if not _is_named_identifier(n)]
+
+    def _drop_shown(b) -> bool:
+        """Remove rows an earlier section showed; False when nothing is left."""
         if shown:
             for ln in list(b.groups):
-                kept = [e for e in b.groups[ln]
-                        if _render_key(e.entity.name) not in shown]
+                kept = [e for e in b.groups[ln] if _render_key(e.entity.name) not in shown]
                 if kept:
                     b.groups[ln] = kept
                 else:
                     del b.groups[ln]
-            if not b.groups:
-                continue
-        rendered, ritems = render_text_spans(b)
-        cost = len(rendered) // 4
-        if used + cost > max_tokens:
-            parts.append("# [truncated by --max-tokens]")
-            break
-        parts.append("")
-        parts.append(rendered)
-        marks.append((len(parts) - 1, ritems))
-        used += cost
+        return bool(b.groups)
+
+    def _mark_shown(b) -> None:
         for entries in b.groups.values():
             for e in entries:
                 shown.add(_render_key(e.entity.name))
+
+    def _add_section(header: str, rendered: str, ritems: "list[dict]") -> None:
+        """One block: optional header + body. Item spans shift by the prefix's bytes."""
+        prefix = (header + "\n\n") if header else ""
+        if parts:
+            prefix = "\n" + prefix          # one blank line between sections
+        pb = len(prefix.encode("utf-8"))
+        items = []
+        for it in ritems:
+            it = dict(it)
+            it["offset_bytes"] += pb
+            if it.get("body_offset_bytes") is not None:
+                it["body_offset_bytes"] += pb
+            items.append(it)
+        parts.append(prefix + rendered)
+        marks.append((len(parts) - 1, items))
+
+    def _symbol_sections(names: "list[str]") -> bool:
+        """Render `names`' bundles under one header; False when `max_tokens` ran out."""
+        nonlocal used
+        if not names:
+            return True
+        header = f"# refmatrix context for prompt-mentioned symbols: {', '.join(names)}"
+        for name in names:
+            b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                              degree=degree)
+            if b.anchor is None or not b.groups:
+                continue
+            _retrieve(b)
+            if not _drop_shown(b):
+                continue
+            rendered, ritems = render_text_spans(b)
+            cost = len(rendered) // 4 + (len(header) // 4 if header else 0)
+            if used + cost > max_tokens:
+                parts.append("# [truncated by --max-tokens]")
+                return False
+            _add_section(header, rendered, ritems)
+            header = ""                       # the header rides on the tier's first bundle
+            used += cost
+            _mark_shown(b)
+        return True
+
+    if not _symbol_sections(first):
+        return _finish()
+    if cbundle is not None:
+        terms = [c for c in cands if c.lower() not in _PROMPT_STOPWORDS]
+        header = f"# refmatrix content matches for prompt: {', '.join((terms or cands)[:8])}"
+        _retrieve(cbundle)
+        if _drop_shown(cbundle):
+            rendered, ritems = render_text_spans(cbundle)
+            _add_section(header, rendered, ritems)
+            used += (len(header) + len(rendered)) // 4
+            _mark_shown(cbundle)
+    _symbol_sections(rest)
     return _finish()

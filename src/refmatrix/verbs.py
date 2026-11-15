@@ -1645,6 +1645,12 @@ def save_state(root: Path, *, message: str | None = None,
     res["session"] = sess
     res["session_source"] = session_source
     res["memory_dir"] = str(memdir)
+    if not dry_run:
+        # PreCompact runs save-state: after a compaction the context no longer holds the last
+        # STM composite, so forget the "sent" markers and let it be sent once more (ch-bsd
+        # scan-order r1 #m1, 2026-11-15).
+        from refmatrix.composite import clear_sent_markers
+        res["composite_markers_cleared"] = clear_sent_markers(root)
     res["subject"] = s.get_subject()
     if dry_run:
         res["dry_run"] = True

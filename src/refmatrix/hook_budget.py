@@ -11,7 +11,8 @@ R0 measured the cap (`workflow/measurements/hook-output-cap-probe.md`, 2026-11-1
 2.1.322): **10,000 UTF-16 code units of whitespace-trimmed stdout, per hook COMMAND** (outcome A
 on UserPromptSubmit and on SessionStart; PreCompact cuts at the same cap instead of previewing).
 The unit this module budgets is therefore the generated hook command (25.1 d9), at
-`0.9 x cap` = 9,000 B each, and producers that share ONE command share its budget
+`0.95 x cap` = 9,500 B each (raised from 0.9 by the user, 2026-11-15: "make sure the 9.5k
+constraint is added with it", with the scan-prompt order fix), and producers that share ONE command share its budget
 (`HOOK_COMMAND_CHANNELS`: scan-prompt and curator status run in `scan_cmd`).
 
 The budget unit is UTF-8 BYTES of the rendered payload (19.1 R1): for any text the UTF-8 byte
@@ -29,17 +30,20 @@ from typing import Callable, Sequence
 
 # R0 (d748196): Claude Code's per-hook delivery cap, in UTF-16 code units.
 HOOK_CAP_UNITS = 10_000
-# Outcome (A): each generated hook command's budget is 0.9 x cap.
-HOOK_COMMAND_BUDGET_BYTES = int(0.9 * HOOK_CAP_UNITS)
+# Outcome (A): each generated hook command's budget is 0.95 x cap (the user, 2026-11-15; was
+# 0.9). UTF-8 bytes >= UTF-16 units, so 9,500 B stays 500 units under the harness cap.
+HOOK_COMMAND_BUDGET_BYTES = int(0.95 * HOOK_CAP_UNITS)
 
 # Per producer (21.1's channel names, plus R11's `recall_state`). The R1 provisional set was
-# kept after R0: under outcome (A) every value is at or under the 9,000 B command budget
+# kept after R0: under outcome (A) every value is at or under the per-command budget (9,500 B since 2026-11-15)
 # (`#outcome-r1-fit`), and the per-prompt 4,000 is d3's POINTER list -- 12 hook lines at
 # 250-370 B fill it and no 2 kB body fits, so bodies stay a `session_start` feature.
 CHANNEL_BUDGET_BYTES: "dict[str, int]" = {
     "prompt_recall": 4_000,
-    # scan_cmd = scan-prompt `;` curator status: ONE command, ONE 5,000 B budget split here.
-    "scan_prompt": 4_500,
+    # scan_cmd = scan-prompt `;` curator status: ONE command, ONE 9,500 B budget split here
+    # (2026-11-15: was 4,500 + 500 = 5,000, leaving half the command's room unused while the
+    # cap dropped the symbol bundles on nearly every prompt).
+    "scan_prompt": 9_000,
     "curator_status": 500,
     # `rmx focus hook --event input` writes nothing to stdout today; its share is a cap, so a
     # later print cannot grow unbounded beside the other three UserPromptSubmit commands.
@@ -109,7 +113,7 @@ def _check_tables() -> None:
         total = sum(CHANNEL_BUDGET_BYTES[c] for c in chans)
         if total > HOOK_COMMAND_BUDGET_BYTES:
             raise ValueError(f"hook_budget: command {cmd!r} budget {total} B exceeds the "
-                             f"per-command {HOOK_COMMAND_BUDGET_BYTES} B (0.9 x R0's cap)")
+                             f"per-command {HOOK_COMMAND_BUDGET_BYTES} B (0.95 x R0's cap)")
     carried = {c for chans in HOOK_COMMAND_CHANNELS.values() for c in chans}
     missing = sorted(set(CHANNEL_BUDGET_BYTES) - carried)
     if missing:
