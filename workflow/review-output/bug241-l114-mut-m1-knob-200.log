@@ -1,0 +1,93 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/070141d0-80c6-4c13-95a2-56f192e2a1de/scratchpad/mut240/refmatrix/src/refmatrix as checked-hash (bug-037)
+FF..                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence[metadata-code+docs: markdown/gmd] _
+
+base = PosixPath('/private/tmp/b241r2.qkzjjqul'), cache = 'metadata'
+phase = 'code+docs: markdown/gmd'
+
+    @pytest.mark.parametrize("cache,phase", [
+        ("metadata", "code+docs: markdown/gmd"),
+        ("none", "code+docs: tldr/tree"),
+    ])
+    def test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence(base, cache, phase):
+        from refmatrix.ingest import ingest_path
+        from refmatrix.store import Store
+        proj = _project(base, cache, n_md=N_DOCS)
+        root = proj / ".refmatrix"
+        root.mkdir()
+        current = {"phase": None}
+        yields: dict = {}
+    
+        def _progress(name: str, done: int = 0, total: int = 0) -> None:
+            current["phase"] = name
+    
+        def _yield() -> None:
+            yields[current["phase"]] = yields.get(current["phase"], 0) + 1
+    
+        s = Store(root)
+        try:
+            with s.with_partition("proj"):
+                ingest_path(s, proj, yield_lock=_yield, yield_every=DAEMON_YIELD_EVERY,
+                            progress_cb=_progress)
+                gmd_docs = sum(1 for i in range(N_DOCS) if s.get_entity("doc", f"d{i:02d}"))
+        finally:
+            s.close()
+        assert gmd_docs == N_DOCS, f"the GMD pass ingested {gmd_docs}/{N_DOCS} docs (fixture broken)"
+>       assert yields.get(phase, 0) >= N_DOCS, (
+            f"the GMD pass yielded {yields.get(phase, 0)} times over {N_DOCS} docs with the "
+            f"daemon's yield_every={DAEMON_YIELD_EVERY}: it inherits the code-unit cadence, not the "
+            f"GMD op's per-doc one; yields by phase: {yields}")
+E       AssertionError: the GMD pass yielded 0 times over 12 docs with the daemon's yield_every=200: it inherits the code-unit cadence, not the GMD op's per-doc one; yields by phase: {'code+docs: tldr/tree': 1}
+E       assert 0 >= 12
+E        +  where 0 = <built-in method get of dict object at 0x107dd1380>('code+docs: markdown/gmd', 0)
+E        +    where <built-in method get of dict object at 0x107dd1380> = {'code+docs: tldr/tree': 1}.get
+
+tests/test_bug241_r3_l114.py:74: AssertionError
+_ test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence[none-code+docs: tldr/tree] _
+
+base = PosixPath('/private/tmp/b241r2.s_j_l6xy'), cache = 'none'
+phase = 'code+docs: tldr/tree'
+
+    @pytest.mark.parametrize("cache,phase", [
+        ("metadata", "code+docs: markdown/gmd"),
+        ("none", "code+docs: tldr/tree"),
+    ])
+    def test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence(base, cache, phase):
+        from refmatrix.ingest import ingest_path
+        from refmatrix.store import Store
+        proj = _project(base, cache, n_md=N_DOCS)
+        root = proj / ".refmatrix"
+        root.mkdir()
+        current = {"phase": None}
+        yields: dict = {}
+    
+        def _progress(name: str, done: int = 0, total: int = 0) -> None:
+            current["phase"] = name
+    
+        def _yield() -> None:
+            yields[current["phase"]] = yields.get(current["phase"], 0) + 1
+    
+        s = Store(root)
+        try:
+            with s.with_partition("proj"):
+                ingest_path(s, proj, yield_lock=_yield, yield_every=DAEMON_YIELD_EVERY,
+                            progress_cb=_progress)
+                gmd_docs = sum(1 for i in range(N_DOCS) if s.get_entity("doc", f"d{i:02d}"))
+        finally:
+            s.close()
+        assert gmd_docs == N_DOCS, f"the GMD pass ingested {gmd_docs}/{N_DOCS} docs (fixture broken)"
+>       assert yields.get(phase, 0) >= N_DOCS, (
+            f"the GMD pass yielded {yields.get(phase, 0)} times over {N_DOCS} docs with the "
+            f"daemon's yield_every={DAEMON_YIELD_EVERY}: it inherits the code-unit cadence, not the "
+            f"GMD op's per-doc one; yields by phase: {yields}")
+E       AssertionError: the GMD pass yielded 0 times over 12 docs with the daemon's yield_every=200: it inherits the code-unit cadence, not the GMD op's per-doc one; yields by phase: {}
+E       assert 0 >= 12
+E        +  where 0 = <built-in method get of dict object at 0x10490f3c0>('code+docs: tldr/tree', 0)
+E        +    where <built-in method get of dict object at 0x10490f3c0> = {}.get
+
+tests/test_bug241_r3_l114.py:74: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug241_r3_l114.py::test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence[metadata-code+docs: markdown/gmd]
+FAILED tests/test_bug241_r3_l114.py::test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence[none-code+docs: tldr/tree]
+2 failed, 2 passed in 12.96s

@@ -244,6 +244,53 @@ persisted by the lead on dev master, so not linked from this branch): DIRTY 0B/2
 
 {#l112-mutation-table}
 
+## ch-bsd r2 fold, ruling L114 {#l114}
+
+ch-bsd r2 on `bba7313` found MEHs only and gave GO (report
+`workflow/bullshit/2026-11-15-0152-bug241-bug240-r2-bba7313.md` on dev master). RED by red-216
+at `111e4b0` (`tests/test_bug241_r3_l114.py`, 3 RED + 1 guard), merged onto the summary tip at
+`5808a58`. GREEN `044ff2a` (src `ingest.py`, `daemon.py`, `cli.py`). No test edited.
+{#l114-commits}
+
+- **M1, the GMD pass yields per doc.** `_ingest_markdown_gmd` no longer takes the caller's
+  code-unit `yield_every`: 200 on the daemon (`RMX_INGEST_YIELD_EVERY_UNITS`), meant for cheap
+  per-file units. It passes `gmd_doc_yield_every()` to `ingest_gmd_paths`, which reads
+  `RMX_INGEST_YIELD_EVERY` and defaults to 1 doc. The daemon's `ingest_gmd` job now reads the
+  same function, so one knob serves both GMD routes. Both code+docs routes (cached, and
+  `_ingest_tree`) reach the helper, so the cadence is set in one place. bsd measured 211 docs:
+  max hold 15.0 s → 5.4 s, p95 9.9 s → 1.3 s, same total time. This also answers the ~12 s
+  stretch from L112 #l112-s1: that was the code cadence, not a phase without a yield hook.
+  {#l114-m1}
+- **M2, a failed GMD pass ends the agent's job `error`.** `_run_detached_job` takes an optional
+  `failure(result)` verdict. `ingest_path_start` passes `ingest.gmd_pass_failure_message`, and
+  the job ends `status: error` with that sentence as its `error`, keeping `result` beside it.
+  `cli._ingest` prints the same function's sentence as its `Error:` line. Why `error` rather than
+  `done` + `warning`: the CLI exits 1 on the same condition, so one condition gets one verdict
+  and one wording on both routes; and `done` is what a polling agent reads as success.
+  {#l114-m2}
+- **Nit.** `_DaemonWriter.__init__` sets `last_ingest_result = {}`. {#l114-nit}
+
+### Runs and mutations {#l114-runs}
+
+- L114 + L112 + verb_parity: **180 passed** (`bug241-l114-green-iter1.log`).
+- Family (L114 + L112 + bug-240/241 + the bug-216 family + ingest / gmd / reingest / sync /
+  watch / derive / mcp / verbs / verb_parity / docs_generated ...): **969 passed, 1 skipped**
+  (`bug241-l114-family.log`; the skip is the clone-artifact `test_repo_hooks_in_sync` skip).
+- No branch full suite (lead, L114): the release suite on merged master is the gate.
+- Mutations, each alone in a throwaway clone of `044ff2a`, restored with `git checkout -- src`
+  in its own command, `__pycache__` cleared, the fix confirmed present after the batch; suite =
+  the L114 file. The per-doc cadence is set once, in the helper both routes call, so one
+  mutation there covers both routes; each mutation below fails both route cases.
+  {#l114-runs-list}
+
+| mutation | result | log |
+|---|---|---|
+| M1: the helper passes the code cadence (200) | 2 failed (cached, tree) | `bug241-l114-mut-m1-helper-200.log` |
+| M1: `gmd_doc_yield_every()` returns 200 | 2 failed (cached, tree) | `bug241-l114-mut-m1-knob-200.log` |
+| M2: the job buries the failure in `result` (`failure=None`) | 1 failed | `bug241-l114-mut-m2-buried.log` |
+
+{#l114-mutation-table}
+
 ## Next {#next}
 
 AC-6 live: after deploy, the lead re-runs bug-216 R4's `rmx reingest --force --no-sessions` and
