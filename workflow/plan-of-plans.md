@@ -478,10 +478,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q47**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q48**. Open: Q47. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q47 | 2026-11-15 | The user: "does pinning the venv make sense". There is no lock file; `pyproject.toml` has only floors (`duckdb>=1.5.3`, `pylance>=0.20`), and an unpinned install on the mini took **duckdb 2.0.0 and pylance 14**, the two libraries that define the store's on-disk format. `.venv-eval` and the deploy venv already differ (click 8.3.3/8.4.1, numpy 2.4.4/2.4.6, transformers 5.8.1/5.9.0, sentence-transformers 5.5.0/5.5.1) | (a) **one committed `requirements.lock` taken from the deploy venv** (what production runs); `.venv-eval`, the mini lanes, the Docker image and the deploy venv install from it; `pyproject.toml` caps the storage libraries (`duckdb>=1.5.3,<2`, `pylance>=6,<7`); upgrades are a deliberate lock bump tested in the lanes; ships in R1 (recommended); (b) the lanes pin to `.venv-eval` (today's interim) and production is left as is; (c) only the storage caps | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
