@@ -134,6 +134,8 @@ after its release deploys ([[orchestration#release]]). {#queue-releases-body}
 
 ### Known stale points, reconciled at RED {#queue-stale}
 
+**T2 (26.5-26.9, plan-27):** RED starts from `spec-t2-fresh` after its bsd round, never master's text alone; read [[agent-brief-t2-red-notes]] (L138).
+
 **bug-218:** read [[agent-brief-bug218-red-notes]] (arch-t56, ten traps and two design gaps, L137) with the spec.
 
 From the 2026-11-14 reviews, for the tasks in the queue. The specs were approved on 2026-11-13
