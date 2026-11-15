@@ -45,3 +45,10 @@ patching `ping`/`daemon.call`; (3) one census test that fails when `src/` gains 
 output path or construction outside the fix (an allowlist, not a hand count). Never patch the
 value a guard reads. If the spec misses a case these find, say so in the RED report; that
 gap is a finding, not scope creep.
+
+## Test discipline (CLAUDE.md #test-discipline, L168)
+
+You own it. Rules 1 (extend, don't add; parametrize variants), 4 (real states, no patched
+ping/call/guard input) and 6 (no real waits) are the ones most often broken: check each new test
+against all nine before you commit. A new test file needs a reason in your report (a new feature,
+not a new round).

@@ -19,3 +19,11 @@ form, with evidence (command + output, grep list, test node). "N/A" needs a reas
 unanswered question blocks the merge. The questions are ch-bsd's recurring findings: running the
 real path, the test reaching the wiring, the census of callers and siblings, the whole path
 bounded, busy is not absent, the guard can fire, failures loud, nothing handed off on paper.
+
+## Tests you write (small fixes) and the discipline (CLAUDE.md #test-discipline)
+
+On the **small-fix path** ([ORCHESTRATION #task-small]) you write the test AND the fix: this
+overrides "authors no tests" in the neutral definition. Follow CLAUDE.md #test-discipline: extend
+the feature's existing test file (no per-fix file), go through the entry point, no patched daemon
+state, no real waits, and show the test failing before the fix by its E line. On the large path
+you still write no tests.

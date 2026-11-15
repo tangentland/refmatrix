@@ -71,9 +71,9 @@ several modules):
 (listed by grep). Never a branch full suite. Failures compared by E line with the last
 release's full-suite log. {#task-verify}
 
-**Tests stay lean.** A fold adds to the feature's existing test file; no new
-`test_*_r<n>.py` / `*_remedy_*` file per review round. Test behaviour, not source text: a test
-that greps `src/` is allowed only as a guard on a stated rule. {#task-tests}
+**Tests stay lean:** the nine rules in CLAUDE.md `#test-discipline` (extend, don't add;
+parametrize variants; entry point; real states; behaviour not source; no real waits; seen
+failing; never red; the lane). {#task-tests}
 
 ## 4. Release and deploy path {#release}
 

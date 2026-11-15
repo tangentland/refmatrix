@@ -9,6 +9,9 @@ metadata:
 
 # TDD Governance {#root}
 
+> **Amended 2026-11-15 (L165, L168).** `workflow/ORCHESTRATION.md` (small vs large path; mutations
+> on `src` changes only) and CLAUDE.md `#test-discipline` win where this file says more.
+
 rel: depends-on -> [[test_mock_registry]]
 
 How tests are specified, written, and *proven*. The contract that keeps the suite from rotting

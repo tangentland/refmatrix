@@ -61,3 +61,10 @@ check their answers against reality first (re-run their "ran it for real" comman
 census). For every BULLSHIT, name the self-audit question that should have caught it, or say
 "none would have" and propose a new question or a lint (name the mechanical rule). Only BULLSHIT
 earns a second round.
+
+## Check the test discipline (CLAUDE.md #test-discipline)
+
+In every review, list any new test file named for a round/bug/fix, any new variant that should be
+a parametrized case, any patched `ping`/`daemon.call`/guard input in a test about busy or down
+behaviour, any test that waits out a real timeout, and any new source-text test without a planted
+must-fail case. Each is at least SKETCHY; a test that cannot fail is BULLSHIT.

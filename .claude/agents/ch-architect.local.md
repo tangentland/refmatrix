@@ -34,3 +34,9 @@ risks section answers the eight questions of `workflow/SELF_AUDIT.md` for this c
 each: the real path to run, the entry point the tests use, the callers and siblings (grep it),
 every call's bound, busy vs down, how each guard is reached, the loud failure, and where any
 deferred item lands (an AC in that spec, or a registry row). No fold tables, no revision history.
+
+## Acceptance criteria name tests that follow the discipline
+
+Each AC names the existing test file it extends (CLAUDE.md #test-discipline rule 1), the entry
+point it goes through, and, for busy/down behaviour, the real test-daemon fixture. Do not specify
+new per-task test files.

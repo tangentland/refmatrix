@@ -63,9 +63,42 @@ There is no container. Two venvs, one rule each:
 
 ### Tests (CRITICAL — NEVER SKIP) {#system-dependent-tests}
 
-**ALL tests run.** Never `--ignore` or `-k` away a failing group to get green. Daemon tests need a
-SHORT tmp root (macOS `sun_path` is ~104 bytes). A known pre-existing failure is logged in
-`workflow/bug_registry.md`, not skipped.
+**ALL tests run.** Never `--ignore` or `-k` away a failing group to get green. How tests are
+written, grouped and run: [[#test-discipline]].
+
+### Test Discipline (CRITICAL) {#test-discipline}
+
+The suite is ~4,100 tests and 60 min; the 2026-11-15 audit (`workflow/measurements/test-suite-audit-2026-11-15.md`)
+found it bloated by habit, not by junk: per-round files, 2-4 near-identical variants, tests that
+wait out real timeouts, and 49 tests "proving" busy/down behaviour against a patched value. These
+rules keep it from growing back (L165-L168). Every agent that writes or reviews a test follows them.
+
+1. **Extend, don't add.** Before writing a test, find the feature's existing test file and the
+   tests on the same path (`rmx grep`, the test names). Add a case to it; 2+ variants of one
+   behaviour are ONE parametrized test. Never a new `test_*_r<n>.py`, `*_remedy*`, `test_bug<N>*`
+   or `*_red.py` file per round, bug or fix: name files and tests for the behaviour.
+2. **One file per feature, grouped by module**, so `pytest <file or dir>` is a focused run. After
+   29.5 the layout mirrors `src/` (`tests/<module>/`).
+3. **Through the entry point.** Each feature change has at least one test through what users call
+   (CLI, verb, MCP tool, daemon op, hook), not only the helper.
+4. **Real states, faked boundaries only.** Never patch the function under test or the value a
+   guard reads. Busy, slow, held or down daemon behaviour runs on a real test daemon (the sandbox
+   daemon, the lock-hold fixture), never a patched `ping` / `daemon.call` / `daemon_status`. Fake
+   only process boundaries (launchd, the hub, a model worker), each registered in
+   `workflow/test_mock_registry.md`.
+5. **Behaviour, not source text.** A test that reads `src/` is allowed only as a guard on a stated
+   rule, and it plants a must-fail case to prove it can fail.
+6. **No real waits.** Never sit out a production timeout: use a test-sized budget knob and keep ONE
+   test per budget at the real default. Fixtures stop test daemons with a short shutdown timeout.
+   Hold a job open with a gate, not with a big dataset.
+7. **Seen failing first.** A new test fails before its fix, for the intended reason (its E line).
+8. **Never red, never skipped away.** A failing test is fixed or marked
+   `xfail(strict=True, reason="bug-NNN")`; nothing stays red across releases. Never `--ignore` or
+   `-k` away a failing group. A known failure has a `workflow/bug_registry.md` row.
+9. **Running tests:** every run through `/usr/bin/lockf /private/tmp/claude-501/rmx-test-lane.lock`,
+   output tee'd to `workflow/review-output/<name>.log`; daemon tests on a SHORT `mkdtemp()` root
+   (`sun_path` ~104 bytes); a branch runs the verify set (its tests + every importer of a changed
+   module), never the full suite.
 
 ## Development Guidelines {#development-guidelines}
 
