@@ -124,3 +124,4 @@
 2026-11-15T13:34:28Z commit=f2664e6 verdict=DIRTY findings=21 (2B/4S/15M) report=2026-11-15-1106-spec-31b-r1-f2664e6.md
 2026-11-15T13:34:28Z commit=7ceedb4 verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-15-1322-spec-31b-r2-7ceedb4.md
 2026-11-15T13:34:28Z commit=222659d verdict=MEH-only findings=4 (0B/0S/4M) report=2026-11-15-1331-spec-31b-r3-222659d.md
+2026-11-15T13:46:00Z commit=e314b19 verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-15-1310-t08-r1-e314b19.md

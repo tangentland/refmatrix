@@ -1,0 +1,56 @@
+....................................F....                                [100%]
+=================================== FAILURES ===================================
+_______ test_t0_8_the_pairing_key_holds_cwd_invocation_and_channel[cwd] ________
+
+R = PosixPath('/private/tmp/rmx-tx8jq33q/r/37/.refmatrix'), differs = 'cwd'
+
+    @pytest.mark.parametrize("differs", ["cwd", "invocation", "channel"])
+    def test_t0_8_the_pairing_key_holds_cwd_invocation_and_channel(R, differs):
+        """ch-bsd r1 S1 (c): each key component is load-bearing. Two calls one second apart that
+        differ ONLY in `differs`: A is query-only (killed after `log_query` exited), B is
+        cli-only (died before). Under the full key nothing pairs and B is counted on the cli.log
+        leg. A key without that component, dropped on both sides (M8.14 cwd, M8.15 invocation,
+        M8.16 channel), pairs B's end row with A's query row, and B vanishes."""
+        other_cwd = str(R.parent / "other")
+        if differs == "cwd":       # same channel (prompt_recall) and invocation (hook)
+            q = [{**_recall_qrow(R, "2026-10-05T10:10:00", invocation="hook", stdin_json=True),
+                  "cwd": str(R.parent)}]
+            cli = _end(R, "2026-10-05T10:10:01", _PROMPT_ARGV, "hook", cwd=other_cwd)
+            ch = "prompt_recall"
+        elif differs == "invocation":   # same channel (recall: a plain query) and cwd
+            q = [_recall_qrow(R, "2026-10-05T10:10:00", invocation="agent")]
+            cli = _end(R, "2026-10-05T10:10:01", _QUERY_ARGV, "unknown")
+            ch = "recall"
+        else:                      # same invocation (hook) and cwd; prompt_recall vs session_start
+            q = [_recall_qrow(R, "2026-10-05T10:10:00", invocation="hook", stdin_json=True)]
+            cli = _end(R, "2026-10-05T10:10:01", _START_ARGV, "hook")
+            ch = "session_start"
+        out = _run_logs(R, cli, q)
+        c = _cli_counters(out)
+>       assert (c.get("end_rows"), c.get("paired_with_query_log"), c.get("counted")) == (1, 0, 1), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=1 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 1
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=hook
+E             memory_recall prompt_recall: 1 p50=40ms p95=40ms
+E         outcomes:
+E           prompt_recall: ok=1 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory_recall end_rows=1 paired_with_query_log=1 counted=0 ts_unparseable=0 query_ts_unparseable=0 internal_excluded=0 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert (1, 1, 0) == (1, 0, 1)
+E         
+E         At index 1 diff: 1 != 0
+E         Use -v to get more diff
+
+tests/test_task21_1_agent_usage_report.py:713: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_agent_usage_report.py::test_t0_8_the_pairing_key_holds_cwd_invocation_and_channel[cwd]
+1 failed, 40 passed in 2.70s

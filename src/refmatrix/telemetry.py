@@ -44,6 +44,7 @@ import sys
 import time
 import uuid
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 import typing
 from typing import Any
@@ -1355,6 +1356,115 @@ def channel_of_row(row: dict) -> "str | None":
                           invocation=row.get("invocation") or "unknown")
 
 
+def cli_recall_channel(row: dict) -> "str | None":
+    """The R11 channel of a cli.log `memory recall` end row, or None for any
+    other command (bug-196, T0.8 R8.1, 2026-11-15).
+
+    The cli.log leg of `--agent-usage` printed ONE `memory recall commands=<n>`
+    total, so a pre-21.1 store (whose recalls exist only in cli.log) showed its
+    34 agent recalls nowhere: they were summed with 210 hook calls. The channel
+    is recomputable from the row with the SAME `recall_channel` the query.log
+    leg uses: the flag NAMES survive argv redaction (only values are hashed),
+    and `source` is `invocation_source()`, the value query.log stores as
+    `invocation`. No second copy of the R11 rule exists here."""
+    argv = [str(a) for a in (row.get("argv") or [])]
+    if argv[:2] != ["memory", "recall"]:
+        return None
+    flags = set(argv[2:])
+    return recall_channel(session_start="--session-start" in flags,
+                          stdin_json="--stdin-json" in flags,
+                          recent="--recent" in flags,
+                          invocation=row.get("source") or "unknown")
+
+
+def _log_ts_seconds(ts: "str | None") -> "float | None":
+    """A log row's `ts` (`time.strftime("%Y-%m-%dT%H:%M:%S")`, local time, on
+    both query.log and cli.log) as POSIX seconds for an offset test, or None
+    when it does not parse. The caller counts a None; it never guesses."""
+    try:
+        return datetime.fromisoformat(str(ts)).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+# The widest `ts` gap between one call's query.log row and its cli.log end row
+# (ruling L130, 2026-11-15). Both are stamped at second precision when they are
+# written, and `log_query.__exit__` runs inside `main()` BEFORE `cli_entry`'s
+# `finally` stamps the end row, so the end row is never EARLIER than the query
+# row. That ordering proves the sign only, not the 1 s bound: between the two
+# stamps `memory_recall` runs `rec.emit()` (STM ring read, name spans, the
+# recall-events write), then `cli_entry` runs `render_phase_report` and
+# `_root()`, and under load that can pass 1 s, which loses the pair (a double
+# count). The bound is measured, not derived (ch-bsd T0.8 r1 #m1, 2026-11-15):
+# over a copy of the live logs, 613 query-to-end gaps were 610 at 0 s and 3 at
+# 1 s, and widening the window to 2, 3, 5, 10 or 30 s paired no further row,
+# while recall latency reached p95 3.6 s and max 10.8 s.
+CLI_QUERY_PAIR_WINDOW_S = 1
+
+
+def pair_cli_recalls_with_query_log(cli_rows: "list[dict]", query_rows: "list[dict]"
+                                    ) -> "tuple[list[dict], int, int, int]":
+    """Split cli.log `memory recall` end rows into the calls query.log does NOT
+    hold, so `--agent-usage` counts each call once (bug-196, T0.8 R8.2, ruling
+    L130, 2026-11-15).
+
+    Since task 21.1 one `rmx memory recall` writes BOTH a cli.log end row and a
+    `kind=recall` query.log row, and the two share no call id (query.log has
+    `query_id`, cli.log has `pid`; neither has the other's). Adding a field
+    would leave every row already written unmatchable, so the key is what both
+    rows already carry: cwd (`os.getcwd()` on both), the R11 channel (flags on
+    one, argv flag names on the other), the invocation (`invocation` on one,
+    `source` on the other), and `ts` with the end row 0 to
+    `CLI_QUERY_PAIR_WINDOW_S` seconds after the query row. Pairing is per call
+    and one-to-one: each query row absorbs at most one end row (the earliest
+    eligible, end rows taken in `ts` order, which is a maximum matching for
+    equal-width windows), so two hook calls in the same second stay two calls,
+    and a post-21.1 call whose query row was never written stays counted.
+
+    `query_rows` are the query.log recall rows the report already counts (in
+    window, attributed, and FLAGGED: the precondition is `channel_of_row(q) is
+    not None` for every row, which the report's `rec` filter guarantees; an
+    unflagged row is a writer defect the report prints as `recall_unflagged`,
+    and its call's end row is then counted on the cli.log leg). Returns (unpaired cli rows, paired count,
+    cli rows whose `ts` did not parse, query rows whose `ts` did not parse).
+    Neither kind of row can be paired: an end row is kept among the unpaired
+    (its call is counted once, on the cli.log leg), and a query row cannot
+    absorb its end row (its call may then be counted on both legs). Both counts
+    are printed by the report, never hidden."""
+    open_q: "dict[tuple, list[float]]" = {}
+    q_bad_ts = 0
+    for q in query_rows:
+        ch = channel_of_row(q)
+        t = _log_ts_seconds(q.get("ts"))
+        if t is None:
+            q_bad_ts += 1
+            continue
+        open_q.setdefault((q.get("cwd"), ch, q.get("invocation") or "unknown"), []).append(t)
+    for times in open_q.values():
+        times.sort()
+    unpaired: list[dict] = []
+    timed: "list[tuple[float, dict]]" = []
+    c_bad_ts = 0
+    for r in cli_rows:
+        t = _log_ts_seconds(r.get("ts"))
+        if t is None:
+            c_bad_ts += 1
+            unpaired.append(r)
+        else:
+            timed.append((t, r))
+    paired = 0
+    for t, r in sorted(timed, key=lambda tr: tr[0]):
+        times = open_q.get((r.get("cwd"), cli_recall_channel(r), r.get("source") or "unknown"))
+        hit = next((i for i, qt in enumerate(times or ())
+                    if 0 <= t - qt <= CLI_QUERY_PAIR_WINDOW_S), None)
+        if hit is None:
+            unpaired.append(r)
+            continue
+        del times[hit]
+        paired += 1
+    return unpaired, paired, c_bad_ts, q_bad_ts
+
+
 def _global_root_default() -> Path:
     from refmatrix import hub
     return Path(hub.global_store_root())
@@ -1964,23 +2074,41 @@ def agent_usage_report(root: Path, *, since: "str | None" = None,
     out.append(f"used_lookup_cap_hits={sum(int(r.get('cap_hits') or 0) for r in lookups)} "
                f"used_no_session={sum(1 for r in lookups if r.get('used_no_session'))}")
 
-    # cli.log: one count per command (phase=start intent rows excluded).
+    # cli.log: one count per command (phase=start intent rows excluded), per R11
+    # channel, and only for calls query.log does not already hold (bug-196, T0.8
+    # R8.1 + R8.2, ruling L130, 2026-11-15). The single `commands=<n>` total this
+    # replaced summed 210 hook calls with the 34 agent recalls and, on a post-21.1
+    # store, counted every paired call a second time.
     crows, c_bad = _read_jsonl_counted(root / CLI_LOG_NAME)
     c_test = 0
-    recalls = 0
+    c_internal = 0
+    cli_recalls: list[dict] = []
     for r in crows:
         if r.get("phase") == "start" or not _in_window(r.get("ts"), since, until):
             continue
         if row_provenance(r, reader_root=root) == "test_artifact":
             c_test += 1
             continue
-        if not include_internal and (r.get("source") or "unknown") == "internal":
+        if cli_recall_channel(r) is None:
             continue
-        argv = [str(a) for a in (r.get("argv") or [])]
-        if argv[:2] == ["memory", "recall"]:
-            recalls += 1
-    out.append(f"cli.log: memory recall commands={recalls} "
-               f"excluded_test_rows={c_test} unparseable={c_bad}")
+        if not include_internal and (r.get("source") or "unknown") == "internal":
+            c_internal += 1
+            continue
+        cli_recalls.append(r)
+    cli_only, paired, c_bad_ts, q_bad_ts = pair_cli_recalls_with_query_log(cli_recalls, rec)
+    out.append(f"cli.log: memory_recall end_rows={len(cli_recalls)} "
+               f"paired_with_query_log={paired} counted={len(cli_only)} "
+               f"ts_unparseable={c_bad_ts} query_ts_unparseable={q_bad_ts} "
+               f"internal_excluded={c_internal} excluded_test_rows={c_test} "
+               f"unparseable={c_bad}")
+    by_cli_channel: "dict[str, Counter]" = {}
+    for r in cli_only:
+        by_cli_channel.setdefault(cli_recall_channel(r), Counter())[
+            r.get("source") or "unknown"] += 1
+    for ch in sorted(by_cli_channel):
+        c = by_cli_channel[ch]
+        invs = " ".join(f"{inv}={c[inv]}" for inv in sorted(c))
+        out.append(f"  cli.log memory_recall {ch}: {sum(c.values())} invocation {invs}")
 
     # recall-events.jsonl, classified by the same function (source="events").
     erows, e_bad = _read_jsonl_counted(root / EVENTS_NAME)

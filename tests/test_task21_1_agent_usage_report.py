@@ -491,3 +491,275 @@ def test_ac6_synthetic_mechanisms_window_phase_start_and_legacy_counts(R):
     assert [ln for ln in rec if re.search(r"\b4\b", ln)], out
     assert not [ln for ln in rec if re.search(r"\b[58]\b", ln)], out
     assert code == 0, out
+
+
+# ---- T0.8 R8.2: a call in both logs is counted once -------------------------------------------
+
+def _recall_qrow(R: Path, ts: str, *, invocation: str, session_start=False, stdin_json=False,
+                 recent=False) -> dict:
+    """A `kind=recall` query.log row as `cli.memory_recall` writes it (`source=memory-recall`,
+    the three R11 flags, `invocation` = the same `invocation_source()` value the call's cli.log
+    end row carries as `source`). `body` is a hash, never a prompt."""
+    return {"ts": ts, "kind": "recall", "body": "sha256:" + "f" * 64, "source": "memory-recall",
+            "invocation": invocation, "cardinality": None, "latency_ms": 40, "outcome": "ok",
+            "error": None, "session": None, "query_id": None, "cwd": str(R.parent),
+            "root": str(R), "budget_s": 5.0, "session_start": session_start,
+            "stdin_json": stdin_json, "recent": recent}
+
+
+def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
+    """T0.8 R8.2 / AC-8.2 (RED at c4b44d0). Since 21.1 one `rmx memory recall` call writes
+    BOTH a cli.log end row (`cli_entry`) and a `kind=recall` query.log row (`log_query` in
+    `cli.memory_recall`): the same cwd (`Path.cwd()` on both), the same invocation (`source`
+    on the one, `invocation` on the other) and the same flags. The two rows share no call id,
+    and their `ts` can differ: `log_query` exits inside `main()` and `cli_entry` stamps the end
+    row afterwards, in its `finally`, so the end row can land one second later. One paired
+    call here does (query.log 10-05T10:01:00, cli.log end row :01). The query.log leg already
+    counts the query.log rows per channel (`memory_recall <channel>: n`, `outcomes:`), so
+    R8.1's per-channel cli.log leg counts only the calls query.log does not hold (ruling L130).
+
+    First, AC-8.1 on the frozen fixture (ruling L130; the AC-6 tests stay as they are, R8.3):
+    its cli.log holds 244 recall end rows and its query.log no `kind=recall` row, so the
+    cli.log leg prints one line per channel, 201 prompt_recall, 6 session_start, 3 precompact
+    and 34 recall (recomputed with `recall_channel` from the argv flag names and `source` at
+    c4b44d0; hook 210, unknown 34). M8.1 (one channel for every cli.log recall) fails here.
+
+    The store mixes three kinds of call, each in the window:
+      - pre-21.1, cli.log only (10-01): 2 prompt_recall, 2 session_start, 1 precompact,
+        1 recall;
+      - paired, in both logs (10-05): 2 prompt_recall, 1 session_start, 2 precompact,
+        3 recall (2 agent queries + 1 agent `--recent`, which R11 files as `recall`);
+      - post-21.1, cli.log only (10-06): 1 prompt_recall whose query.log row was never
+        written (a call that died before `log_query` exited). Pairing is per call: a cut-over
+        date ("ignore cli.log after the first `kind=recall` row") drops it.
+    So the query.log leg prints prompt_recall 2, session_start 1, precompact 2, recall 3, and
+    the cli.log leg prints prompt_recall 3, session_start 2, precompact 1, recall 1. Counting
+    the paired calls twice prints the cli.log leg as 5 / 3 / 3 / 4 (mutation M8.2); every one
+    of those numbers is absent from the correct report for that channel. Each phase=start
+    row is never counted (21.1 R7)."""
+    def chan(out: str, name: str, n: int) -> list:
+        word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+        return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)
+                and "commands=" not in ln]
+
+    # AC-8.1: the frozen fixture, one line per channel, summing to the old 244
+    assert (FIXTURE / "cli.log").is_file() and (FIXTURE / "query.log").is_file(), FIXTURE
+    for name in ("query.log", "cli.log"):
+        (R / name).write_bytes((FIXTURE / name).read_bytes())
+    code, fx = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+    assert code == 0, fx
+    assert chan(fx, "prompt_recall", 201), fx
+    assert chan(fx, "session_start", 6), fx
+    assert chan(fx, "precompact", 3), fx
+    assert chan(fx, "recall", 34), fx
+
+    # AC-8.2: the synthetic store below replaces both logs
+    def pair(ts, argv, source, end_ts=None):
+        return [_cli_row(ts, argv, phase="start", source=source),
+                {**_cli_row(end_ts or ts, argv, source=source), "cwd": str(R.parent)}]
+    prompt = ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64, "--json"]
+    start = ["memory", "recall", "--session-start", "--json"]
+    pre = ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64]
+    agent_q = ["memory", "recall", "sha256:" + "d" * 64]
+    agent_recent = ["memory", "recall", "--recent"]
+    cli: list[dict] = []
+    q: list[dict] = []
+    # pre-21.1: cli.log only
+    for i in range(2):
+        cli += pair(f"2026-10-01T10:0{i}:00", prompt, "hook")
+    for i in range(2):
+        cli += pair(f"2026-10-01T11:0{i}:00", start, "hook")
+    cli += pair("2026-10-01T12:00:00", pre, "hook")
+    cli += pair("2026-10-01T13:00:00", agent_q, "unknown")
+    # paired: the same call in both logs
+    for i in range(2):
+        ts = f"2026-10-05T10:0{i}:00"
+        # the second call's cli.log end row is stamped one second after its query.log row
+        cli += pair(ts, prompt, "hook", end_ts=None if i == 0 else f"2026-10-05T10:0{i}:01")
+        q.append(_recall_qrow(R, ts, invocation="hook", stdin_json=True))
+    ts = "2026-10-05T11:00:00"
+    cli += pair(ts, start, "hook")
+    q.append(_recall_qrow(R, ts, invocation="hook", session_start=True, recent=True))
+    for i in range(2):
+        ts = f"2026-10-05T12:0{i}:00"
+        cli += pair(ts, pre, "hook")
+        q.append(_recall_qrow(R, ts, invocation="hook", recent=True))
+    for i in range(2):
+        ts = f"2026-10-05T13:0{i}:00"
+        cli += pair(ts, agent_q, "agent")
+        q.append(_recall_qrow(R, ts, invocation="agent"))
+    ts = "2026-10-05T13:05:00"
+    cli += pair(ts, agent_recent, "agent")
+    q.append(_recall_qrow(R, ts, invocation="agent", recent=True))
+    # post-21.1: a call whose query.log row was never written
+    cli += pair("2026-10-06T10:00:00", prompt, "hook")
+    _write_jsonl(R / "query.log", q)
+    _write_jsonl(R / "cli.log", cli)
+    code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+    assert code == 0, out
+    # the cli.log leg, per channel, holds only the calls query.log does not
+    assert chan(out, "prompt_recall", 3), out
+    assert chan(out, "session_start", 2), out
+    assert chan(out, "precompact", 1), out
+    assert chan(out, "recall", 1), out
+    # the query.log leg is unchanged
+    assert chan(out, "prompt_recall", 2), out
+    assert chan(out, "recall", 3), out
+    # no channel counts a paired call twice
+    assert not chan(out, "prompt_recall", 5), out
+    assert not chan(out, "session_start", 3), out
+    assert not chan(out, "precompact", 3), out
+    assert not chan(out, "recall", 4), out
+
+
+# ---- T0.8 ch-bsd r1 S1/S2 (ruling L143): the pairing rules and the cli.log counters ----------
+
+_WINDOW = ("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+_PROMPT_ARGV = ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64, "--json"]
+_START_ARGV = ["memory", "recall", "--session-start", "--json"]
+_QUERY_ARGV = ["memory", "recall", "sha256:" + "d" * 64]
+
+
+def _end(R: Path, ts: str, argv: list, source: str, cwd: "str | None" = None) -> list[dict]:
+    """One call's cli.log rows: its phase=start intent row (never counted) and its end row."""
+    end = {**_cli_row(ts, argv, source=source), "cwd": cwd or str(R.parent)}
+    return [_cli_row(ts, argv, phase="start", source=source), end]
+
+
+def _cli_counters(out: str) -> dict:
+    """The `cli.log: memory_recall ...` header's `name=<n>` counters (GREEN e314b19's line)."""
+    lines = [ln for ln in out.splitlines() if ln.startswith("cli.log: memory_recall ")]
+    assert len(lines) == 1, out
+    return {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", lines[0])}
+
+
+def _cli_channel_lines(out: str) -> dict:
+    """`cli.log memory_recall <channel>: <n> invocation ...` → {channel: (n, line)}."""
+    got = {}
+    for ln in out.splitlines():
+        m = re.match(r"\s+cli\.log memory_recall (\w+): (\d+)\b", ln)
+        if m:
+            got[m.group(1)] = (int(m.group(2)), ln)
+    return got
+
+
+def _run_logs(R: Path, cli: list, q: list, *extra) -> str:
+    _write_jsonl(R / "query.log", q)
+    _write_jsonl(R / "cli.log", cli)
+    code, out = _report(*_WINDOW, *extra)
+    assert code == 0, out
+    return out
+
+
+def test_t0_8_a_same_key_burst_pairs_one_to_one_earliest_first(R):
+    """ch-bsd r1 S1 (a)+(b): one-to-one pairing, earliest eligible query row first. The copied
+    live query.log holds 6 same-key recall rows each within 1 s of the previous: concurrent
+    hook calls. Here 7 prompt_recall hook calls in one cwd, each end row 0 or 1 s after its
+    query row: (00,00) (00,01) (01,01) (01,02) (02,02) (02,03), plus one call at 03 whose
+    query.log row was never written. 6 pair, 1 is counted on the cli.log leg.
+    - one query row absorbing every eligible end row (M8.6): 7 pair, 0 counted, so the
+      lost-query call vanishes from both legs (an undercount);
+    - the LATEST eligible query row matched (M8.13): end rows 02 and 03 lose their partners,
+      5 pair and 2 are counted (one call on both legs)."""
+    cli: list[dict] = []
+    for ts in ("00", "01", "01", "02", "02", "03", "03"):
+        cli += _end(R, f"2026-10-05T10:00:{ts}", _PROMPT_ARGV, "hook")
+    q = [_recall_qrow(R, f"2026-10-05T10:00:{ts}", invocation="hook", stdin_json=True)
+         for ts in ("00", "00", "01", "01", "02", "02")]
+    out = _run_logs(R, cli, q)
+    c = _cli_counters(out)
+    assert (c.get("end_rows"), c.get("paired_with_query_log"), c.get("counted")) == (7, 6, 1), out
+    assert _cli_channel_lines(out).get("prompt_recall", (None,))[0] == 1, out
+
+
+def test_t0_8_an_end_row_never_pairs_with_a_later_query_row(R):
+    """ch-bsd r1 S1 (d), ruling L143 (the window is "after only", Q1 answered from 613 real
+    pairs: 610 at 0 s, 3 at 1 s, none with the end row first). Call X died before `log_query`
+    exited: an end row at 10:05:00 and no query row. Call Y, same key, was killed after
+    `log_query` exited (a hook timeout): a query row at 10:05:01 and no end row. They are two
+    calls; X is counted on the cli.log leg. A symmetric window (M8.5) pairs X's end row with Y's
+    query row and X vanishes."""
+    cli = _end(R, "2026-10-05T10:05:00", _PROMPT_ARGV, "hook")
+    q = [_recall_qrow(R, "2026-10-05T10:05:01", invocation="hook", stdin_json=True)]
+    out = _run_logs(R, cli, q)
+    c = _cli_counters(out)
+    assert (c.get("end_rows"), c.get("paired_with_query_log"), c.get("counted")) == (1, 0, 1), out
+    assert _cli_channel_lines(out).get("prompt_recall", (None,))[0] == 1, out
+
+
+@pytest.mark.parametrize("differs", ["cwd", "invocation", "channel"])
+def test_t0_8_the_pairing_key_holds_cwd_invocation_and_channel(R, differs):
+    """ch-bsd r1 S1 (c): each key component is load-bearing. Two calls one second apart that
+    differ ONLY in `differs`: A is query-only (killed after `log_query` exited), B is
+    cli-only (died before). Under the full key nothing pairs and B is counted on the cli.log
+    leg. A key without that component, dropped on both sides (M8.14 cwd, M8.15 invocation,
+    M8.16 channel), pairs B's end row with A's query row, and B vanishes."""
+    other_cwd = str(R.parent / "other")
+    if differs == "cwd":       # same channel (prompt_recall) and invocation (hook)
+        q = [{**_recall_qrow(R, "2026-10-05T10:10:00", invocation="hook", stdin_json=True),
+              "cwd": str(R.parent)}]
+        cli = _end(R, "2026-10-05T10:10:01", _PROMPT_ARGV, "hook", cwd=other_cwd)
+        ch = "prompt_recall"
+    elif differs == "invocation":   # same channel (recall: a plain query) and cwd
+        q = [_recall_qrow(R, "2026-10-05T10:10:00", invocation="agent")]
+        cli = _end(R, "2026-10-05T10:10:01", _QUERY_ARGV, "unknown")
+        ch = "recall"
+    else:                      # same invocation (hook) and cwd; prompt_recall vs session_start
+        q = [_recall_qrow(R, "2026-10-05T10:10:00", invocation="hook", stdin_json=True)]
+        cli = _end(R, "2026-10-05T10:10:01", _START_ARGV, "hook")
+        ch = "session_start"
+    out = _run_logs(R, cli, q)
+    c = _cli_counters(out)
+    assert (c.get("end_rows"), c.get("paired_with_query_log"), c.get("counted")) == (1, 0, 1), out
+    assert _cli_channel_lines(out).get(ch, (None,))[0] == 1, out
+
+
+def _counter_store(R: Path) -> "tuple[list, list]":
+    """ch-bsd r1 S2's fixture. cli.log: one agent recall (counted), one `source=internal`
+    recall (an eval harness: excluded and counted as excluded), and one prompt_recall hook end
+    row whose `ts` is inside the string window but does not parse (`+99:99` is no UTC offset).
+    query.log: one session_start hook recall row whose `ts` does not parse, and no end row for
+    it. No row pairs."""
+    bad = "2026-10-05T10:00:00+99:99"
+    cli = (_end(R, "2026-10-04T09:00:00", _QUERY_ARGV, "agent")
+           + _end(R, "2026-10-04T09:30:00", _QUERY_ARGV, "internal")
+           + _end(R, bad, _PROMPT_ARGV, "hook"))
+    q = [_recall_qrow(R, "2026-10-05T11:00:00+99:99", invocation="hook", session_start=True,
+                      recent=True)]
+    return cli, q
+
+
+def test_t0_8_cli_log_counters_internal_and_unparseable_ts(R):
+    """ch-bsd r1 S2: every counter the cli.log line prints has a fixture. Expect
+    `internal_excluded=1 ts_unparseable=1 query_ts_unparseable=1`, end_rows=2, counted=2, and
+    the bad-ts end row counted on its channel line (it cannot pair, so it is kept: counted
+    once, never dropped). Kills: internal_excluded hard-wired 0 (M8.7); the internal filter
+    removed (M8.8, the harness recall counted as a real one); the bad-ts end row silently
+    dropped (M8.9, CLAUDE.md #no-silent-failures); the bad-ts query row skipped uncounted
+    (M8.9q)."""
+    cli, q = _counter_store(R)
+    out = _run_logs(R, cli, q)
+    c = _cli_counters(out)
+    assert {k: c.get(k) for k in ("end_rows", "paired_with_query_log", "counted",
+                                  "ts_unparseable", "query_ts_unparseable",
+                                  "internal_excluded")} == {
+        "end_rows": 2, "paired_with_query_log": 0, "counted": 2, "ts_unparseable": 1,
+        "query_ts_unparseable": 1, "internal_excluded": 1}, out
+    lines = _cli_channel_lines(out)
+    assert lines.get("prompt_recall", (None,))[0] == 1, out
+    assert lines.get("recall", (None,))[0] == 1, out
+    assert "internal=" not in lines["recall"][1], out
+
+
+def test_t0_8_cli_log_counters_with_include_internal(R):
+    """ch-bsd r1 S2, `--include-internal`: the harness recall is counted on its channel line,
+    by invocation, and `internal_excluded=0`."""
+    cli, q = _counter_store(R)
+    out = _run_logs(R, cli, q, "--include-internal")
+    c = _cli_counters(out)
+    assert {k: c.get(k) for k in ("end_rows", "counted", "ts_unparseable",
+                                  "query_ts_unparseable", "internal_excluded")} == {
+        "end_rows": 3, "counted": 3, "ts_unparseable": 1, "query_ts_unparseable": 1,
+        "internal_excluded": 0}, out
+    n, line = _cli_channel_lines(out).get("recall", (None, ""))
+    assert n == 2 and "agent=1" in line and "internal=1" in line, out

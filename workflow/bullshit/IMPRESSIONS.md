@@ -87,6 +87,9 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-15 (plan-31 31b r2): When a fold makes a broken route work (bug-203's `-i`), re-read that route for the defect the sibling route was just fixed for. {#imp-route-fixed-inherits-sibling-bug}
 - 2026-11-15 (plan-31 31b r3): A purge that is moved has to take its pending-row bookkeeping with it, and the pending row's key must be the name the resolver will look up later, not the text the author wrote. {#imp-pending-key-is-the-lookup-name}
 - 2026-11-15 (plan-31 31b r3): A marker that "only X writes" must name its writer's API. The convenient one may add a stamp, a hash or counts that turn the marker into something else. {#imp-marker-names-its-writer}
+- 2026-11-15 (T0.8 r1): a pairing function that states one-to-one, earliest-eligible and a three-part key in its docstring passed with all five properties mutated away. The node only pinned the window width. A docstring invariant needs a must-fail input of its own. {#imp-docstring-invariant-needs-must-fail}
+- 2026-11-15 (T0.8 r1): an appended per-invocation breakdown (`unknown=34`) satisfied an older tolerant `\bN\b` matcher and silently retired a mutation-killing node. When a line gains numbers, re-run the old mutation map against the new format. {#imp-new-numbers-satisfy-old-matcher}
+- 2026-11-15 (T0.8 r1): a time-window join between two logs was checked against a copy of the live logs (613/613 within 1 s, none gained up to 30 s). Measuring the join on real rows settled the window question that reasoning about stamp order could not. {#imp-measure-join-on-real-rows}
 
 ## Former anchors, restored {#former-anchors}
 

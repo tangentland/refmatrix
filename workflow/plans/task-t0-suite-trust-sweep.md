@@ -1470,7 +1470,7 @@ rel: derives-from -> [[bug_registry]] {bug: "bug-196"}
 
 `src/refmatrix/telemetry.py`, `tests/test_task21_1_agent_usage_report.py` (only a new R8.2
 test), `workflow/bug_registry.md` (row 196),
-`workflow/implementation_summaries/task-t0.8-bug196-recall-channels.md`.
+`workflow/implementation_summaries/task-t0.8-bug196.md`.
 
 ## Merge order {#merge-order}
 

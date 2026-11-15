@@ -1,0 +1,116 @@
+.................................F                                       [100%]
+=================================== FAILURES ===================================
+__________ test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once ___________
+
+R = PosixPath('/private/tmp/rmx-k2npe6xd/r/34/.refmatrix')
+
+    def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
+        """T0.8 R8.2 / AC-8.2 (RED at c4b44d0). Since 21.1 one `rmx memory recall` call writes
+        BOTH a cli.log end row (`cli_entry`) and a `kind=recall` query.log row (`log_query` in
+        `cli.memory_recall`): the same cwd (`Path.cwd()` on both), the same invocation (`source`
+        on the one, `invocation` on the other) and the same flags. The two rows share no call id,
+        and their `ts` can differ: `log_query` exits inside `main()` and `cli_entry` stamps the end
+        row afterwards, in its `finally`, so the end row can land one second later. One paired
+        call here does (query.log 10-05T10:01:00, cli.log end row :01). The query.log leg already
+        counts the
+        query.log rows per channel (`memory_recall <channel>: n`, `outcomes:`), so R8.1's per-channel
+        cli.log leg counts only the calls query.log does not hold.
+    
+        The store mixes three kinds of call, each in the window:
+          - pre-21.1, cli.log only (10-01): 2 prompt_recall, 2 session_start, 1 precompact,
+            1 recall;
+          - paired, in both logs (10-05): 2 prompt_recall, 1 session_start, 2 precompact,
+            3 recall (2 agent queries + 1 agent `--recent`, which R11 files as `recall`);
+          - post-21.1, cli.log only (10-06): 1 prompt_recall whose query.log row was never
+            written (a call that died before `log_query` exited). Pairing is per call: a cut-over
+            date ("ignore cli.log after the first `kind=recall` row") drops it.
+        So the query.log leg prints prompt_recall 2, session_start 1, precompact 2, recall 3, and
+        the cli.log leg prints prompt_recall 3, session_start 2, precompact 1, recall 1. Counting
+        the paired calls twice prints the cli.log leg as 5 / 3 / 3 / 4 (mutation M8.2); every one
+        of those numbers is absent from the correct report for that channel. Each phase=start
+        row is never counted (21.1 R7)."""
+        def pair(ts, argv, source, end_ts=None):
+            return [_cli_row(ts, argv, phase="start", source=source),
+                    {**_cli_row(end_ts or ts, argv, source=source), "cwd": str(R.parent)}]
+        prompt = ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64, "--json"]
+        start = ["memory", "recall", "--session-start", "--json"]
+        pre = ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64]
+        agent_q = ["memory", "recall", "sha256:" + "d" * 64]
+        agent_recent = ["memory", "recall", "--recent"]
+        cli: list[dict] = []
+        q: list[dict] = []
+        # pre-21.1: cli.log only
+        for i in range(2):
+            cli += pair(f"2026-10-01T10:0{i}:00", prompt, "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-01T11:0{i}:00", start, "hook")
+        cli += pair("2026-10-01T12:00:00", pre, "hook")
+        cli += pair("2026-10-01T13:00:00", agent_q, "unknown")
+        # paired: the same call in both logs
+        for i in range(2):
+            ts = f"2026-10-05T10:0{i}:00"
+            # the second call's cli.log end row is stamped one second after its query.log row
+            cli += pair(ts, prompt, "hook", end_ts=None if i == 0 else f"2026-10-05T10:0{i}:01")
+            q.append(_recall_qrow(R, ts, invocation="hook", stdin_json=True))
+        ts = "2026-10-05T11:00:00"
+        cli += pair(ts, start, "hook")
+        q.append(_recall_qrow(R, ts, invocation="hook", session_start=True, recent=True))
+        for i in range(2):
+            ts = f"2026-10-05T12:0{i}:00"
+            cli += pair(ts, pre, "hook")
+            q.append(_recall_qrow(R, ts, invocation="hook", recent=True))
+        for i in range(2):
+            ts = f"2026-10-05T13:0{i}:00"
+            cli += pair(ts, agent_q, "agent")
+            q.append(_recall_qrow(R, ts, invocation="agent"))
+        ts = "2026-10-05T13:05:00"
+        cli += pair(ts, agent_recent, "agent")
+        q.append(_recall_qrow(R, ts, invocation="agent", recent=True))
+        # post-21.1: a call whose query.log row was never written
+        cli += pair("2026-10-06T10:00:00", prompt, "hook")
+        _write_jsonl(R / "query.log", q)
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)
+                    and "commands=" not in ln]
+        # the cli.log leg, per channel, holds only the calls query.log does not
+>       assert chan("prompt_recall", 3), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=8 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 8
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=agent
+E             memory_recall recall: 3 p50=40ms p95=40ms
+E           invocation=hook
+E             memory_recall precompact: 2 p50=40ms p95=40ms
+E             memory_recall prompt_recall: 2 p50=40ms p95=40ms
+E             memory_recall session_start: 1 p50=40ms p95=40ms
+E         outcomes:
+E           precompact: ok=2 skipped_budget=0 error=0
+E           prompt_recall: ok=2 skipped_budget=0 error=0
+E           recall: ok=3 skipped_budget=0 error=0
+E           session_start: ok=1 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=15 excluded_test_rows=0 unparseable=0
+E           cli.log recall precompact: 3
+E           cli.log recall prompt_recall: 5
+E           cli.log recall recall: 4
+E           cli.log recall session_start: 3
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once.<locals>.chan at 0x1077c3740>('prompt_recall', 3)
+
+tests/test_task21_1_agent_usage_report.py:584: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_agent_usage_report.py::test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once
+1 failed, 33 passed in 1.71s

@@ -1,0 +1,37 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t08-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 713 items
+
+tests/test_brief_bsd_r1.py ......................                        [  3%]
+tests/test_brief_surfaces.py ...........                                 [  4%]
+tests/test_bsd_r1_telemetry_eval.py ..............                       [  6%]
+tests/test_bug198_brief_compile_scope.py ..................              [  9%]
+tests/test_bug212_r1_remedy.py ......................................... [ 14%]
+.                                                                        [ 15%]
+tests/test_context_cost.py .....................                         [ 17%]
+tests/test_grep_answered_by.py .............                             [ 19%]
+tests/test_plan7_10_remedy_r4.py .............                           [ 21%]
+tests/test_task21_1_agent_usage_report.py .............................. [ 25%]
+...........                                                              [ 27%]
+tests/test_task21_1_emitters.py ........................................ [ 32%]
+.........                                                                [ 34%]
+tests/test_task21_1_pointer_surfacing.py ............................... [ 38%]
+..                                                                       [ 38%]
+tests/test_task21_1_query_rows.py .......................                [ 42%]
+tests/test_task21_1_recall_skip.py ........                              [ 43%]
+tests/test_task21_1_used_events.py .............                         [ 45%]
+tests/test_task25_1_recall_budget.py ................................... [ 49%]
+........................................................................ [ 60%]
+....................................                                     [ 65%]
+tests/test_telemetry_adoption.py ...............                         [ 67%]
+tests/test_telemetry_invocation.py ..........                            [ 68%]
+tests/test_telemetry_outcomes.py .............                           [ 70%]
+tests/test_v2_features.py ............................................   [ 76%]
+tests/test_verb_parity.py .............................................. [ 83%]
+........................................................................ [ 93%]
+.................................................                        [100%]
+
+======================= 713 passed in 856.77s (0:14:16) ========================

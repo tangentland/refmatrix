@@ -1,0 +1,51 @@
+..................................F......                                [100%]
+=================================== FAILURES ===================================
+__________ test_t0_8_a_same_key_burst_pairs_one_to_one_earliest_first __________
+
+R = PosixPath('/private/tmp/rmx-azf7hr_m/r/35/.refmatrix')
+
+    def test_t0_8_a_same_key_burst_pairs_one_to_one_earliest_first(R):
+        """ch-bsd r1 S1 (a)+(b): one-to-one pairing, earliest eligible query row first. The copied
+        live query.log holds 6 same-key recall rows each within 1 s of the previous: concurrent
+        hook calls. Here 7 prompt_recall hook calls in one cwd, each end row 0 or 1 s after its
+        query row: (00,00) (00,01) (01,01) (01,02) (02,02) (02,03), plus one call at 03 whose
+        query.log row was never written. 6 pair, 1 is counted on the cli.log leg.
+        - one query row absorbing every eligible end row (M8.6): 7 pair, 0 counted, so the
+          lost-query call vanishes from both legs (an undercount);
+        - the LATEST eligible query row matched (M8.13): end rows 02 and 03 lose their partners,
+          5 pair and 2 are counted (one call on both legs)."""
+        cli: list[dict] = []
+        for ts in ("00", "01", "01", "02", "02", "03", "03"):
+            cli += _end(R, f"2026-10-05T10:00:{ts}", _PROMPT_ARGV, "hook")
+        q = [_recall_qrow(R, f"2026-10-05T10:00:{ts}", invocation="hook", stdin_json=True)
+             for ts in ("00", "00", "01", "01", "02", "02")]
+        out = _run_logs(R, cli, q)
+        c = _cli_counters(out)
+>       assert (c.get("end_rows"), c.get("paired_with_query_log"), c.get("counted")) == (7, 6, 1), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=6 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 6
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=hook
+E             memory_recall prompt_recall: 6 p50=40ms p95=40ms
+E         outcomes:
+E           prompt_recall: ok=6 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory_recall end_rows=7 paired_with_query_log=5 counted=2 ts_unparseable=0 query_ts_unparseable=0 internal_excluded=0 excluded_test_rows=0 unparseable=0
+E           cli.log memory_recall prompt_recall: 2 invocation hook=2
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert (7, 5, 2) == (7, 6, 1)
+E         
+E         At index 1 diff: 5 != 6
+E         Use -v to get more diff
+
+tests/test_task21_1_agent_usage_report.py:671: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_agent_usage_report.py::test_t0_8_a_same_key_burst_pairs_one_to_one_earliest_first
+1 failed, 40 passed in 5.25s
