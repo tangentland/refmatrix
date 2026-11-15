@@ -64,7 +64,7 @@ the RED report's way, `HOME=/private/tmp/claude-501/hb315`) is
 
 ## Design choices worth checking {#choices}
 
-- **bug-268 is fixed at the phase read, not in the shared loader.** `phase_fields` loads the
+- **(Superseded by L178, [[#l178]].) bug-268 is fixed at the phase read, not in the shared loader.** `phase_fields` loads the
   graph strictly and validates it (`focus_graph_problem`: what the readers consume). A wrong
   shape raises `FocusGraphCorrupt`, and `phase_fields_checked` turns that into `stm_error`, one
   stderr line and null phase fields. Only `FocusGraphCorrupt` is caught. The composite keeps
@@ -207,58 +207,84 @@ and review logs, so only the three files re-ran, in one lane hold
 (`green-merge-3files.log`): `test_injection_capture.py`, `test_composite.py` and
 `test_stm_composite_members.py` gave 64 collected, 64 passed, exit 0, no E lines. {#after-merge-body}
 
+## L178 fold (ch-bsd 315 r1) {#l178}
+
+`83125cc` on red-315's `ae26a52`, `src` plus the M5 spec line, no tests. {#l178-lead}
+
+rel: depends-on -> [[bsd-315-r1-51bbdfb]]
+
+| Item | Change |
+|---|---|
+| S1 / bug-276 | `telemetry._utf8` (`surrogatepass`) for every capture count and hash; `_record_line` writes a record with a lone surrogate ASCII-escaped; `stm.prompt_sha` the same (found by the real run: with a `<session>.pre.json` present a surrogate prompt made `scan-prompt` exit 1 even with the capture off). `_capture_day_files` returns a listing error: the pruner counts `list_failed`, the report names it `unreadable`. `write_capture` is now ONE guard (body `_write_capture`) used by both call sites: any exception → one `capture_failed` errors.jsonl line + one stderr line, exit unchanged. The recall site hands its block builder in as a callable so it runs inside the guard; capture-only work inside `scan_prompt` (the post-stop builds, the block assembly) is guarded too and reaches the writer as `blocks_error` |
+| S2 / bug-277 | `build_topic_composite_pending` computes each topic's printed members once (`t["printed"]`), signs over them, and `_render_gmd` reuses them |
+| S4 / bug-268 | `Stm._load_graph` validates for EVERY reader: a wrong shape is said once per process (`rmx: STM focus graph <file> is corrupt (...); read as an empty graph, the next focus hook rewrites it`), recorded, and read empty; `_save_graph` clears the record. A wrong-shaped `pre.json` graph falls back to the live state. `_is_num` requires a finite number (`{"turn": Infinity}`). `phase_fields_checked` nulls the phase fields and returns `graph_corruption(...)` as `stm_error`. `FocusGraphCorrupt` and the `strict` flags are gone. This supersedes [[#choice-268]] |
+| M2 | `capture_report` gains `errors_capped` and `unreadable`; the line names both |
+| M3 | the coverage counts hook rows from the `query.log` row of the earliest call any record joins (log order, not clock); no record → every hook row |
+| M6 | **docstring fixed, code kept**: a day file whose stat fails has no knowable size, so it adds 0 bytes, stays listed and can still be pruned |
+| M5 | spec R0.2 lists `stm_error` (L153, L178) |
+{#l178-table}
+
+**Verify.** 163 files: the four named, plus every test importing `scan`, `composite`,
+`stm`, `telemetry` or `cli` (AST over `tests/`).
+- The mini lane (`315-l178-green-verify.log`, rmxtest2) did not finish. From about 65% every
+  test ERRORed, then pytest crashed in sessionfinish with `OSError: [Errno 24] Too many open
+  files`. The slot's `ulimit -n` is 256. That is a lane failure, not a test failure.
+- The fallback ran on the old lane (`31.5/green-l178-verify-oldlane.log`): exit 1, 2,945
+  passed, 4 failed.
+  - **Same E lines as base:** two `test_task21_1_agent_usage_report` ac6 nodes.
+  - **Two failures from RED's new node:**
+    `test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]`
+    and `[scan_prompt-dir-0o300]`, both
+    `AssertionError: bug-276: scan_prompt with <fault> changed the payload` (`b'…degree=0]\n' ==
+    b'…stream\n```\n'`). These are not a fault in the fix. Both calls now exit 0, and the
+    difference is the composite. The capture-off control delivers the composite and commits its
+    sent marker, so the capture-on call that follows correctly suppresses it as unchanged. AC-0.4
+    resets the marker between its two arms (`_reset_composite_marker`); this node does not.
+    Flagged to the lead. The other 23 RED nodes pass. {#l178-verify}
+
 ## Self-audit {#self-audit}
 
-1. **Real run** (`green-selfaudit-real.log`): the dev `rmx` was run by path on a throwaway
-   store, with the cwd discovering the store and capture in the default mode. Hook-shaped
-   `scan-prompt` exits 0 and writes `.gitignore` plus one record (7 blocks, `capture_ms` 0.5,
-   `capture_mode` names). `memory recall --session-start --pack` writes a `session_start`
-   record (13 blocks). `--recent --since 1h --pack` writes a `precompact` record (24 blocks).
-   `telemetry --context` prints `capture: on (mode names) · … · 3 captured of 3 hook calls
-   · errors none · composite_errors=0 · stm_errors=0 · malformed=0`. The band (AC-0.13) ran
-   the hook command 1,200 times on a copy of the live catalog. {#sa-1}
-2. **Wiring:** every capture node runs the real `rmx scan-prompt` or `rmx memory recall
-   --pack` as a child process. The bug-268 nodes send the hook's `--stdin-json` envelope.
-   `test_a_verb_recall_with_pack_writes_no_capture_record` goes through `verbs.memory_recall`
-   with a sandbox daemon. Nothing in `src/` is patched. {#sa-2}
-3. **Census** (`green-selfaudit-census-hooks.log`, `green-selfaudit-census-sites.log`): the
-   generated hook commands that print to the model are `scan-prompt`, `curator status` (×2),
-   `memory recall --pack` (×3: prompt, session start, precompact), `recall-state` and
-   `focus context`. Captured: scan-prompt and the three recall packs (the spec's four
-   channels). Left: `curator status`, `recall-state` and `focus context`, outside R0.2's
-   channel list and census row. `fit_blocks` has 5 sites; two record a capture (`scan._finish`
-   via the CLI, `recall_pack.pack` via `_RecallCall`). Both recall pack routes (verb and replica
-   fall-through) end in `_echo_pack`, so both capture. JSON and MCP do not capture (AC-0.11).
-   {#sa-3}
-4. **Bound:** the capture makes no RPC. In mode `names` it costs one stat (`.gitignore`), one
-   listdir, one stat per day file (at most 43) and one append; measured p95 5.2 ms and max
-   11.6 ms. In mode `full` it adds up to `max_concepts` (5) `build_context` calls with no time
-   bound of their own; measured max 2 builds and 3,751 ms. That is why the default is
-   `names`, and the spec's live fallback table (AC-0.17) is a setting. {#sa-4}
-5. **Busy / down:** the capture never calls a daemon. With the daemon down, the recall falls
-   through to the replica and is captured (Q1 stderr: `reading the replica`). With the daemon
-   busy, the degraded pack prints nothing and `emit` writes a record with empty `blocks`,
-   because the call still counts for coverage. Busy was not forced in a live run. {#sa-5}
-6. **Guards, each reached by a real state:**
-   - `over_bound`: a 65 MiB sparse day file (`test_a_day_file_over_the_bound_stops_appending`).
-   - Vanished file: a dangling link, which stat follows to ENOENT
-     (`test_a_file_another_process_removed_is_not_an_error`).
-   - `.gitignore` creation: a bare directory (`test_an_existing_capture_dir_without_gitignore_gets_one`).
-   - Invalid mode: the word `bogus` in the mode file (`test_the_mode_file_selects_the_path`).
-   - `FocusGraphCorrupt`: three real files (nine bug-268 nodes).
-   - `suppressed_cadence` / `suppressed_unchanged`: two AC-0.3 nodes.
-   - Member filter: the AC-2.0 nodes.
-   - Not exercised by a test: `prune_failed` (an unlink EPERM) and the 1 MiB `errors.jsonl` cap.
-   {#sa-6}
-7. **Loud** (Q1 log): an unwritable day file gives exit 0, the same payload, and stderr
-   `rmx: injection capture: append_failed for query … (PermissionError …)`. A `[]` focus graph
-   gives exit 0 and stderr `rmx scan-prompt: STM composite build failed, sent without it
-   (AttributeError: 'list' object has no attribute 'setdefault')` plus `rmx: STM focus graph of
-   session … is corrupt (FocusGraphCorrupt: … not a JSON object (list))`. A bogus mode gives
-   `capture: off (invalid mode: 'bogus' in injection-capture.mode) · … errors
-   append_failed=1 · composite_errors=1 · stm_errors=1`. No `except: pass` was added; every
-   handler says and counts. {#sa-7}
-8. **Handoff:** live checks AC-0.14 and AC-0.17 are spec ACs run after the deploy. Mutations
-   are in the spec's `#mutations`, for the lead. bug-268 has no registry row yet (the lead
-   allocates it). The version bump belongs to R1. {#sa-8}
+1. **Real run** (`green-selfaudit-real.log` at 51bbdfb; re-run at 83125cc, output below in
+   [[#sa-7]]): dev `rmx` by path, throwaway store, capture on. Hook-shaped `scan-prompt`,
+   `memory recall --session-start --pack` and `--recent --since 1h --pack` each write a record;
+   `telemetry --context` prints `3 captured of 3 hook calls · errors none`. {#sa-1}
+2. **Wiring:** every capture node runs `rmx scan-prompt` / `rmx memory recall --pack` as a
+   child; the bug-268 reader nodes go through `rmx focus hook --event input` and
+   `rmx focus context` (and `Stm.pin`, which has no CLI). AC-0.16's child replaces
+   `composite.topic_composites` only (registered); nothing in `src/` is patched elsewhere.
+   {#sa-2}
+3. **Census:** capture channels as before (scan-prompt + three recall `--pack` hooks; curator
+   status, recall-state and focus context out of scope). The signature is now a second consumer
+   of the printed-member list (bug-277: the r1 census missed it); both read `t["printed"]`.
+   Focus-graph readers: `snapshot_pre_prompt`, `_ingest_into_graph`, `focus_graph`, `pin`,
+   `live_turn`, `phase_fields` all go through `_load_graph`; the only other graph reader is the
+   `pre.json` snapshot in `pre_prompt_state`, validated too (`rmx grep _graph_path` /
+   `_load_graph`). `prompt_sha` was the second strict encode on the prompt (found by Q1). {#sa-3}
+4. **Bound:** no RPC added. `names`: one `.gitignore` stat, one listdir, ≤ 43 day-file stats, one
+   append (band p95 5.2 ms). `full`: up to `max_concepts` (5) unbounded `build_context` calls,
+   hence the `names` default. A failed listing skips the pruner (counted). {#sa-4}
+5. **Busy / down:** the capture calls no daemon; down → the replica fall-through is captured
+   (Q1); busy → the degraded pack prints nothing and `emit` writes an empty-blocks record. Busy
+   not forced live. {#sa-5}
+6. **Guards, each on a real state:** `list_failed` (0o300 dir: `…dir-0o300` nodes);
+   `capture_failed` via a non-I/O error (lone surrogate before the encode fix; now reached by
+   the guard only for an unforeseen class: no real input left that raises, so no node);
+   `errors_capped` (a 1 MiB errors.jsonl, `test_a_capped_errors_file_is_named_on_the_capture_line`);
+   coverage start (`test_the_coverage_window_starts_at_the_first_capture_record`); corrupt graph
+   in every reader (12 reader nodes, 4 shapes incl. non-finite turn); signature over printed
+   members (`test_a_composite_whose_printed_members_did_not_change_is_suppressed`);
+   `prune_failed` (P4 node). Still untested: the `pre.json` corrupt-graph fallback. {#sa-6}
+7. **Loud, including a non-I/O class** (local run at 83125cc,
+   `/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/8adeba5c-7501-477c-b9c6-4642a05dae9e/scratchpad/q1.log`):
+   unwritable day file → exit 0, `rmx: injection capture: append_failed … (PermissionError …)`;
+   `[]` focus graph → exit 0, ONE line `rmx: STM focus graph sess-cap315.focus.json is corrupt
+   (not a JSON object (list)); read as an empty graph, the next focus hook rewrites it`, no
+   composite error; 0o300 dir → exit 0, `list_failed … (PermissionError …)`, and the line
+   `… errors append_failed=1 list_failed=1 · … · unreadable injection-capture/ (PermissionError)`
+   with `telemetry --context` exit 0; **non-I/O:** a lone-surrogate prompt (`\ud800` in the
+   envelope) → exit 0 (it exited 1 at 51bbdfb, and, through `prompt_sha`, also with the capture
+   off once a `pre.json` existed). {#sa-7}
+8. **Handoff:** bug-276 / bug-277 / bug-268 registry rows are the lead's; M4 (R2.0's hook-path
+   cost) is read in AC-0.17's live window; AC-0.14 / AC-0.17 post-deploy; mutations (X-2 and the
+   rest) are red-315's re-run. {#sa-8}
 {#self-audit-list}

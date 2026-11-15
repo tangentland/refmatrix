@@ -1,0 +1,315 @@
+pyc-guard: recompiled 5 timestamp pyc(s) under /Volumes/littlebig/refmatrix-315-green/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+............................................FF.......................... [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 56%]
+........................................................................ [ 58%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 68%]
+.......................................FF............................... [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 83%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+.....................................................................    [100%]
+=================================== FAILURES ===================================
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]>>
+route = 'scan_prompt', fault = 'surrogate'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+>       assert r.stdout == control.stdout, f"bug-276: {route} with {fault} changed the payload"
+E       AssertionError: bug-276: scan_prompt with surrogate changed the payload
+E       assert b'# refmatrix..., degree=0]\n' == b'# refmatrix...stream\n```\n'
+E         
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:1092: AssertionError
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-dir-0o300] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-dir-0o300]>>
+route = 'scan_prompt', fault = 'dir-0o300'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+>       assert r.stdout == control.stdout, f"bug-276: {route} with {fault} changed the payload"
+E       AssertionError: bug-276: scan_prompt with dir-0o300 changed the payload
+E       assert b'# refmatrix..., degree=0]\n' == b'# refmatrix...stream\n```\n'
+E         
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:1092: AssertionError
+_______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
+
+R = PosixPath('/private/tmp/rmx-gpk0_lnn/r/2056/.refmatrix')
+
+    def test_ac6_frozen_fixture_prints_the_exact_counts(R):
+        """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+        trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+        2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+        greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+        hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+        legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
+        fixes no per-route format): a line naming the surface and holding the number as a word.
+    
+        1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+        upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+        dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+        ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
+        manifest = FIXTURE / "manifest.json"
+        assert manifest.is_file(), (
+            "AC-6 BLOCKED: the redacted fixture is not committed; run "
+            "`python3 tools/cut_agent_usage_fixture.py` (reads this project's .refmatrix logs, "
+            "writes tests/fixtures/agent_usage/)")
+        L = json.loads(manifest.read_text())["L"]
+        for name in ("query.log", "cli.log"):
+            (R / name).write_bytes((FIXTURE / name).read_bytes())
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
+        assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
+        assert [ln for ln in _line_with(out, "grep-replica")
+                if re.search(r"\b1,?121\b", ln)], out
+        rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
+>       assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=4709
+E         query.log: counted=4709 unparseable=0 internal_excluded=0
+E         totals:
+E           context context-replica: 3
+E           grep grep-replica: 1121
+E           grep grep-stdin: 3330
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=unknown
+E             context context-replica: 3 p50=792ms p95=808ms
+E             grep grep-replica: 1121 p50=8ms p95=48ms
+E             grep grep-replica answered_by=dropin: 839 p50=9ms p95=26ms
+E             grep grep-replica answered_by=floor: 4 p50=64ms p95=71ms
+E             grep grep-replica answered_by=index: 21 p50=55ms p95=267ms
+E             grep grep-replica answered_by=none: 5 p50=16ms p95=105ms
+E             grep grep-replica answered_by=unknown: 252 p50=6ms p95=89ms
+E             grep grep-stdin: 3330 p50=0ms p95=0ms
+E             grep grep-stdin answered_by=stdin: 3330 p50=0ms p95=0ms
+E         outcomes:
+E           context: ok=3 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+
+tests/test_task21_1_agent_usage_report.py:392: AssertionError
+________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
+
+R = PosixPath('/private/tmp/rmx-gpk0_lnn/r/2057/.refmatrix')
+
+    def test_ac6_cli_log_recalls_are_split_per_channel(R):
+        """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+        channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+        `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+        into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+        (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+        AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+        survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+        invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+        (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+        `recall`, not `precompact`), each with its phase=start row (never counted)."""
+        def pair(ts, argv, source):
+            return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+        cli = []
+        for i in range(5):
+            cli += pair(f"2026-10-01T10:0{i}:00",
+                        ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                         "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-02T10:0{i}:00",
+                        ["memory", "recall", "--session-start", "--json"], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-03T10:0{i}:00",
+                        ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-04T10:0{i}:00",
+                        ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                        "unknown")
+        cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+        _write_jsonl(R / "query.log", [])
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+>       assert chan("prompt_recall", 5), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=0 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E         outcomes:
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=14 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x3cc74bed0>('prompt_recall', 5)
+
+tests/test_task21_1_agent_usage_report.py:434: AssertionError
+=============================== warnings summary ===============================
+tests/test_grep_stdin_dialect.py:11
+  /Volumes/littlebig/refmatrix-315-green/tests/test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_task4_5_r4_remedy.py::test_every_stop_path_hands_the_daemon_the_one_stop_grace[8-hub-ui-stop]
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-dir-0o300]
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+4 failed, 2945 passed, 2 warnings in 2698.05s (0:44:58)
+exit 1
