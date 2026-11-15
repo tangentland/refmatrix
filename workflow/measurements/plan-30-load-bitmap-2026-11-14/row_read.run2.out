@@ -1,0 +1,10 @@
+load at start: 12.01 6.68 5.94
+len(frag)  med/p90 us: (2998.416544869542, 3198.8329719752073)
+bool(frag) med/p90 us: (0.08300412446260452, 0.125030055642128)
+mask build+free med/p90 us: (3708.9374964125454, 4174.1670574992895)
+load_bitmap today med/p90 us: (6723.104044795036, 9323.208942078054)
+stateless row (no mask, no len) med/p90 us: (29.729038942605257, 30.792085453867912) |row| 317
+identity: 123448 rows vs fragment decode, mismatches 0; 407 sampled rows vs load_bitmap, mismatches 0
+largest row: ('mentions', 8737) 3900 stateless med/p90 us: (304.3130272999406, 314.5829541608691) today: (6706.1249865219, 7292.625028640032)
+20 concepts x 34 linkages: today med 2233.3 ms p90 2346.1 | stateless med 2.61 ms p90 2.76
+load at end: 12.84 7.15 6.12
