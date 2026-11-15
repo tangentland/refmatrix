@@ -67,9 +67,9 @@ rmx_sandbox.assert_under_sandbox(_SANDBOX, {"launchctl.LAUNCH_AGENTS_DIR":
 # served INSIDE the pytest process writes no ledger line (nothing is exec'd or forked), so the
 # instance itself is recorded: `Daemon.__init__` is wrapped to put each instance, weakly, in
 # `rmx_sandbox`'s registry with the test that built it, and changes nothing else. At session
-# finish an instance whose serve loop is still running is reported and fails the session --
-# never stopped through its `rmxd.pid`, which names THIS process (ruling L142: the reaper never
-# signals its own pid or an ancestor); see `_stop_in_process` for why it is not stopped here.
+# finish an instance whose serve loop is still running is reported, stopped through the
+# registry (`_stop_in_process`), and fails the session -- never stopped through its `rmxd.pid`,
+# which names THIS process (ruling L142: the reaper never signals its own pid or an ancestor).
 _SERVE_CODE = _dm.Daemon.serve_forever.__code__
 
 
@@ -101,16 +101,26 @@ def _serve_thread(d) -> "int | None":
 
 
 def _stop_in_process(d, emit) -> bool:
-    """NOT stopped in-session, and said so. Its own stop path cannot be used here:
-    `Daemon.serve_forever` ends every shutdown in `os._exit(0)` (daemon.py, the force-exit after
-    "daemon stopped"), so a stop through the registry (`OPS["stop"]`) ends THIS session with exit
-    0 before pytest prints its summary, losing the failure it exists to report (found
-    2026-11-15, T0.2 GREEN). A signal is ruled out too (ruling L142). The session fails, and the
-    daemon ends with the session's process. Open gap: task-29.4 #r4 item 6's "stopped"."""
-    emit("  NOT stopped in-session: serve_forever ends its shutdown in os._exit(0), which "
-         "would end this session with exit 0; it ends with this process (task-29.4 #r4 item 6, "
-         "open gap)")
-    return False
+    """Stop an in-process daemon through the registry (ruling L142: never a signal, never its
+    pid file, which names this process): the `stop` op the socket would dispatch
+    (`OPS["stop"]`, the flag the accept loop polls each second), then wait for its serve thread
+    to run its shutdown. Since bug-267's fix (L151, 2026-11-15) `serve_forever` off the main
+    thread returns after joining its pool workers instead of ending the host with
+    `os._exit(0)`, so this session survives the stop and keeps its own exit status."""
+    import threading
+    tid = _serve_thread(d)
+    _dm.OPS["stop"](d, {})
+    emit("  stop op sent through the Daemon registry (no signal)")
+    t = {th.ident: th for th in threading.enumerate()}.get(tid)
+    if t is not None:
+        t.join(_dm.stop_grace_s() + _INPROC_STOP_SLACK_S)
+    ok = _serve_thread(d) is None
+    emit("  serve loop ended" if ok else "  serve loop STILL RUNNING after its stop grace")
+    return ok
+
+
+# Beyond the daemon's own stop grace: the in-host pool join after it (bug-267).
+_INPROC_STOP_SLACK_S = 30.0
 
 
 _track_daemon_instances()

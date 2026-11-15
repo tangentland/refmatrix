@@ -51,6 +51,7 @@ import glob
 import json
 import os
 import plistlib
+import re
 import pwd
 import runpy
 import shlex
@@ -1395,6 +1396,28 @@ def _with_descendants(ledger, recs: list, protected: set, emit) -> list:
     return recs
 
 
+# Ruling L154 (2026-11-15): the ONE exempt process. Loading the embedder in-process (torch)
+# starts the stdlib's multiprocessing resource tracker as a child of the session; it ignores
+# SIGTERM and ends by itself when its parent closes the pipe at exit, so it ends with its parent
+# by construction. The tier-(b) verify run at 78489af reaped it (`green-verify-tierb.log`) and
+# multiprocessing relaunched it at exit. Exempt only as a DIRECT child of this process with
+# exactly this argv; printed and counted, never silent. No other helper is exempt.
+_RESOURCE_TRACKER = re.compile(r"from multiprocessing\.resource_tracker import main;main\(\d+\)")
+
+
+def _is_resource_tracker(rec: dict, info: dict) -> bool:
+    if info.get("ppid") != os.getpid():
+        return False
+    argv = rec.get("argv") or []
+    if len(argv) == 1:                      # a descendant read from `ps`: one command string
+        try:
+            argv = shlex.split(str(argv[0]))
+        except ValueError:
+            return False
+    return (len(argv) == 3 and argv[1] == "-c"
+            and _RESOURCE_TRACKER.fullmatch(str(argv[2])) is not None)
+
+
 def reap_ledger(ledger, label: str, emit, grace: float = 0.0,
                 descendants: bool = False) -> dict:
     """Stop every live survivor of `ledger`, each printed `<label> pid=<n> age=<s> spawned in
@@ -1412,7 +1435,7 @@ def reap_ledger(ledger, label: str, emit, grace: float = 0.0,
     protected = _ancestors()
     if descendants:
         recs = _with_descendants(ledger, recs, protected, emit)
-    out: dict = {"leaked": [], "reused": [], "unverified": [], "survived": []}
+    out: dict = {"leaked": [], "reused": [], "unverified": [], "survived": [], "exempt": []}
     live = []
     for rec in recs:
         pid = int(rec["pid"])
@@ -1431,6 +1454,11 @@ def reap_ledger(ledger, label: str, emit, grace: float = 0.0,
             emit(f"rmx sandbox: pid={pid} in {ledger} is a reused pid (ledger start {start}, "
                  f"the live process started {info['start']}); not signalled")
             out["reused"].append(rec)
+        elif _is_resource_tracker(rec, info):
+            emit(f"rmx sandbox: pid={pid} exempt, not reaped: the stdlib multiprocessing "
+                 f"resource tracker, a direct child of this session (spawned in "
+                 f"{rec.get('test')}); it ends with its parent by construction (ruling L154)")
+            out["exempt"].append(rec)
         else:
             live.append(rec)
     if live and grace > 0:
@@ -1551,8 +1579,8 @@ def set_inprocess_ops(serving, stop) -> None:
 
 def inprocess_leaks(emit) -> list:
     """Every tracked instance still serving: printed `LEAKED IN-PROCESS DAEMON root=<…> built
-    in <test>`, handed to conftest's `stop` (never its pid file, which names this process).
-    Returns the printed lines with their tests."""
+    in <test>`, stopped through conftest's `stop` (the registry; never its pid file, which
+    names this process). Returns the printed lines with their tests."""
     serving, stop = _INPROC_OPS["serving"], _INPROC_OPS["stop"]
     if serving is None:
         return []
@@ -1562,7 +1590,8 @@ def inprocess_leaks(emit) -> list:
             continue
         line = f"LEAKED IN-PROCESS DAEMON root={meta['root']} built in {meta['test']}"
         emit(line)
-        stop(obj, emit)
+        if not stop(obj, emit):
+            emit(f"  the in-process daemon on {meta['root']} did NOT stop")
         out.append((meta["test"], line))
     return out
 
@@ -1726,10 +1755,15 @@ def reap_session(repo: Path, emit) -> int:
         failure_record(str(rec.get("test")), "reaper", line)
     for rec in res["reused"]:
         log.append(f"reused pid={rec['pid']} (ledger line from {rec.get('test')}); not signalled")
+    exempt = len(res["exempt"])
     leak_log(repo, log)
     if findings:
         emit(f"rmx sandbox: {findings} leak(s) outlived their tests; the session FAILS "
-             f"(bug-229; task-29.4 #r4). Logged in {Path(repo) / LEAK_LOG_REL}")
+             f"(bug-229; task-29.4 #r4); {exempt} exempt (stdlib resource tracker, L154). "
+             f"Logged in {Path(repo) / LEAK_LOG_REL}")
+    elif exempt:
+        emit(f"rmx sandbox: 0 leaks; {exempt} exempt process(es) (the stdlib multiprocessing "
+             f"resource tracker, which ends with this session by construction; ruling L154)")
     return findings
 
 

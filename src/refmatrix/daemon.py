@@ -2200,6 +2200,18 @@ class Daemon:
                     )
                 elif close_err:
                     self._log(f"store close failed: {close_err[0]!r}")
+            # bug-267 (ruling L151, 2026-11-15): off the main thread this
+            # daemon is served INSIDE a host process (a test, a host that
+            # embeds it) and must end its serve thread, not the host. The
+            # force-exit below exists so concurrent.futures' atexit join of
+            # leaked pool workers cannot pin a process alive; the in-host
+            # return solves that the other way: every pool worker is joined
+            # here, so none is left for the host's atexit join.
+            in_host = threading.current_thread() is not threading.main_thread()
+            if in_host:
+                self._join_pool_workers_for_host(
+                    (("disp", disp_pool), ("cli", cli_pool), ("bg", bg_pool)),
+                    stop_grace_s())
             self._log("daemon stopped")
             # ch-bsd r2 m-r2-3: the handler serve_forever attached comes off
             # before the log fh closes (an in-process daemon left it on the
@@ -2210,15 +2222,38 @@ class Daemon:
                     self.log_fh.close()
                 except Exception:
                     pass
-            # Belt-and-suspenders force-exit. _run_detached's finally already
-            # calls os._exit(0), but: (a) serve_forever may be called outside
-            # _run_detached (rmxd entrypoint, tests) and (b) atexit handlers
-            # registered by concurrent.futures.thread join all worker threads
-            # before interpreter shutdown -- including the workers we just
-            # leaked in _drain_pool. Skip atexit; the kernel reaps the
-            # threads and releases all DuckDB file locks immediately.
-            os._exit(0)
-        return 0  # unreachable; satisfies `-> int` signature
+            if not in_host:
+                # Belt-and-suspenders force-exit for the daemon PROCESS
+                # (the rmxd entrypoint, serve_foreground, and _run_detached,
+                # whose finally also calls os._exit(0)): atexit handlers
+                # registered by concurrent.futures.thread join all worker
+                # threads before interpreter shutdown -- including any we
+                # leaked in _drain_pool. Skip atexit; the kernel reaps the
+                # threads and releases all DuckDB file locks immediately.
+                os._exit(0)
+        return 0
+
+    def _join_pool_workers_for_host(self, pools, timeout_s: float) -> None:
+        """The in-host stop's half of the force-exit's job (bug-267, L151,
+        2026-11-15): the pools were shut down by `_drain_pool` (queued work
+        cancelled, a bounded join); join what is still running within
+        `timeout_s` more, so the host's `concurrent.futures` atexit join has
+        no worker to block on. A worker still alive after that is in a call
+        nothing can preempt: named in the log and on stderr, never dropped."""
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        live: list[str] = []
+        for name, pool in pools:
+            pool.shutdown(wait=False, cancel_futures=True)
+            for t in list(getattr(pool, "_threads", ()) or ()):
+                t.join(timeout=max(0.0, deadline - time.monotonic()))
+                if t.is_alive():
+                    live.append(f"{name}:{t.name}")
+        if live:
+            msg = (f"in-host stop: {len(live)} pool worker(s) still running after "
+                   f"{timeout_s:.0f}s ({', '.join(live)}); the host's exit will "
+                   f"wait on them")
+            self._log(msg)
+            sys.stderr.write(f"rmx daemon {self.root}: {msg}\n")
 
     def _start_periodic_flush(self, interval_s: float | None = None) -> None:
         """Spawn a daemon thread that periodically calls
