@@ -1,0 +1,4 @@
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "start", "t": 1794768686.7225258}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "report", "phase": "setup", "outcome": "passed", "duration": 0.042755458038300276, "e_lines": [], "crash": null, "t": 1794768686.765921}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "report", "phase": "call", "outcome": "passed", "duration": 5.976944750058465, "e_lines": [], "crash": null, "t": 1794768692.7433338}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "report", "phase": "teardown", "outcome": "passed", "duration": 0.00046758295502513647, "e_lines": [], "crash": null, "t": 1794768692.744013}

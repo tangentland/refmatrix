@@ -1,0 +1,75 @@
+{
+ "level": 3,
+ "targets": [
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "load": [
+  [
+   "tests/test_memory_bridge.py",
+   "tests/test_bug212_r4_red.py",
+   "tests/test_plan3_remedy_r4.py",
+   "tests/test_bug216_hidden_no_pollution.py",
+   "tests/test_task3_6_r9_remedy.py",
+   "tests/test_plan3_remedy_r6.py",
+   "tests/test_bug225_handoff_trunk.py",
+   "tests/test_memory_compile_remedy_r1.py"
+  ],
+  [
+   "tests/test_task25_1_recall_budget.py",
+   "tests/test_task21_1_used_events.py",
+   "tests/test_memory_compile_scope.py",
+   "tests/test_bridge_move_safety_r1.py",
+   "tests/test_bug212_r6_red.py",
+   "tests/test_rerank_budget_real_clients.py",
+   "tests/test_plan3_remedy_r3.py",
+   "tests/test_plan4_remedy.py",
+   "tests/test_bug212_r1_remedy.py"
+  ],
+  [
+   "tests/test_bridge_move_safety.py",
+   "tests/test_plan3_remedy_r5.py",
+   "tests/test_savestate_mtype.py",
+   "tests/test_modelsrv.py",
+   "tests/test_sync_fails_loudly_r2.py",
+   "tests/test_task21_1_emitters.py",
+   "tests/test_plan4_remedy_r3.py",
+   "tests/test_catalog_measure.py"
+  ]
+ ],
+ "load_mode": "until-target",
+ "warmup_s": 20.0,
+ "cap_s": 6028.14,
+ "T_s": 2009.38,
+ "wall_s": 41.57076987507753,
+ "wall_clock_s": 41.5711989402771,
+ "cap_hit": false,
+ "leaked_after_kill": 0,
+ "leaked": [],
+ "target_exit_s": 26.570060083060525,
+ "target_rc": 0,
+ "load_rcs": [
+  2,
+  2,
+  2
+ ],
+ "status": "counted",
+ "outcomes": {
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 5.975554250064306
+  }
+ },
+ "loadavg_start": [
+  4.6923828125,
+  4.8544921875,
+  4.97998046875
+ ],
+ "loadavg_end": [
+  6.89208984375,
+  5.416015625,
+  5.1796875
+ ],
+ "live_socket_touches_added": 0,
+ "sha": "83c2711056bb649c3cfbcbd615cd72f7a41d0bbf",
+ "lane_request_to_release_s": 43.75023293495178
+}

@@ -1,0 +1,2 @@
+{"start": "10:52:54", "start_epoch": 1794768774.112402, "grace": 60.0, "seconds": 5.361, "report": {"stop_op": "sent", "pid": 95390}, "result": true}
+{"start": "10:52:59", "start_epoch": 1794768779.473817, "grace": 45.0, "seconds": 0.0, "report": {"stop_op": "skipped: no daemon"}, "result": true}
