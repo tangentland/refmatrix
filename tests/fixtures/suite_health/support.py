@@ -21,11 +21,12 @@ import tempfile
 from pathlib import Path
 
 
-def store_root(prefix: str = "sh-") -> "tuple[Path, Path]":
+def store_root(prefix: str = "sh-", under: "str | None" = None) -> "tuple[Path, Path]":
     """(base, root): an initialised store at `<base>/proj/.refmatrix`, base under /tmp (short:
-    macOS `sun_path` is ~104 bytes)."""
+    macOS `sun_path` is ~104 bytes), or under `under` when given (the inner sandbox root, for
+    the R4.4 case)."""
     from refmatrix.store import Store
-    base = Path(tempfile.mkdtemp(prefix=prefix, dir="/tmp")).resolve()
+    base = Path(tempfile.mkdtemp(prefix=prefix, dir=under or "/tmp")).resolve()
     root = base / "proj" / ".refmatrix"
     root.parent.mkdir()
     s = Store(root)

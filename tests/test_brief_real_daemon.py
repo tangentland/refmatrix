@@ -136,18 +136,22 @@ def test_saved_briefs_do_not_grow_the_corpus_on_rerun(daemon_root):
 
 
 def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
-    """#m-17: the MCP schema has no enum, so this path is reachable."""
+    """#m-17: the MCP schema has no enum, so this path is reachable.
+
+    bug-127 (task-t0-suite-trust-sweep `#t0-2` R2.3, ruling L142): the library's raise is
+    reached THROUGH the daemon, the way MCP reaches it -- `verbs.memory(..., "brief",
+    classes=[…])` -> the daemon's `memory_brief` op -> `brief.compile_briefs`. The test used to
+    open `Store()` on the catalog its own daemon holds, and DuckDB refused it (`Conflicting
+    lock is held in … (PID <the test's daemon>)`). The asserted text is the library's own
+    message, so a library that stops raising (mutation M2.3) fails here, not just a missing
+    error."""
     root, env = daemon_root
     # click.Choice already rejects this, so exit!=0 proved nothing about the
     # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
-    from refmatrix import brief as brief_mod
-    from refmatrix.store import Store
-    s = Store(root)
-    with s.with_partition(root.parent.name):
-        with pytest.raises(ValueError) as e:
-            brief_mod.compile_briefs(s, classes=["bogus-class"])
-    s.close()
-    assert "bogus-class" in str(e.value)
+    from refmatrix import verbs
+    with pytest.raises(verbs.VerbError) as e:
+        verbs.memory(root, "brief", classes=["bogus-class"])
+    assert "unknown brief class(es): bogus-class" in str(e.value), str(e.value)
     assert _rmx(env, "memory", "brief", "--class", "bogus-class").returncode != 0
 
 

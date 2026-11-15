@@ -268,17 +268,13 @@ def test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so(tmp_path, case_i
         unrelated.wait()
 
 
-def test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start(tmp_path, case_info):
-    """AC-5 fixture 4: a run killed with SIGKILL mid-test never reaches teardown, so no
-    session-finish reaper can run (bug-229's most likely cause). The NEXT inner session's start
-    finds the killed run's `/tmp/rmx-*/owner.json` (owner no longer running), stops its
-    ledger's survivors, prints `ORPHAN from a killed run` with the pid, removes the killed
-    run's root, logs the count in `workflow/review-output/leaked-processes.log`, and exits 0
-    (plan-29 D13: a killed run's orphan does not fail the new session). Kills mutation 13."""
+def _killed_run(tmp_path: Path, case_info: Path) -> "tuple[Path, int, str]":
+    """Run `case_killed_mid_test` as inner session A, wait until it reports its daemon, then
+    SIGKILL A (never reaching teardown) and swap the trivial case in for the next session.
+    Returns (tree, the orphan daemon's pid, A's sandbox root)."""
     tree = _inner_tree(tmp_path, "case_killed_mid_test")
     a = subprocess.Popen(_inner_cmd(), cwd=str(tree), env=_inner_env(case_info),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    killed_sandbox = None
     try:
         deadline = time.monotonic() + _INFO_WAIT_S
         while not case_info.is_file() and time.monotonic() < deadline and a.poll() is None:
@@ -299,9 +295,18 @@ def test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start(tmp_path,
         a.stdout.close()
     assert killed_sandbox and Path(killed_sandbox).is_dir(), (
         f"the killed run's sandbox root {killed_sandbox} should still exist after SIGKILL")
+    (tree / "tests" / "test_case.py").write_text((_CASES / "case_trivial.py").read_text())
+    return tree, pid, killed_sandbox
 
-    (tree / "tests" / "test_case.py").write_text(
-        (_CASES / "case_trivial.py").read_text())
+
+def test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start(tmp_path, case_info):
+    """AC-5 fixture 4: a run killed with SIGKILL mid-test never reaches teardown, so no
+    session-finish reaper can run (bug-229's most likely cause). The NEXT inner session's start
+    finds the killed run's `/tmp/rmx-*/owner.json` (owner no longer running), stops its
+    ledger's survivors, prints `ORPHAN from a killed run` with the pid, removes the killed
+    run's root, logs the count in `workflow/review-output/leaked-processes.log`, and exits 0
+    (plan-29 D13: a killed run's orphan does not fail the new session). Kills mutation 13."""
+    tree, pid, killed_sandbox = _killed_run(tmp_path, case_info)
     try:
         r = _run_inner(tree, tmp_path / "unused-info.json")
         out = _out(r)
@@ -320,6 +325,35 @@ def test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start(tmp_path,
         assert log.is_file() and str(pid) in log.read_text(), (
             f"{log} does not record the orphan {pid}: "
             f"{log.read_text()[-1000:] if log.is_file() else '(missing)'}")
+    finally:
+        if killed_sandbox and Path(killed_sandbox).exists():
+            shutil.rmtree(killed_sandbox, ignore_errors=True)
+
+
+# R4.3's header line, format defined by this RED (ruling L142 (6)): one line in pytest's
+# session header (before `collected …`), the number of orphan processes the session-start
+# sweep stopped, whatever killed runs they came from.
+_HEADER_COUNT = re.compile(r"^rmx sandbox: (\d+) orphan process\(es\) swept from killed runs$",
+                           re.M)
+
+
+def test_r4_3_the_session_header_counts_the_orphans_the_start_swept(tmp_path, case_info):
+    """`#r4` item 3: "the count is in the session header". After a killed run, the next
+    session's header carries `rmx sandbox: <n> orphan process(es) swept from killed runs`
+    with n >= 1, before the `collected` line (other dead sandboxes on the machine may add
+    to n; this run's orphan guarantees at least one)."""
+    tree, pid, killed_sandbox = _killed_run(tmp_path, case_info)
+    try:
+        r = _run_inner(tree, tmp_path / "unused-info.json")
+        out = r.stdout or ""
+        m = _HEADER_COUNT.search(out)
+        assert m is not None, (
+            "no `rmx sandbox: <n> orphan process(es) swept from killed runs` line in the "
+            f"session header after a killed run left pid {pid}:\n{out[-3000:]}")
+        assert int(m.group(1)) >= 1, m.group(0)
+        coll = re.search(r"^collected \d+ items?", out, re.M)
+        assert coll is not None and m.start() < coll.start(), (
+            f"the orphan count is not in the header (before `collected`):\n{out[-3000:]}")
     finally:
         if killed_sandbox and Path(killed_sandbox).exists():
             shutil.rmtree(killed_sandbox, ignore_errors=True)
@@ -345,6 +379,57 @@ def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_
         f"the line does not name the daemon's root {root}: {line!r}")
     assert f"{_NODE}test_leaves_an_in_process_daemon_serving" in line, (
         f"the line does not name the test that built it: {line!r}")
+
+
+def test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session(tmp_path,
+                                                                               case_info):
+    """Ruling L142 (2): the reaper never signals its own pid or an ancestor. An in-process
+    `Daemon`'s `rmxd.pid` names the PYTEST process (the case reports it, so the hazard is
+    shown, not assumed); stopping it the way a spawned daemon is stopped (`stop_daemon(root)`,
+    which ends in a signal to the pid file's pid) SIGTERMs the session. Stopped through the
+    weak `Daemon` registry instead, the session reports it, finishes its own summary, and exits
+    with pytest's "tests failed" status -- never by a signal.
+
+    At base there is no reaper, so nothing can signal the session: the not-signalled half
+    holds and the node is RED on the other half (exit 0, nothing reported). Its own claim is
+    proved by a mutation after GREEN: stop the in-process daemon by `stop_daemon(root)` or by
+    its pid file -> the inner exits -15 / 143 and this node fails on the signal assertion."""
+    tree = _inner_tree(tmp_path, "case_inprocess_daemon_own_pid")
+    r = _run_inner(tree, case_info)
+    out = _out(r)
+    d = _info(case_info)
+    assert d.get("pidfile") == d.get("inner_pid"), (
+        f"precondition: the in-process daemon's rmxd.pid ({d.get('pidfile')}) should name the "
+        f"inner pytest ({d.get('inner_pid')}): {d!r}")
+    assert r.returncode >= 0 and r.returncode != 128 + signal.SIGTERM, (
+        f"the inner session was killed by a signal (exit {r.returncode}): the reaper signalled "
+        f"its own pid {d.get('inner_pid')}, named by the in-process daemon's rmxd.pid\n"
+        + out[-3000:])
+    assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+        f"the in-process daemon (pid file -> the session itself) was left serving and the "
+        f"session exited {r.returncode}: nothing reported or stopped it\n{out[-3000:]}")
+    leak = out.find("LEAKED IN-PROCESS DAEMON")
+    final = [m.start() for m in re.finditer(r"^=+ .*\b(passed|failed)\b.* =+$", out, re.M)]
+    assert leak >= 0 and final, out[-3000:]
+    assert "Terminated" not in out, out[-3000:]
+
+
+def test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file(tmp_path,
+                                                                           case_info):
+    """`#r4` item 4: the session-finish hook prints the count of sandbox store roots that
+    still hold a live `rmxd.pid` before removal. Format defined by this RED (ruling L142 (6)):
+    `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish`,
+    counted when the finish hook starts, before anything is stopped or removed. A daemon left
+    on a root under the inner sandbox makes n >= 1."""
+    tree = _inner_tree(tmp_path, "case_leak_daemon_under_sandbox")
+    r = _run_inner(tree, case_info)
+    out = _out(r)
+    m = re.search(r"^rmx sandbox: (\d+) store root\(s\) under the sandbox hold a live "
+                  r"rmxd\.pid at session finish$", out, re.M)
+    assert m is not None, (
+        "no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session "
+        f"finish` line, with a daemon left on {_info(case_info).get('root')}:\n{out[-3000:]}")
+    assert int(m.group(1)) >= 1, m.group(0)
 
 
 def test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session(tmp_path,
