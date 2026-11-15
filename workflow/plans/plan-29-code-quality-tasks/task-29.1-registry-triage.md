@@ -100,9 +100,11 @@ logged as `scheduled` or `deferred` on the day it is logged. If its owner is unk
 `.claude/rules/bug-registry.md` changes to say this. {#r1-body}
 
 **Other specs that write a status.** A task that sets a registry status after this one uses the
-grammar. One approved spec does not yet: the T0 suite-trust sweep (`task-t0-suite-trust-sweep`,
-approved on branch `spec-wave-t0` at `fa1227d`, not yet on `master`; track T0 in
-[[plan-review-2026-11-13#p1]]). Its T0.3 sets
+grammar. One approved spec did not when this task was written: the T0 suite-trust sweep
+([[task-t0-suite-trust-sweep]], approved on branch `spec-wave-t0` at `fa1227d`; track T0 in
+[[plan-review-2026-11-13#p1]]). It reaches `master` with its 2026-11-15 freshness revision,
+which carries the amends line this paragraph asks for
+([[task-t0-suite-trust-sweep#amend-6]]). Its T0.3 set
 `open / diagnosed-loud` for a flake it could not fix or reproduce. Under this grammar that row
 reads `deferred: diagnosed-loud, <trial counts>; review <date>` (a flake that now explains
 itself, with no owner until it fires again), or `scheduled → <target>` when T0.3 opens a product
@@ -473,7 +475,7 @@ requires. {#test-strategy-body}
 | `README.md`, `.claude/PROJECT_PROFILE.md` | the suite figures ([[#r6]]) |
 | `workflow/deferral_registry.md` | a row for 151-154 if the triage defers them as the queue review proposes |
 | `workflow/implementation_summaries/task-29.1-registry-triage.md` | new: the triage table and counts |
-| `workflow/plans/task-t0-suite-trust-sweep.md` | one amends line: `open / diagnosed-loud` reads as [[#r1-other-writers]] says (after that spec's branch has merged) |
+| `workflow/plans/task-t0-suite-trust-sweep.md` | one amends line: `open / diagnosed-loud` reads as [[#r1-other-writers]] says. Made in T0's 2026-11-15 freshness revision, which brought that spec's branch to `master`: [[task-t0-suite-trust-sweep#amend-6]] |
 {#files-table}
 
 `CLAUDE.md`, `.claude/PROJECT_PROFILE.md` and `.claude/rules/bug-registry.md` are instruction

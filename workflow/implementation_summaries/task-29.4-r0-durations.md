@@ -18,8 +18,9 @@ rel: derives-from -> [[plan-29-spec-census]]
 rel: reinforces -> [[feedback_compare_failures_by_error_not_name]]
 rel: reinforces -> [[feedback_review_clones_cannot_see_dev_tree_failures]]
 
-A measurement. No `src/` change and no new test. It serves T0.3's R0 (`T0#t0-3-r0`, the
-25-file list below is the list T0.3's harness loads with) and 29.4 R0.1, R0.2 and the static
+A measurement. No `src/` change and no new test. It serves T0.3's R0
+([[task-t0-suite-trust-sweep#t0-3-r0]]; the 25-file list below is the list T0.3's harness
+loads with) and 29.4 R0.1, R0.2 and the static
 part of R0.3. The weights were written by a committed script,
 `scripts/shard_weights_from_durations.py`, to `tests/shard_weights.json`. {#what}
 

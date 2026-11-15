@@ -21,7 +21,8 @@ metadata:
 > [[plan-review-2026-11-13#goal-horizon]]) after ch-bsd r3 came back MEH-only; the MEH is folded
 > ([[#decision-approved]]). The lead's rulings on the first draft's choices and on each review
 > round are in [[#rulings]], [[#rev-r1]], [[#rev-r2]] and [[#rev-r3]]. Revised 2026-11-15 for
-> freshness and the 29.4 fold ([[#rev-note-fresh]]).
+> freshness and the 29.4 fold ([[#rev-note-fresh]]), and again after its review
+> ([[#rev-note-fresh-2]], ruling L122).
 > Depends on: what 29.4 depends on ([[task-29.4-suite-health#root]]), and 29.4's stage 0, which
 > is done ([[task-29.4-r0-durations]]). Queue item 1 is on `master`: bug-212 (`cc061f4`),
 > bug-216 (`7aed8df`), 25.1 rev 7 (`d44e359`, `d1be40a`). Every T0 branch starts from the
@@ -112,7 +113,9 @@ R1.3 shipped verbatim (`988e96d`) and is dropped as a requirement. R1.4 shipped 
 `memory/` defeats the fallback. R1.4 becomes: converge the shipped fallback onto one resolver,
 with the populated-directory check and canonicalisation. AC-1.5's RED is the empty-directory
 case, and M1.3 and M1.4 are restated against it. The bug-155 row gains the residual
-([[#rev-note-fresh-bug155]]).
+([[#rev-note-fresh-bug155]]). Round 2 (ruling L122) adds what the review found live: a clone
+of a clone. The resolver walks the origin chain, and AC-1.5 has a second RED for it
+([[#rev-note-fresh-2]]).
 
 rel: amends -> [[#r1-3]]
 rel: amends -> [[#r1-4]]
@@ -169,8 +172,11 @@ rel: derives-from -> [[task-29.1-registry-triage#r1-other-writers]]
 ### A7 (row 7): the clean runs go through 29.4's runner {#amend-7}
 
 R7.4 and R7.5 named one `pytest -rA --junitxml` process of about 45 minutes. They become
-`scripts/ptest.sh --tier all`, in the main tree (run tier (c) included) and in the clone twin,
-with `-rA` and one junit file per shard. "Clean" keeps T0's definition word for word.
+`scripts/ptest.sh --tier all`, in the main tree (run tier (c) included) and in the clone twin.
+"Clean" keeps T0's definition word for word. Row 7 also asked for `-rA` and one junit file per
+shard. The runner has no such flags, and ruling L122 adds none: per-node results are read from
+the runner's `outcomes.jsonl` ([[task-29.4-suite-health#r2-outcomes]]), and row 7 is reworded
+to say so.
 
 rel: amends -> [[#r7-4]]
 rel: amends -> [[#r7-5]]
@@ -205,7 +211,7 @@ rel: derives-from -> [[plan-review-fable-2026-11-14-queue#ord-6]]
 | sub-task | closes | branch | stage ([[task-29.4-suite-health#fold-stages]]) |
 |---|---|---|---|
 | [[#t0-1]] **T0.1'** Skip gate and checkout identity | bug-215, bug-155's residual ([[#amend-1]]) | `task-t0.1-skip-gate-checkout-identity` | 1 |
-| [[#t0-2]] Dev-tree-only tests stop reading the real HOME and cwd ancestry | bug-170, bug-168, bug-127; with 29.4b on the same branch: bug-229 ([[#amend-5]]), and bug-253 by L121 ([[#t0-2-bug253]]) | `task-t0.2-dev-tree-test-isolation` | 2 |
+| [[#t0-2]] Dev-tree-only tests stop reading the real HOME and cwd ancestry | bug-170, bug-168, bug-127; with 29.4b on the same branch: bug-229 ([[#amend-5]]), and bug-253 by L121 and L122, which retires the 18 venv pins ([[#t0-2-bug253]]) | `task-t0.2-dev-tree-test-isolation` | 2 |
 | [[#t0-3]] Load-dependent flakes | bug-130, bug-190, bug-091; with 29.4c on the same branch: bug-228, bug-231 ([[#amend-4]]) | `task-t0.3-load-flakes` | 2 |
 | [[#t0-8]] bug-196: the cli.log recall leg split per channel | bug-196 ([[#ruling-o1]]) | `task-t0.8-bug196-recall-channels` | 2 |
 | [[#t0-6]] W2-c: the plan-7 dense/fused re-run | task 7.4's missing rows; REPORT.md completed | `task-t0.6-plan7-dense-rerun` | lane: any time after stage 1; long-running |
@@ -270,13 +276,19 @@ harness is several pytest processes by design; while it is up it is that one run
 - **R0.1 to R0.8 also bind what 29.4 adds** ([[#amend-10]]; [[task-29.4-suite-health#r10]]).
   {#r0-also-29-4}
 - **The operating procedure binds every sub-task** ([[orchestration]], adopted 2026-11-15, after
-  this spec). Two of its rules change how T0 runs, and neither changes a requirement:
+  this spec). Two of its rules change how T0 runs:
   - no branch full suite ([[orchestration#task]] step 4). A sub-task verifies with its own
     files, their family and every test that imports a changed module. T0's full runs are stage
     0's, which is done, and T0.7's two (R7.4, R7.5), which run at a `master` sha;
   - one test run at a time on the machine ([[orchestration#one-suite]]).
 
   {#r0-orchestration}
+- **Two branches edit files every test loads, so their verify set is named** (ch-bsd r1 M8;
+  ruling L122). `tests/conftest.py` and `tests/sandbox_site/rmx_sandbox.py` are imported by the
+  whole suite, so "every test that imports a changed module" would be a branch full suite, which
+  the procedure forbids. The lead named the two sets: T0.1' in [[#t0-1-verify]], T0.2 + 29.4b in
+  [[#t0-2-verify]]. Neither is the full suite; that stays the minor-release gate.
+  {#r0-verify-sets}
 
 ## T0.1 Skip gate and checkout identity (bug-215, bug-155) {#t0-1}
 
@@ -315,17 +327,25 @@ have shipped fixes since; what T0.1' builds is the residual, below.**
   `scripts/lint-gmd.sh:49-64` falls back to the origin checkout's memory dir and says so on
   stderr (`44d1a34`, Q18 a). `tests/test_gmd_lint_requires_version.py:125-140` repeats the slug
   and origin logic in Python to fill its decoy home.
-- **The residual.** Both copies test only that a directory exists (the script's `-d` test, the
-  test's `is_dir()`). An own-slug `memory/` that exists and is empty is taken as the memory dir.
-  No fallback is tried, and every memory-id ref dangles again. This is the case r2 s-1 named
-  ([[#rev-r2]]).
+- **The residual has two cases.** Both copies look at one directory per checkout and follow the
+  origin one hop only.
+  1. **A clone of a clone (live today; ch-bsd r1 S1).** A clone whose origin is another clone
+     reaches a slug with no memory dir, and the fallback stops there. The gate then prints
+     `no memory dir for <clone> or its origin <clone>; memory-id refs will dangle` and exits 1
+     on every memory id: 1,234 `dangling-doc` errors in the reviewer's own clone at `5b04e2d`
+     ([[bsd-spec-t0-fresh-r1-5b04e2d]]). Of the 33 `refmatrix-*` clones on littlebig, 23 have
+     the dev tree as origin, 8 have another clone, and 2 have none. Every review clone cut from
+     an author's clone is of this kind.
+  2. **An empty own-slug dir (not live today).** Both copies test only that the directory
+     exists (the script's `-d` test, the test's `is_dir()`). An own-slug `memory/` that exists
+     and is empty is taken as the memory dir, no fallback is tried, and every memory-id ref
+     dangles. This is the case r2 s-1 named ([[#rev-r2]]). No
+     `~/.claude/projects/-Volumes-littlebig-refmatrix*` directory exists on the dev machine
+     (2026-11-15), so a test has to plant one, and it plants it in a decoy home.
 - **The two copies also differ**, from each other and from R1.4. The script accepts only an
   absolute origin that holds a `.git` directory and keeps the logical path (`cd … && pwd`); the
   test `resolve()`s it. Neither takes a relative origin or a `<path>/.git` origin, and neither
   checks that the origin's dir is populated.
-- **It is not live on the dev machine today.** No `~/.claude/projects/-Volumes-littlebig-refmatrix*`
-  directory exists (2026-11-15), so no clone has an empty own-slug dir yet. A test has to plant
-  one, and it plants it in a decoy home.
 
 {#t0-1-residual}
 
@@ -342,13 +362,22 @@ and a clone with none, run with the main tree's interpreter and `PYTHONPATH=<clo
   them and must not (R0.5).
 - **Owner.** L121 gives bug-253's fix, and `lint-gmd.sh`'s dev-interpreter lookup with it, to
   the stage-2 branch ([[#t0-2-bug253]]), "or the next RED touching those files". T0.1' is the
-  first branch after that ruling to edit `scripts/lint-gmd.sh`. It does not take the lookup
-  unless the lead says so: its own ACs run where the script already reaches lint (the symlinked
-  clone), and AC-1.4 runs only the seven pinned files.
+  first branch after that ruling to edit `scripts/lint-gmd.sh`. It does not take the lookup:
+  L122 keeps `DEVPY` with stage 2. T0.1's own ACs run where the script already reaches lint
+  (the symlinked clone), and AC-1.4 runs only the seven pinned files.
 - **Until bug-253's fix merges**, a no-venv clone run carries its E lines:
   `AssertionError: dev rmx missing at <clone>/.venv-eval/bin/rmx`, a `FileNotFoundError` on the
   same path, and `scripts/lint-gmd.sh did not run its checks (exit 2)`. They are bug-253,
-  matched by E line (R0.2), not new findings.
+  matched by E line (R0.2), not new findings. T0.1's new script-level test adds no other line
+  to that list: it asserts that the gate ran before anything else, with that same message
+  ([[#ac-1-5]]; ch-bsd r1 M1).
+- **The 18 venv pins are stage-1 scope and are retired in stage 2** (ch-bsd r1 M5; ruling
+  L122, ruled before stage 1 because T0.1' builds R1.1 first). bug-253's helper covers every
+  file that looks up the dev `rmx`, the seven pinned files included. Once a pinned file uses
+  the helper it no longer skips in a no-venv clone, and its pin goes in the same commit (R1.2:
+  the pins follow the tests). So T0.1' builds R1.1's venv condition as written, AC-1.2 and
+  AC-1.4 are met at stage 1 and stand as stage-1 evidence, and stage 2 then removes the 18
+  pins and R1.1's venv half ([[#t0-2-bug253]]).
 
 {#t0-1-bug253}
 
@@ -382,7 +411,8 @@ reasons the tests actually skip with. Those are:
 
    A `.venv-eval` that is a symlink resolving outside the checkout satisfies neither condition by
    itself. Today one `(_REPO / ".venv-eval").is_dir()` test switches the whole set (`conftest.py:286`).
-   {#r1-1}
+   The first condition lives until stage 2 retires the 18 pins it guards ([[#t0-1-bug253]]); the
+   hooks condition stays. {#r1-1}
 2. **R1.2 The gate matches the reason exactly.** Each pinned entry's value is the test's own
    `reason=` string, verbatim from [[#t0-1-skip-reasons]]. The two `_CLONE_*` description
    strings stop being match keys (they may stay as comments). `SkipGate` treats a skip as pinned
@@ -402,33 +432,47 @@ reasons the tests actually skip with. Those are:
    - **One resolver.** A stdlib-only Python helper, `resolve_memdir(root, home)`, in a new
      `scripts/gmd_memdir.py`, takes the checkout root AND the home dir as explicit arguments and
      returns the chosen dir (or none) plus the one-line note to print. `scripts/lint-gmd.sh`
-     calls it with its own `$HOME` and keeps no slug or origin logic of its own. The repo-scope
-     test imports it and calls it **in-process** with `RMX_SANDBOX_REAL_HOME` (a read-only
-     existence check). No child process is ever given the real `HOME`.
+     calls it with its own `$HOME` and keeps no slug or origin logic of its own
+     ([[#ac-1-7]]). It runs the helper under `python3`, as it runs the linter, and never under
+     `$DEVPY`: the resolver must not depend on the dev venv, or it would inherit bug-253 (ch-bsd
+     r1 M1). The repo-scope test imports it and calls it **in-process** with
+     `RMX_SANDBOX_REAL_HOME` (a read-only existence check). No child process is ever given the
+     real `HOME`.
    - **"Present" means populated.** The own-slug dir `<home>/.claude/projects/<own slug>/memory`
      counts only if it holds at least one `*.md` file. Claude Code creates an empty `memory/` for
      any session whose cwd was the checkout, so an empty dir is not a memory dir.
-   - **Fallback.** If the own-slug dir is absent or empty, the resolver reads
-     `git remote get-url origin` and canonicalises it before slugging:
+   - **Fallback, one origin at a time.** If the own-slug dir is absent or empty, the resolver
+     reads the checkout's `git remote get-url origin` and canonicalises it before slugging:
      - a URL with a scheme or an scp-style `host:path` (`ssh://`, `https://`, `file://`,
-       `git@…:`) is non-local, and no fallback is taken;
-     - a relative path is resolved against `root`;
+       `git@…:`) is non-local, and the walk stops;
+     - a relative path is resolved against the checkout it was read from;
      - the path is `resolve()`d (symlinks, `..`, trailing `/`), and a trailing `.git` component
        or suffix is stripped.
 
      The canonical path is slugged as today (`/` and `_` → `-`). If that path's memory dir holds
      at least one `*.md`, it is used for the lint scope and the parity `--memory-dir`.
-   - **Loud.** Whenever the fallback is taken, the script prints one stderr line naming the own
-     slug, why it was skipped (`absent` or `empty`), the canonical origin path, and the dir used:
-     for example `own memory dir <path> is empty; using origin <path>`. If no dir qualifies (no
-     origin, a non-local origin, or an absent or empty dir under the origin's slug), it prints one
-     stderr line saying so and that memory-id refs will surface as `dangling-doc`. The shipped
-     lines (`lint-gmd: no memory dir for <root>; using its origin's …`) carry no reason word, and
-     no test pins their wording at `f45b9a3`.
+   - **The walk follows local origins hop by hop** (ch-bsd r1 S1; ruling L122). A clone of a
+     clone has an origin whose slug has no memory dir either. So when a local origin's dir is
+     absent or empty, the resolver reads **that** checkout's origin and tries again. The walk
+     stops at the first checkout whose slug has a populated dir, which is the one used. It also
+     stops, with no dir, at:
+     - a checkout with no origin, or a path that is not a git checkout;
+     - a non-local origin;
+     - a **cycle**: a canonical path already visited (two clones that name each other);
+     - the **bound**: 5 origins followed from the checkout being linted.
+   - **Loud, and the line names the chain.** Whenever the own-slug dir is not the one used, the
+     script prints one stderr line. It names every checkout tried, in order, each with why it
+     was passed over (`absent` or `empty`), and then either the dir used or why the walk
+     stopped (`no origin`, `not a checkout`, `non-local origin`, `cycle`, `bound of 5`): for
+     example
+     `own memory dir <path> is empty; origin <path> absent; using origin <path>`. When no dir
+     qualifies, the line also says that memory-id refs will surface as `dangling-doc`. The
+     shipped lines (`lint-gmd: no memory dir for <root>; using its origin's …`) carry no reason
+     word and at most one origin, and no test pins their wording at `f45b9a3`.
    - **The test copies what the resolver names.** It copies exactly that dir into its decoy HOME,
-     under the slug the child's own resolution will reach there (the own slug if that was
-     chosen, else the origin's slug), so the child, running with the decoy HOME, resolves the same
-     content. {#r1-4}
+     under the slug of the checkout the resolver chose (the own slug, or the slug of the origin
+     the walk stopped at). The child, running with the decoy HOME, walks the same origins, finds
+     nothing at the slugs before it, and resolves the same content. {#r1-4}
 5. **R1.5 Exit codes are part of every recorded run.** [[tdd-governance#rules]]
    (`workflow/TDD_GOVERNANCE.md`) gains one bullet: "A recorded run (RED, GREEN, suite) quotes the pytest exit code and
    the collected count; counts without the exit code are not a record." This is the second half
@@ -455,28 +499,44 @@ reasons the tests actually skip with. Those are:
   `SKIPPED-UNPINNED`. (In the main tree, `test_the_tool_itself_is_the_one_that_scrambles` would
   also skip if `rg` were missing; there its venv condition is false, so that skip stays unpinned
   and fails the session, which is correct.) {#ac-1-4}
-- **AC-1.5 (bug-155's residual, clone; [[#amend-1]]).** The RED is the **empty own-slug
-  directory**. A new test in `tests/test_lint_gmd_memdir_fallback.py` runs the real
-  `./scripts/lint-gmd.sh` on the checkout with a decoy `HOME`. The decoy holds an empty `memory/`
-  under the checkout's own slug and, under the origin's slug, a copy of the origin's memory dir
-  (read through `RMX_SANDBOX_REAL_HOME`, as the repo-scope test reads it). Nothing is written to
-  the real home. In the T0.1 clone (the symlinked-`.venv-eval` clone of AC-1.1: not named
-  `refmatrix`, origin = the main tree; the script needs `<checkout>/.venv-eval/bin/python` to
-  reach lint at all, [[#t0-1-bug253]]):
-  - **RED at base.** The script takes no fallback, because its `-d` test is satisfied by the
-    empty dir, and exits 1. Its E lines are the memory-id `dangling-doc` errors, which R0.2
-    quotes by count and first lines. Stderr carries no fallback line.
-  - **After R1.4**, `./scripts/lint-gmd.sh` prints the fallback stderr line with `empty`, and its
-    error count and E lines **equal the main tree's at the same sha**. The test passes when the
-    main tree's gate exits 0 at that sha, which is the same precondition R7.4 states. Dev master's
-    gate was green at `35e1e0d` ([[#ruling-o4]]), red again on two forward-linked anchors, and
-    green at `b816a08`. If the main tree is red at the T0.1 base, equality is still asserted, the
-    failing E lines are reported as gate drift, and they are not T0.1's.
-  - **The absent case is a characterization check, not a RED.**
-    `test_the_repo_scope_is_clean_under_the_stricter_gate` passes in that clone at base, through
-    the shipped fallback, and passes after R1.4, through the resolver.
+- **AC-1.5 (bug-155's residual, through the real script, in a clone; [[#amend-1]]).** Two REDs,
+  one per case of [[#t0-1-residual]]. Both run the real `./scripts/lint-gmd.sh` on the checkout
+  with a decoy `HOME`, and nothing is written to the real home. The clone has a symlinked
+  `.venv-eval` (the script needs `<checkout>/.venv-eval/bin/python` to reach lint at all,
+  [[#t0-1-bug253]]), is not named `refmatrix`, and its origin chain reaches a checkout with a
+  populated memory dir within the bound: the main tree, directly or through other clones. (At
+  approval this read "origin = the main tree"; ruling L122 relaxed it.)
+  - **The gate ran, first** (ch-bsd r1 M1). Before any other assertion, every test that runs
+    the script asserts that the gate ran, with the message of `assert_gate_ran_clean`'s first
+    clause (`scripts/lint-gmd.sh did not run its checks (exit <n>) …`). In a no-venv clone
+    before stage 2 the E line is then bug-253's own, already listed in [[#t0-1-bug253]].
+  - **Case 1, a clone of a clone.** `test_the_repo_scope_is_clean_under_the_stricter_gate` is
+    **RED at base** in a clone whose origin is another clone: stderr holds
+    `no memory dir for <clone> or its origin <clone>; memory-id refs will dangle`, the exit is
+    1, and the E lines are the memory-id `dangling-doc` errors, which R0.2 quotes by count and
+    first lines. After R1.4 it passes there, and the fallback line names both hops.
+  - **Case 2, the empty own-slug directory.** A new test in
+    `tests/test_lint_gmd_memdir_fallback.py` gives the decoy an empty `memory/` under the
+    checkout's own slug, and the populated dir the resolver names for this checkout (read
+    through `RMX_SANDBOX_REAL_HOME`, as the repo-scope test reads it) under that checkout's slug.
+    **RED at base:** the shipped script takes no fallback, because its `-d` test is satisfied by
+    the empty dir; it exits 1 on the memory-id `dangling-doc` errors, and stderr carries no
+    fallback line. The new test needs the resolver to build its decoy, so as a pytest node it
+    fails at base on the missing module, like AC-1.6's cases. The RED for the stated reason is
+    therefore recorded as a logged run of the shipped script against the same decoy (R0.3),
+    with both E lines quoted (R0.2). ch-bsd's r1 probes are that run and case 1's, at `5b04e2d`.
+  - **After R1.4**, in both cases, `./scripts/lint-gmd.sh` prints the fallback stderr line (with
+    `empty` in case 2, with the chain in case 1), and its error count and E lines **equal the
+    main tree's at the same sha**. The tests pass when the main tree's gate exits 0 at that sha,
+    which is the same precondition R7.4 states. Dev master's gate was green at `35e1e0d`
+    ([[#ruling-o4]]), red again on two forward-linked anchors, and green at `b816a08`. If the
+    main tree is red at the T0.1 base, equality is still asserted, the failing E lines are
+    reported as gate drift, and they are not T0.1's.
+  - **The absent case with a direct origin is a characterization check, not a RED.** In a clone
+    whose origin is the main tree, the repo-scope test passes at base, through the shipped
+    fallback, and passes after R1.4, through the resolver.
   - **In a checkout with no usable origin** (the main tree: its origin is not a local path) the
-    same new test asserts the other branch, which is AC-1.6's last case through the script: the
+    new test asserts the other branch, which is AC-1.6's non-local case through the script: the
     "no memory dir" line, and exit 1 on `dangling-doc`. It does not skip (R0.5).
   - Any other E line is a new finding, not an assumed residue.
 
@@ -491,9 +551,22 @@ reasons the tests actually skip with. Those are:
   - origin given as a relative path, as a path with a trailing `/`, and as `<path>/.git`: all
     resolve to the same canonical origin and slug;
   - origin non-local (`git@host:repo`, `https://…`, `file://…`): no fallback, the "no memory dir"
-    line, and through the script the memory-id refs surface as `dangling-doc` (exit 1).
+    line, and through the script the memory-id refs surface as `dangling-doc` (exit 1);
+  - **chained** (ch-bsd r1 S1): checkout → clone A → clone B, where only B's slug has a
+    populated dir. B's dir is chosen, and the line names A as `absent` and B as used. The same
+    with A's dir present and empty: the line says `empty` for A;
+  - **cycle**: clone A's origin is clone B and B's is A, and neither slug has a populated dir.
+    The resolver returns no dir, the line says `cycle`, and the call returns (it does not loop);
+  - **bound**: a chain of 6 local origins where only the sixth has a populated dir. No dir is
+    chosen and the line says `bound of 5`. With the populated dir at the fifth, it is chosen.
 
   {#ac-1-6}
+- **AC-1.7 (one copy; static; ch-bsd r1 M2).** A test reads `scripts/lint-gmd.sh` as text and
+  asserts three things: it invokes `scripts/gmd_memdir.py`; it holds no slug derivation (no
+  `tr '/_'` and no other rewrite of a path into a slug); and it reads no origin (no
+  `remote.origin.url`, no `remote get-url`). RED at base: the shipped block has both. This is
+  the check AC-1.5 and AC-1.6 cannot make: a second, correct implementation in bash would pass
+  both while the convergence had failed ([[feedback_converge_repeated_shapes]]). {#ac-1-7}
 - **Mutations (each FAILS):**
   - M1.1: restore the single `is_dir()` switch (AC-1.1 and AC-1.2 red);
   - M1.2: match by nodeid only, or by substring (AC-1.3 red);
@@ -505,7 +578,12 @@ reasons the tests actually skip with. Those are:
     does the absent-case repo-scope test;
   - M1.5: silence the fallback's stderr line (AC-1.6 red);
   - M1.6: treat an existing own-slug dir as present whatever it holds (AC-1.6's empty case red);
-  - M1.7: skip origin canonicalisation (AC-1.6's relative and `.git` cases red).
+  - M1.7: skip origin canonicalisation (AC-1.6's relative and `.git` cases red);
+  - M1.8 (ch-bsd r1 M2): put the slug derivation back into `scripts/lint-gmd.sh`, beside a
+    working resolver call (AC-1.7 red; AC-1.5 and AC-1.6 stay green, which is the point);
+  - M1.9 (ch-bsd r1 S1): follow one hop only (AC-1.6's chained case red, and AC-1.5's case 1);
+  - M1.10 (ch-bsd r1 S1): drop the visited-path guard (AC-1.6's cycle case red: it must fail on
+    the bound's message or on a deadline, never hang, R0.4).
   {#t0-1-mutations}
 
 ### Files {#t0-1-files}
@@ -519,6 +597,23 @@ a new `tests/test_lint_gmd_memdir_fallback.py`, `workflow/TDD_GOVERNANCE.md`,
 `workflow/bug_registry.md` (rows bug-215, bug-155; the lead writes them). `.gmd/config.yml` is
 no longer edited: R1.3 shipped, and only mutation M1.3 touches the file, and restores it. The
 summary is `workflow/implementation_summaries/task-t0.1-skip-gate-checkout-identity.md`.
+
+### Verify set {#t0-1-verify}
+
+Named by the lead (ruling L122; ch-bsd r1 M8), because conftest and `SkipGate` load in every
+test and a branch full suite is not run ([[#r0-verify-sets]]):
+- the seven pinned files of [[#t0-1-skip-reasons]];
+- `tests/test_t0_skip_gate.py` and `tests/test_lint_gmd_memdir_fallback.py`;
+- every `tests/test_gmd_lint*.py` and every `tests/test_*sandbox*.py` (at `f45b9a3`:
+  `test_gmd_lint_requires_version.py`, and the seven `test_sandbox_*.py` files);
+- every file a grep for `ALLOWED_SKIPS|SkipGate|lint-gmd|gmd_memdir` lists under `tests/`. At
+  `f45b9a3` those are, beside files already named: `test_bug179_anchor_parity.py`,
+  `test_bug216_rev4.py`, `test_bug216_scope_parity.py`, `test_bug230_repo_scope_gate.py` and
+  `test_plan7_10_remedy_r4.py`. R0 re-runs the grep at the branch base and the summary lists
+  what it found.
+
+It is run in the clone layouts the ACs name: the symlinked clone for AC-1.1 and AC-1.5, a
+no-venv clone for AC-1.4. Each run quotes its exit code (R0.3). {#t0-1-verify-body}
 
 ## T0.2 Dev-tree-only tests stop reading the real HOME and cwd ancestry (bug-170, bug-168, bug-127) {#t0-2}
 
@@ -548,12 +643,31 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
 - **What is owned.** The fix is the bug-253 row's own text: the fixtures resolve the dev `rmx`
   from the bin directory of `sys.executable`, with the checkout's `src` on `PYTHONPATH` for the
   child, through one helper the files share. `scripts/lint-gmd.sh`'s dev-interpreter lookup
-  (`DEVPY`, line 23 at `f45b9a3`) is in the same bug and has the same owner.
-- **The files.** `tests/test_bug240_ingest_file_arg.py`, `tests/test_bug240_ingest_file_arg_mcp.py`,
-  `tests/test_bug241_r2_l112.py` and `tests/test_bug241_rule_docs_reingest.py` name the path;
-  `tests/test_bug241_r3_l114.py` errors through the fixtures it imports from
-  `test_bug241_r2_l112`; `tests/test_scanorder_r2_l120.py` fails on the same path.
-- **This spec adds no requirement to it.** The row and L121 are the text.
+  (`DEVPY`, line 23 at `f45b9a3`) is in the same bug and has the same owner (L122: it stays
+  here, not with T0.1').
+- **The helper covers every file that looks up the dev `rmx`** (ch-bsd r1 M5; ruling L122), so
+  that one definition of "the dev rmx" is left, not two. At `f45b9a3` twelve test files name
+  `<checkout>/.venv-eval/bin`:
+  - the six that error or fail in a no-venv clone: `tests/test_bug240_ingest_file_arg.py`,
+    `tests/test_bug240_ingest_file_arg_mcp.py`, `tests/test_bug241_r2_l112.py` and
+    `tests/test_bug241_rule_docs_reingest.py` name the path;
+    `tests/test_bug241_r3_l114.py` errors through the fixtures it imports from
+    `test_bug241_r2_l112`; `tests/test_scanorder_r2_l120.py` fails on the same path;
+  - the seven pinned files of [[#t0-1-skip-reasons]], which skip where the six error.
+
+  R0 re-runs the grep at the branch base and the summary lists what it found.
+- **Stage 2 retires the 18 venv pins and R1.1's venv half.** A pinned file that uses the
+  helper no longer skips for a missing checkout venv, so its `skipif` and its pin go in the
+  same commit (R1.2: the pins follow the tests). When all seven are done:
+  - `_CLONE_ONLY_SKIPS` holds one entry, the hooks test, under R1.1's hooks condition;
+  - R1.1's venv condition guards nothing and is deleted, and AC-1.2's layouts assert the
+    hooks-only set;
+  - `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only. It
+    is not pinned, so a machine without `rg` fails the session there, which is correct;
+  - AC-1.4's 19 pinned skips stand as stage-1 evidence and are not re-asserted.
+
+  The stage-2 summary quotes a run of the seven files in a no-venv clone: no error from a
+  missing dev `rmx`, and one skip, the hooks pin, reported as pinned.
 - **Afterwards** the five errored files have real durations for the first time. Stage 0's
   weights understate them ([[task-29.4-r0-durations#weights-gaps]]), and L121 asks for the
   re-weighting after this fix.
@@ -564,9 +678,11 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
 
 1. **R2.1 bug-170: the hooks test renders with the real home, read-only.**
    `tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated` renders the generator
-   with an explicit home equal to the real `HOME`, captured before the 23.0 sandbox redirect. It
-   can do this through `hooks_mod.check` with an explicit home, or by restoring `HOME` for that
-   one render.
+   with a home equal to the real `HOME`, captured before the 23.0 sandbox redirect. It does
+   this with no `src/` change (ch-bsd r1 M6; ruling L122): `hooks.check(project_root)` takes no
+   home parameter (`hooks.py:737`) and gets none. The test restores `HOME` for that one render,
+   and where only the hooks dir matters it uses `RMX_CLAUDE_HOOKS_DIR`, which
+   `search_hooks.hooks_dir()` already reads (`search_hooks.py:399-402`).
 
    It reads, and never writes, outside the sandbox. The 23.0 touches-log shows no write outside
    the sandbox root. It still compares all three user-global scripts and the SessionStart memory
@@ -587,9 +703,9 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
 
 ### Acceptance {#t0-2-acceptance}
 
-- **AC-2.1 (bug-170).** With `home=` pointed at a tmp copy of the installed hooks dir with one
-  script byte changed, the comparison reports `script … differs`. This proves the test looks at
-  real content. In the main tree (T0.7), the test passes under [[#r7-4]]'s hook precondition: the
+- **AC-2.1 (bug-170).** With `RMX_CLAUDE_HOOKS_DIR` pointed at a tmp copy of the installed
+  hooks dir with one script byte changed, the comparison reports `script … differs`. This proves
+  the test looks at real content. In the main tree (T0.7), the test passes under [[#r7-4]]'s hook precondition: the
   deployed `rmx install-hooks --check` reads in sync, which proves the installed hooks match the
   DEPLOYED build's render. The test itself then proves the installed hooks also match this
   checkout's render. The sandbox touches-log for the test shows no write outside the sandbox.
@@ -619,8 +735,22 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
 On the same branch, not by this spec's requirements: 29.4b's files
 ([[task-29.4-suite-health#files]]: conftest, `rmx_sandbox.py`, `tests/test_daemon_reaper.py`,
 `tests/test_tmp_root_census.py`, the 28 files that call `spawn_daemon_subprocess`), and
-bug-253's ([[#t0-2-bug253]]: the six test files, their shared helper, and the `DEVPY` lookup in
-`scripts/lint-gmd.sh`). {#t0-2-files-shared}
+bug-253's ([[#t0-2-bug253]]: the twelve test files, their shared helper, the 18 pins and R1.1's
+venv condition in `tests/conftest.py`, `tests/test_t0_skip_gate.py` for AC-1.2's layouts, and
+the `DEVPY` lookup in `scripts/lint-gmd.sh`). {#t0-2-files-shared}
+
+### Verify set {#t0-2-verify}
+
+Named by the lead (ruling L122; ch-bsd r1 M8), because conftest, the sandbox and the reaper
+load in every test and a branch full suite is not run ([[#r0-verify-sets]]):
+- T0.2's own files and the twelve bug-253 files;
+- every file stage 0's tier rule puts in run tier (b): 126 files, 2,065 s serial
+  ([[task-29.4-r0-durations#tiers]]);
+- the sandbox tests (every `tests/test_*sandbox*.py`) and the reaper tests
+  (`tests/test_daemon_reaper.py`, `tests/test_tmp_root_census.py`).
+
+It is one run at a time, like any other ([[orchestration#one-suite]]). It is not the full
+suite: run tiers (a) and (d) are not in it. {#t0-2-verify-body}
 
 ## T0.3 Load-dependent flakes (bug-130, bug-190, bug-091) {#t0-3}
 
@@ -643,8 +773,10 @@ failing bug-228 run and say which leg spent the time. Stage 0 had no failing run
 ([[task-29.4-r0-durations#digest-bug228-231]]). So the measurement is taken from bug-228's base
 trials here. The first failing trial is the run that is broken down by leg, and the breakdown
 goes in the summary before any fix is written. If no trial fails at any level, there is no
-failing run to break down. Neither spec says which branch of `#r3-bug228` is then built
-([[#rev-note-fresh-proposals]], P3). {#t0-3-bug228-legs}
+failing run to break down. Then the "otherwise" branch of
+[[task-29.4-suite-health#r3-bug228]] is built, the split, which does not depend on where the
+time went, and the product row records "not reproduced in N trials at levels 3/5/8" (ch-bsd r1
+M7; ruling L122; the sentence is in 29.4). {#t0-3-bug228-legs}
 
 ### The load harness and bands (pre-registered) {#t0-3-bands}
 
@@ -710,8 +842,10 @@ failing run to break down. Neither spec says which branch of `#r3-bug228` is the
 - **Live-socket exposure.** Concurrent suites multiply the suite's reach to live rmx sockets
   (bug-088, deferred by the user). T0.3 adds no mitigation. It records the conftest live-socket
   recorder's count for the R0 run and for one trial at each load level, so the multiplication is
-  measured, not assumed. Stage 0's summary carries no such count for the R0 run
-  ([[#rev-note-fresh-proposals]], P4). {#t0-3-sockets}
+  measured, not assumed. Stage 0's summary carries no such count, but the run's recorder log
+  exists: `/Volumes/littlebig/refmatrix-r0/workflow/review-output/live-socket-touches.log`, 41
+  lines, written inside the stage-0 run (ch-bsd r1; ruling L122). That is the R0 count. T0.3's
+  summary quotes it, with the file's line count re-read on the day. {#t0-3-sockets}
 
 ### Requirements {#t0-3-requirements}
 
@@ -826,11 +960,11 @@ The implementer re-takes this table at the branch base (R0.1). {#t0-4-lead}
    mutation that r1 asked for. If it records no test for the `memory_partition` warning branch,
    add one: an answered-error `partition_list` logs the `warning` naming root, error and the
    fallback partition (mutation M4.4). {#r4-4}
-5. **R4.5 #s-3 and todo G7: phrase families, not literals.** Fix the three sites (or their
-   current equivalents):
-   - delete the landed claims in `session_ingest.py`;
+5. **R4.5 #s-3 and todo G7: phrase families, not literals.** Of the three sites, T0.4 fixes
+   one and allow-lists two ([[#r4-5-derive-hold]]):
    - `cli.py`'s `-v` docstring says "refused, falls back to rg";
-   - `vectors.py` names a task or makes no promise.
+   - the landed claim in `session_ingest.py` (line 5, "later phases") and `vectors.py`'s "for
+     now" (line 14) are **not edited here**. Each gets an allow-list entry.
 
    Then widen `test_deferrals_clean.py` from five literals to phrase families: `for now`,
    `in v1`, `later phase(s)`, `eventually`, `when needed`, `not yet`, and `TODO` with no plan
@@ -838,19 +972,31 @@ The implementer re-takes this table at the branch base (R0.1). {#t0-4-lead}
    asserts the phrase set, not `len(BANNED)`. G7's five named docstrings (`ingest_gmd`, `store`,
    `duckdb_view`, `embedder`, `sync`) are re-checked, and the todo row is updated. {#r4-5}
 
-   **Open conflict with 29.4, found 2026-11-15 and not ruled.** Two of the three sites are
-   derive pass modules: `session_ingest.py` (pass `sessions`) and `vectors.py` (pass `embed`)
-   (`_DERIVE_PASS_MODULES`, `store.py:889`).
-   - [[task-29.4-suite-health#files-src-note]] says no commit of 29.4 edits a pass module, and
-     [[task-29.4-suite-health#ac-15]] checks that the seven are byte-identical from the task's
-     base to stage 5. Its one stated exception is R4.1's `store.py` deletion.
-   - Under today's raw-bytes derive hash a docstring edit to either file flips its pass on every
-     fleet store.
-   - So this requirement and 29.4's rule cannot both be built. G7's re-check of the `ingest_gmd`
-     and `embedder` docstrings meets the same rule if it finds an edit to make. A scan of the
-     seven pass modules for the phrase families at `f45b9a3` finds only these two lines.
-   - **Until the lead rules, T0.4 does not edit `session_ingest.py` or `vectors.py`.** The
-     proposal is [[#rev-note-fresh-proposals]], P1.
+   **The two pass-module lines are allow-listed, not edited (ruling L122; ch-bsd r1 S2).**
+   `session_ingest.py` (pass `sessions`) and `vectors.py` (pass `embed`) are derive pass
+   modules (`_DERIVE_PASS_MODULES`, `store.py:889`).
+   - **Why not here.** The pass hash reads raw bytes (`store.py:1047-1090`), so a docstring
+     edit to either file flips its pass on every fleet store.
+     [[task-29.4-suite-health#files-src-note]] forbids it, and
+     [[task-29.4-suite-health#ac-15]] checks that the seven pass modules are byte-identical from
+     29.4's base to stage 5.
+   - **The entries.** `test_deferrals_clean.py`'s allow-list gains exactly two:
+     `src/refmatrix/session_ingest.py`, line 5, phrase `later phases`; and
+     `src/refmatrix/vectors.py`, line 14, phrase `for now`. Each carries the reason ("derive
+     pass module: the edit is made by 29.2's R7 release") and its owner,
+     [[task-29.2-mypy-gate#ac-29]].
+   - **Each entry is self-expiring.** The guard fails when an entry's line no longer holds its
+     phrase, naming the entry. So the release that fixes the docstring must delete the entry in
+     the same commit, and an entry cannot outlive what it excuses.
+   - **Who makes the edits.** 29.2's R7 makes the derive hash ignore docstrings. Its release
+     makes both edits and deletes both entries; that is an AC there, not a note here
+     ([[task-29.2-mypy-gate#ac-29]]).
+   - **Nothing else is held.** A scan of the seven pass modules for the phrase families and
+     `TODO` at `f45b9a3` finds only these two lines, so G7's re-check of the `ingest_gmd` and
+     `embedder` docstrings has no edit to make. If R0 finds one at the branch base, it is
+     raised to the lead, not made.
+   - **Plan-6.** The lead accepts that #s-3 closes with these two named, owned exceptions
+     ([[#ac-4-close]]).
 
    {#r4-5-derive-hold}
 6. **R4.6 #m-2.** `_op_embed`'s shutdown-cancel return carries `"degraded": degraded`, as the
@@ -880,23 +1026,33 @@ The implementer re-takes this table at the branch base (R0.1). {#t0-4-lead}
   leftover `wrappers` key as drift, and AC-4.3 goes red. {#ac-4-3}
 - **AC-4.4.** Mutations: M4.5a replaces one phrase family with `ZZZ-never-matches`, and the
   meta-test goes red, because it compares the set. M4.5b appends `# for now` to a `src/` file,
-  and the guard goes red. M4.6 drops `degraded` from the cancel return, and a test of that return
+  and the guard goes red. M4.5c (ruling L122): the guard is run on a tmp copy of the tree in
+  which `vectors.py` line 14 no longer holds `for now`, with the allow-list unchanged, and it
+  goes red naming the stale entry; no pass module in the checkout is edited for it. M4.5d: an
+  allow-list entry for a pass module other than the two named in [[#r4-5-derive-hold]] makes
+  the meta-test go red. It allows at most those two, so 29.2's deletion of both keeps it green
+  ([[task-29.2-mypy-gate#ac-29]] then allows none). M4.6 drops `degraded` from the cancel return, and a test of that return
   goes red. M4.4 (if R4.4 adds its test): the `memory_partition` warning is not logged, and that
   test goes red. M4.8 (if R4.8 adds its check): drop a module from the required list, and the
   unimportable-module test goes red. {#ac-4-4}
 - **AC-4.5.** The summary carries R0's per-finding table, covering #b-1, #b-2, #s-1, #s-2, #s-3,
   #m-1 to #m-5, G7 and G8. Every row is `holds → fixed by <commit>` or `closed by <evidence>`.
+  #s-3 has one more form for its two pass-module lines: `allow-listed, owned by 29.2 AC-29`.
   {#ac-4-5}
 - **Plan-6 closes** when the T0.4 ch-bsd round is CLEAN, as its `#execution` requires
-  ([[plan-6-deferrals-docs-benchmark#execution]]). {#ac-4-close}
+  ([[plan-6-deferrals-docs-benchmark#execution]]). The two allow-listed lines of
+  [[#r4-5-derive-hold]] do not hold it open: the lead accepted them as named, owned exceptions
+  (ruling L122). {#ac-4-close}
 
 ### Files {#t0-4-files}
 
 - Deleted: `src/refmatrix/duckdb_view.py`, `tests/test_duckdb_read_routing.py`,
   `tests/test_duckdb_parity.py`.
-- Modified source: `src/refmatrix/store.py`, `src/refmatrix/search_hooks.py`,
-  `src/refmatrix/hooks.py`, `src/refmatrix/daemon.py` (`_op_embed`),
-  `src/refmatrix/session_ingest.py`, `src/refmatrix/cli.py`, `src/refmatrix/vectors.py`.
+- Modified source: `src/refmatrix/store.py` (R4.1, R4.7; in no pass's set),
+  `src/refmatrix/search_hooks.py`, `src/refmatrix/hooks.py`, `src/refmatrix/daemon.py`
+  (`_op_embed`), `src/refmatrix/cli.py`.
+- **Not modified:** `src/refmatrix/session_ingest.py` and `src/refmatrix/vectors.py`, nor any
+  other derive pass module ([[#r4-5-derive-hold]]).
 - Tests: `tests/test_deferrals_clean.py`, a new `tests/test_mock_registry_coverage.py`, and
   `tests/conftest.py` (only if R4.8 routes there).
 - Docs and registries: `workflow/test_mock_registry.md`,
@@ -1135,14 +1291,14 @@ branch with 29.4d, and its two runs go through 29.4's runner ([[#amend-7]]).
    - no branch switch: the main tree is shared ([[feedback_shared_tree_no_branch_switch]]).
 
    **Command ([[#amend-7]]).** `scripts/ptest.sh --tier all --name t0-clean-suite-<sha>`,
-   29.4's runner ([[task-29.4-suite-health#r2]]). In the main tree it runs run tier (c) as well.
-   Every shard is a pytest process run with `-rA` and its own `--junitxml`, so every PASSED
-   nodeid is in a shard log for AC-7.4. The run is the directory
-   `workflow/review-output/t0-clean-suite-<sha>/`: one log and one junit file per shard,
-   `failures.jsonl`, `outcomes.jsonl`, and `summary.txt` with each shard's command, exit code
-   and counts, the sha and the load average. This replaces the single
-   `pytest -rA --junitxml … | tee` process, and its echoed exit code, that this requirement
-   named at approval.
+   29.4's runner ([[task-29.4-suite-health#r2]]), with no flag it does not already have. In the
+   main tree it runs run tier (c) as well. The run is the directory
+   `workflow/review-output/t0-clean-suite-<sha>/`: one log per shard, `failures.jsonl`,
+   `outcomes.jsonl`, and `summary.txt` with each shard's command, exit code and counts, the sha
+   and the load average. `outcomes.jsonl` holds one record per test node and phase
+   ([[task-29.4-suite-health#r2-outcomes]]), and it is where AC-7.4 reads a `passed` node. This
+   replaces the single `pytest -rA --junitxml … | tee` process, and its echoed exit code, that
+   this requirement named at approval.
 
    **Clean** means all of:
    - pytest exit code 0;
@@ -1163,13 +1319,19 @@ branch with 29.4d, and its two runs go through 29.4's runner ([[#amend-7]]).
    `./scripts/lint-gmd.sh`'s error count in the clone **equals the main tree's** at the same sha.
    A clone is where every branch run and review round happens, so it is the checkout bug-215 and
    bug-155 failed in.
-   - **What the runner changes here.** In a clone the runner does not run run tier (c), and says
-     so ([[task-29.4-suite-health#r2]], [[task-29.4-suite-health#ac-7]]). The seven pinned files
-     and `tests/test_gmd_lint_requires_version.py` are tier (c) by 29.4's rule
-     ([[task-29.4-suite-health#r1]]). So in this run the pinned set may be empty, and the gate's
-     fallback line comes from running `./scripts/lint-gmd.sh` directly in the clone, which this
-     requirement already asks for. The pins' own proof in a clone is AC-1.4, and the repo-scope
-     test's is AC-1.5 ([[#rev-note-fresh-proposals]], P5).
+   - **The runner does not run run tier (c) in a clone**, and says so
+     ([[task-29.4-suite-health#r2]], [[task-29.4-suite-health#ac-7]]). The files that carried
+     bug-215 and bug-155 are tier (c) by 29.4's rule ([[task-29.4-suite-health#r1]]). Left
+     there, the twin would show neither a pinned skip nor the repo-scope gate test.
+   - **So the twin has a second run** (ch-bsd r1 M4; ruling L122). After the runner, the same
+     clone runs eight files directly: `pytest -rA <files>`, with the seven files of
+     [[#t0-1-skip-reasons]] and `tests/test_gmd_lint_requires_version.py`, whatever run tier
+     each has by then. Its log is kept beside the twin run's, with its exit code and its counts
+     quoted (R0.3). It exits 0. Its only skips are the pinned set at that sha, each reported as
+     pinned: after stage 2 that is the hooks pin alone ([[#t0-2-bug253]]). The repo-scope gate
+     test passes in it, and its fallback line is in the log.
+   - The runner has no `--files` form at this stage and gets none for this; the second run is
+     plain pytest. It starts after the runner run has ended ([[orchestration#one-suite]]).
 
    {#r7-5}
 6. **R7.6 A failure in R7.4 or R7.5 does not get explained away.** Every failing E line is matched
@@ -1219,10 +1381,13 @@ branch with 29.4d, and its two runs go through 29.4's runner ([[#amend-7]]).
   red. {#ac-7-2}
 - **AC-7.3.** The committed R7.4 run (its `summary.txt`) shows exit 0 for every shard, with the
   collected count equal to passed. The committed R7.5 run shows exit 0 for every shard, with
-  only pinned skips. The summary quotes both runs' exit codes and both counts. {#ac-7-3}
-- **AC-7.4.** At least one previously failing test from each of bug-170, 168 and 127 appears as
-  `PASSED` in its shard's `-rA` summary in the R7.4 run and in that shard's junit XML. This is
-  T0.2's main-tree proof. {#ac-7-4}
+  only pinned skips, and its eight-file run shows exit 0 with only pinned skips. The summary
+  quotes all three exit codes and counts. {#ac-7-3}
+- **AC-7.4.** At least one previously failing test from each of bug-170, 168 and 127 has a
+  `call` record with outcome `passed` in the R7.4 run's `outcomes.jsonl`
+  ([[task-29.4-suite-health#r2-outcomes]]; ch-bsd r1 S2, ruling L122: one source, and no `-rA`
+  or junit flag on the runner). The summary quotes the three records. This is T0.2's main-tree
+  proof. {#ac-7-4}
 - **AC-7.5.** After R7.8, none of the six deferral rows names "plan 7" or "plan 8" as its owner.
   {#ac-7-5}
 
@@ -1231,7 +1396,8 @@ branch with 29.4d, and its two runs go through 29.4's runner ([[#amend-7]]).
 `tests/test_rerank_budget_real_clients.py`, `src/refmatrix/daemon.py` (only R7.2's wording),
 `workflow/bug_registry.md`, `workflow/test_mock_registry.md`, `workflow/deferral_registry.md`
 (R7.8), the run directories `workflow/review-output/t0-clean-suite-<sha>/` and
-`workflow/review-output/t0-clean-twin-<sha>/`, and the plan
+`workflow/review-output/t0-clean-twin-<sha>/` (the twin's holds the eight-file run's log), and
+the plan
 frontmatter and body status lines for plans 6, 7, 8 and 15. The summaries are
 `workflow/implementation_summaries/task-t0.7-plan15-close-clean-suite.md` and
 `workflow/implementation_summaries/task-t0-suite-trust-sweep.md` (the T0 roll-up: each sub-task,
@@ -1474,6 +1640,9 @@ deferral-row titles, the plan and task-spec paths, and the three ch-bsd spec rep
 
 ### Where the documents disagreed, and what was chosen {#rev-note-fresh-choices}
 
+Ruling L122 let choices 1 to 5 stand and ruled on 6 ([[#rev-note-fresh-2]]). R7.5 has since
+gained the second run that choice 5 lacked.
+
 1. **T0.1' and `lint-gmd.sh`'s interpreter lookup.** L121's "or the next RED touching those
    files" would make T0.1' the owner, because it is the first branch to edit that script. Chosen:
    the lookup stays with stage 2 unless the lead moves it, and T0.1's ACs name the
@@ -1501,27 +1670,38 @@ deferral-row titles, the plan and task-spec paths, and the three ch-bsd spec rep
 
 The lead writes registry rows. Proposed addition to the row's fix cell:
 
-> RESIDUAL (queue review `#st-8`; T0.1', 29.4 stage 1). The shipped fallback
-> (`scripts/lint-gmd.sh:49-64`) and the test's copy of it
-> (`tests/test_gmd_lint_requires_version.py:125-140`) test only that the own-slug directory
-> exists. An own-slug `memory/` that exists and holds no `*.md` is used as the memory dir, no
-> origin fallback is taken, and every memory-id ref dangles again. Claude Code creates that
-> directory for a session whose cwd is the checkout. The two copies also differ on the origin:
-> the script keeps `cd && pwd`, the test `resolve()`s; neither takes a relative or
-> `<path>/.git` origin; neither checks that the origin's dir is populated. Not live on the dev
-> machine on 2026-11-15 (no `~/.claude/projects/-Volumes-littlebig-refmatrix*` exists). Fix:
-> T0.1' R1.4, one stdlib resolver `resolve_memdir(root, home)` in `scripts/gmd_memdir.py`, used
-> by the script and by the test, with the populated check on both dirs, the origin
-> canonicalised, and the reason (`absent` or `empty`) on stderr. RED: AC-1.5's empty-directory
-> run.
+> RESIDUAL, two cases (queue review `#st-8`; ch-bsd T0 fresh r1 S1; T0.1', 29.4 stage 1). The
+> shipped fallback (`scripts/lint-gmd.sh:49-64`) and the test's copy of it
+> (`tests/test_gmd_lint_requires_version.py:125-140`) look at one directory per checkout and
+> follow the origin one hop. (1) LIVE: a clone whose origin is another clone. The origin's slug
+> has no memory dir either, the gate prints `lint-gmd: no memory dir for <clone> or its origin
+> <clone>; memory-id refs will dangle` and exits 1 on every memory id: 1,234 `dangling-doc` in
+> `/Volumes/littlebig/refmatrix-bsdt0-r1` at `5b04e2d` (`bsdt0-r1-chained-origin-probe.log`).
+> 8 of the 33 `refmatrix-*` clones have another clone as origin, and so does every review
+> clone cut from an author's clone. (2) NOT LIVE on 2026-11-15: an own-slug `memory/` that
+> exists and holds no `*.md` (Claude Code creates one for a session whose cwd is the checkout)
+> is used as the memory dir, no fallback is taken, and every memory-id ref dangles; no
+> `~/.claude/projects/-Volumes-littlebig-refmatrix*` exists yet. The two copies also differ on
+> the origin: the script keeps `cd && pwd`, the test `resolve()`s; neither takes a relative or
+> `<path>/.git` origin; neither checks that the origin's dir is populated. Fix: T0.1' R1.4, one
+> stdlib resolver `resolve_memdir(root, home)` in `scripts/gmd_memdir.py`, run under `python3`,
+> used by the script and by the test: populated check on every dir, the origin canonicalised,
+> local origins walked hop by hop (bound 5, cycle guard), and the chain with each reason
+> (`absent` or `empty`) on stderr. RED: AC-1.5 case 1 (the repo-scope test in a clone of a
+> clone) and case 2 (the empty-directory run).
 
 Proposed status cell, in 29.1's grammar:
-`scheduled → task-t0-suite-trust-sweep (T0); causes 1 and 2 fixed 988e96d + 44d1a34, residual: empty own-slug memory dir`.
-Tags gain `residual`. `Seen` stays 4. {#rev-note-fresh-bug155-status}
+`scheduled → task-t0-suite-trust-sweep (T0); causes 1 and 2 fixed 988e96d + 44d1a34, residual: clone of a clone (live), empty own-slug memory dir`.
+Tags gain `residual`. `Seen` goes from 4 to 5: the reviewer's clone reproduced the symptom on
+2026-11-15. (Rewritten in round 2, ruling L122, to name both cases.)
+{#rev-note-fresh-bug155-status}
 
 ### Proposals for the lead {#rev-note-fresh-proposals}
 
-None of these is in the spec's requirements. Each needs a ruling.
+As written on 2026-11-15, before the review: none of these was in the spec's requirements, and
+each needed a ruling. **All eight were ruled in L122 and are folded** ([[#rev-note-fresh-2]]):
+P1 accepted with two conditions, P2 replaced by a static AC, P5's command corrected, the rest
+as proposed. The text below is kept as the record of what was asked.
 
 - **P1 (blocks stage 3): R4.5 against 29.4's derive-file rule.** `session_ingest.py` and
   `vectors.py` are pass modules ([[#r4-5-derive-hold]]). Proposed, by the rule 29.4 already
@@ -1573,12 +1753,61 @@ the main tree's interpreter and `PYTHONPATH=<clone>/src`. Both exited 0: lint 0 
 0 divergent docs, 0 parse failures, 0 docs outside the ingest scope. The same lint exited 0 at
 the merged base before the revision. {#rev-note-fresh-lint-body}
 
+## Revision note 2 (2026-11-15, ch-bsd confirm-lite r1; ruling L122) {#rev-note-fresh-2}
+
+ch-bsd's confirm-lite r1 of the freshness revision (`549c56e..5b04e2d`) came back DIRTY 10
+(0B/2S/8M), persisted as `workflow/bullshit/2026-11-15-0918-spec-t0-fresh-r1-5b04e2d.md`. The
+lead ruled that all ten fold (L122, [[plan-review-2026-11-13#lead]]). No test was run and no
+`src/` or test file was edited for this round. {#rev-note-fresh-2-lead}
+
+rel: derives-from -> [[bsd-spec-t0-fresh-r1-5b04e2d]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]] {ruling: "L122"}
+
+| finding | resolution | where |
+|---|---|---|
+| S1 a clone of a clone still fails the gate | the resolver walks local origins hop by hop; it stops at the first populated slug, or with no dir at a missing or non-local origin, a cycle, or the bound of 5; the loud line names the chain; chained, cycle and bound cases; M1.9 (one hop only) and M1.10 (no cycle guard); AC-1.5's "origin = the main tree" relaxed and split in two REDs; the residual and the proposed bug-155 text name both cases | [[#t0-1-residual]], [[#r1-4]], [[#ac-1-5]], [[#ac-1-6]], [[#t0-1-mutations]], [[#rev-note-fresh-bug155]] |
+| S2 / P1 the hand-off to 29.2 had no AC there | T0.4 allow-lists `session_ingest.py:5` and `vectors.py:14`; each entry fails once its line no longer holds the phrase (M4.5c), and no third pass-module entry is allowed (M4.5d); 29.2 gains AC-29 and a paragraph under R7; the hold is lifted; plan-6 #s-3 closes with the two exceptions | [[#r4-5]], [[#r4-5-derive-hold]], [[#ac-4-4]], [[#ac-4-5]], [[#ac-4-close]], [[#t0-4-files]], [[task-29.2-mypy-gate#ac-29]] |
+| S2 / P6 `-rA` and junit had one source | AC-7.4 reads `outcomes.jsonl`; R7.4's command asks the runner for no new flag; row 7 in 29.4 and [[#amend-7]] reworded | [[#ac-7-4]], [[#r7-4]], [[#amend-7]], [[task-29.4-suite-health#fold-deltas]] |
+| M1 an unlisted E line in a no-venv clone | every test that runs the script asserts "the gate ran" first, with `assert_gate_ran_clean`'s first-clause message; `gmd_memdir.py` runs under `python3`, never `$DEVPY` | [[#ac-1-5]], [[#r1-4]], [[#t0-1-bug253]] |
+| M2 / P2 nothing checked that two copies became one | new static AC-1.7; M1.8 puts the slug derivation back into the script and must turn it red | [[#ac-1-7]], [[#t0-1-mutations]] |
+| M3 29.4's exception was narrower than T0.4's `store.py` edits | the exception names R4.1 and R4.7 | [[task-29.4-suite-health#files-src-note]], [[#t0-4-files]] |
+| M4 / P5 the proposed command used a flag that does not exist | the twin has a second run: `pytest -rA` over the eight files, exit code and counts quoted; no `--files` | [[#r7-5]], [[#ac-7-3]] |
+| M5 / P7 two definitions of "the dev rmx" | bug-253's helper covers all twelve files; stage 2 retires the 18 venv pins and R1.1's venv half; AC-1.4 stands as stage-1 evidence | [[#t0-2-bug253]], [[#t0-1-bug253]], [[#r1-1]], [[#t0-2-files-shared]] |
+| M6 / P8 AC-2.1 assumed a `home=` parameter | R2.1 and AC-2.1 use the routes that need no `src/` change | [[#r2-1]], [[#ac-2-1]] |
+| M7 / P3 bug-228's branch if it never fails | one sentence in 29.4: build the "otherwise" split; the product row records "not reproduced in N trials at levels 3/5/8" | [[task-29.4-suite-health#r3-bug228]], [[#t0-3-bug228-legs]] |
+| M8 no verify set for the branches that edit conftest | the two sets the lead named | [[#r0-verify-sets]], [[#t0-1-verify]], [[#t0-2-verify]] |
+| P4 the R0 live-socket count | the stage-0 clone's recorder log, 41 lines, is the R0 count | [[#t0-3-sockets]] |
+
+{#rev-note-fresh-2-table}
+
+**Also, as the lead asked.** [[task-29.1-registry-triage#r1-other-writers]] no longer says T0 is
+"not yet on `master`", and its files row for T0 points at [[#amend-6]]. The one `T0#t0-3-r0`
+code span in [[task-29.4-r0-durations]] is a link. {#rev-note-fresh-2-also}
+
+**Three things in this round are the author's, not the ruling's**, and the next review should
+look at them. {#rev-note-fresh-2-own}
+1. **AC-1.5 case 2 is RED at base in two different ways.** As a pytest node it fails on the
+   missing resolver, which it needs to build its decoy without a third copy of the logic. The
+   RED for the stated reason is a logged run of the shipped script against the same decoy.
+   Case 1 has no such gap: it is an existing test, RED at base in a clone of a clone.
+2. **Two mutations beyond the ruling:** M1.10 (no cycle guard) for the cycle case, and M4.5d
+   (no pass-module entry other than the two), so that the allow-list cannot grow quietly. A **bound** case
+   was added to AC-1.6 beside the chained and cycle cases.
+3. **The eight-file run takes the eight files "whatever run tier each has by then".** After
+   stage 2 retires their pins, six of the seven formerly pinned files leave run tier (c) by
+   29.4's derivation, and the runner then runs them in a clone anyway. The list is kept fixed
+   so the twin's evidence does not depend on that.
+
+**Lint for this round.** Same commands as [[#rev-note-fresh-lint]]: both exited 0 (lint 0
+errors; parity 0 divergent docs). {#rev-note-fresh-2-lint}
+
 ## Decision {#decision}
 
 | date | decision | by | basis |
 |---|---|---|---|
 | 2026-11-13 | `metadata.status: approved` | the lead | Approved by the lead on the user's pattern (d9co route) after ch-bsd r3 MEH-only, `bsd-spec-t0-r3-efe618c`, MEH folded ([[#rev-r3]]) |
 | 2026-11-15 | `approved` stands; the text is revised for freshness and the 29.4 fold ([[#rev-note-fresh]]) | ch-architect, on the lead's brief | [[task-29.4-suite-health#fold-deltas]], ruling L121. A ch-bsd confirm-lite on the revision's diff comes before the merge; P1 to P8 are open for the lead |
+| 2026-11-15 | round 2: ch-bsd confirm-lite r1 (DIRTY 10, 0B/2S/8M) folded whole ([[#rev-note-fresh-2]]); P1 to P8 ruled | the lead (ruling L122); text by ch-architect | [[bsd-spec-t0-fresh-r1-5b04e2d]]. A confirm-lite r2 comes before the merge |
 
 {#decision-approved}
 

@@ -208,7 +208,7 @@ requirements, ACs and mutations are otherwise built as written.
 | 4 | T0.3 covers bug-130, 190, 091 | plus bug-228 and bug-231, on the same harness, with the same bands ([[task-t0-suite-trust-sweep#t0-3-bands]]) | queue review `#b3` |
 | 5 | T0.2 covers bug-170, 168, 127 | plus bug-229: [[#r4]] and [[#r5]] | queue review `#b3` |
 | 6 | status `open / diagnosed-loud` ([[task-t0-suite-trust-sweep#t0-3-attempts]], [[task-t0-suite-trust-sweep#t0-3-band-none]], [[task-t0-suite-trust-sweep#r3-1]]) | `deferred: diagnosed-loud, <trial counts>; review <date>` | [[task-29.1-registry-triage#r1-other-writers]] |
-| 7 | [[task-t0-suite-trust-sweep#r7-4]], [[task-t0-suite-trust-sweep#r7-5]]: one `pytest -rA --junitxml` process, about 45 min, in the main tree | `scripts/ptest.sh --tier all` in the main tree (tier (c) included) and in the clone twin; `-rA` and one junit file per shard; "clean" keeps T0's definition word for word | queue review `#b3` |
+| 7 | [[task-t0-suite-trust-sweep#r7-4]], [[task-t0-suite-trust-sweep#r7-5]]: one `pytest -rA --junitxml` process, about 45 min, in the main tree | `scripts/ptest.sh --tier all` in the main tree (tier (c) included) and in the clone twin; per-node results are read from `outcomes.jsonl` ([[#r2-outcomes]]), and the runner gains no `-rA` or junit flag (ruling L122; this row first asked for both); the twin also runs T0's eight tier-(c) files with plain `pytest -rA`; "clean" keeps T0's definition word for word | queue review `#b3` |
 | 8 | [[task-t0-suite-trust-sweep#r7-8]]: four plan-7 deferral rows re-owned to "plan-20 evals" | "no host plan; backlog (L33)". Plan-20's three tasks hold none of them | queue review `#dup-2` |
 | 9 | Ruling O7's "immediate isolated re-run" | unchanged, and it is the **only** re-run this task allows ([[#decisions]] plan-29 D14) | this spec |
 | 10 | R0.1 to R0.8 apply to T0's sub-tasks | they apply to everything in this spec too ([[#r10]]) | queue review `#ord-6` |
@@ -464,6 +464,11 @@ here:
     the answer is logged as **its own registry row** ("live recall over its 5 s budget at load
     N: <leg> spent <t>"), `deferred: …; review <date>` unless a task takes it. The registry's
     threshold to log is low.
+  - **If bug-228 is not reproduced** in T0.3's base trials
+    ([[task-t0-suite-trust-sweep#t0-3-bug228-legs]]), there is no failing run to break down. Then the "otherwise"
+    split is built, because it does not depend on where the time went, and the product row
+    records "not reproduced in N trials at levels 3/5/8" in place of a leg (ch-bsd T0 fresh r1
+    M7; ruling L122).
   {#r3-bug228}
 - **The census** (`tests/test_wallclock_census.py`) reads every file under `tests/` as a syntax
   tree and finds each upper bound on a clock difference, on a name assigned from one, or on an
@@ -1007,9 +1012,14 @@ the test that needs it, and it adds a parameter with the current behaviour as it
 - A class-B test that needs a clock in one of those files does not get it here: the test
   stays in the allow list, and the edit is routed to 29.2 R7's release, as a line in the
   summary and a note on the allow-list entry.
-- **The exception is T0.4's deletion of the `_read_via_duckdb` state in `store.py`**, which is
-  T0's text. `store.py` is in the union only, and the union is compared with no stamp
-  ([[task-29.5-split-giant-modules#fact-derive]]), so it flips no pass. A check in stage 5
+- **The exception is T0.4's edits to `store.py`**, which are T0's text: R4.1's deletion of the
+  `_read_via_duckdb` state and of its stale mentions, and R4.7's one-line `_log_event`
+  docstring ([[task-t0-suite-trust-sweep#r4-1]], [[task-t0-suite-trust-sweep#r4-7]]; widened from the deletion alone by ruling L122).
+  `store.py` is in the union only, and the union is compared with no stamp
+  ([[task-29.5-split-giant-modules#fact-derive]]), so it flips no pass.
+- **T0.4 edits no pass module.** Its R4.5 allow-lists the two docstring lines it would have
+  changed in `session_ingest.py` and `vectors.py`, and 29.2's R7 release makes those edits
+  ([[task-t0-suite-trust-sweep#r4-5-derive-hold]], [[task-29.2-mypy-gate#ac-29]]). A check in stage 5
   shows the seven pass modules byte-identical (`git hash-object`) at this task's base and
   final sha.
 {#files-src-note}
@@ -1149,3 +1159,16 @@ No requirement, AC or mutation changed. T0's freshness revision ([[task-t0-suite
 
 The anchors of the queue, store and memory reviews are still written as code.
 {#rev-note-6-body}
+
+## Revision note 7 (2026-11-15, T0's review round; ruling L122) {#rev-note-7}
+
+Three edits, each a fold of ch-bsd's confirm-lite r1 on T0's freshness revision
+([[bsd-spec-t0-fresh-r1-5b04e2d]]; T0's side is [[task-t0-suite-trust-sweep#rev-note-fresh-2]]):
+- **M3:** [[#files-src-note]]'s exception covers T0.4's `store.py` edits (R4.1 and R4.7), and
+  says that T0.4 edits no pass module.
+- **M7:** [[#r3-bug228]] says what is built when bug-228 is not reproduced.
+- **S2:** row 7 of [[#fold-deltas]] no longer asks for `-rA` and a junit file per shard. T0's
+  AC-7.4 reads `outcomes.jsonl`, and [[#r2]] gains no flag.
+
+P1, P5 and P6, which revision note 6 listed as open, are ruled. No other requirement, AC or
+mutation changed. {#rev-note-7-body}

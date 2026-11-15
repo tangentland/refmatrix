@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-29-code-quality
   created: 2026-11-14
-  updated: 2026-11-14
+  updated: 2026-11-15
 ---
 
 # Task 29.2: the mypy gate {#root}
@@ -478,6 +478,14 @@ stand-in modules. Under this requirement a comment is no change, so `@ch-test-en
 each to a statement edit in the RED commit and lists them; the comment form becomes the "stays
 equal" case of AC-20. No assertion in them is weakened.
 
+**Two docstring edits wait for this requirement** (ruling L122; ch-bsd T0 fresh r1 S2). T0.4's
+R4.5 found two stale phrases in pass-module docstrings: `session_ingest.py` line 5 ("later
+phases") and `vectors.py` line 14 ("for now"). Under the raw-bytes hash an edit to either flips
+its pass on every fleet store, so T0.4 allow-lists both lines in `tests/test_deferrals_clean.py`
+with this task as owner ([[task-t0-suite-trust-sweep#r4-5-derive-hold]]). Once the hash ignores docstrings the edits
+are neutral. This task's release makes both and deletes both entries: [[#ac-29]]. They are
+pass-file edits, so they ride deploy B below, never deploy A. {#r7-t0-docstrings}
+
 **What the fleet shows, and in what order things are deployed.** {#r7-release}
 
 - After the deploy that carries this requirement, every existing stamp has the tag `p1` and is
@@ -769,6 +777,24 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   `stamp_derive` is the set recorded at the start commit (the derive passes and the
   `derive_stamp` op); the rehash path is not in it and writes neither `version` nor
   `derived_at` (AST on its write statement, and AC-24's column check).
+- **AC-29: T0.4's two held docstrings are fixed, and their allow-list entries are gone**
+  ([[#r7-t0-docstrings]]; ruling L122). After this task's deploy-B commit:
+  - `src/refmatrix/session_ingest.py`'s module docstring no longer holds `later phases`, and
+    `src/refmatrix/vectors.py`'s no longer holds `for now`; each says what is true today, or
+    names the task that owns what is left;
+  - `tests/test_deferrals_clean.py`'s allow-list holds no entry for a file that
+    `_DERIVE_PASS_MODULES` names, and a test asserts that. It is RED at this task's start
+    commit, where the two entries exist, and it stays as a guard afterwards: with docstrings
+    out of the hash, a pass module has no reason to be excused;
+  - the deferral guard passes over `src/` with those entries gone;
+  - both edits are docstring-only, so by AC-20 the `normal` digest of `sessions` and of
+    `embed` does not move. The test puts the old line back into a copy of each file (AC-20's
+    fixture) and asserts that the copy's `normal` digest equals the checked-in file's.
+
+  The edits and the deletions are ONE commit. T0.4 made each entry self-expiring: the guard
+  fails if an entry's line no longer holds its phrase, so the edit cannot land without the
+  deletion. Mutations: restore one entry (the pass-module test goes red); put `for now` back
+  into `vectors.py`'s docstring with the entry gone (the deferral guard goes red). {#ac-29}
 - **AC-17: no mixin hides its host.** No strict module contains a `self` parameter annotated
   `Any`, and the count of `# type: ignore` in the store module family is 0. `Store.__mro__`
   (class names, in order) equals the list recorded at the start commit, and
@@ -878,6 +904,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | `tests/test_derive_hash_normalised.py`; `tests/test_derive_pass_identity.py`, `tests/test_plan12_remedy.py`, `tests/test_derive_stamp.py` | create: AC-20 to AC-23; the three existing files get their comment-only edits re-pointed (test engineer) |
 | the verbs module, the daemon op registry, the CLI `derive` group, the store derive module (`derive_history` and its readers) | R8: `rmx_derive_rehash`, `derive_rehash`, `rmx derive rehash`; the rehash mark and the readers that skip it |
 | `tests/test_derive_rehash.py` | create: AC-24 to AC-28 |
+| `src/refmatrix/session_ingest.py`, `src/refmatrix/vectors.py` (module docstrings only), `tests/test_deferrals_clean.py` | AC-29, in deploy B: the two docstring edits T0.4 held, the two allow-list entries deleted, the no-pass-module-entry test |
 | `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's window as [[#r7-release]] lists it (deploy A; `rmx derive rehash --apply` with its output kept; deploy B; the forced re-derive of the affected passes and of every `left` pass, with the exact command per pass; no memory compile; the stamp-time check; bug-096 and bug-241 fixed first). Standing lines: `rmx derive rehash --apply` after EVERY deploy that touches a pass file and after a Python upgrade (which ships with no pass-file change); a later release that makes a real edit to a pass file closes with the same re-derive |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
@@ -1378,6 +1405,18 @@ ch-bsd spec review r4 was GO with MEH findings only. Two are folded here.
 |---|---|---|
 | M3: the normal form assumed no pass file reads annotations or docstrings at run time | such a file, and one with an aliased dataclass or an attrs-style class, is refused: hashed raw and reported, never normalised; AC-20 rows; two mutations; a census that finds none at `f3709d2` | [[#r7-refuse]], AC-20 |
 | M4: rehash history rows had no cap | 20 per partition and pass, oldest rehash row pruned, never a derive row; an AC-25 case; two mutations | [[#r8-history-cap]], AC-25 |
+
+### After T0's review: ruling L122 {#rev-l122}
+
+ch-bsd's confirm-lite r1 on the T0 freshness revision found that T0.4 handed two docstring
+edits to this task's R7 release while this spec held no AC for them
+([[bsd-spec-t0-fresh-r1-5b04e2d]], S2). Folded here, by the T0 revision's author on its branch:
+
+| finding | change | anchor |
+|---|---|---|
+| S2 / P1: a hand-off with no AC in the receiving spec | this task's release makes the two docstring edits in `session_ingest.py` and `vectors.py` and deletes T0.4's two allow-list entries, in one deploy-B commit; a test keeps pass modules off the allow-list; two mutations | [[#r7-t0-docstrings]], [[#ac-29]], [[#files]] |
+
+No other requirement, AC or mutation changed. {#rev-l122-body}
 
 ## Out of scope {#out-of-scope}
 
