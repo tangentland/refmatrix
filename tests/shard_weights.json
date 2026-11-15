@@ -1,0 +1,2213 @@
+{
+ "source": "r0-serial.log",
+ "sha": "4c6a0c6",
+ "unit": "seconds, setup + call + teardown summed per test file",
+ "hidden_phases": 6778,
+ "hidden_below_s": 0.005,
+ "hidden_upper_bound_s": 33.89,
+ "total_s": 3255.09,
+ "understated": {
+  "tests/test_bug240_ingest_file_arg.py": {
+   "failed": 0,
+   "error": 8
+  },
+  "tests/test_bug240_ingest_file_arg_mcp.py": {
+   "failed": 0,
+   "error": 10
+  },
+  "tests/test_bug241_r2_l112.py": {
+   "failed": 0,
+   "error": 9
+  },
+  "tests/test_bug241_r3_l114.py": {
+   "failed": 0,
+   "error": 4
+  },
+  "tests/test_bug241_rule_docs_reingest.py": {
+   "failed": 0,
+   "error": 96
+  },
+  "tests/test_gmd_lint_requires_version.py": {
+   "failed": 1,
+   "error": 0
+  },
+  "tests/test_scanorder_r2_l120.py": {
+   "failed": 1,
+   "error": 0
+  },
+  "tests/test_task21_1_agent_usage_report.py": {
+   "failed": 2,
+   "error": 0
+  }
+ },
+ "files": {
+  "tests/test_memory_bridge.py": 244.93,
+  "tests/test_task25_1_recall_budget.py": 156.01,
+  "tests/test_bridge_move_safety.py": 146.44,
+  "tests/test_plan3_remedy_r5.py": 143.48,
+  "tests/test_task21_1_used_events.py": 132.68,
+  "tests/test_bug212_r4_red.py": 115.5,
+  "tests/test_memory_compile_scope.py": 92.93,
+  "tests/test_savestate_mtype.py": 92.85,
+  "tests/test_plan3_remedy_r4.py": 80.99,
+  "tests/test_bridge_move_safety_r1.py": 79.83,
+  "tests/test_modelsrv.py": 67.29,
+  "tests/test_bug216_hidden_no_pollution.py": 59.76,
+  "tests/test_sync_fails_loudly_r2.py": 56.2,
+  "tests/test_bug212_r6_red.py": 53.38,
+  "tests/test_task3_6_r9_remedy.py": 52.87,
+  "tests/test_task21_1_emitters.py": 51.89,
+  "tests/test_rerank_budget_real_clients.py": 45.35,
+  "tests/test_plan3_remedy_r6.py": 44.66,
+  "tests/test_plan4_remedy_r3.py": 41.65,
+  "tests/test_plan3_remedy_r3.py": 37.42,
+  "tests/test_plan4_remedy.py": 37.25,
+  "tests/test_bug225_handoff_trunk.py": 36.27,
+  "tests/test_catalog_measure.py": 35.68,
+  "tests/test_bug212_r1_remedy.py": 34.11,
+  "tests/test_memory_compile_remedy_r1.py": 32.71,
+  "tests/test_verbs_memory_recall.py": 32.42,
+  "tests/test_sync_fails_loudly_r1.py": 30.59,
+  "tests/test_savestate_subfolder.py": 30.21,
+  "tests/test_task3_5_r8_remedy.py": 29.86,
+  "tests/test_bug197_unknown_compile_scope.py": 29.22,
+  "tests/test_plan4_remedy_r2.py": 25.45,
+  "tests/test_plan3_remedy_r7.py": 24.55,
+  "tests/test_bug112_duckdb_reopen.py": 23.89,
+  "tests/test_fragment_repair_audit_r4.py": 23.85,
+  "tests/test_plan3_remedy_r2.py": 23.48,
+  "tests/test_plan3_remedy.py": 22.34,
+  "tests/test_mcp_session_pointer.py": 21.08,
+  "tests/test_bug212_r2_red.py": 20.87,
+  "tests/test_bug212_r5_red.py": 20.86,
+  "tests/test_save_state_embeds_memories.py": 20.84,
+  "tests/test_bulk_link.py": 20.5,
+  "tests/test_verbs_migrated.py": 20.23,
+  "tests/test_daemon_dense_ops.py": 19.04,
+  "tests/test_task21_1_pointer_surfacing.py": 18.26,
+  "tests/test_bug212_hooks_in_worktrees.py": 18.01,
+  "tests/test_recall.py": 17.85,
+  "tests/test_task3_7_graph.py": 17.62,
+  "tests/test_bug212_r7_red.py": 17.2,
+  "tests/test_bridge_move_safety_ac4c.py": 16.24,
+  "tests/test_task3_7_remedy_r6.py": 14.44,
+  "tests/test_plan2_remedy_r6.py": 12.78,
+  "tests/test_task21_1_query_rows.py": 12.17,
+  "tests/test_task4_5_r4_remedy.py": 11.48,
+  "tests/test_memory_index_layout.py": 11.4,
+  "tests/test_task4_6_r5_remedy.py": 11.35,
+  "tests/test_bug200_brief_compile_real_daemon.py": 11.22,
+  "tests/test_plan2_remedy.py": 10.93,
+  "tests/test_verb_parity.py": 10.9,
+  "tests/test_memory_recall_widen.py": 10.68,
+  "tests/test_bug216_rule_docs_e2e.py": 10.4,
+  "tests/test_task3_7_remedy_r4.py": 9.91,
+  "tests/test_plan5_remedy.py": 9.68,
+  "tests/test_daemon_subproc_embed.py": 9.36,
+  "tests/test_mcp_memory_recall_routing.py": 9.36,
+  "tests/test_scan_prompt_block_order.py": 9.07,
+  "tests/test_subproc_workers.py": 8.99,
+  "tests/test_task21_1_recall_skip.py": 8.71,
+  "tests/test_task3_7_remedy_r5.py": 8.52,
+  "tests/test_bug216_remedy_r1.py": 8.43,
+  "tests/test_task3_7_curator.py": 8.39,
+  "tests/test_v2_features.py": 8.37,
+  "tests/test_grep_verify_before_cap.py": 8.31,
+  "tests/test_task21_1_pointer_lifecycle.py": 8.3,
+  "tests/test_hub.py": 8.2,
+  "tests/test_scanorder_r2_l120.py": 7.95,
+  "tests/test_bug113_replica_merge_recovery.py": 7.89,
+  "tests/test_bug115_liveness_under_load.py": 7.83,
+  "tests/test_fragment_repair_audit_r3.py": 7.79,
+  "tests/test_bug216_rev4.py": 7.57,
+  "tests/test_bus.py": 7.57,
+  "tests/test_plan2_remedy_r7.py": 7.28,
+  "tests/test_bug179_anchor_parity.py": 7.07,
+  "tests/test_task3_7_infra.py": 6.97,
+  "tests/test_daemon_reap.py": 6.93,
+  "tests/test_bug216_binding.py": 6.38,
+  "tests/test_ingest_partition_yield_race.py": 6.14,
+  "tests/test_upgrade.py": 5.87,
+  "tests/test_subject.py": 5.8,
+  "tests/test_bug015_wedge.py": 5.78,
+  "tests/test_deferrals_clean.py": 5.61,
+  "tests/test_daemon_adopt.py": 5.5,
+  "tests/test_global_memory.py": 5.48,
+  "tests/test_task3_7_live.py": 5.37,
+  "tests/test_task3_7_matrix.py": 5.29,
+  "tests/test_daemon_shutdown_drain.py": 5.27,
+  "tests/test_bug178_bulk_write.py": 5.18,
+  "tests/test_task3_7_remedy_r1.py": 4.98,
+  "tests/test_reranker.py": 4.88,
+  "tests/test_bug129_hub_pidfile.py": 4.45,
+  "tests/test_task3_7_session.py": 4.29,
+  "tests/test_read_path_partition_and_budget.py": 4.27,
+  "tests/test_session_cli.py": 4.23,
+  "tests/test_sandbox_proof_script.py": 4.11,
+  "tests/test_bug216_remedy_l86.py": 3.87,
+  "tests/test_factslog_compaction.py": 3.8,
+  "tests/test_grep_fixed_and_file_lists.py": 3.75,
+  "tests/test_task21_1_mcp_route.py": 3.59,
+  "tests/test_memory_hook_repair.py": 3.58,
+  "tests/test_context_degree.py": 3.56,
+  "tests/test_sync_and_extras.py": 3.46,
+  "tests/test_reingest.py": 3.45,
+  "tests/test_bug216_scope_parity.py": 3.42,
+  "tests/test_derive_coverage.py": 3.39,
+  "tests/test_sandbox_hardening.py": 3.36,
+  "tests/test_bug216_replay_fidelity.py": 3.34,
+  "tests/test_task3_7_canon.py": 3.32,
+  "tests/test_bug216_remedy_r2.py": 3.3,
+  "tests/test_watch.py": 3.28,
+  "tests/test_bug178_r2.py": 3.21,
+  "tests/test_task3_7_curation.py": 3.21,
+  "tests/test_models_offline.py": 3.19,
+  "tests/test_context.py": 3.13,
+  "tests/test_scan_prompt_content_fusion.py": 3.13,
+  "tests/test_reinforcement_bench.py": 3.11,
+  "tests/test_grep_learned_reachable.py": 3.03,
+  "tests/test_stm_rationale_capture.py": 2.9,
+  "tests/test_bug216_remedy_r4.py": 2.87,
+  "tests/test_ingest_markdown.py": 2.86,
+  "tests/test_grep_stdin_dialect.py": 2.79,
+  "tests/test_derive_surface.py": 2.74,
+  "tests/test_grep_flags.py": 2.71,
+  "tests/test_partition_audit.py": 2.69,
+  "tests/test_grep_empty_pipe.py": 2.63,
+  "tests/test_task3_7_focus.py": 2.61,
+  "tests/test_task3_7_remedy_r3.py": 2.61,
+  "tests/test_kwic.py": 2.6,
+  "tests/test_search_hooks.py": 2.58,
+  "tests/test_rerank_warning_routes.py": 2.56,
+  "tests/test_bug216_rel_landing.py": 2.53,
+  "tests/test_grep_answered_by.py": 2.52,
+  "tests/test_learn_toggle_sites.py": 2.47,
+  "tests/test_rerank_cost_budget.py": 2.4,
+  "tests/test_scan_prompt_dedup.py": 2.36,
+  "tests/test_derive_stamp.py": 2.34,
+  "tests/test_learn_broker_bounded.py": 2.34,
+  "tests/test_ingest_graphify.py": 2.32,
+  "tests/test_derive_history.py": 2.26,
+  "tests/test_bug216_watch_base.py": 2.18,
+  "tests/test_memory_compile.py": 2.18,
+  "tests/test_save_state.py": 2.12,
+  "tests/test_plan1_remedy.py": 2.11,
+  "tests/test_bug216_surfaces.py": 2.1,
+  "tests/test_task21_1_agent_usage_report.py": 2.08,
+  "tests/test_grep_evidence_verified.py": 2.07,
+  "tests/test_bug199_repair_rewrites_index.py": 2.04,
+  "tests/test_bug216_ignore_reinclude.py": 2.03,
+  "tests/test_learn_queue.py": 2.0,
+  "tests/test_bug111_repair_dead_concept_links.py": 1.97,
+  "tests/test_bug216_remedy_r5.py": 1.81,
+  "tests/test_ingest_adr.py": 1.81,
+  "tests/test_grep_output_shape.py": 1.79,
+  "tests/test_learn_toggle_hook.py": 1.79,
+  "tests/test_stm.py": 1.76,
+  "tests/test_content_rank_caches.py": 1.67,
+  "tests/test_grep_case_every_path.py": 1.65,
+  "tests/test_pyc_invalidation.py": 1.65,
+  "tests/test_grep_learned_paths_absolute.py": 1.63,
+  "tests/test_lance_drop_failures_loud.py": 1.62,
+  "tests/test_memory.py": 1.61,
+  "tests/test_snapshot_tier.py": 1.55,
+  "tests/test_bug230_repo_scope_gate.py": 1.51,
+  "tests/test_memory_index_char_budget.py": 1.48,
+  "tests/test_ppr_degree_walk.py": 1.46,
+  "tests/test_surface_parity.py": 1.46,
+  "tests/test_bug199_r2_remedy.py": 1.45,
+  "tests/test_helix.py": 1.45,
+  "tests/test_plan12_remedy.py": 1.45,
+  "tests/test_rerank_degrades_are_surfaced.py": 1.45,
+  "tests/test_fragment_partition_scope.py": 1.44,
+  "tests/test_ingest_concurrency.py": 1.43,
+  "tests/test_describe.py": 1.42,
+  "tests/test_rmxgrep.py": 1.42,
+  "tests/test_memory_layout.py": 1.41,
+  "tests/test_sandbox_redirect.py": 1.39,
+  "tests/test_bug117_rebuild_non_concept.py": 1.38,
+  "tests/test_task3_7_taxonomy.py": 1.38,
+  "tests/test_sandbox_child_extensions.py": 1.36,
+  "tests/test_flag_crud.py": 1.35,
+  "tests/test_grep.py": 1.35,
+  "tests/test_bigop_nonblocking.py": 1.34,
+  "tests/test_refmatrix.py": 1.33,
+  "tests/test_plan7_10_remedy_r4.py": 1.31,
+  "tests/test_duckdb_migrate.py": 1.3,
+  "tests/test_shared_worker_readoption.py": 1.28,
+  "tests/test_telemetry_invocation.py": 1.26,
+  "tests/test_bug216_remedy_r3.py": 1.25,
+  "tests/test_gmd_lint_requires_version.py": 1.25,
+  "tests/test_scan_prompt_expansion.py": 1.25,
+  "tests/test_fragment_repair_audit.py": 1.24,
+  "tests/test_memory_tags_taxonomy.py": 1.24,
+  "tests/test_net.py": 1.24,
+  "tests/test_bug110_snapshot_keeps_lock.py": 1.21,
+  "tests/test_coref.py": 1.21,
+  "tests/test_daemon_shutdown.py": 1.18,
+  "tests/test_composite.py": 1.17,
+  "tests/test_log.py": 1.17,
+  "tests/test_rank_modifiers.py": 1.17,
+  "tests/test_bug118_optional_hook_exit.py": 1.16,
+  "tests/test_fingerprint.py": 1.15,
+  "tests/test_structural_signal.py": 1.13,
+  "tests/test_daemon_learn_guard.py": 1.12,
+  "tests/test_embedder.py": 1.12,
+  "tests/test_context_cost.py": 1.11,
+  "tests/test_grep_delegate.py": 1.09,
+  "tests/test_telemetry_outcomes.py": 1.08,
+  "tests/test_embed_phases_r10.py": 1.07,
+  "tests/test_memory_index.py": 1.07,
+  "tests/test_brief_bsd_r1.py": 1.05,
+  "tests/test_cli_time_phases.py": 1.03,
+  "tests/test_partitions.py": 1.03,
+  "tests/test_telemetry_adoption.py": 1.03,
+  "tests/test_replica_merge.py": 1.02,
+  "tests/test_reinforcement.py": 0.99,
+  "tests/test_cctree_web.py": 0.98,
+  "tests/test_memory_recall_exclude_mtype.py": 0.96,
+  "tests/test_inflight_registry.py": 0.95,
+  "tests/test_sync_semantic_bulk.py": 0.95,
+  "tests/test_body_precedence.py": 0.93,
+  "tests/test_ts_extract.py": 0.92,
+  "tests/test_brief_detectors.py": 0.91,
+  "tests/test_context_nl_ref.py": 0.91,
+  "tests/test_duckdb_fragments.py": 0.91,
+  "tests/test_graph_landing.py": 0.9,
+  "tests/test_tf_norm.py": 0.9,
+  "tests/test_longmemeval_scoring.py": 0.86,
+  "tests/test_install_commands_user_level.py": 0.85,
+  "tests/test_learn_switch.py": 0.85,
+  "tests/test_memory_recall_degree.py": 0.84,
+  "tests/test_bulk_link_weighted.py": 0.83,
+  "tests/test_bug198_brief_compile_scope.py": 0.81,
+  "tests/test_refine_cli.py": 0.81,
+  "tests/test_hooks_reproducible.py": 0.8,
+  "tests/test_read_surface_grammar.py": 0.8,
+  "tests/test_session_ingest.py": 0.8,
+  "tests/test_daemon_rotation.py": 0.79,
+  "tests/test_scan_stopwords.py": 0.79,
+  "tests/test_duckdb_parity.py": 0.77,
+  "tests/test_embed_gc.py": 0.77,
+  "tests/test_longmemeval_prepare.py": 0.77,
+  "tests/test_task_cli_session.py": 0.76,
+  "tests/test_hub_watchdog.py": 0.75,
+  "tests/test_repair_entities.py": 0.74,
+  "tests/test_concept_timeline.py": 0.73,
+  "tests/test_rrf.py": 0.72,
+  "tests/test_untrack.py": 0.72,
+  "tests/test_derive_unstamp.py": 0.71,
+  "tests/test_bug216_remedy_r6.py": 0.7,
+  "tests/test_memory_reclassify.py": 0.7,
+  "tests/test_ui_server.py": 0.7,
+  "tests/test_sandbox_refusal.py": 0.69,
+  "tests/test_grep_dropin_contract.py": 0.67,
+  "tests/test_onboard_huballd_curator.py": 0.67,
+  "tests/test_ingest_progress.py": 0.66,
+  "tests/test_ingest_gmd_root_rel_mirror.py": 0.65,
+  "tests/test_task3_7_remedy_r2.py": 0.65,
+  "tests/test_purge_path_batched_lance.py": 0.64,
+  "tests/test_slot_rotation_drift.py": 0.63,
+  "tests/test_stop_deadline.py": 0.62,
+  "tests/test_bug162_163_worker_qos_hook_path.py": 0.61,
+  "tests/test_grep_backstop.py": 0.61,
+  "tests/test_task3_7_refine.py": 0.61,
+  "tests/test_rerank_window.py": 0.6,
+  "tests/test_fragment_repair_audit_r2.py": 0.59,
+  "tests/test_store_vectors.py": 0.59,
+  "tests/test_grep_argv_order.py": 0.58,
+  "tests/test_workflow_ignore.py": 0.58,
+  "tests/test_brief_gmd.py": 0.57,
+  "tests/test_bsd_r1_telemetry_eval.py": 0.57,
+  "tests/test_daemon_liveness.py": 0.57,
+  "tests/test_memory_content_log.py": 0.57,
+  "tests/test_dual_write_purge.py": 0.56,
+  "tests/test_gmd_body_anchors.py": 0.56,
+  "tests/test_mcp_write.py": 0.56,
+  "tests/test_phase8_mcp_sched.py": 0.55,
+  "tests/test_verb_alias.py": 0.54,
+  "tests/test_session_launchctl.py": 0.53,
+  "tests/test_alert_refinement_repeat.py": 0.52,
+  "tests/test_context_rerank_off_the_writer_lock.py": 0.52,
+  "tests/test_sync_gmd_routing.py": 0.52,
+  "tests/test_adjacency_cache.py": 0.51,
+  "tests/test_brief_surfaces.py": 0.5,
+  "tests/test_bus_retention.py": 0.5,
+  "tests/test_bug240_ingest_file_arg_mcp.py": 0.49,
+  "tests/test_memory_bulk_forget.py": 0.49,
+  "tests/test_task21_1_live_guard.py": 0.49,
+  "tests/test_test_lanes.py": 0.49,
+  "tests/test_declared_python_floor.py": 0.48,
+  "tests/test_hub_plist_devtree.py": 0.46,
+  "tests/test_longmemeval_ingest.py": 0.46,
+  "tests/test_memory_only_guard.py": 0.46,
+  "tests/test_memory_reembed_on_edit.py": 0.46,
+  "tests/test_partition_merge.py": 0.46,
+  "tests/test_session_raw_link.py": 0.46,
+  "tests/test_embed_partition_routing.py": 0.45,
+  "tests/test_grep_no_flag_bundle.py": 0.45,
+  "tests/test_vectors.py": 0.45,
+  "tests/test_mcp_tools.py": 0.44,
+  "tests/test_sandbox_children.py": 0.44,
+  "tests/test_bug241_r2_l112.py": 0.43,
+  "tests/test_agent_env.py": 0.42,
+  "tests/test_js_extract.py": 0.42,
+  "tests/test_sandbox_checkout_guard.py": 0.42,
+  "tests/test_stm_tool_detail.py": 0.42,
+  "tests/test_bug240_ingest_file_arg.py": 0.4,
+  "tests/test_hybrid_recall.py": 0.4,
+  "tests/test_locate.py": 0.4,
+  "tests/test_same_as_audit.py": 0.4,
+  "tests/test_launchctl_label.py": 0.39,
+  "tests/test_cli_store_rotation.py": 0.38,
+  "tests/test_daemon_restart_cli.py": 0.38,
+  "tests/test_snapshot_policy.py": 0.38,
+  "tests/test_called_by_derive.py": 0.37,
+  "tests/test_memory_dedup.py": 0.37,
+  "tests/test_runtime_identity_surface.py": 0.37,
+  "tests/test_docs_generated.py": 0.36,
+  "tests/test_task3_7_folded.py": 0.36,
+  "tests/test_content_rank_def_surface.py": 0.35,
+  "tests/test_derive_pass_identity.py": 0.35,
+  "tests/test_reupsert_staleness.py": 0.35,
+  "tests/test_ingest_sql.py": 0.34,
+  "tests/test_clear_tracked_stamps.py": 0.33,
+  "tests/test_worker_budget_invariant.py": 0.33,
+  "tests/test_hook_wiring.py": 0.32,
+  "tests/test_ingest_async.py": 0.32,
+  "tests/test_daemon_replica_symlink.py": 0.31,
+  "tests/test_context_exact_rank.py": 0.3,
+  "tests/test_hooks.py": 0.3,
+  "tests/test_mcp_channels.py": 0.3,
+  "tests/test_mcp_parity.py": 0.3,
+  "tests/test_store_health_probe.py": 0.3,
+  "tests/test_ingest_tldr_ignore.py": 0.28,
+  "tests/test_stm_composite_injection.py": 0.27,
+  "tests/test_suite_runs_from_any_checkout.py": 0.27,
+  "tests/test_context_rerank_warning.py": 0.26,
+  "tests/test_launchd_path_deterministic.py": 0.26,
+  "tests/test_phrase_miner.py": 0.26,
+  "tests/test_scan_modal_salience.py": 0.26,
+  "tests/test_hub_watchdog_grace.py": 0.25,
+  "tests/test_mcp_bus_passthrough.py": 0.25,
+  "tests/test_task3_7_remedy_r2_meh.py": 0.25,
+  "tests/test_duckdb_read_routing.py": 0.24,
+  "tests/test_ingest_pseudo.py": 0.22,
+  "tests/test_memory_recall_score.py": 0.21,
+  "tests/test_grep_learning_replay.py": 0.2,
+  "tests/test_rewriter_wrapper_resolution.py": 0.2,
+  "tests/test_fork_safety_reexec.py": 0.19,
+  "tests/test_eval_artifact_cited.py": 0.17,
+  "tests/test_bug241_r3_l114.py": 0.16,
+  "tests/test_grep_argv_order_e2e.py": 0.13,
+  "tests/test_version_single_source.py": 0.07,
+  "tests/test_docs_hooks_target.py": 0.05
+ },
+ "phases": {
+  "tests/test_memory_bridge.py": {
+   "setup": 7.78,
+   "call": 193.71,
+   "teardown": 43.44
+  },
+  "tests/test_task25_1_recall_budget.py": {
+   "setup": 52.47,
+   "call": 100.08,
+   "teardown": 3.46
+  },
+  "tests/test_bridge_move_safety.py": {
+   "setup": 12.81,
+   "call": 129.46,
+   "teardown": 4.17
+  },
+  "tests/test_plan3_remedy_r5.py": {
+   "setup": 3.05,
+   "call": 140.26,
+   "teardown": 0.17
+  },
+  "tests/test_task21_1_used_events.py": {
+   "setup": 0.92,
+   "call": 131.76,
+   "teardown": 0.0
+  },
+  "tests/test_bug212_r4_red.py": {
+   "setup": 14.39,
+   "call": 101.06,
+   "teardown": 0.05
+  },
+  "tests/test_memory_compile_scope.py": {
+   "setup": 1.17,
+   "call": 35.59,
+   "teardown": 56.17
+  },
+  "tests/test_savestate_mtype.py": {
+   "setup": 3.02,
+   "call": 86.08,
+   "teardown": 3.75
+  },
+  "tests/test_plan3_remedy_r4.py": {
+   "setup": 1.61,
+   "call": 79.24,
+   "teardown": 0.14
+  },
+  "tests/test_bridge_move_safety_r1.py": {
+   "setup": 5.5,
+   "call": 74.31,
+   "teardown": 0.02
+  },
+  "tests/test_modelsrv.py": {
+   "setup": 1.68,
+   "call": 54.27,
+   "teardown": 11.34
+  },
+  "tests/test_bug216_hidden_no_pollution.py": {
+   "setup": 2.88,
+   "call": 56.88,
+   "teardown": 0.0
+  },
+  "tests/test_sync_fails_loudly_r2.py": {
+   "setup": 2.68,
+   "call": 41.06,
+   "teardown": 12.46
+  },
+  "tests/test_bug212_r6_red.py": {
+   "setup": 3.62,
+   "call": 6.49,
+   "teardown": 43.27
+  },
+  "tests/test_task3_6_r9_remedy.py": {
+   "setup": 7.92,
+   "call": 33.33,
+   "teardown": 11.62
+  },
+  "tests/test_task21_1_emitters.py": {
+   "setup": 13.48,
+   "call": 20.78,
+   "teardown": 17.63
+  },
+  "tests/test_rerank_budget_real_clients.py": {
+   "setup": 3.98,
+   "call": 38.74,
+   "teardown": 2.63
+  },
+  "tests/test_plan3_remedy_r6.py": {
+   "setup": 1.5,
+   "call": 43.09,
+   "teardown": 0.07
+  },
+  "tests/test_plan4_remedy_r3.py": {
+   "setup": 2.8,
+   "call": 38.84,
+   "teardown": 0.01
+  },
+  "tests/test_plan3_remedy_r3.py": {
+   "setup": 1.26,
+   "call": 36.15,
+   "teardown": 0.01
+  },
+  "tests/test_plan4_remedy.py": {
+   "setup": 2.68,
+   "call": 24.66,
+   "teardown": 9.91
+  },
+  "tests/test_bug225_handoff_trunk.py": {
+   "setup": 25.01,
+   "call": 10.95,
+   "teardown": 0.31
+  },
+  "tests/test_catalog_measure.py": {
+   "setup": 1.65,
+   "call": 34.03,
+   "teardown": 0.0
+  },
+  "tests/test_bug212_r1_remedy.py": {
+   "setup": 11.59,
+   "call": 22.46,
+   "teardown": 0.06
+  },
+  "tests/test_memory_compile_remedy_r1.py": {
+   "setup": 1.88,
+   "call": 18.33,
+   "teardown": 12.5
+  },
+  "tests/test_verbs_memory_recall.py": {
+   "setup": 3.47,
+   "call": 0.42,
+   "teardown": 28.53
+  },
+  "tests/test_sync_fails_loudly_r1.py": {
+   "setup": 1.52,
+   "call": 24.46,
+   "teardown": 4.61
+  },
+  "tests/test_savestate_subfolder.py": {
+   "setup": 3.79,
+   "call": 24.45,
+   "teardown": 1.97
+  },
+  "tests/test_task3_5_r8_remedy.py": {
+   "setup": 5.11,
+   "call": 6.36,
+   "teardown": 18.39
+  },
+  "tests/test_bug197_unknown_compile_scope.py": {
+   "setup": 1.37,
+   "call": 4.06,
+   "teardown": 23.79
+  },
+  "tests/test_plan4_remedy_r2.py": {
+   "setup": 2.01,
+   "call": 23.44,
+   "teardown": 0.0
+  },
+  "tests/test_plan3_remedy_r7.py": {
+   "setup": 1.18,
+   "call": 23.28,
+   "teardown": 0.09
+  },
+  "tests/test_bug112_duckdb_reopen.py": {
+   "setup": 0.98,
+   "call": 22.91,
+   "teardown": 0.0
+  },
+  "tests/test_fragment_repair_audit_r4.py": {
+   "setup": 3.19,
+   "call": 1.57,
+   "teardown": 19.09
+  },
+  "tests/test_plan3_remedy_r2.py": {
+   "setup": 0.81,
+   "call": 16.32,
+   "teardown": 6.35
+  },
+  "tests/test_plan3_remedy.py": {
+   "setup": 2.61,
+   "call": 0.32,
+   "teardown": 19.41
+  },
+  "tests/test_mcp_session_pointer.py": {
+   "setup": 3.24,
+   "call": 17.84,
+   "teardown": 0.0
+  },
+  "tests/test_bug212_r2_red.py": {
+   "setup": 8.04,
+   "call": 12.83,
+   "teardown": 0.0
+  },
+  "tests/test_bug212_r5_red.py": {
+   "setup": 5.67,
+   "call": 5.91,
+   "teardown": 9.28
+  },
+  "tests/test_save_state_embeds_memories.py": {
+   "setup": 2.55,
+   "call": 12.23,
+   "teardown": 6.06
+  },
+  "tests/test_bulk_link.py": {
+   "setup": 0.72,
+   "call": 19.74,
+   "teardown": 0.04
+  },
+  "tests/test_verbs_migrated.py": {
+   "setup": 1.63,
+   "call": 3.91,
+   "teardown": 14.69
+  },
+  "tests/test_daemon_dense_ops.py": {
+   "setup": 0.37,
+   "call": 18.67,
+   "teardown": 0.0
+  },
+  "tests/test_task21_1_pointer_surfacing.py": {
+   "setup": 3.93,
+   "call": 14.33,
+   "teardown": 0.0
+  },
+  "tests/test_bug212_hooks_in_worktrees.py": {
+   "setup": 5.06,
+   "call": 4.01,
+   "teardown": 8.94
+  },
+  "tests/test_recall.py": {
+   "setup": 17.2,
+   "call": 0.57,
+   "teardown": 0.08
+  },
+  "tests/test_task3_7_graph.py": {
+   "setup": 8.99,
+   "call": 8.63,
+   "teardown": 0.0
+  },
+  "tests/test_bug212_r7_red.py": {
+   "setup": 1.34,
+   "call": 1.29,
+   "teardown": 14.57
+  },
+  "tests/test_bridge_move_safety_ac4c.py": {
+   "setup": 0.93,
+   "call": 15.31,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r6.py": {
+   "setup": 1.71,
+   "call": 12.69,
+   "teardown": 0.04
+  },
+  "tests/test_plan2_remedy_r6.py": {
+   "setup": 0.99,
+   "call": 11.75,
+   "teardown": 0.04
+  },
+  "tests/test_task21_1_query_rows.py": {
+   "setup": 1.5,
+   "call": 10.67,
+   "teardown": 0.0
+  },
+  "tests/test_task4_5_r4_remedy.py": {
+   "setup": 3.43,
+   "call": 8.04,
+   "teardown": 0.01
+  },
+  "tests/test_memory_index_layout.py": {
+   "setup": 5.21,
+   "call": 6.19,
+   "teardown": 0.0
+  },
+  "tests/test_task4_6_r5_remedy.py": {
+   "setup": 4.42,
+   "call": 6.93,
+   "teardown": 0.0
+  },
+  "tests/test_bug200_brief_compile_real_daemon.py": {
+   "setup": 0.1,
+   "call": 1.58,
+   "teardown": 9.54
+  },
+  "tests/test_plan2_remedy.py": {
+   "setup": 2.07,
+   "call": 8.85,
+   "teardown": 0.01
+  },
+  "tests/test_verb_parity.py": {
+   "setup": 10.87,
+   "call": 0.03,
+   "teardown": 0.0
+  },
+  "tests/test_memory_recall_widen.py": {
+   "setup": 0.99,
+   "call": 0.14,
+   "teardown": 9.55
+  },
+  "tests/test_bug216_rule_docs_e2e.py": {
+   "setup": 2.52,
+   "call": 7.88,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r4.py": {
+   "setup": 0.69,
+   "call": 9.08,
+   "teardown": 0.14
+  },
+  "tests/test_plan5_remedy.py": {
+   "setup": 1.3,
+   "call": 8.38,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_subproc_embed.py": {
+   "setup": 0.6,
+   "call": 8.76,
+   "teardown": 0.0
+  },
+  "tests/test_mcp_memory_recall_routing.py": {
+   "setup": 6.82,
+   "call": 0.43,
+   "teardown": 2.11
+  },
+  "tests/test_scan_prompt_block_order.py": {
+   "setup": 2.59,
+   "call": 6.26,
+   "teardown": 0.22
+  },
+  "tests/test_subproc_workers.py": {
+   "setup": 1.46,
+   "call": 7.47,
+   "teardown": 0.06
+  },
+  "tests/test_task21_1_recall_skip.py": {
+   "setup": 0.62,
+   "call": 8.09,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r5.py": {
+   "setup": 1.14,
+   "call": 7.29,
+   "teardown": 0.09
+  },
+  "tests/test_bug216_remedy_r1.py": {
+   "setup": 4.82,
+   "call": 3.61,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_curator.py": {
+   "setup": 1.87,
+   "call": 6.52,
+   "teardown": 0.0
+  },
+  "tests/test_v2_features.py": {
+   "setup": 4.28,
+   "call": 3.84,
+   "teardown": 0.25
+  },
+  "tests/test_grep_verify_before_cap.py": {
+   "setup": 0.81,
+   "call": 7.42,
+   "teardown": 0.08
+  },
+  "tests/test_task21_1_pointer_lifecycle.py": {
+   "setup": 0.84,
+   "call": 7.46,
+   "teardown": 0.0
+  },
+  "tests/test_hub.py": {
+   "setup": 0.68,
+   "call": 7.52,
+   "teardown": 0.0
+  },
+  "tests/test_scanorder_r2_l120.py": {
+   "setup": 2.78,
+   "call": 5.08,
+   "teardown": 0.09
+  },
+  "tests/test_bug113_replica_merge_recovery.py": {
+   "setup": 1.43,
+   "call": 6.46,
+   "teardown": 0.0
+  },
+  "tests/test_bug115_liveness_under_load.py": {
+   "setup": 0.57,
+   "call": 7.26,
+   "teardown": 0.0
+  },
+  "tests/test_fragment_repair_audit_r3.py": {
+   "setup": 0.88,
+   "call": 2.1,
+   "teardown": 4.81
+  },
+  "tests/test_bug216_rev4.py": {
+   "setup": 1.34,
+   "call": 6.23,
+   "teardown": 0.0
+  },
+  "tests/test_bus.py": {
+   "setup": 0.73,
+   "call": 6.84,
+   "teardown": 0.0
+  },
+  "tests/test_plan2_remedy_r7.py": {
+   "setup": 1.29,
+   "call": 5.97,
+   "teardown": 0.02
+  },
+  "tests/test_bug179_anchor_parity.py": {
+   "setup": 1.99,
+   "call": 5.08,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_infra.py": {
+   "setup": 1.58,
+   "call": 5.39,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_reap.py": {
+   "setup": 0.34,
+   "call": 6.59,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_binding.py": {
+   "setup": 1.32,
+   "call": 5.06,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_partition_yield_race.py": {
+   "setup": 0.22,
+   "call": 5.92,
+   "teardown": 0.0
+  },
+  "tests/test_upgrade.py": {
+   "setup": 0.99,
+   "call": 4.88,
+   "teardown": 0.0
+  },
+  "tests/test_subject.py": {
+   "setup": 0.45,
+   "call": 5.35,
+   "teardown": 0.0
+  },
+  "tests/test_bug015_wedge.py": {
+   "setup": 0.33,
+   "call": 5.45,
+   "teardown": 0.0
+  },
+  "tests/test_deferrals_clean.py": {
+   "setup": 0.77,
+   "call": 4.81,
+   "teardown": 0.03
+  },
+  "tests/test_daemon_adopt.py": {
+   "setup": 0.11,
+   "call": 5.39,
+   "teardown": 0.0
+  },
+  "tests/test_global_memory.py": {
+   "setup": 0.32,
+   "call": 5.16,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_live.py": {
+   "setup": 0.88,
+   "call": 1.64,
+   "teardown": 2.85
+  },
+  "tests/test_task3_7_matrix.py": {
+   "setup": 1.1,
+   "call": 4.19,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_shutdown_drain.py": {
+   "setup": 0.56,
+   "call": 4.71,
+   "teardown": 0.0
+  },
+  "tests/test_bug178_bulk_write.py": {
+   "setup": 1.29,
+   "call": 3.89,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r1.py": {
+   "setup": 1.65,
+   "call": 3.33,
+   "teardown": 0.0
+  },
+  "tests/test_reranker.py": {
+   "setup": 1.54,
+   "call": 3.27,
+   "teardown": 0.07
+  },
+  "tests/test_bug129_hub_pidfile.py": {
+   "setup": 0.94,
+   "call": 3.51,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_session.py": {
+   "setup": 0.99,
+   "call": 3.3,
+   "teardown": 0.0
+  },
+  "tests/test_read_path_partition_and_budget.py": {
+   "setup": 0.7,
+   "call": 3.57,
+   "teardown": 0.0
+  },
+  "tests/test_session_cli.py": {
+   "setup": 0.82,
+   "call": 3.41,
+   "teardown": 0.0
+  },
+  "tests/test_sandbox_proof_script.py": {
+   "setup": 0.3,
+   "call": 3.81,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_remedy_l86.py": {
+   "setup": 0.6,
+   "call": 3.26,
+   "teardown": 0.01
+  },
+  "tests/test_factslog_compaction.py": {
+   "setup": 0.39,
+   "call": 3.41,
+   "teardown": 0.0
+  },
+  "tests/test_grep_fixed_and_file_lists.py": {
+   "setup": 2.21,
+   "call": 1.54,
+   "teardown": 0.0
+  },
+  "tests/test_task21_1_mcp_route.py": {
+   "setup": 0.06,
+   "call": 3.53,
+   "teardown": 0.0
+  },
+  "tests/test_memory_hook_repair.py": {
+   "setup": 1.26,
+   "call": 2.32,
+   "teardown": 0.0
+  },
+  "tests/test_context_degree.py": {
+   "setup": 1.07,
+   "call": 2.38,
+   "teardown": 0.11
+  },
+  "tests/test_sync_and_extras.py": {
+   "setup": 1.5,
+   "call": 1.92,
+   "teardown": 0.04
+  },
+  "tests/test_reingest.py": {
+   "setup": 0.1,
+   "call": 3.35,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_scope_parity.py": {
+   "setup": 0.41,
+   "call": 2.95,
+   "teardown": 0.06
+  },
+  "tests/test_derive_coverage.py": {
+   "setup": 1.33,
+   "call": 1.99,
+   "teardown": 0.07
+  },
+  "tests/test_sandbox_hardening.py": {
+   "setup": 1.83,
+   "call": 1.53,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_replay_fidelity.py": {
+   "setup": 0.37,
+   "call": 2.97,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_canon.py": {
+   "setup": 2.18,
+   "call": 1.13,
+   "teardown": 0.01
+  },
+  "tests/test_bug216_remedy_r2.py": {
+   "setup": 0.62,
+   "call": 2.67,
+   "teardown": 0.01
+  },
+  "tests/test_watch.py": {
+   "setup": 0.4,
+   "call": 2.88,
+   "teardown": 0.0
+  },
+  "tests/test_bug178_r2.py": {
+   "setup": 1.38,
+   "call": 1.83,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_curation.py": {
+   "setup": 1.51,
+   "call": 1.7,
+   "teardown": 0.0
+  },
+  "tests/test_models_offline.py": {
+   "setup": 0.84,
+   "call": 2.35,
+   "teardown": 0.0
+  },
+  "tests/test_context.py": {
+   "setup": 1.53,
+   "call": 1.41,
+   "teardown": 0.19
+  },
+  "tests/test_scan_prompt_content_fusion.py": {
+   "setup": 0.9,
+   "call": 2.14,
+   "teardown": 0.09
+  },
+  "tests/test_reinforcement_bench.py": {
+   "setup": 0.16,
+   "call": 2.95,
+   "teardown": 0.0
+  },
+  "tests/test_grep_learned_reachable.py": {
+   "setup": 1.89,
+   "call": 0.96,
+   "teardown": 0.18
+  },
+  "tests/test_stm_rationale_capture.py": {
+   "setup": 0.28,
+   "call": 2.62,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_remedy_r4.py": {
+   "setup": 1.34,
+   "call": 1.46,
+   "teardown": 0.07
+  },
+  "tests/test_ingest_markdown.py": {
+   "setup": 1.22,
+   "call": 1.51,
+   "teardown": 0.13
+  },
+  "tests/test_grep_stdin_dialect.py": {
+   "setup": 0.61,
+   "call": 2.18,
+   "teardown": 0.0
+  },
+  "tests/test_derive_surface.py": {
+   "setup": 1.34,
+   "call": 1.4,
+   "teardown": 0.0
+  },
+  "tests/test_grep_flags.py": {
+   "setup": 2.71,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_partition_audit.py": {
+   "setup": 1.5,
+   "call": 1.19,
+   "teardown": 0.0
+  },
+  "tests/test_grep_empty_pipe.py": {
+   "setup": 1.05,
+   "call": 1.58,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_focus.py": {
+   "setup": 1.58,
+   "call": 1.03,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r3.py": {
+   "setup": 0.6,
+   "call": 2.0,
+   "teardown": 0.01
+  },
+  "tests/test_kwic.py": {
+   "setup": 1.4,
+   "call": 1.2,
+   "teardown": 0.0
+  },
+  "tests/test_search_hooks.py": {
+   "setup": 1.34,
+   "call": 1.24,
+   "teardown": 0.0
+  },
+  "tests/test_rerank_warning_routes.py": {
+   "setup": 1.65,
+   "call": 0.81,
+   "teardown": 0.1
+  },
+  "tests/test_bug216_rel_landing.py": {
+   "setup": 1.56,
+   "call": 0.97,
+   "teardown": 0.0
+  },
+  "tests/test_grep_answered_by.py": {
+   "setup": 1.27,
+   "call": 1.25,
+   "teardown": 0.0
+  },
+  "tests/test_learn_toggle_sites.py": {
+   "setup": 1.82,
+   "call": 0.65,
+   "teardown": 0.0
+  },
+  "tests/test_rerank_cost_budget.py": {
+   "setup": 1.26,
+   "call": 1.14,
+   "teardown": 0.0
+  },
+  "tests/test_scan_prompt_dedup.py": {
+   "setup": 1.15,
+   "call": 1.13,
+   "teardown": 0.08
+  },
+  "tests/test_derive_stamp.py": {
+   "setup": 1.82,
+   "call": 0.42,
+   "teardown": 0.1
+  },
+  "tests/test_learn_broker_bounded.py": {
+   "setup": 0.34,
+   "call": 2.0,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_graphify.py": {
+   "setup": 1.03,
+   "call": 1.15,
+   "teardown": 0.14
+  },
+  "tests/test_derive_history.py": {
+   "setup": 0.94,
+   "call": 1.2,
+   "teardown": 0.12
+  },
+  "tests/test_bug216_watch_base.py": {
+   "setup": 0.96,
+   "call": 1.22,
+   "teardown": 0.0
+  },
+  "tests/test_memory_compile.py": {
+   "setup": 1.88,
+   "call": 0.3,
+   "teardown": 0.0
+  },
+  "tests/test_save_state.py": {
+   "setup": 1.12,
+   "call": 1.0,
+   "teardown": 0.0
+  },
+  "tests/test_plan1_remedy.py": {
+   "setup": 1.26,
+   "call": 0.85,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_surfaces.py": {
+   "setup": 1.75,
+   "call": 0.32,
+   "teardown": 0.03
+  },
+  "tests/test_task21_1_agent_usage_report.py": {
+   "setup": 1.76,
+   "call": 0.32,
+   "teardown": 0.0
+  },
+  "tests/test_grep_evidence_verified.py": {
+   "setup": 1.58,
+   "call": 0.35,
+   "teardown": 0.14
+  },
+  "tests/test_bug199_repair_rewrites_index.py": {
+   "setup": 0.7,
+   "call": 1.34,
+   "teardown": 0.0
+  },
+  "tests/test_bug216_ignore_reinclude.py": {
+   "setup": 0.72,
+   "call": 1.31,
+   "teardown": 0.0
+  },
+  "tests/test_learn_queue.py": {
+   "setup": 0.8,
+   "call": 1.2,
+   "teardown": 0.0
+  },
+  "tests/test_bug111_repair_dead_concept_links.py": {
+   "setup": 1.12,
+   "call": 0.73,
+   "teardown": 0.12
+  },
+  "tests/test_bug216_remedy_r5.py": {
+   "setup": 0.15,
+   "call": 1.66,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_adr.py": {
+   "setup": 0.76,
+   "call": 0.97,
+   "teardown": 0.08
+  },
+  "tests/test_grep_output_shape.py": {
+   "setup": 1.14,
+   "call": 0.65,
+   "teardown": 0.0
+  },
+  "tests/test_learn_toggle_hook.py": {
+   "setup": 0.83,
+   "call": 0.96,
+   "teardown": 0.0
+  },
+  "tests/test_stm.py": {
+   "setup": 1.6,
+   "call": 0.16,
+   "teardown": 0.0
+  },
+  "tests/test_content_rank_caches.py": {
+   "setup": 1.47,
+   "call": 0.13,
+   "teardown": 0.07
+  },
+  "tests/test_grep_case_every_path.py": {
+   "setup": 0.99,
+   "call": 0.6,
+   "teardown": 0.06
+  },
+  "tests/test_pyc_invalidation.py": {
+   "setup": 0.51,
+   "call": 1.14,
+   "teardown": 0.0
+  },
+  "tests/test_grep_learned_paths_absolute.py": {
+   "setup": 0.52,
+   "call": 1.11,
+   "teardown": 0.0
+  },
+  "tests/test_lance_drop_failures_loud.py": {
+   "setup": 0.81,
+   "call": 0.81,
+   "teardown": 0.0
+  },
+  "tests/test_memory.py": {
+   "setup": 1.23,
+   "call": 0.38,
+   "teardown": 0.0
+  },
+  "tests/test_snapshot_tier.py": {
+   "setup": 0.53,
+   "call": 1.02,
+   "teardown": 0.0
+  },
+  "tests/test_bug230_repo_scope_gate.py": {
+   "setup": 1.21,
+   "call": 0.3,
+   "teardown": 0.0
+  },
+  "tests/test_memory_index_char_budget.py": {
+   "setup": 0.83,
+   "call": 0.65,
+   "teardown": 0.0
+  },
+  "tests/test_ppr_degree_walk.py": {
+   "setup": 0.6,
+   "call": 0.79,
+   "teardown": 0.07
+  },
+  "tests/test_surface_parity.py": {
+   "setup": 1.3,
+   "call": 0.08,
+   "teardown": 0.08
+  },
+  "tests/test_bug199_r2_remedy.py": {
+   "setup": 0.54,
+   "call": 0.91,
+   "teardown": 0.0
+  },
+  "tests/test_helix.py": {
+   "setup": 0.85,
+   "call": 0.6,
+   "teardown": 0.0
+  },
+  "tests/test_plan12_remedy.py": {
+   "setup": 0.91,
+   "call": 0.54,
+   "teardown": 0.0
+  },
+  "tests/test_rerank_degrades_are_surfaced.py": {
+   "setup": 1.27,
+   "call": 0.14,
+   "teardown": 0.04
+  },
+  "tests/test_fragment_partition_scope.py": {
+   "setup": 0.75,
+   "call": 0.62,
+   "teardown": 0.07
+  },
+  "tests/test_ingest_concurrency.py": {
+   "setup": 0.98,
+   "call": 0.45,
+   "teardown": 0.0
+  },
+  "tests/test_describe.py": {
+   "setup": 0.51,
+   "call": 0.91,
+   "teardown": 0.0
+  },
+  "tests/test_rmxgrep.py": {
+   "setup": 0.71,
+   "call": 0.71,
+   "teardown": 0.0
+  },
+  "tests/test_memory_layout.py": {
+   "setup": 1.41,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_sandbox_redirect.py": {
+   "setup": 0.47,
+   "call": 0.91,
+   "teardown": 0.01
+  },
+  "tests/test_bug117_rebuild_non_concept.py": {
+   "setup": 0.38,
+   "call": 1.0,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_taxonomy.py": {
+   "setup": 0.87,
+   "call": 0.51,
+   "teardown": 0.0
+  },
+  "tests/test_sandbox_child_extensions.py": {
+   "setup": 0.62,
+   "call": 0.74,
+   "teardown": 0.0
+  },
+  "tests/test_flag_crud.py": {
+   "setup": 0.42,
+   "call": 0.93,
+   "teardown": 0.0
+  },
+  "tests/test_grep.py": {
+   "setup": 0.94,
+   "call": 0.31,
+   "teardown": 0.1
+  },
+  "tests/test_bigop_nonblocking.py": {
+   "setup": 0.59,
+   "call": 0.7,
+   "teardown": 0.05
+  },
+  "tests/test_refmatrix.py": {
+   "setup": 0.69,
+   "call": 0.58,
+   "teardown": 0.06
+  },
+  "tests/test_plan7_10_remedy_r4.py": {
+   "setup": 0.7,
+   "call": 0.61,
+   "teardown": 0.0
+  },
+  "tests/test_duckdb_migrate.py": {
+   "setup": 0.32,
+   "call": 0.98,
+   "teardown": 0.0
+  },
+  "tests/test_shared_worker_readoption.py": {
+   "setup": 0.6,
+   "call": 0.68,
+   "teardown": 0.0
+  },
+  "tests/test_telemetry_invocation.py": {
+   "setup": 1.16,
+   "call": 0.0,
+   "teardown": 0.1
+  },
+  "tests/test_bug216_remedy_r3.py": {
+   "setup": 0.13,
+   "call": 1.12,
+   "teardown": 0.0
+  },
+  "tests/test_gmd_lint_requires_version.py": {
+   "setup": 0.48,
+   "call": 0.77,
+   "teardown": 0.0
+  },
+  "tests/test_scan_prompt_expansion.py": {
+   "setup": 1.07,
+   "call": 0.12,
+   "teardown": 0.06
+  },
+  "tests/test_fragment_repair_audit.py": {
+   "setup": 0.95,
+   "call": 0.2,
+   "teardown": 0.09
+  },
+  "tests/test_memory_tags_taxonomy.py": {
+   "setup": 0.62,
+   "call": 0.62,
+   "teardown": 0.0
+  },
+  "tests/test_net.py": {
+   "setup": 0.87,
+   "call": 0.3,
+   "teardown": 0.07
+  },
+  "tests/test_bug110_snapshot_keeps_lock.py": {
+   "setup": 0.28,
+   "call": 0.93,
+   "teardown": 0.0
+  },
+  "tests/test_coref.py": {
+   "setup": 0.94,
+   "call": 0.21,
+   "teardown": 0.06
+  },
+  "tests/test_daemon_shutdown.py": {
+   "setup": 0.41,
+   "call": 0.77,
+   "teardown": 0.0
+  },
+  "tests/test_composite.py": {
+   "setup": 0.94,
+   "call": 0.23,
+   "teardown": 0.0
+  },
+  "tests/test_log.py": {
+   "setup": 0.3,
+   "call": 0.87,
+   "teardown": 0.0
+  },
+  "tests/test_rank_modifiers.py": {
+   "setup": 0.68,
+   "call": 0.42,
+   "teardown": 0.07
+  },
+  "tests/test_bug118_optional_hook_exit.py": {
+   "setup": 0.59,
+   "call": 0.57,
+   "teardown": 0.0
+  },
+  "tests/test_fingerprint.py": {
+   "setup": 1.06,
+   "call": 0.09,
+   "teardown": 0.0
+  },
+  "tests/test_structural_signal.py": {
+   "setup": 0.89,
+   "call": 0.19,
+   "teardown": 0.05
+  },
+  "tests/test_daemon_learn_guard.py": {
+   "setup": 0.3,
+   "call": 0.81,
+   "teardown": 0.01
+  },
+  "tests/test_embedder.py": {
+   "setup": 0.79,
+   "call": 0.28,
+   "teardown": 0.05
+  },
+  "tests/test_context_cost.py": {
+   "setup": 1.11,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_grep_delegate.py": {
+   "setup": 0.28,
+   "call": 0.81,
+   "teardown": 0.0
+  },
+  "tests/test_telemetry_outcomes.py": {
+   "setup": 1.04,
+   "call": 0.0,
+   "teardown": 0.04
+  },
+  "tests/test_embed_phases_r10.py": {
+   "setup": 0.65,
+   "call": 0.42,
+   "teardown": 0.0
+  },
+  "tests/test_memory_index.py": {
+   "setup": 0.9,
+   "call": 0.17,
+   "teardown": 0.0
+  },
+  "tests/test_brief_bsd_r1.py": {
+   "setup": 1.0,
+   "call": 0.05,
+   "teardown": 0.0
+  },
+  "tests/test_cli_time_phases.py": {
+   "setup": 0.38,
+   "call": 0.65,
+   "teardown": 0.0
+  },
+  "tests/test_partitions.py": {
+   "setup": 0.4,
+   "call": 0.63,
+   "teardown": 0.0
+  },
+  "tests/test_telemetry_adoption.py": {
+   "setup": 1.03,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_replica_merge.py": {
+   "setup": 0.26,
+   "call": 0.76,
+   "teardown": 0.0
+  },
+  "tests/test_reinforcement.py": {
+   "setup": 0.84,
+   "call": 0.15,
+   "teardown": 0.0
+  },
+  "tests/test_cctree_web.py": {
+   "setup": 0.98,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_memory_recall_exclude_mtype.py": {
+   "setup": 0.48,
+   "call": 0.48,
+   "teardown": 0.0
+  },
+  "tests/test_inflight_registry.py": {
+   "setup": 0.29,
+   "call": 0.66,
+   "teardown": 0.0
+  },
+  "tests/test_sync_semantic_bulk.py": {
+   "setup": 0.1,
+   "call": 0.85,
+   "teardown": 0.0
+  },
+  "tests/test_body_precedence.py": {
+   "setup": 0.41,
+   "call": 0.48,
+   "teardown": 0.04
+  },
+  "tests/test_ts_extract.py": {
+   "setup": 0.92,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_brief_detectors.py": {
+   "setup": 0.87,
+   "call": 0.04,
+   "teardown": 0.0
+  },
+  "tests/test_context_nl_ref.py": {
+   "setup": 0.73,
+   "call": 0.14,
+   "teardown": 0.04
+  },
+  "tests/test_duckdb_fragments.py": {
+   "setup": 0.42,
+   "call": 0.47,
+   "teardown": 0.02
+  },
+  "tests/test_graph_landing.py": {
+   "setup": 0.41,
+   "call": 0.49,
+   "teardown": 0.0
+  },
+  "tests/test_tf_norm.py": {
+   "setup": 0.85,
+   "call": 0.0,
+   "teardown": 0.05
+  },
+  "tests/test_longmemeval_scoring.py": {
+   "setup": 0.86,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_install_commands_user_level.py": {
+   "setup": 0.79,
+   "call": 0.06,
+   "teardown": 0.0
+  },
+  "tests/test_learn_switch.py": {
+   "setup": 0.85,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_memory_recall_degree.py": {
+   "setup": 0.31,
+   "call": 0.53,
+   "teardown": 0.0
+  },
+  "tests/test_bulk_link_weighted.py": {
+   "setup": 0.67,
+   "call": 0.11,
+   "teardown": 0.05
+  },
+  "tests/test_bug198_brief_compile_scope.py": {
+   "setup": 0.81,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_refine_cli.py": {
+   "setup": 0.81,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_hooks_reproducible.py": {
+   "setup": 0.8,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_read_surface_grammar.py": {
+   "setup": 0.8,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_session_ingest.py": {
+   "setup": 0.8,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_rotation.py": {
+   "setup": 0.33,
+   "call": 0.46,
+   "teardown": 0.0
+  },
+  "tests/test_scan_stopwords.py": {
+   "setup": 0.32,
+   "call": 0.47,
+   "teardown": 0.0
+  },
+  "tests/test_duckdb_parity.py": {
+   "setup": 0.61,
+   "call": 0.16,
+   "teardown": 0.0
+  },
+  "tests/test_embed_gc.py": {
+   "setup": 0.32,
+   "call": 0.45,
+   "teardown": 0.0
+  },
+  "tests/test_longmemeval_prepare.py": {
+   "setup": 0.69,
+   "call": 0.08,
+   "teardown": 0.0
+  },
+  "tests/test_task_cli_session.py": {
+   "setup": 0.21,
+   "call": 0.55,
+   "teardown": 0.0
+  },
+  "tests/test_hub_watchdog.py": {
+   "setup": 0.23,
+   "call": 0.52,
+   "teardown": 0.0
+  },
+  "tests/test_repair_entities.py": {
+   "setup": 0.28,
+   "call": 0.46,
+   "teardown": 0.0
+  },
+  "tests/test_concept_timeline.py": {
+   "setup": 0.38,
+   "call": 0.33,
+   "teardown": 0.02
+  },
+  "tests/test_rrf.py": {
+   "setup": 0.54,
+   "call": 0.16,
+   "teardown": 0.02
+  },
+  "tests/test_untrack.py": {
+   "setup": 0.48,
+   "call": 0.24,
+   "teardown": 0.0
+  },
+  "tests/test_derive_unstamp.py": {
+   "setup": 0.4,
+   "call": 0.3,
+   "teardown": 0.01
+  },
+  "tests/test_bug216_remedy_r6.py": {
+   "setup": 0.32,
+   "call": 0.38,
+   "teardown": 0.0
+  },
+  "tests/test_memory_reclassify.py": {
+   "setup": 0.26,
+   "call": 0.44,
+   "teardown": 0.0
+  },
+  "tests/test_ui_server.py": {
+   "setup": 0.65,
+   "call": 0.05,
+   "teardown": 0.0
+  },
+  "tests/test_sandbox_refusal.py": {
+   "setup": 0.33,
+   "call": 0.36,
+   "teardown": 0.0
+  },
+  "tests/test_grep_dropin_contract.py": {
+   "setup": 0.37,
+   "call": 0.3,
+   "teardown": 0.0
+  },
+  "tests/test_onboard_huballd_curator.py": {
+   "setup": 0.44,
+   "call": 0.23,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_progress.py": {
+   "setup": 0.15,
+   "call": 0.51,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_gmd_root_rel_mirror.py": {
+   "setup": 0.43,
+   "call": 0.22,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r2.py": {
+   "setup": 0.14,
+   "call": 0.49,
+   "teardown": 0.02
+  },
+  "tests/test_purge_path_batched_lance.py": {
+   "setup": 0.15,
+   "call": 0.49,
+   "teardown": 0.0
+  },
+  "tests/test_slot_rotation_drift.py": {
+   "setup": 0.53,
+   "call": 0.1,
+   "teardown": 0.0
+  },
+  "tests/test_stop_deadline.py": {
+   "setup": 0.62,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_bug162_163_worker_qos_hook_path.py": {
+   "setup": 0.12,
+   "call": 0.49,
+   "teardown": 0.0
+  },
+  "tests/test_grep_backstop.py": {
+   "setup": 0.3,
+   "call": 0.31,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_refine.py": {
+   "setup": 0.61,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_rerank_window.py": {
+   "setup": 0.6,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_fragment_repair_audit_r2.py": {
+   "setup": 0.45,
+   "call": 0.1,
+   "teardown": 0.04
+  },
+  "tests/test_store_vectors.py": {
+   "setup": 0.5,
+   "call": 0.04,
+   "teardown": 0.05
+  },
+  "tests/test_grep_argv_order.py": {
+   "setup": 0.55,
+   "call": 0.03,
+   "teardown": 0.0
+  },
+  "tests/test_workflow_ignore.py": {
+   "setup": 0.56,
+   "call": 0.0,
+   "teardown": 0.02
+  },
+  "tests/test_brief_gmd.py": {
+   "setup": 0.45,
+   "call": 0.12,
+   "teardown": 0.0
+  },
+  "tests/test_bsd_r1_telemetry_eval.py": {
+   "setup": 0.57,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_liveness.py": {
+   "setup": 0.36,
+   "call": 0.21,
+   "teardown": 0.0
+  },
+  "tests/test_memory_content_log.py": {
+   "setup": 0.21,
+   "call": 0.36,
+   "teardown": 0.0
+  },
+  "tests/test_dual_write_purge.py": {
+   "setup": 0.51,
+   "call": 0.05,
+   "teardown": 0.0
+  },
+  "tests/test_gmd_body_anchors.py": {
+   "setup": 0.55,
+   "call": 0.01,
+   "teardown": 0.0
+  },
+  "tests/test_mcp_write.py": {
+   "setup": 0.36,
+   "call": 0.2,
+   "teardown": 0.0
+  },
+  "tests/test_phase8_mcp_sched.py": {
+   "setup": 0.55,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_verb_alias.py": {
+   "setup": 0.4,
+   "call": 0.11,
+   "teardown": 0.03
+  },
+  "tests/test_session_launchctl.py": {
+   "setup": 0.53,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_alert_refinement_repeat.py": {
+   "setup": 0.52,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_context_rerank_off_the_writer_lock.py": {
+   "setup": 0.43,
+   "call": 0.07,
+   "teardown": 0.02
+  },
+  "tests/test_sync_gmd_routing.py": {
+   "setup": 0.46,
+   "call": 0.02,
+   "teardown": 0.04
+  },
+  "tests/test_adjacency_cache.py": {
+   "setup": 0.4,
+   "call": 0.07,
+   "teardown": 0.04
+  },
+  "tests/test_brief_surfaces.py": {
+   "setup": 0.45,
+   "call": 0.05,
+   "teardown": 0.0
+  },
+  "tests/test_bus_retention.py": {
+   "setup": 0.47,
+   "call": 0.03,
+   "teardown": 0.0
+  },
+  "tests/test_bug240_ingest_file_arg_mcp.py": {
+   "setup": 0.49,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_memory_bulk_forget.py": {
+   "setup": 0.42,
+   "call": 0.07,
+   "teardown": 0.0
+  },
+  "tests/test_task21_1_live_guard.py": {
+   "setup": 0.49,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_test_lanes.py": {
+   "setup": 0.21,
+   "call": 0.28,
+   "teardown": 0.0
+  },
+  "tests/test_declared_python_floor.py": {
+   "setup": 0.05,
+   "call": 0.43,
+   "teardown": 0.0
+  },
+  "tests/test_hub_plist_devtree.py": {
+   "setup": 0.46,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_longmemeval_ingest.py": {
+   "setup": 0.46,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_memory_only_guard.py": {
+   "setup": 0.41,
+   "call": 0.05,
+   "teardown": 0.0
+  },
+  "tests/test_memory_reembed_on_edit.py": {
+   "setup": 0.2,
+   "call": 0.26,
+   "teardown": 0.0
+  },
+  "tests/test_partition_merge.py": {
+   "setup": 0.4,
+   "call": 0.06,
+   "teardown": 0.0
+  },
+  "tests/test_session_raw_link.py": {
+   "setup": 0.41,
+   "call": 0.05,
+   "teardown": 0.0
+  },
+  "tests/test_embed_partition_routing.py": {
+   "setup": 0.21,
+   "call": 0.24,
+   "teardown": 0.0
+  },
+  "tests/test_grep_no_flag_bundle.py": {
+   "setup": 0.31,
+   "call": 0.14,
+   "teardown": 0.0
+  },
+  "tests/test_vectors.py": {
+   "setup": 0.43,
+   "call": 0.02,
+   "teardown": 0.0
+  },
+  "tests/test_mcp_tools.py": {
+   "setup": 0.36,
+   "call": 0.08,
+   "teardown": 0.0
+  },
+  "tests/test_sandbox_children.py": {
+   "setup": 0.16,
+   "call": 0.28,
+   "teardown": 0.0
+  },
+  "tests/test_bug241_r2_l112.py": {
+   "setup": 0.43,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_agent_env.py": {
+   "setup": 0.4,
+   "call": 0.02,
+   "teardown": 0.0
+  },
+  "tests/test_js_extract.py": {
+   "setup": 0.42,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_sandbox_checkout_guard.py": {
+   "setup": 0.06,
+   "call": 0.35,
+   "teardown": 0.01
+  },
+  "tests/test_stm_tool_detail.py": {
+   "setup": 0.4,
+   "call": 0.02,
+   "teardown": 0.0
+  },
+  "tests/test_bug240_ingest_file_arg.py": {
+   "setup": 0.4,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_hybrid_recall.py": {
+   "setup": 0.4,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_locate.py": {
+   "setup": 0.4,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_same_as_audit.py": {
+   "setup": 0.3,
+   "call": 0.07,
+   "teardown": 0.03
+  },
+  "tests/test_launchctl_label.py": {
+   "setup": 0.39,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_cli_store_rotation.py": {
+   "setup": 0.3,
+   "call": 0.08,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_restart_cli.py": {
+   "setup": 0.15,
+   "call": 0.23,
+   "teardown": 0.0
+  },
+  "tests/test_snapshot_policy.py": {
+   "setup": 0.3,
+   "call": 0.08,
+   "teardown": 0.0
+  },
+  "tests/test_called_by_derive.py": {
+   "setup": 0.15,
+   "call": 0.22,
+   "teardown": 0.0
+  },
+  "tests/test_memory_dedup.py": {
+   "setup": 0.15,
+   "call": 0.22,
+   "teardown": 0.0
+  },
+  "tests/test_runtime_identity_surface.py": {
+   "setup": 0.28,
+   "call": 0.09,
+   "teardown": 0.0
+  },
+  "tests/test_docs_generated.py": {
+   "setup": 0.35,
+   "call": 0.01,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_folded.py": {
+   "setup": 0.36,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_content_rank_def_surface.py": {
+   "setup": 0.15,
+   "call": 0.2,
+   "teardown": 0.0
+  },
+  "tests/test_derive_pass_identity.py": {
+   "setup": 0.35,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_reupsert_staleness.py": {
+   "setup": 0.16,
+   "call": 0.19,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_sql.py": {
+   "setup": 0.15,
+   "call": 0.19,
+   "teardown": 0.0
+  },
+  "tests/test_clear_tracked_stamps.py": {
+   "setup": 0.28,
+   "call": 0.02,
+   "teardown": 0.03
+  },
+  "tests/test_worker_budget_invariant.py": {
+   "setup": 0.33,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_hook_wiring.py": {
+   "setup": 0.32,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_async.py": {
+   "setup": 0.1,
+   "call": 0.22,
+   "teardown": 0.0
+  },
+  "tests/test_daemon_replica_symlink.py": {
+   "setup": 0.31,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_context_exact_rank.py": {
+   "setup": 0.3,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_hooks.py": {
+   "setup": 0.3,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_mcp_channels.py": {
+   "setup": 0.3,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_mcp_parity.py": {
+   "setup": 0.3,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_store_health_probe.py": {
+   "setup": 0.27,
+   "call": 0.0,
+   "teardown": 0.03
+  },
+  "tests/test_ingest_tldr_ignore.py": {
+   "setup": 0.1,
+   "call": 0.18,
+   "teardown": 0.0
+  },
+  "tests/test_stm_composite_injection.py": {
+   "setup": 0.27,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_suite_runs_from_any_checkout.py": {
+   "setup": 0.27,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_context_rerank_warning.py": {
+   "setup": 0.15,
+   "call": 0.11,
+   "teardown": 0.0
+  },
+  "tests/test_launchd_path_deterministic.py": {
+   "setup": 0.26,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_phrase_miner.py": {
+   "setup": 0.26,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_scan_modal_salience.py": {
+   "setup": 0.26,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_hub_watchdog_grace.py": {
+   "setup": 0.25,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_mcp_bus_passthrough.py": {
+   "setup": 0.25,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_task3_7_remedy_r2_meh.py": {
+   "setup": 0.25,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_duckdb_read_routing.py": {
+   "setup": 0.15,
+   "call": 0.09,
+   "teardown": 0.0
+  },
+  "tests/test_ingest_pseudo.py": {
+   "setup": 0.06,
+   "call": 0.16,
+   "teardown": 0.0
+  },
+  "tests/test_memory_recall_score.py": {
+   "setup": 0.21,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_grep_learning_replay.py": {
+   "setup": 0.2,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_rewriter_wrapper_resolution.py": {
+   "setup": 0.2,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_fork_safety_reexec.py": {
+   "setup": 0.19,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_eval_artifact_cited.py": {
+   "setup": 0.17,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_bug241_r3_l114.py": {
+   "setup": 0.16,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_grep_argv_order_e2e.py": {
+   "setup": 0.09,
+   "call": 0.04,
+   "teardown": 0.0
+  },
+  "tests/test_version_single_source.py": {
+   "setup": 0.07,
+   "call": 0.0,
+   "teardown": 0.0
+  },
+  "tests/test_docs_hooks_target.py": {
+   "setup": 0.05,
+   "call": 0.0,
+   "teardown": 0.0
+  }
+ }
+}
