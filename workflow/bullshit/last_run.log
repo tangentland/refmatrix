@@ -126,3 +126,4 @@
 2026-11-15T13:34:28Z commit=222659d verdict=MEH-only findings=4 (0B/0S/4M) report=2026-11-15-1331-spec-31b-r3-222659d.md
 2026-11-15T13:46:00Z commit=e314b19 verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-15-1310-t08-r1-e314b19.md
 2026-11-15T20:09:00Z commit=1121b4e verdict=DIRTY findings=10 (2B/4S/4M) report=2026-11-15-2009-t02-r1-1121b4e.md
+2026-11-15T21:40:00Z commit=a7b30b3 verdict=GO findings=1 (bug-274, fixed pre-merge) report=confirm-lite text (persisted as INDEX row)
