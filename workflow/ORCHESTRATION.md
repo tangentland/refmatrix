@@ -93,7 +93,7 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
    mutation must make a test FAIL, not hang. The table goes in the summary.
 4. **Verify** — the task's files + the family + every test that imports a changed module
    (until 29.4 R6 derives families, list them by grep and say how). **No branch full suite**:
-   the full suite runs once per minor release, on merged `master`; a patch release gates on the
+   the full suite runs once per major release, on merged `master`; a minor release gates on the
    narrower set ([[#release]]); failures compared **by
    E line** with the last release's full-suite log, never by test name. (The user, 2026-11-15:
    "it's taken most of the day to get one patch release out" — 0.83.1 ran four full suites;
@@ -112,14 +112,15 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 1. **Release commit** on `master`: bump `pyproject.toml` and `src/refmatrix/__init__.py` only.
    **Pick the version by scope** (the user, 2026-11-15): a change that alters behaviour on a
    shared path — ingest, the store, the daemon ops, a hook's output, the CLI's contract — or
-   whose changed modules are imported by most of the suite is a **minor** release (`0.N.0`); a
-   fix confined to a few modules with no such change is a **patch** (`0.N.x`). When unsure, it is
-   minor.
+   whose changed modules are imported by most of the suite is a **major** release (`0.N.0`); a
+   fix confined to a few modules with no such change is a **minor** release (`0.N.x`). When unsure,
+   it is major. (The user's terms, L119 and 2026-11-15: "targeted testing for minor releases and
+   full testing for majors".)
 2. **The gate on merged `master`, by release kind:**
-   - **minor (`0.N.0`): the full suite**, compared by E line with the previous release's log.
+   - **major (`0.N.0`): the full suite**, compared by E line with the previous release's log.
      A clone cannot see failures that need the dev tree's live `.refmatrix/`, so a green branch
      run is evidence, not the gate.
-   - **patch (`0.N.x`): the narrower set** — the task's tests, its family, and every test that
+   - **minor (`0.N.x`): the targeted set** — the task's tests, its family, and every test that
      imports a changed module (until 29.4 R6 derives families, listed by grep and named in the
      release commit), run on merged `master`, compared by E line.
    - Never a branch full suite ([[#task]]).
