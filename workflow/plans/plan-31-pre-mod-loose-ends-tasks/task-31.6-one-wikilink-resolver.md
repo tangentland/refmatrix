@@ -15,7 +15,8 @@ metadata:
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t6]]); admitted by the
 > user, Q30 = a, 2026-11-15.
-> Status: drafting (revision 1 after ch-bsd r1, ruling L139; fold table at [[#rev-r1]])
+> Status: drafting (revision 2 after ch-bsd r2, ruling L147; fold tables at [[#rev-r1]] and
+> [[#rev-r2]])
 > Depends on: [[task-31.1-frontmatter-type-refusal]] merged first (both edit
 > `ingest_gmd.py`). Order, fixed by ruling L139 ([[plan-of-plans#rulings]]): 31.3 → 31.4 →
 > 31.1 → **31.6**, never two in flight; it needs 31.3's gate-tree helper and makes its
@@ -334,6 +335,17 @@ Ruling L132 keeps this requirement. {#r5-body}
   record's unowned rows**, two today; bug-185's AC-15 is amended by its owner to read the
   same. A third producer the walk finds is classed the same way and added before RED.
   {#r5-two-entries}
+- **What each entry costs.** A stale key that matches an entry is skipped and counted, not
+  unlinked. R10 states that cost for the `memory_link` entry (a node → memory key). The
+  `link_part_of` entry shields `rel: part-of` keys from one memory to another: 2 root-mirror
+  keys on the copy today (for example `project_concept_provenance_join` →
+  `project_read_surface_rework`; ch-bsd r2, `bsd31b-r2-unowned-cost.log`). If either line is
+  dropped its edge stays and is counted in `rel_unlink_skipped_unowned` until bug-265 is
+  fixed. {#r5-entry-cost}
+- **A removed anchor is not this rule's.** When an edit deletes a heading, its anchor and
+  every edge at either end of it, the inbound ones from other docs included, are removed by
+  31.1 ([[task-31.1-frontmatter-type-refusal#r6-removed]]), before this rule runs. This
+  rule then finds those keys gone. {#r5-removed-anchor}
 - **"Stated", on today's per-row pass 2.** R10 writes "steps 5-7's write set", which are
   step numbers of bug-185's bulk pass. On the pass this task edits, the write set of one doc
   is every key issued by: pass 1's `same_as` link; the `rel:` loop's `store.link` calls and
@@ -441,8 +453,12 @@ manifest, in the same user-gated window as the reingest. {#r10-body}
 
 - **The class.** An `entity_links` row is residue when all of these hold:
   1. no `linkage_evidence` row exists for its `(linkage, concept, entity)`;
-  2. its linkage carries at least one `rel:` evidence row in the store, and is not `part-of`
-     or another linkage the ingest writes without evidence ([[#fact-stale-edges]]);
+  2. its linkage carries at least one `rel:` evidence row in the store, and is not one of
+     the linkages the ingest writes without evidence: `part-of`, `mentions`, `imports`,
+     `titles`, `aliases`, `lead`, `denotes`, `same_as`, `coref`. The set is one constant,
+     `ingest_gmd.NO_EVIDENCE_LINKAGES`; the op imports it, and `rel_residue_census.py`'s
+     hand copy is replaced by an import at R0. On the copy only `part-of` among them carries
+     `rel:` evidence ([[#fact-stale-edges]]);
   3. its target (the `entity_id` side) is a path-less concept whose name is the name of a
      `doc` or `memory` row of the same partition;
   4. its source (the `concept_id` side) is a doc, a memory, or a GMD node (a concept with a
@@ -454,11 +470,22 @@ manifest, in the same user-gated window as the reingest. {#r10-body}
   other 22 evidence-less edges ([[#fact-residue-table]]) have other shapes and other
   possible writers (a hand `memory link` has no evidence row until bug-218); they are left
   alone and printed as counts by shape. {#r10-not-all}
-- **After the reingest, never before.** The reingest gives every `rel:` line that is stated
-  today its evidence row, so condition 1 then means "no line states this edge". Run before
-  it, the cleanup would also take the 62 misbound edges whose evidence [[#r5]] is about to
-  move. The op refuses to apply while the store's `gmd` derive stamp is older than this
-  task's code, and says so. {#r10-order}
+- **After the reingest, never before.** Condition 1 means "no line states this edge" only
+  when every citing doc has been re-processed by code that writes evidence. In a store that
+  an older build ingested, a line that is stated today can have its edge and no evidence
+  row, and the cleanup would take it. (The 62 misbound edges of this store are not that
+  case: they carry evidence, so condition 1 excludes them with or without the reingest; the
+  first draft's reason was wrong.) {#r10-order}
+- **The proof that the reingest ran is a reingest marker, not the `gmd` stamp** (ch-bsd r2
+  M3). `stamp_derive("gmd")` is written at the end of every `ingest_gmd_paths` call, a
+  one-file watcher sync included, so the first sync after a deploy would satisfy a gate on
+  it. Instead: `rmx reingest --force`, when every one of its steps succeeded, appends one
+  row to `derive_history` with `pass_name` `reingest-force`, the `gmd` pass's code hash, and
+  in `counts` the number of GMD docs it re-processed and the number it skipped as unchanged
+  (0 for a forced run). The op applies only when the partition's latest `reingest-force`
+  row carries the running code's `gmd` hash and a skipped count of 0; otherwise it refuses
+  and names `rmx reingest --force --no-sessions`. The dry run prints the marker it found.
+  Nothing else writes that pass name. {#r10-marker}
 - **The op.** `rmx repair-index --rel-residue` (a verb, a daemon op and the CLI flag, beside
   `--entities` and `--fragments`). With `--dry-run` it prints the count of the class, the
   count that has the right twin, the `reinforces` count, and the other evidence-less edges
@@ -588,8 +615,10 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
   logs an `unlink` for each, and leaves every other edge; the manifest holds two records by
   name and a `commit`; with the unlink made to fail after the write, the manifest has the
   records and no `commit` and both edges are still there; with `.refmatrix/removal`
-  unwritable, nothing is unlinked; a rebuild from the log agrees; with a stale `gmd` derive
-  stamp the apply refuses. **RED** at base (the flag does not exist). {#ac-12}
+  unwritable, nothing is unlinked; a rebuild from the log agrees. The marker: with no
+  `reingest-force` row the apply refuses; after a one-file sync (which refreshes the `gmd`
+  stamp) it still refuses; after `rmx reingest --force` on the throwaway store it applies; a
+  marker row whose code hash is not the running code's refuses. **RED** at base (the flag does not exist). {#ac-12}
 - **AC-13: the dev store's residue.** In the reingest window, after the reingest:
   the dry run's class count equals `rel_residue_census.py`'s on a copy taken just before
   (114 on the copy of 2026-11-15 02:34, 18 of them `reinforces`; the count is taken again
@@ -630,7 +659,9 @@ New tests live in `tests/test_bug251_one_resolver.py` unless said otherwise.
 | 16 | the cleanup drops condition 3 (any evidence-less edge on a `rel:` verb) | AC-12 (the other shapes are unlinked) |
 | 17 | the cleanup counts `part-of` as a `rel:` verb | AC-12 (the containment edge is unlinked) |
 | 18 | the cleanup unlinks before it writes the manifest | AC-12's failing-unlink leg |
-| 19 | the cleanup ignores the derive stamp | AC-12's last leg |
+| 19 | the cleanup accepts the `gmd` derive stamp as proof of the reingest | AC-12's marker leg (it applies after a one-file sync) |
+| 19a | `rmx reingest` without `--force`, or with a failed step, writes the marker | AC-12's marker leg, with those two runs added |
+| 19b | the op's excluded set differs from `NO_EVIDENCE_LINKAGES` (drops `part-of`) | AC-12 (the containment edge is unlinked) |
 | 20 | drop the `# gate-file:` line for `resolve.py` | every test that builds a gate tree (the lint's import fails) |
 {#mutations-table}
 
@@ -664,6 +695,7 @@ This repo: `tools/gmd/lint.py` and `tools/gmd/resolve.py` (re-vendored);
 `src/refmatrix/gmd_resolve.py` (the copy); `src/refmatrix/ingest_gmd.py` (R4, R5);
 `src/refmatrix/store.py` or, after 29.5, `store_links.py` (one read beside
 `clear_rel_evidence`); `scripts/check-gmd-parity.py` (R8); `scripts/lint-gmd.sh` (one `# gate-file:` line);
+the `reingest-force` marker row in `rmx reingest` (R10); `ingest_gmd.NO_EVIDENCE_LINKAGES`;
 the `repair-index --rel-residue` verb, daemon op and CLI flag (R10; `verbs.py`, `daemon.py`,
 the `cli` module that holds `repair_index`, and the removal module for the selection);
 `tests/test_bug179_anchor_parity.py` (the blob test's parametrize); each in-reach producer
@@ -748,6 +780,16 @@ The review read `a4d245a`; R5 had already been rewritten as bug-185 R10's rule a
 | L136 (3) | the residue cleanup, with a class, a dry run, a manifest and two ACs | [[#r10]], [[#ac-12]], [[#ac-13]], mutations 16-19 |
 {#rev-r1-table}
 
+## Revision 2: fold of ch-bsd r2 (ruling L147) {#rev-r2}
+
+| Finding | Fold | Where |
+|---|---|---|
+| M1 the second unowned entry's cost is not stated | 2 memory-to-memory `rel: part-of` keys are shielded today, until bug-265 | [[#r5-entry-cost]] |
+| M2 R10's class does not name the linkages it excludes | the nine are named, as one constant the op and the census script import | [[#r10-class]], mutation 19b |
+| M3 the `gmd` stamp does not prove the reingest ran | a `reingest-force` row in `derive_history`, written only by a forced reingest whose steps all succeeded; the wrong reason for the order is corrected | [[#r10-order]], [[#r10-marker]], [[#ac-12]], mutations 19, 19a |
+| S1 (31.1's) a removed anchor | cross-reference: 31.1 removes it with its edges before this task's unlink rule runs | [[#r5-removed-anchor]] |
+{#rev-r2-table}
+
 ## Decisions {#decisions}
 
 Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
@@ -761,6 +803,7 @@ cites them and records none of its own. {#decisions-rule}
   form on both sides. {#d12}
 - **Ruling L136:** (1) this task builds bug-185 R10's rule ([[#r5-whose]]); (3) it owns the
   cleanup of the misbinding's residue ([[#r10]]). {#l136}
+- **Ruling L147:** ch-bsd r2's three findings here fold ([[#rev-r2]]). {#l147}
 - **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); the linter order ([[#r7]]). {#l139}
 - **Ruling L132:** [[#r5]] stays; the recount AC is all three classes at 0
   ([[#ac-9]]); 31.1 lands before this task; the re-bind reingest of each store is its own

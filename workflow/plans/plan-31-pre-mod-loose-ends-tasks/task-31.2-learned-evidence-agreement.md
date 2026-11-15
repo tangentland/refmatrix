@@ -14,7 +14,8 @@ metadata:
 # Task 31.2: learned evidence agreement {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t2]])
-> Status: drafting (revision 1 after ch-bsd r1, ruling L139; fold table at [[#rev-r1]])
+> Status: drafting (revision 2 after ch-bsd r2, ruling L147; fold tables at [[#rev-r1]] and
+> [[#rev-r2]])
 > Depends on: 29.5 released ([[task-29.5-split-giant-modules]]): the purge code is then in
 > `store_removal.py` and the replay in `store_replay.py`. Written against that layout
 > ([[#layout]]).
@@ -279,7 +280,7 @@ written for it. The kept rows are not re-verified: the read path judges them
 | `sync.py:281`, non-GMD edit | `purge_path(abs, keep_learned=True)`; the `upsert_entity` that follows finds the kept row (it only ratchets `protected` upward) |
 | `sync.py:253`, split | missing → [[#r4]]; exists with an unsupported extension → `keep_learned=True` |
 | `sync.py:271` and `ingest.py:1509`, the GMD dispatch's purge | **never `purge_path`**; `Store.purge_legacy_relpath_doc(rel, abs)` instead ([[#r3-gmd]]) |
-| `rmx sync --invalidate P` (`cli.py:9014`, and whatever route R0 finds for a live daemon) | an existing path: `keep_learned=True`; a missing path: [[#r4]] |
+| `rmx sync --invalidate P` (`cli.py:9014`, and whatever route R0 finds for a live daemon) | an existing **GMD** file: the GMD dispatch, never a whole-path purge ([[#r3-invalidate-gmd]]); any other existing path: `keep_learned=True`; a missing path: [[#r4]] |
 {#r3-sites}
 
 These are 22.6 R4's rules and its "two branches are not the same call"
@@ -323,6 +324,15 @@ changing this one. {#r3-source}
   requirement rewrites what `-i` does, so it also routes it: through the daemon's sync op
   family when a daemon answers, in-process otherwise, never the replica. T4's adopt list
   drops bug-203. {#r3-invalidate}
+- **`-i` on an existing GMD file is a forced re-derive, not a purge** (ch-bsd r2 M4).
+  `purge_path(abs, keep_learned=True)` on a GMD file would purge its doc-id row and every
+  anchor with their inbound edges from unchanged citers: bug-264's shape, which 31.1 removed
+  from the sync and ingest dispatch, and which AC-14's writer routing would otherwise make
+  reachable on the daemon route. So for an existing GMD file `-i` takes the GMD dispatch:
+  `purge_legacy_relpath_doc` (31.1's narrow purge, with this task's learned keep), then the
+  GMD pass with the doc's content-hash and mtime gates bypassed, including 31.1's
+  removed-anchor rule ([[task-31.1-frontmatter-type-refusal#r6-removed]]). The doc-id row,
+  the anchors the text still has, and their inbound edges keep their ids. {#r3-invalidate-gmd}
 
 ### R4: a deleted or ignored file's learned rows leave through a manifest {#r4}
 
@@ -650,8 +660,13 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 - **AC-14: `rmx sync -i` reaches the writer (bug-203; ruling L136 (2)).** With a throwaway
   daemon up,
   `rmx sync -i <existing file>` keeps the file's learned rows and re-derives its ingest rows
-  on the writer store, and `-i <missing file>` writes the [[#r4]] manifest. **RED** at base
-  (E line: the purge goes to the replica, or the learned rows are gone). {#ac-14}
+  on the writer store, and `-i <missing file>` writes the [[#r4]] manifest. **A GMD leg**
+  (ch-bsd r2 M4): docs `a` and `b` as in 31.1's AC-11, `a` unchanged on disk; `rmx sync -i a`
+  through the daemon and in-process: `adoc` and `adoc#sec` keep their ids, `b`'s edges to
+  `adoc#sec` are live, `a`'s content-hash stamp is rewritten (the pass ran in spite of the
+  unchanged file), and a learned row on `a`'s relpath row is kept. **RED** at base
+  (E line: the purge goes to the replica, or the learned rows are gone; for the GMD leg, the
+  anchor has a new id and `b`'s edges are 0). {#ac-14}
 - **AC-15: a manifest can be re-applied** (ch-bsd r1 M7, condition 1). A test reads the
   cleanup manifest AC-3 wrote and the one AC-7 wrote and re-applies each with store methods
   that exist today (`upsert_entity`, `link`, `add_evidence`, `set_entity_flag`): the
@@ -694,6 +709,8 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 | 19 | the delete of the non-resolvable rows runs before the manifest write | AC-7's failing-delete leg |
 | 20 | the learned keep runs before the memory-anchor keep | AC-13's unreadable-metadata leg (a manifest is written) |
 | 21 | `-i` calls `purge_path` on whatever store it is handed | AC-14 |
+| 33 | `-i` on an existing GMD file calls `purge_path(…, keep_learned=True)` | AC-14's GMD leg (new anchor id; `b`'s edges 0) |
+| 34 | `-i` on a GMD file drops the relpath row and leaves the hash gate on | AC-14's GMD leg (the stamp is not rewritten; nothing was re-derived) |
 | 22 | `_apply_event_body` ignores `rel_evidence_clear` | AC-12 (i) |
 | 23 | `_apply_event_body` ignores `pending_refs_clear` | AC-12 (ii) |
 | 24 | `purge_legacy_relpath_doc` deletes the `tracked_files` row | AC-2 (an `untrack` event appears) |
@@ -802,6 +819,13 @@ The review read `a4d245a`; D14, the manifest form and bug-260's leg had already 
 | L134 (2), (4), (5) | folded at `da184bd` | [[#scope-22-6-body]], [[#r7-why]], [[#r4-vectors]] |
 {#rev-r1-table}
 
+## Revision 2: fold of ch-bsd r2 (ruling L147) {#rev-r2}
+
+| Finding | Fold | Where |
+|---|---|---|
+| M4 `rmx sync -i` on an existing GMD file is still bug-264's shape | it takes the GMD dispatch (31.1's narrow purge with this task's learned keep, then a forced re-derive with the removed-anchor rule); a GMD leg on AC-14; two mutations | [[#r3-sites]], [[#r3-invalidate-gmd]], [[#ac-14]], mutations 33, 34 |
+{#rev-r2-table}
+
 ## Decisions {#decisions}
 
 Decisions live in [[plan-of-plans#decisions]] and [[plan-of-plans#rulings]]; this section
@@ -819,6 +843,7 @@ cites them and records none of its own. {#decisions-rule}
   [[#r7-line-table]]. {#q38}
 - **Ruling L136 (2):** Q39 is withdrawn. This task routes `rmx sync -i` to the writer
   (bug-203), unconditionally ([[#r3-invalidate]], [[#ac-14]], mutation 21). {#l136}
+- **Ruling L147:** ch-bsd r2's finding here folds ([[#rev-r2]]). {#l147}
 - **Ruling L144:** bug-264 is fixed in 31.1; this task keeps the learned-row halves of R3;
   bug-262 is fixed here; bug-263 is post-mod. {#l144}
 - **Ruling L139:** all of ch-bsd r1 folds ([[#rev-r1]]); "no restore command" is accepted on
