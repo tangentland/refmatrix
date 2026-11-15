@@ -162,7 +162,7 @@ Two legs have different contracts:
      counted, never silent.
    - **Re-measure (r4 #n4).** R3 re-runs over the `bre_meta_literal: true` rows when they reach
      M ≥ 30, or on 2026-12-31, whichever comes first; the bands above decide again, unchanged.
-     The trigger is a queue line in [[plan-of-plans#queue-bug174-remeasure]] (and the plan-25 row's
+     The trigger is a queue line in [[pop-finished#queue-bug174-remeasure]] (and the plan-25 row's
      status text), so it is read where the queue is read. The count has a reader: `rmx telemetry
      --agent-usage` (`telemetry.agent_usage_report`, `telemetry.py:1799`, which already prints
      grep rows per `answered_by` from `query.log`) gains one line, `grep bre_meta_literal: N
@@ -275,7 +275,7 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 | finding | change | anchor |
 |---|---|---|
 | N3 join "by pid and ts", but `query.log` grep rows have no `pid` | key = `ts` second + pattern in argv + `root` from `cwd` + path-less argv; ambiguous matches excluded and counted as a third class; measured 20 unique / 15 ambiguous / 0 unmatched on the current 35 path-less rows | [[#r3]], [[#files]] |
-| N4 re-measure trigger not an event, count has no reader | M ≥ 30 or 2026-12-31, queued in [[plan-of-plans#queue-bug174-remeasure]] and the plan-25 row; `rmx telemetry --agent-usage` prints the `bre_meta_literal` count (`telemetry.py:1799`); AC-4 asserts the line; f4 updated | [[#r4]], AC-4, [[#files]], f4 |
+| N4 re-measure trigger not an event, count has no reader | M ≥ 30 or 2026-12-31, queued in [[pop-finished#queue-bug174-remeasure]] and the plan-25 row; `rmx telemetry --agent-usage` prints the `bre_meta_literal` count (`telemetry.py:1799`); AC-4 asserts the line; f4 updated | [[#r4]], AC-4, [[#files]], f4 |
 
 ## Approval (2026-11-14, d9co) {#approval-2026-11-14}
 

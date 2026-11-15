@@ -138,7 +138,7 @@ handle and no consumer changes. {#core-body}
 
 Recorded in round 12 from [[bsd-plan23-3-5-freshness-62a2465#order]]. It extends
 [[task-23.1-queue-and-drain#merge-order]] with the bulk GMD task and the two tasks the user put in
-scope ([[plan-of-plans#goal-2026-11-09-scope]]):
+scope ([[pop-finished#goal-2026-11-09-scope]]):
 
 1. **3.7** (`task-3.7-verb-it-backlog`). Merged `91ddbe0`.
 2. **bug-178** ([[task-bug178-bulk-write-helper]], `backend.bulk_write`). Merged `76ec748`.
@@ -467,7 +467,7 @@ round-10 table above is unchanged history.
 | b-n1 (the `memory_compile` apply's bounding deferred to a revision that did not exist) | [[#consumers]] (the 26.6 row names its owner), [[task-23.5-read-path-and-holder-bounds#r9-compile-apply]], [[task-23.5-read-path-and-holder-bounds#ac-9]] |
 | s-n1, s-n2, m2, m4, m5, m6, m7 | [[task-23.1-queue-and-drain#rev-round-12]]; [[#consumers]] (`hook_writes` row) |
 | m1 | [[task-23.2-lock-hold-fixture#rev-round-3]] |
-| m3 | [[plan-of-plans#goal-2026-11-09]] (bug-182 named in item 6) |
+| m3 | [[pop-finished#goal-2026-11-09]] (bug-182 named in item 6) |
 
 rel: derives-from -> [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]
 

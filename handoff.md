@@ -64,34 +64,19 @@ perf-bitmap. green-216 may miss its own run ending — tail the log
 
 ## Next {#next}
 
-**Pre-mod freeze in force** ([[plan-of-plans#freeze]], user 2026-11-15): only 0.83.1, plan-29,
-plan-30 (+ 30.6) and plan-31 before the mod; anything else goes to the post-mod list unless it
-breaks something live. The procedure is [[orchestration]].
-
-1. Collect green-216 (or re-dispatch from the briefs file); check its L114 mutation table.
-2. **Ship 0.83.1:** merge `--no-ff` → bump `pyproject.toml` + `__init__.py` → full suite on master
-   (log, E lines vs `release-0.83.0-full.log`) → deploy (ff, `daemon restart --relaunch`,
-   `version -v`, `relaunch-fleet`, hub stop + ONE kickstart if stale, `install-hooks --check`) →
-   back up `catalog.read.duckdb` + `facts.log` + `active` → `rmx reingest --force --no-sessions` →
-   `scripts/check-rel-landing.py` until `claude` / `project-profile` unresolved = 0.
-3. `.venv-eval` duckdb → 1.5.3 (L106).
-4. **Plan-29:** 29.1 → 29.4 → 29.5 (ADR 0006 first; store event with D23 = (a)) → 29.2 ∥ 29.3 → 29.6.
-5. **Plan-30** after plan-29.
-6. Unowned: bug-107 (28,164 orphaned learned evidence rows, 26%), bug-244, bug-247, bug-248; a
-   `legs_ms` task, a cross-partition `rel:` probe, linked-store usage (L106).
+**The queue lives in the POP only:** [[plan-of-plans#queue]] (the user, 2026-11-15: "the source of
+truth must be the POP"). This file does not repeat it. Open questions and decisions:
+[[plan-of-plans#ledgers]]. Procedure: [[orchestration]].
 
 ## Open {#open}
 
-- **Questions:** none open (next id Q23). No plan decision open.
-- **Not pushed:** dev master ~380 commits ahead of `origin/main` (the user pushes).
-- **Throwaway clones on `/Volumes/littlebig`:** `refmatrix-bug212-mut4`, `bsd216-r3..r6`,
-  `bsd230-r1`, `refmatrix-bsd241-r1`, `refmatrix-bsd30-r1`, `refmatrix-plan30`,
-  `refmatrix-spec-29-7`, plan-29 spec clones; remove when no longer wanted (look first).
-- **curator queue:** 46 files pending a gmd-curator pass.
+- See [[plan-of-plans#questions]] and [[plan-of-plans#decisions]].
+- **Not pushed:** dev master is far ahead of `origin/main` (the user pushes).
+- **Throwaway clones on `/Volumes/littlebig`:** many `refmatrix-*` clones from 2026-11-13..15;
+  remove when no longer wanted (look first).
 
 ## Resume {#resume}
 
-1. `/recall-state`; read this file, `workflow/agents/inflight-2026-11-15.md`, memory
-   `project_0831_ship_plan30_state`.
-2. `ListAgents`; collect green-216 or re-dispatch.
+1. `/recall-state`; read [[plan-of-plans#queue]] (the state) and this file.
+2. `ListAgents`; collect agents in flight or re-dispatch from `workflow/agents/`.
 3. Never run the dev-venv `rmx` against the live store with a bumped version.

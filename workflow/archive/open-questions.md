@@ -4,11 +4,18 @@ id: open-questions
 title: "Open questions for the user — the running ledger"
 tags: [workflow, questions, decisions, user]
 metadata:
+  status: archived
   node_type: ledger
   created: 2026-11-13
 ---
 
 # Open questions for the user {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 Every question the lead asks the user gets an id here before it is asked: `Q<n>`, a simple counter
 that starts at 1 in each session and increments by one, never reused within the session (user,

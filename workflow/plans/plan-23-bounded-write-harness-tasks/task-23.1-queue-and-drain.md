@@ -55,7 +55,7 @@ its mutation synced to 23.5 R4's owner order (nm23-r10-5); see [[#rev-round-10]]
 > inside `batch_transaction`, where a bare commit splits the batch). Merge order:
 > [[#merge-order]].
 > Blocks: 23.3; 16.6's Wave 1 slice; 22.2 (and so 22.5, 22.3); 17.1; 19.2; **bug-177's close
-> (R11, AC-21; pulled into the pre-plan-24 queue by [[plan-of-plans#goal-2026-11-09]])**
+> (R11, AC-21; pulled into the pre-plan-24 queue by [[pop-finished#goal-2026-11-09]])**
 > Not gated on 23.4: the `bind` seam serves either verdict (decision-log #s-2).
 > bug-113 is FIXED (0.79.0, merged `74f8f98`), so `replica_merge` runs live through
 > `_op_replica_merge`; R8 / AC-13 are UN-RETIRED narrowly in round 11 (s2): `merge_slots` carries
@@ -1044,7 +1044,7 @@ Where an earlier spec says "`bind(batch)`", it means `bind(partition_name)` ente
 
 ### R11 The hook-write front-end: `hook_writes` closes bug-177 (round 11, b1) {#r11}
 
-**Why.** [[plan-of-plans#goal-2026-11-09]] pulls 23.1 forward on the premise that it closes
+**Why.** [[pop-finished#goal-2026-11-09]] pulls 23.1 forward on the premise that it closes
 bug-177, and the registry row says "hook writes enqueue and return"; R1-R10 had no requirement
 that does it (the only registrant was `learn`). The defect, corrected by
 [[bsd-plan23-1-2-freshness-9bcf464#p-not-dropped]]: the digest write is NOT lost (the dispatcher
@@ -1973,7 +1973,7 @@ rel: derives-from -> [[task-23.5-read-path-and-holder-bounds#r4]] {sync: "owner 
 ## Revision round 11 (2026-11-09) {#rev-round-11}
 
 Source: [[bsd-plan23-1-2-freshness-9bcf464]], the pre-implementation freshness review at
-`9bcf464` (DIRTY 2B/3S/6M), run because [[plan-of-plans#goal-2026-11-09]] pulled 23.1 forward
+`9bcf464` (DIRTY 2B/3S/6M), run because [[pop-finished#goal-2026-11-09]] pulled 23.1 forward
 to close bug-177. Code facts re-read at `9901589` (`src/` identical to `9bcf464`) and, read-only,
 in the 3.7 clone (`d093f65`) and the bug-178 clone (`d13c4d7`). No user decision remained: the
 report's decisions are adopted as the user would decide them (the registry already said "enqueue
@@ -2004,7 +2004,7 @@ rel: derives-from -> [[bsd-plan23-1-2-freshness-9bcf464#m6]]
 rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: depends-on -> [[task-26.2-bridge-move-safety#impl-notes-r6]]
 rel: related-to -> [[task-bug178-bulk-write-helper]]
-rel: implements -> [[plan-of-plans#goal-2026-11-09]]
+rel: implements -> [[pop-finished#goal-2026-11-09]]
 
 ## Revision round 12 (2026-11-09) {#rev-round-12}
 
@@ -2022,7 +2022,7 @@ finding is folded, so the status is BUILD-READY. The round-11 table above is unc
 | s-n2 (R8.2 forbade the one place the queue tables must be declared) | [[#facts]] round 12, [[#r8]] 1 (`writer_side`) and 2 (DDL in `init_catalog`; the false premise struck), [[#ac-13]] (A-writer and B-writer runs; two mutations), [[#files]] (`duckdb_catalog.py`) | `init_catalog` is both the Store schema and the merge target's; only `_op_replica_merge` knows the writer, so it says |
 | m1 (23.2's census and error text) | [[task-23.2-lock-hold-fixture#rev-round-3]] | 23.2's finding |
 | m2 (`_install_writer_store(st, None)` and the link refresh) | [[#facts]] round 12, [[#r1-6-proposed]] item 2 (`None` skips the refresh; decided), [[#ac-20]] (spy case; mutation), [[#files]] | at both `None` sites the writer is on the legacy file, so a refresh would point readers by a marker the writer is not on; the end-of-init refresh already covers both |
-| m3 (bug-182 not in the goal queue) | [[plan-of-plans#goal-2026-11-09]] (item 6 names bug-182 as part of bug-177's original scope) | the row's claim is made true, not dropped: bug-182 is the half of bug-177's scope R11 does not cover ([[#non-goals]]) |
+| m3 (bug-182 not in the goal queue) | [[pop-finished#goal-2026-11-09]] (item 6 names bug-182 as part of bug-177's original scope) | the row's claim is made true, not dropped: bug-182 is the half of bug-177's scope R11 does not cover ([[#non-goals]]) |
 | m4 (the queued apply never requests a snapshot) | [[#facts]] round 12, [[#r6]] 1 (one call in `tick_registry.run()` after a committing turn), [[#r11]] 3, [[#ac-21]] step 3 (replica read), mutation | one place, so learn and `hook_writes` both get it and no future registrant can forget it |
 | m5 (the queued path's budget not derived) | [[#facts]] round 12, [[#r11]] 4 (`deadline=`; `ENQUEUE_RESERVE_S`, `MIN_DIAL_S`; one probe), [[#ac-21]] step 2 (`cli.log` `latency_ms < 5000`, wall < 5 s, one probe counted), mutations | the deadline `focus_summarize` already computes, moved before the probe, is the budget; `_write_or_local`'s probe is the only one |
 | m6 (producer details) | [[#facts]] round 12, [[#r11]] 2 (ONE resolver: `discovery.resolve_partition`), 4 (`local=None` for the hook, the existing closure for save-state; `QUEUED_WRITE_MSG` beside the classifier, not in it), 5 (save-state relabelled user-run and queued on its own grounds; `memory add` sync because its caller waits for an id), [[#r10-contract]], [[#ac-21]] steps 2 and 6, [[#files]] | `store_name` is the resolver's last fallback and splits the key on a marked store; `resolve_partition` is 3.7's one lock-free resolver |
