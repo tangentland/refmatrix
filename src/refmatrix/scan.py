@@ -1042,9 +1042,17 @@ def scan_prompt(
 
     if fmt == "json":
         out = []
-        blist = ([cbundle] if cbundle is not None else []) + [
-            build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
-                          degree=degree) for name in matches]
+        _named = {c.lower() for c in cands}
+        _first = [n for n in matches if n.lower() in _named
+                  and ("/" in n or _token_shape_score(n) > 0.0)]
+        _rest = [n for n in matches if n not in _first]
+
+        def _bc(name):
+            return build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                                 degree=degree)
+        # Same section order as the text path (named identifiers, content, the rest).
+        blist = ([_bc(n) for n in _first] + ([cbundle] if cbundle is not None else [])
+                 + [_bc(n) for n in _rest])
         for b in blist:
             _retrieve(b)
             out.append(json.loads(render_json(b)))
@@ -1061,55 +1069,98 @@ def scan_prompt(
     used = 0
     # Rows already rendered by an earlier section (keyed via `_render_key`).
     # The content bundle and the per-symbol bundles pull from the same graph,
-    # so without this the symbol bundle for the prompt's main term re-prints
-    # the exact memories the content section just showed — measured on a live
-    # prompt, ~30-40% of the spent budget was duplicate rows.
+    # so without this a later bundle re-prints the exact memories an earlier
+    # section just showed — measured on a live prompt, ~30-40% of the spent
+    # budget was duplicate rows.
     shown: set[str] = set()
-    if cbundle is not None:
-        header = (f"# refmatrix content matches for prompt: "
-                  f"{', '.join(cands[:8])}")
-        _retrieve(cbundle)
-        rendered, ritems = render_text_spans(cbundle)
-        parts.append(header)
-        parts.append("")
-        parts.append(rendered)
-        marks.append((len(parts) - 1, ritems))
-        used += (len(header) + len(rendered)) // 4
-        for entries in cbundle.groups.values():
-            for e in entries:
-                shown.add(_render_key(e.entity.name))
-    if not matches:
-        return _finish()
-    parts.append("")
-    parts.append(
-        f"# refmatrix context for prompt-mentioned symbols: {', '.join(matches)}")
-    used += len(parts[-1]) // 4
-    for name in matches:
-        b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
-                          degree=degree)
-        if b.anchor is None or not b.groups:
-            continue
-        _retrieve(b)
+
+    # Section order (the user, 2026-11-15: "fix the scan-prompt ordering right now").
+    # `_finish` fits WHOLE blocks in order and drops the tail, so the order is the ranking.
+    # Measured in session 070141d0: nearly every output ended `[+N block(s) omitted]`, having
+    # kept the keyword content bundle (built from every prompt word) and the bare header of
+    # the symbol section, and dropped the bundles for the identifiers the prompt named. Now:
+    #   1. bundles for identifier-shaped tokens the prompt NAMES (`widget_registry`, `bug-241`,
+    #      `task-29.5`, a path) — the author cited them deliberately (`_token_shape_score`);
+    #   2. the content-ranked bundle over the prompt's terms;
+    #   3. the other matched concepts: plain words and PPR expansions;
+    #   4. the composite (appended by `_finish`).
+    # A section's header is part of its block, so the cap never keeps a header without its
+    # body.
+    named = {c.lower() for c in cands}
+
+    def _is_named_identifier(name: str) -> bool:
+        return name.lower() in named and ("/" in name or _token_shape_score(name) > 0.0)
+
+    first = [n for n in matches if _is_named_identifier(n)]
+    rest = [n for n in matches if not _is_named_identifier(n)]
+
+    def _drop_shown(b) -> bool:
+        """Remove rows an earlier section showed; False when nothing is left."""
         if shown:
             for ln in list(b.groups):
-                kept = [e for e in b.groups[ln]
-                        if _render_key(e.entity.name) not in shown]
+                kept = [e for e in b.groups[ln] if _render_key(e.entity.name) not in shown]
                 if kept:
                     b.groups[ln] = kept
                 else:
                     del b.groups[ln]
-            if not b.groups:
-                continue
-        rendered, ritems = render_text_spans(b)
-        cost = len(rendered) // 4
-        if used + cost > max_tokens:
-            parts.append("# [truncated by --max-tokens]")
-            break
-        parts.append("")
-        parts.append(rendered)
-        marks.append((len(parts) - 1, ritems))
-        used += cost
+        return bool(b.groups)
+
+    def _mark_shown(b) -> None:
         for entries in b.groups.values():
             for e in entries:
                 shown.add(_render_key(e.entity.name))
+
+    def _add_section(header: str, rendered: str, ritems: "list[dict]") -> None:
+        """One block: optional header + body. Item spans shift by the prefix's bytes."""
+        prefix = (header + "\n\n") if header else ""
+        if parts:
+            prefix = "\n" + prefix          # one blank line between sections
+        pb = len(prefix.encode("utf-8"))
+        items = []
+        for it in ritems:
+            it = dict(it)
+            it["offset_bytes"] += pb
+            if it.get("body_offset_bytes") is not None:
+                it["body_offset_bytes"] += pb
+            items.append(it)
+        parts.append(prefix + rendered)
+        marks.append((len(parts) - 1, items))
+
+    def _symbol_sections(names: "list[str]") -> bool:
+        """Render `names`' bundles under one header; False when `max_tokens` ran out."""
+        nonlocal used
+        if not names:
+            return True
+        header = f"# refmatrix context for prompt-mentioned symbols: {', '.join(names)}"
+        for name in names:
+            b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                              degree=degree)
+            if b.anchor is None or not b.groups:
+                continue
+            _retrieve(b)
+            if not _drop_shown(b):
+                continue
+            rendered, ritems = render_text_spans(b)
+            cost = len(rendered) // 4 + (len(header) // 4 if header else 0)
+            if used + cost > max_tokens:
+                parts.append("# [truncated by --max-tokens]")
+                return False
+            _add_section(header, rendered, ritems)
+            header = ""                       # the header rides on the tier's first bundle
+            used += cost
+            _mark_shown(b)
+        return True
+
+    if not _symbol_sections(first):
+        return _finish()
+    if cbundle is not None:
+        terms = [c for c in cands if c.lower() not in _PROMPT_STOPWORDS]
+        header = f"# refmatrix content matches for prompt: {', '.join((terms or cands)[:8])}"
+        _retrieve(cbundle)
+        if _drop_shown(cbundle):
+            rendered, ritems = render_text_spans(cbundle)
+            _add_section(header, rendered, ritems)
+            used += (len(header) + len(rendered)) // 4
+            _mark_shown(cbundle)
+    _symbol_sections(rest)
     return _finish()

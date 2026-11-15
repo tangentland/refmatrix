@@ -82,7 +82,10 @@ def test_build_composite_stm_only(tmp_path):
     out = build_topic_composite(None, root, expand=False, session="sess")
     assert "STM topic composite" in out
     assert "```gmd" in out
-    assert "parser.py" in out and "daemon" in out
+    assert "parser.py" in out
+    # The daemon/socket thread has no file, path or identifier member, so it is not emitted
+    # (2026-11-15, the user: "don't burn context on every input"; tests/test_stm_composite_injection.py).
+    assert "daemon" not in out
     # expand=False → no LTM lookups, so no grounded/external edges; the header +
     # Members line (the signal) still render. co-occurs is gone entirely.
     assert "Members:" in out and "co-occurs" not in out
@@ -232,6 +235,8 @@ def test_composite_every_gates_on_turn(tmp_path):
     assert turn > 0
     # every=1 always renders
     assert build_topic_composite(None, root, expand=False, session="sess", every=1)
+    # Clear the unchanged-composite marker (2026-11-15) so this test isolates the cadence gate.
+    (stm_mod.stm_dir(root) / "sess.composite.last").unlink()
     # a divisor of turn renders (turn % turn == 0); turn+1 never divides → skip
     assert build_topic_composite(
         None, root, expand=False, session="sess", every=turn)

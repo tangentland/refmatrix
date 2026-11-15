@@ -111,16 +111,55 @@ def build_topic_composite(
     # Cadence gate: throttle per-prompt injection to every Nth turn.
     if every > 1 and turn % every != 0:
         return ""
+    # Grounded topics only (the user, 2026-11-15: "keep the mechanism, just don't burn context
+    # on every input with it"). In session 070141d0 the lead topic was the prompt's own plain
+    # words (`context, don, relevant, keep, mechanism, burn, …`) linked to unrelated nodes. A
+    # topic is emitted only when it holds at least one file, path or identifier-shaped member;
+    # the focus graph itself is unchanged and still updates every turn.
+    topics = [t for t in topics if _has_grounded_member(t["members"])]
+    if not topics:
+        return ""
+    # Never re-send an unchanged composite (feedback_injection_presentation_rules): the
+    # signature is the topics' member sets, so a turn counter or re-ranked edge alone does not
+    # count as a change. Kept per session beside the ring. Fail-open: an unreadable or
+    # unwritable marker means the composite is sent, never lost.
+    import hashlib
+    import json as _json
+    from .stm import _safe, stm_dir
+    sig = hashlib.sha256(_json.dumps(
+        sorted(sorted(t["members"]) for t in topics)).encode("utf-8")).hexdigest()
+    mark = stm_dir(root) / f"{_safe(session)}.composite.last"
+    try:
+        if mark.read_text(encoding="utf-8").strip() == sig:
+            return ""
+    except OSError:
+        pass                                  # no marker yet: send
     budget = _scaled_budget(
         max_tokens, turn, autoscale=autoscale,
         ceiling=max_tokens_ceiling, per_turn=tokens_per_turn)
-    return _render_gmd(
+    out = _render_gmd(
         s, topics,
         expand=expand, per_node_entities=per_node_entities,
         expand_nodes_per_topic=expand_nodes_per_topic,
         max_expansions=max_expansions, max_tokens=budget,
         turn=turn, intra_edges=intra_edges,
     )
+    if out:
+        try:
+            mark.write_text(sig, encoding="utf-8")
+        except OSError:
+            pass                              # fail-open: the next turn re-sends
+    return out
+
+
+def _has_grounded_member(members: "list[str]") -> bool:
+    """A file, a path, or an identifier-shaped name (scan's `_token_shape_score`), not only
+    plain words."""
+    from .scan import _token_shape_score
+    for m in members:
+        if "/" in m or ("." in m.strip(".")) or _token_shape_score(m) > 0.0:
+            return True
+    return False
 
 
 def _render_gmd(

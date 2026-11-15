@@ -1,0 +1,23 @@
+...............F....................                                     [100%]
+=================================== FAILURES ===================================
+______________________ test_composite_every_gates_on_turn ______________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1733/test_composite_every_gates_on_0')
+
+    def test_composite_every_gates_on_turn(tmp_path):
+        root = tmp_path / ".refmatrix"
+        _seed(root)
+        turn = stm_mod.Stm(root, "sess").focus_graph(top=30)["turn"]
+        assert turn > 0
+        # every=1 always renders
+        assert build_topic_composite(None, root, expand=False, session="sess", every=1)
+        # a divisor of turn renders (turn % turn == 0); turn+1 never divides → skip
+>       assert build_topic_composite(
+            None, root, expand=False, session="sess", every=turn)
+E       AssertionError: assert ''
+E        +  where '' = build_topic_composite(None, PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1733/test_composite_every_gates_on_0/.refmatrix'), expand=False, session='sess', every=3)
+
+tests/test_composite.py:239: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_composite.py::test_composite_every_gates_on_turn - Assertio...
+1 failed, 35 passed in 6.86s
