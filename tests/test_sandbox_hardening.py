@@ -145,15 +145,17 @@ def test_silent():
 def test_runs():
     assert True
 ''')
-    gate = rmx_sandbox.SkipGate({"test_inner_skips.py::test_pinned": "why"})
+    # T0.1' R1.2: a pin's value is the skip's own reason, matched exactly (no longer any text).
+    gate = rmx_sandbox.SkipGate({"test_inner_skips.py::test_pinned": "named in the pinned list"})
     result = pytester.runpytest("-p", "no:cacheprovider", plugins=[gate])
     out = result.stdout.str()
     assert result.ret == pytest.ExitCode.TESTS_FAILED, out[-3000:]
     assert "SKIPPED-UNPINNED test_inner_skips.py::test_silent" in out, out[-3000:]
     assert "test_pinned:" not in out.split("SkipGate:")[-1], out[-3000:]
 
-    ok = rmx_sandbox.SkipGate({"test_inner_skips.py::test_pinned": "why",
-                               "test_inner_skips.py::test_silent": "why"})
+    ok = rmx_sandbox.SkipGate({
+        "test_inner_skips.py::test_pinned": "named in the pinned list",
+        "test_inner_skips.py::test_silent": "a HOME-derived condition turned true"})
     assert pytester.runpytest("-p", "no:cacheprovider", plugins=[ok]).ret == 0
 
 

@@ -8,7 +8,7 @@ metadata:
   status: pending
   created: 2026-10-06
   revised: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 16.3: Grep-tool hook on the learner, and the docs {#root}
@@ -18,7 +18,8 @@ metadata:
 > r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 8, 2026-10-15: R5 retires
 > `enforce-rmx-grep.sh`'s redirect, d9bj, [[#rev-round-8]]; revision round 9, 2026-10-15: R5
 > lands over bug-118's one renderer, [[#rev-round-9]]; revision round 10, 2026-10-15: the
-> merge-order clause carries the test half, [[#rev-round-10]])
+> merge-order clause carries the test half, [[#rev-round-10]]; revision round 11, 2026-11-13: a
+> re-included hidden-dir rule doc is taught, L5, [[#rev-round-11]])
 > **Wave:** 2 ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]]. Tests run in plan-23 task 23.0's sandbox.
 
@@ -30,6 +31,21 @@ rel: amends -> [[bsd-plan16-spec-review-r3-c8278b1]]
 rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
+
+## Revision round 11 (2026-11-13) {#rev-round-11}
+
+Applies L5 of [[plan-review-2026-11-13#lead]] (contra-d CD-5; spec-wave G23). The Grep tool always
+passes `--hidden`, so 16.1 R1b adds `-g '!.*/'` to every re-run this hook starts; under bug-216 that
+would prune `.claude/PROJECT_PROFILE.md`, which is now in the corpus. 16.1's re-include rule
+([[task-16.1-argv-faithful-learner#r1b-reincludes]]) keeps it; AC-2b pins it here, on the tool's
+captured response.
+
+| finding / decision | answered in |
+|---|---|
+| L5 / CD-5 (the hidden-dir prune drops a re-included rule doc) | AC-2b; mutation list |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-16.1-argv-faithful-learner#r1b-reincludes]]
 
 ## Revision round 10 (2026-10-15) {#rev-round-10}
 
@@ -244,6 +260,11 @@ owner's, and the summary records the divergence. {#r5}
 2. **Dot-directory hit.** A fixture hit under `.github/x.yml` is taught. It is in the corpus only if
    `corpus.is_relevant` allows it; otherwise it is counted `out_of_corpus`, and the test asserts
    whichever the predicate says, explicitly.
+2b. **Re-included dot-directory hit (round 11, L5).** A captured payload whose `tool_response`
+   holds hits in `.claude/PROJECT_PROFILE.md` (GMD frontmatter: bug-216's built-in include) and in
+   `.claude/agents/x.md` teaches the profile hit and not the agent-file hit (pruned by the re-run,
+   or counted `out_of_corpus`; either is correct).
+   Mutation "16.1's re-run without its re-include rule" FAILS it (the profile hit is never found).
 3. **Glob split (#s-n4).** Payloads with `glob: "*.ts,*.tsx"`, `glob: "*.py *.md"` and
    `glob: "*.{ts,tsx}"` each teach what the tool returned. RED: a single-`-g` mapping teaches
    nothing for the first two.
@@ -309,4 +330,13 @@ owner's, and the summary records the divergence. {#r5}
   - write `no-rg` from the hook instead of calling the learner: AC-5c fails;
   - use `command -v` for `RG_ABS`: AC-5b fails;
   - hardcode a stale VCS list: AC-5 fails against the live extraction;
-  - omit `--spawned-by grep-tool-hook`: AC-1's `spawned_by` assertion fails. {#tests}
+  - omit `--spawned-by grep-tool-hook`: AC-1's `spawned_by` assertion fails;
+  - run 16.1's re-run without its re-include rule (round 11): AC-2b fails. {#tests}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

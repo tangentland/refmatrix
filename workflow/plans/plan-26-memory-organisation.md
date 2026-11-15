@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Plan 26: memory-layer organisation {#root}
@@ -20,7 +20,9 @@ implementation, starting with 26.0.
 **Location:** `workflow/plans/plan-26-memory-organisation.md`. This file stays here; its stage is
 `metadata.status`.
 **Sequencing:** task 3.7 → plan-26 (this plan) → plan-25 (the cliquedb bugs) → plan-24 (the mod).
-Set by the user on 2026-11-08 (plan-of-plans `#override-2026-11-08b`).
+Set by the user on 2026-11-08 (plan-of-plans `#override-2026-11-08b`). Amended 2026-11-13 by
+D-Q2 (25.1 rev 7 ships ahead of 26.7) and the queue in [[plan-review-2026-11-13#queue]]; see
+[[#rev-round-6]].
 **Successor:** [[plan-27-memory-fleet-rollout]] applies the deployed result to every other
 project's memory dir.
 **Builds approved work:** tasks 26.6 and 26.7 BUILD the approved plan-19 tasks 19.4 and 19.3.
@@ -355,7 +357,17 @@ at its r3 at the time of review. It merges first. Re-read the overlap at 26.5's 
 Further ordering rules:
 - 26.9's live step (AC-5) does NOT gate plan-26's close. Plan-25 follows plan-26, and its
   consumer bugs must not wait on a ch-bsd run.
-- 25.1 reads the index 26.7 writes, so 26.7 (19.3) closes before 25.1 starts.
+- 25.1 reads the index 26.7 writes, so 26.7 (19.3) closes before 25.1 starts. **Waived for 25.1
+  rev 7 by the user, 2026-11-13 (D-Q2, [[plan-review-2026-11-13#d-q2]]):** rev 7 ships in 0.83.0
+  ahead of 26.7. 26.7 AC-E proves that 25.1's curated-hook lookup survives the regroup
+  ([[task-26.7-memory-index-by-subject#ac-e]]). 25.1b (rev 8) is queued after 10.3 and is not
+  waived. {#overlap-25-1-waiver}
+- The 26.6 R3 residual is built right after 26.7 and before plan-23's T4 work, so that 23.5
+  R9/AC-9 registers on the real compile hold ([[plan-review-2026-11-13#lead]] L1).
+  {#overlap-r3-residual}
+- 26.9 runs in parallel with plan-27 after 26.8 ([[plan-review-2026-11-13#lead]] L10). Neither
+  gates the other: plan-27 depends on 26.8 green, and 26.9 shares no `src/` file with 27.0.
+  {#overlap-26-9-plan-27}
 
 ### What this plan will NOT do {#non-goals}
 
@@ -424,6 +436,21 @@ Further ordering rules:
   which keeps `organise --check` non-zero and can trip 26.2's duplicate-id refusal (26.8 AC-8).
   **DECIDED (user, 2026-11-09): yes** — the user authorises the `MEMORY-RULES.md` edit; it is
   applied at 26.8 with the text 26.0 proposes.
+
+## User gates, collected from the task specs (2026-11-13) {#user-gates}
+
+The consolidated plan runs as a goal that stops at every user step a spec names
+([[plan-review-2026-11-13#goal-horizon]], L45). For plan-26, those steps are:
+
+| task | the goal stops for | spec |
+|---|---|---|
+| 26.5 | none live. bug-202's restore, if R-202a finds the files, runs in 27.5 AC-5 (rev 7) | [[task-26.5-memory-organise-verb#r-202b]] |
+| 26.8 | the stop and report if AC-0's `refresh_pending` is over 50 | [[task-26.8-refmatrix-live-rollout#requirements]] AC-2 |
+| 26.8 | the go-ahead for `organise --apply` on the live refmatrix dir | AC-4 |
+| 26.8 | the user's commit of the staged `git mv`s in `~/.claude` (the verb exits 3) | AC-4 |
+| 26.8 | approval of the ADR-0005 Appendix A text and its edit to `~/.claude/MEMORY-RULES.md`; the forget-flow step 5 decision | AC-8 |
+| 26.8 | any live `--rollback` (only if AC-5 fails) | AC-9 |
+| 26.9 | per-document approval of each pattern doc, and its live AC-5 | [[task-26.9-impression-patterns#ac-5]] |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
 
@@ -524,3 +551,42 @@ rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
   inline code; content unchanged.
 - Every task in [[#tasks]] (26.0-26.9) has its spec under
   `workflow/plans/plan-26-memory-organisation-tasks/`.
+
+## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+
+Answers [[plan-review-2026-11-13#lead]] (L1, L9, L10, L11, L12, L37, L45) and user decision D-Q2
+([[plan-review-2026-11-13#d-q2]]), spec gaps G4, G6, G15 and G19. Status is unchanged
+(`approved`). The revised task specs go through the lead's ch-bsd round before their own status
+moves.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#d-q2]]
+
+| row | change | anchor |
+|---|---|---|
+| D-Q2 / Ca-1 | Waiver of "26.7 before 25.1" for rev 7, recorded; 26.7 AC-E | [[#overlap-25-1-waiver]], [[task-26.7-memory-index-by-subject#rev-round-3]] |
+| L1 / Ca-3 | The 26.6 R3 residual follows 26.7 and comes before T4 | [[#overlap-r3-residual]] |
+| L9, L37 / Ca-5, Ca-6, X1 | 26.5 gains the bug-208 precondition, the bug-202 existence check, and the bug-220 reroute | [[task-26.5-memory-organise-verb#rev-round-6]] |
+| L10 / Ca-7 | 26.9 ∥ plan-27 after 26.8 | [[#overlap-26-9-plan-27]], [[task-26.9-impression-patterns#rev-round-4]] |
+| L11, L12 / Ca-4, Ca-9 | Appendix A carries the marker condition; forget step 5 is put to the user at 26.8 AC-8; 26.8 counts re-read | [[task-26.8-refmatrix-live-rollout#rev-round-6]] |
+| L45 | User gates collected | [[#user-gates]] |
+
+## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+
+Answers [[bsd-spec-t2-b5fe2d3]] (DIRTY 0B/4S/7M) with the lead's rulings. Status is unchanged.
+
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+| finding | change | anchor |
+|---|---|---|
+| s1, s2, s3, m1, m2, m3, m6, m7 | 26.5's bug-220 reroute is rewritten: both path forms; collected, then dispatched outside the writer lock; full `--as-memory` path; loud failure branch; home memdir held per plan-27 Q4. ADR-0005 is made self-consistent | [[task-26.5-memory-organise-verb#rev-round-7]], [[refmatrix/adr-0005-memory-dir-layout#amendments]] |
+| s4 | bug-202's live restore moves to 27.5 AC-5; 26.5 keeps the existence check | [[task-26.5-memory-organise-verb#r-202b]], [[#user-gates]] |
+| m4, m5 | 26.8 AC bodies state rules; the forget-step false-premise branch | [[task-26.8-refmatrix-live-rollout#rev-round-7]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

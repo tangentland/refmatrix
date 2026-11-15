@@ -8,18 +8,21 @@ metadata:
   status: pending
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-14
 ---
 
 # Task 25.2: ack-only prompt gate {#root}
 
 > Plan: [[plan-25-cliquedb-field-report]]
 > Status: Pending (spec drafted 2026-11-08; revision rounds 1-3 2026-11-09, [[#rev-round-1]],
-> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next)
+> [[#rev-round-2]], [[#rev-round-3]]; r3 folded, a short r4-lite confirm is next; revision round 4
+> 2026-11-13, [[#rev-round-4]]: built ONLY if [[#r0]]'s replay passes L34's band, else not built)
 > Bug: bug-165 (cliquedb priority 2)
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (it moves the per-prompt recall into
 > the verb, where this gate lives, and owns the hook generator; the after-measurement is taken on
-> the packed payload); task 3.7 merged.
+> the packed payload); task 3.7 merged; [[#r0]]'s replay PASSED (L34). R0 itself needs no code.
+> It runs on the labels as confirmed by the m1 confirm (plan review G32), which the queue orders
+> before this task's build (L54 S10).
 
 rel: part-of -> [[plan-25-cliquedb-field-report]]
 rel: depends-on -> [[task-25.1-recall-hook-byte-budget]]
@@ -68,6 +71,29 @@ goes in a separate, documented set applied IN ADDITION ([[feedback_reuse_shared_
 
 ## Requirements {#requirements}
 
+0. **R0 Replay the gate on the uses that sank Q10's gate, before anything is built** (L19, L34,
+   revision round 4). The rule in R1 / R2 (g4) is applied, as written, by a standalone script that
+   imports nothing from `src/`, to the DELIVERING prompt of every use in two sets:
+   - the labelled CAUSED and INFORMED uses on prompt channels (11 of the 13 labelled pairs,
+     [[measurement-injection-already-held-2026-11-13#gate-comparison]], labels from
+     [[measurement-task-21.5-r12-pilot-2026-11-13]]);
+   - the 16 R12 explicit uses on prompt channels (same addendum).
+
+   Uses on `session_start` or `precompact` have no prompt and are counted as not applicable. The
+   delivering prompt is read locally from `query.log` and the STM rings (the join the addendum
+   used). The committed file is counts only:
+   `workflow/measurements/task-25.2-gate-replay-<date>.md` holds n per set, n gated per set, the
+   gate rate over all prompt calls in the same window, and the script's sha256. No prompt text is
+   committed ([[feedback_no_raw_prompts_in_public_repo]]).
+   - **Band (L34, pre-registered):** PASS iff 0 CAUSED / INFORMED uses and 0 explicit uses ride
+     a gated prompt. PASS → R1-R5 are built as specced.
+   - **FAIL (L43, pre-decided):** 25.2 is not built. bug-165 moves to the T3 backlog with R0's
+     counts in its row. 25.3's helix half drops with it. Q10's rule (no separate gate) stands.
+
+   The decision row is written in the measurement file and in [[#rev-round-4]] before any `src/`
+   commit. R0 runs AFTER the m1 confirm (plan review G32), on the labels as confirmed there. The
+   queue orders G32 before this task's build (L54 S10), so a built 25.2 can never rest on labels
+   that change afterwards. {#r0}
 1. **R1 The gate.** `terms.prompt_gate(prompt: str) -> PromptGate`, a frozen dataclass
    `(passed: bool, tokens: tuple[str, ...], reason: str)`. Tokens are the whitespace-split prompt
    with leading/trailing `.,;:!?"'()[]` stripped and lower-cased. `passed` is False iff g4 holds:
@@ -109,6 +135,14 @@ goes in a separate, documented set applied IN ADDITION ([[feedback_reuse_shared_
 
 ## Acceptance criteria {#acceptance}
 
+0. **AC-0 R0 before any build** (bsd-spec-t3ab M4). The R0 measurement file exists with n and
+   n gated per set, the window's gate rate, the script's sha256, and the PASS / FAIL row. A
+   structural check over the script fails if it imports anything from `refmatrix` (the replay
+   must not grade the code under test with itself). The file's commit, and G32's confirm report,
+   are older than this task's first `src/` commit (commit order checked). Mutations: the script
+   imports `refmatrix.terms` (AC-0's structural check fails); the decision row committed after the
+   first `src/` commit (commit order).
+
 Run in 23.0's sandbox on 25.1's fixture store, extended with 6 synthetic save-state-shaped memory
 rows whose bodies carry a «NEXT» section, so scan-prompt's content leg has the noise cliquedb saw.
 Run through the GENERATED UserPromptSubmit commands from `hooks._claude_hook_block(...)` with
@@ -147,6 +181,12 @@ fixture is changed until AC-1 is RED, and the route is recorded. {#acceptance-le
 7. **AC-7 Verb parity.** `verbs.memory_recall(query="yes next", gate_thin_prompt=True, pack=True)`
    returns empty text and the gated reason; the parity test lists `gate_thin_prompt` with the CLI's
    `--stdin-json` as its twin.
+7b. **AC-7b R0 parity** (PASS branch only). At GREEN, R0's replay is re-run with
+    `terms.prompt_gate` imported from `src/` in place of the standalone rule, on the same local
+    sets. It gives the same gated counts. Both implementations also run over AC-3's committed
+    prompt table and must give identical verdicts row by row. A difference is a defect in one of
+    the two, resolved before merge. Mutation: `src/`'s gate with the "at least one ack word or
+    marker" clause dropped (AC-7b's row-by-row check differs on `where are we`).
 8. **AC-8 Mutations that must FAIL a test:** gate on "< 2 content terms" (AC-3: `push` gated);
    `ACK_WORDS` not applied (AC-3: `please continue` passes); punctuation not stripped (AC-3:
    `next.` passes); list-marker shape not recognised (AC-3: `a - next` passes); adding `push` to
@@ -221,3 +261,49 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 | M6 R5's "0 by construction" check ignores list markers | the check's union is `STOPWORDS ∪ ACK_WORDS ∪ list-marker shapes`, g4's full union | [[#r5]] |
 | M6 `what now` is not all-stopword | relabelled a content-word prompt (`now` is not in `terms.STOPWORDS`); `where are we` / `so where are we` still kill the ack-or-marker mutation | [[#decisions]] g4, AC-3 |
 
+## Revision round 4 (2026-11-13, the plan review: L19, L34, L43) {#rev-round-4}
+
+The plan review found that this gate has the shape the user rejected for non-human turns in Q10 (a
+gated call prints nothing), and that it was never scored against the labelled and R12 explicit
+uses that killed that gate (contra-b CB-13). L19 and L34 put it to a replay before it is built.
+L43 pre-decides what happens if it fails. {#rev-round-4-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[measurement-injection-already-held-2026-11-13#gate-comparison]]
+rel: derives-from -> [[measurement-task-21.5-r12-pilot-2026-11-13]]
+rel: related-to -> [[task-10.2-plan-10-injection-dedup]]
+
+| item | change | anchor |
+|---|---|---|
+| L19 + L34: scored first | R0 replays g4 over the labelled CAUSED / INFORMED and R12 explicit uses on prompt channels, with L34's band (0 and 0) | [[#r0]] |
+| L43: the else-branch | FAIL → not built; bug-165 to the T3 backlog; 25.3's helix half drops; Q10's rule stands. Nothing is re-specced and no user stop is needed | [[#r0]] |
+| parity | AC-7b: the shipped `terms.prompt_gate` reproduces R0's counts | AC-7b |
+| header | the build depends on R0's PASS; R0 has no code dependency | [[#root]] |
+| R0 decision row | _written here when R0 reports: PASS or FAIL, with the counts_ | — |
+
+10.2 R5 ("25.2's ack-only gate still runs first where it applies") holds only on PASS. On FAIL,
+that clause has nothing to point at, and 10.2's owner removes it.
+
+**Q8 note:** R1-R5 hold under Q8 a and c, where save-states stay in the store as
+`session/recall-state` rows. **Under Q8 b** (save-states out at ingest), bug-165's noise source,
+save-state «NEXT» content hits, no longer reaches scan-prompt. The acceptance lead's fixture of six
+synthetic save-state rows would then not be reachable through the production bridge, and AC-1's
+RED would need noise rows of another kind. Those are the lines that change under b. {#q8-b}
+
+## Revision round 5 (2026-11-13, ch-bsd joint spec review r1; lead ruling L54) {#rev-round-5}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| S10 R0's re-run after a build was undecided | resolved by order: G32 runs before this task's build, and R0 runs on the confirmed labels; the re-run sentence is gone | [[#r0]], [[#root]] |
+| M4 R0 had no AC; AC-7b named no mutation | AC-0 (the file, a script that imports nothing from `refmatrix`, commit order) with two mutations; AC-7b adds a row-by-row check over AC-3's table and a mutation | AC-0, AC-7b |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-15
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 18.3: in-daemon catalog reclaim {#root}
@@ -17,7 +17,9 @@ metadata:
 > is lifted (d9be) and the reclaim is RESHAPED from an offline stop-the-daemon rewrite to an
 > in-daemon rewrite-and-swap (d9bf). It is no longer conditional. It needs a fresh ch-bsd spec
 > review and the user's approval before it is built (d9bf: "rewritten and re-reviewed before
-> approval"). d9bp/d9bq/d9br (PROVISIONAL, from ch-bsd 18.1 r1) amend it: the swap is gated on
+> approval"); that review and approval are d9co (ch-bsd plan-18 r4, after revision rounds 4
+> and 5, [[#rev-round-4]], [[#rev-round-5]]; revision round 6, 2026-11-13, [[#rev-round-6]]). d9bp/d9bq/d9br (PROVISIONAL when written, from ch-bsd 18.1 r1;
+> CONFIRMED, plan-18 r4) amend it: the swap is gated on
 > bug-112's FIX plus a sentinel read-back, no offline route survives, and feasibility is decided
 > on a LOADED hold. Revision round 2 (same day, ch-bsd plan-18 r1, d9bw; [[#rev-round-2]])
 > fixes the rollback's foreign WAL, makes the deadline a real bound, converges the writer reopen
@@ -28,11 +30,18 @@ metadata:
 > sequence leg for a live session. The file name and id keep `offline-reclaim` so inbound links
 > stay stable.
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]).
+> **User-gated (round 6, bsd-spec-t4 r1 M5; plan review L45, `#queue` item 11):** R12's hand
+> rollout swaps the writer slot of four LIVE stores (refmatrix, global, cliquedb, viascope). An
+> unattended run stops before each store's `--confirm` and before its arm, and the user goes
+> ahead store by store. "Announced to the user first" is not enough on its own: R12 says the
+> procedure is not a control.
 > Depends on:
 > - **bug-112 FIXED and reachable from `master`** (an in-process `duckdb.connect` of a path that
->   is already open returns the cached database; [[bug_registry]]). The fix is in progress on
->   branch `bugs-112-113-118`. 18.3 does not start before it merges, and AC-18 reproduces the
->   swap write-loss against the merged fix (d9bp a). What 18.3 uses from it (read on the branch,
+>   is already open returns the cached database; [[bug_registry]]). **SATISFIED** (round 6):
+>   the merge `74f8f98` (0.79.0) is an ancestor of dev master `1cf3b9f`. The implementation
+>   summary still records the `git merge-base --is-ancestor` check run at RED. Round 1's text
+>   ("in progress on branch `bugs-112-113-118`; 18.3 does not start before it merges") is
+>   history. AC-18 reproduces the swap write-loss against the merged fix (d9bp a). What 18.3 uses from it (read on the branch,
 >   [[#facts]] I4): `backend.open_duckdb` is THE opener (a read-only open is a private
 >   `:memory:` instance that `ATTACH`es the file `READ_ONLY`; a write open first closes every
 >   REGISTERED holder bound to a replaced inode, `_close_stale_holders`). Closing a stale
@@ -1330,11 +1339,11 @@ asserts the second rehearsal's band is A1 or A2 before it confirms.
 | d9be (C12 lifted, Q3 moot) | the CONDITIONAL status is gone; [[#why]] cites the 18.1 table; Table C's 30/120 s edges no longer gate anything here |
 | d9bf (in-daemon rewrite-and-swap) | the whole design: [[#design]], R2-R7. Dropped: the watchdog pause, the daemon stop, `daemon.lock`, the launchd kickstart, the restart wait, and the 23.0 tier-2/3 dependency. Added: dependencies on bug-112 and 23.1 R1.6; the identity check (AC-4); the crash-consistency invariant (AC-6); the deadline interrupt (AC-3); lock order (AC-15) |
 | d9bf (offline route for > 5 s) | first written as "specified, not built"; replaced by d9bp b below |
-| d9bp a (bug-112 FIX + sentinel; PROVISIONAL) | header dependency on branch `bugs-112-113-118`; [[#facts]] I4 (the reproduction); R4 step 5 and step 11 (sentinel written after the gate, read back after the reopen, refuse and roll back if absent); the after-release write-through check; [[#ac-4]], [[#ac-18]] |
-| d9bp b (no offline route; PROVISIONAL) | [[#r11-offline-route]] rewritten: `refused:rewrite_too_slow` → helix plan; Q-B withdrawn. The helix pointer is superseded by d9bw b ([[#rev-round-2]]) |
-| d9bp c (loaded feasibility; PROVISIONAL) | [[#facts]] I9; [[#r14-loaded]] (full hold, tmp daemon, 6 readers + a writer, peak RSS); R4's 5 s Phase A budget with `con.interrupt()`; the rehearsal demoted to an idle prefilter; [[#ac-3]], [[#ac-19]]; Q-D, Q-E |
-| d9bq (baseline = 18.1 `rewrite_bytes`; PROVISIONAL) | [[#r7-after]] (b) resets to the new `rewrite_bytes`; R2 seeds a missing baseline from a rehearsal |
-| d9br (one gate; median bytes; 2 % tolerance; PROVISIONAL) | [[#r5-gate]] (six legs, shared with 18.1); [[#ac-2]] (one variant per leg); [[#ac-7]] (2 %, medians) |
+| d9bp a (bug-112 FIX + sentinel; PROVISIONAL then; CONFIRMED plan-18 r4) | header dependency on branch `bugs-112-113-118`; [[#facts]] I4 (the reproduction); R4 step 5 and step 11 (sentinel written after the gate, read back after the reopen, refuse and roll back if absent); the after-release write-through check; [[#ac-4]], [[#ac-18]] |
+| d9bp b (no offline route; PROVISIONAL then; CONFIRMED plan-18 r4) | [[#r11-offline-route]] rewritten: `refused:rewrite_too_slow` → helix plan; Q-B withdrawn. The helix pointer is superseded by d9bw b ([[#rev-round-2]]) |
+| d9bp c (loaded feasibility; PROVISIONAL then; CONFIRMED plan-18 r4) | [[#facts]] I9; [[#r14-loaded]] (full hold, tmp daemon, 6 readers + a writer, peak RSS); R4's 5 s Phase A budget with `con.interrupt()`; the rehearsal demoted to an idle prefilter; [[#ac-3]], [[#ac-19]]; Q-D, Q-E |
+| d9bq (baseline = 18.1 `rewrite_bytes`; PROVISIONAL then; CONFIRMED plan-18 r4) | [[#r7-after]] (b) resets to the new `rewrite_bytes`; R2 seeds a missing baseline from a rehearsal |
+| d9br (one gate; median bytes; 2 % tolerance; PROVISIONAL then; CONFIRMED plan-18 r4) | [[#r5-gate]] (six legs, shared with 18.1); [[#ac-2]] (one variant per leg); [[#ac-7]] (2 %, medians) |
 | d9bf (`rmx compact` retired) | [[#r10-compact]] onto the in-daemon verb |
 | d9bc + d9bg (reason-gated; growth band) | [[#r9-tick-step]] replaces `#r9-not-nightly`: an armed tick step whose reason is 18.2's A2 growth band; [[#r7-after]] (b) resets the baseline |
 | 18.1 R4 (production path) | [[#ac-7]] compares against 18.1's script and the real run; `rewrite_into` / `gate` are shared with the rehearsal child |
@@ -1423,3 +1432,28 @@ no foreign-WAL log line" replaces the unproducible "foreign WAL of 0 bytes" clau
 step 1: "the WAL the open wrote", per I10).
 
 rel: derives-from -> [[bsd-plan18-r4-closing-diffcheck-c4ef0a8]]
+
+## Revision round 6 (2026-11-13): status marks and the bug-112 gate {#rev-round-6}
+
+Source: plan review G25 / L25 ([[plan-review-2026-11-13#lead]]) and contra-c Cc-9 (the
+PROVISIONAL marks against the CONFIRMED d9 rows). The bug-112 gate was read on dev master
+`1cf3b9f`: `git merge-base --is-ancestor 74f8f98 HEAD` exits 0. Status text only. No
+requirement or AC changed, and the bug-113 adoption ("AS MERGED") is unchanged.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
+| mark | now |
+|---|---|
+| d9bp/d9bq/d9br "PROVISIONAL" (header and the d9 rows of the 18.1-verdict table) | CONFIRMED, plan-18 r4 |
+| "needs a fresh ch-bsd spec review and the user's approval" | given: d9co |
+| bug-112 "in progress on branch" | SATISFIED, `74f8f98` |
+| R12's live slot swaps, "announced" only (bsd-spec-t4 r1 M5) | header: USER-GATED per store before `--confirm` and before the arm |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

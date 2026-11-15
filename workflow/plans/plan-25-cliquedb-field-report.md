@@ -7,7 +7,7 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-11-08
-  updated: 2026-11-09
+  updated: 2026-11-14
 ---
 
 # Plan 25: cliquedb field report (bug-164..167) {#root}
@@ -19,7 +19,11 @@ folded in revision round 1 ([[#rev-round-1]]); r2 DIRTY 0B/3S/7M folded in revis
 ([[#rev-round-2]]); task 25.5 added for bug-174; r3 DIRTY 0B/4S/9M folded in revision round 3
 ([[#rev-round-3]]); r4-lite confirm DIRTY 0B/1S/5M folded in revision round 4 ([[#rev-round-4]]);
 the user folded bug-181 into 25.1 on 2026-11-09, revision round 5 ([[#rev-round-5]]), which
-removed the last approval blocker. No `src/` or `tests/` change is made by this document.
+removed the last approval blocker. Revision round 6 (2026-11-13, [[#rev-round-6]]) folds the
+plan review's decisions: 25.1 ships alone in 0.83.0 (D-Q2); its revision 8 becomes task 25.1b
+(drafting); 25.2 is scored before it is built (L34, L43); 25.3's helix memory resets at 10.3's
+marker (L16); 25.4 and 25.5 close as superseded by 16.5 (L42). No `src/` or `tests/` change is
+made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
 **Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
 same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
@@ -51,6 +55,7 @@ rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
 rel: reinforces -> [[feedback_reuse_shared_stoplist]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
 rel: specifies -> [[task-25.1-recall-hook-byte-budget]]
+rel: specifies -> [[task-25.1b-hook-output-ladder-and-spill]]
 rel: specifies -> [[task-25.2-thin-prompt-gate]]
 rel: specifies -> [[task-25.3-stm-ref-admission-and-helix-repeat]]
 rel: specifies -> [[task-25.4-grep-bre-translation]]
@@ -123,12 +128,42 @@ the CLI twin, never written into `cli.py` or into a hook string:
 - the helix repeat memory and hub rule: `helix` with an explicit session (25.3), the shape 24.2a R2
   requires;
 - the BRE translation: one function `grep_dialect.bre_to_py` (25.4) that every grep leg reads.
+  **Closed 2026-11-13:** not built. 25.4 and 25.5 are superseded by 16.5 (L42, [[#rev-round-6]]).
 
 When plan-24's mod lands, it calls the same verbs with its own budget (the mod has no 10k cap,
 [[plan-24-mod-transport#goals]] G2) and gets the same gate and the same pack. Nothing here is
 throwaway shell-surface work. {#principle-tail}
 
 ### Ordering and dependencies {#ordering}
+
+**Amended 2026-11-13 ([[#rev-round-6]]).** This order replaces the 2026-11-09 one, which is kept
+below as history. It follows the plan review's queue item 4 ([[plan-review-2026-11-13#queue]]).
+
+```
+3.7 ──► 26.4 ──► 25.1 (rev 7; ships in 0.83.0; 26.7 / plan-27 order waived, D-Q2)
+plan-10 rev 5 reviewed + merged ──► 10.3 ──► 25.1b (ladder, spill, cap; bug-182 R15; plan-2 riders)
+                                       └───► 25.3 helix half (R6-R9) ◄── 25.2 (built only if L34's replay passes)
+25.3 STM half (R1-R5): no dependency ──► 19.0 remainder (plan-19)
+25.2: L34 replay scoring first ──► build, or not built (L43: bug-165 to the T3 backlog, 25.3's helix half drops)
+25.4, 25.5: closed, superseded by 16.5 (L42)
+```
+
+- **25.1 before 26.7 and plan-27 (the user's waiver, D-Q2).** 25.1's R4 lookup reads both key shapes,
+  so the order is waived on the record. 26.7 gains an AC that 25.1's curated-hook lookup survives
+  its regroup ([[plan-review-2026-11-13#d-q2]]). Plan-27 still precedes the rest of this plan in the
+  queue (items 3 and 4).
+- **10.3 before 25.1b and before 25.3's helix half** (L15, L16, L30). 25.1b's spill page and 25.3's
+  helix repeat memory both reset at 10.3's compaction marker. 10.3 is the only plan-10 task that
+  builds early.
+- **25.2 is scored before it is built** (L19, L34). If its gate drops any CAUSED / INFORMED
+  labelled use or any R12 explicit use on replay, it is not built (L43).
+- **25.3's STM half has no dependency** and always builds. Its helix half follows 25.2 and 10.3,
+  and drops with 25.2 if L43 fires (L43; bsd-pop-r4 X2). 19.0's remainder follows the STM half
+  only (L41).
+- **25.1b and 25.2 are independent** of each other. Both edit `hooks.py` and `verbs.memory_recall`,
+  so whichever merges second rebases.
+
+**As approved 2026-11-09 (history; superseded where the amendment above differs):**
 
 ```
 3.7 ──► plan-26 ──► plan-27 ──► 25.1 ──► 25.2 ──► 25.3 ──► (plan-24)
@@ -141,6 +176,7 @@ throwaway shell-surface work. {#principle-tail}
   27 migrates cliquedb's dir last, so the live after-check on cliquedb runs on the organised dir.
   25.4 does not touch the memory layer and need not wait for 26/27; the recommendation is still
   to run it in the plan-25 slot so the release that closes cliquedb's report closes all four rows.
+  (2026-11-13: waived for 25.1 by D-Q2; 26.4 is merged.)
 - **3.7 first** (the override). Its branch (`task-3.7-verb-it-backlog`, clone
   `/Volumes/littlebig/refmatrix-task-3.7`, HEAD `d093f65` read 2026-11-09, base `591a2fb`) touches files this plan
   edits; see [[#overlap]]. Every 25.x branch is cut from `master` AFTER 3.7 merges.
@@ -155,7 +191,7 @@ throwaway shell-surface work. {#principle-tail}
   has no dependency and may be built in parallel in its own clone.
 - **25.4 is independent** (`cli.py` grep block only, plus a new module). It may land in any slot
   after 3.7. **25.5 follows 25.4** (it reuses the translator and the entry point) and carries a
-  pre-registered measurement before its index-leg decision.
+  pre-registered measurement before its index-leg decision. (2026-11-13: both closed, L42.)
 
 ### File overlap with task 3.7 (3.7 merges first) {#overlap}
 
@@ -215,12 +251,15 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
   not by retuning BM25 / rerank. Rerank works again (bug-162); 25.2 measures noise WITH it.
 - **No mod work.** The verbs gain parameters the mod will pass; the mod itself is plan-24.
 - **No plan-19 completion beyond 19.1 and 19.0 R1.** 19.0 R0, R2-R7, the 19.1 folded riders and
-  19.2-19.6 stay in plan-19. 25.1 lists which 19.1 items it lands (all R1-R8 and their ACs and
+  19.2-19.6 stay in plan-19. (2026-11-13: the 19.1 folded riders #w1c-s2 / #w1c-m4 move to 25.1b,
+  D-Q6.) 25.1 lists which 19.1 items it lands (all R1-R8 and their ACs and
   mutations, with the deltas).
 - **`# rmx grep fallback via rg`** (cliquedb item 5) is a stderr line (`cli.py:6901`), not stdout;
   it is logged as bug-180 (split from bug-167 on 2026-11-09 as bug-173, renumbered in r3 because
   the task-3.7 branch owns bug-173) and stays open when 25.4 closes
   bug-167. Substring-mode `a.b` (bug-174) is IN scope as task 25.5 (orchestrator 2026-11-09).
+  (2026-11-13: 25.4 and 25.5 are closed; bug-167 and bug-174 close when 16.5 lands, L42. bug-180
+  stays on the T5 backlog.)
 - **No raw cliquedb prompt or memory text is committed.** Every fixture is synthetic, shaped to the
   measured sizes ([[feedback_no_raw_prompts_in_public_repo]]).
 
@@ -228,11 +267,12 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
 
 | task | bug | what | RED on |
 |---|---|---|---|
-| [[task-25.1-recall-hook-byte-budget]] | bug-164, bug-181 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget; an MCP `project=` that resolves nothing raises `VerbUnknownProjectError` on every tool (R10, folded r5) | the generated per-prompt argv emits > 10,000 B on the fixture store |
-| [[task-25.2-thin-prompt-gate]] | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
+| [[task-25.1-recall-hook-byte-budget]] (rev 7; ships in 0.83.0) | bug-164, bug-181 | probe the cap (three outcomes); per-prompt rows through the verb; pack recall pointers-first after the merge; byte-cap scan-prompt; every UserPromptSubmit producer in one event budget; an MCP `project=` that resolves nothing raises `VerbUnknownProjectError` on every tool (R10, folded r5) | the generated per-prompt argv emits > 10,000 B on the fixture store |
+| [[task-25.1b-hook-output-ladder-and-spill]] (added 2026-11-13; approved 2026-11-14, [[#approval-2026-11-14]]) | bug-182; plan-2 r9 #s-2 / #m-4 | 25.1's revision 8 split out (D-Q2): one 9,500 B emitter on every hook command as a counted safety net; a degrade ladder and a per-session spill page; the one `still in play` names line (L15); R0 per-leg scan-prompt timing and, in L44's band, R15 leg bounds; the global leg's reserved share and the two-number degrade line | a producer forced to 20 KB prints > 9,500 B through its generated command |
+| [[task-25.2-thin-prompt-gate]] (built only if L34's replay passes) | bug-165 | one ack-only gate: a prompt made only of stopwords / ack words / list markers → scan-prompt and the prompt recall inject nothing; a single content word passes | the generated scan-prompt + recall argvs on "yes next" emit > 0 B of content hits |
 | [[task-25.3-stm-ref-admission-and-helix-repeat]] | bug-166 (both halves) | one ref-admission predicate at both extraction sites and the rebuild; helix says a line once per session, never annotates a hub neighbour, and logs every suppression | a replayed `focus hook` envelope stores `s.repla`; a second identical prompt re-emits the helix line |
-| [[task-25.4-grep-bre-translation]] | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class, ANY pattern under a non-UTF-8 locale) to the real grep; differential tests against BSD and GNU grep in two locales | `rmx grep -n 'B0\|group_key' file` exits 2 |
-| [[task-25.5-substring-bre-metas]] | bug-174 | unescaped `. * [ ^ $` read as BRE on the drop-in legs via 25.4's translator; the index leg decided by a pre-registered count of changed real calls | `rmx grep 'a.b' file` misses `axb` |
+| [[task-25.4-grep-bre-translation]] (**closed 2026-11-13: superseded by 16.5, L42**) | bug-167 | any backslash-escaped BRE translated once for every grep leg; anything not provably the same language (compile failure, stacked quantifier, locale-inexact class, ANY pattern under a non-UTF-8 locale) to the real grep; differential tests against BSD and GNU grep in two locales | `rmx grep -n 'B0\|group_key' file` exits 2 |
+| [[task-25.5-substring-bre-metas]] (**closed 2026-11-13: superseded by 16.5, L42**) | bug-174 | unescaped `. * [ ^ $` read as BRE on the drop-in legs via 25.4's translator; the index leg decided by a pre-registered count of changed real calls | `rmx grep 'a.b' file` misses `axb` |
 
 ## Acceptance for the plan {#acceptance}
 
@@ -248,6 +288,14 @@ Read from the plan-26 task specs' file lists on 2026-11-08 (drafts; re-read at 2
   as bug-180, never bug-173), so cliquedb can verify
   next session (their offer, `fb3fefdff19b`).
 - `@ch-bsd` over the plan's commit range, remedied to CLEAN.
+- **Amended 2026-11-13 ([[#rev-round-6]]).** The `fixed` list is now: bug-164 (25.1 rev 7, with the
+  hard cap in 25.1b), bug-181 (25.1 R10), bug-166's STM half (25.3 R1-R5); bug-165 and bug-166's
+  helix half only if L34's replay passes (else both go to the T3 backlog, L43); bug-182 if L44's
+  band builds R15 (else the T4 backlog; in O5's split case, bug-182's controllable share is fixed
+  by R15 and its row stays open on the T4 backlog for the wait share). bug-167 and bug-174 leave this plan: they close when 16.5
+  lands, fixed by its R3 floor (L42). When 16.5 ships, cliquedb is told on `proj:refmatrix:bugs`
+  (a reply to `ae9c57ed7f13`) that bug-167 is closed by 16.5 and not by a plan-25 task.
+  {#acceptance-amended}
 
 ## Open decisions {#open-decisions}
 
@@ -260,7 +308,7 @@ Recorded with a recommendation; each task spec repeats the ones it owns.
 | q3 | Fix for mis-typed save-states | settled by plan-26: the bridge normalises (26.4); 25.1 re-asserts on the packed path and adds no second rule |
 | q4 | Does the thin-prompt gate also suppress the STM composite | no: the composite is session-derived, not prompt-derived, and keeps its own `--composite-every` cadence; measured in 25.2 AC-5 |
 | q5 | `ACK_WORDS` beside the stoplist, and how aggressive the gate is | decided 2026-11-09: `ACK_WORDS` applied IN ADDITION to the stoplist; gate ACK-ONLY prompts only; a single content word or an issue / task number is never gated |
-| q6 | Helix repeat memory: sidecar file or derive from `helix.log` | sidecar `stm/<session>.helix.json`, the existing per-session sidecar pattern |
+| q6 | Helix repeat memory: sidecar file or derive from `helix.log` | sidecar `stm/<session>.helix.json`, the existing per-session sidecar pattern. **Amended 2026-11-13 (L16):** `stm/<session>.emitted/helix.json`, reset at 10.3's compaction marker ([[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-4]]) |
 | q7 | The helix phase-2 criterion's reading after dedupe | decided 2026-11-09: `rendered + suppressed` (both logged), `rendered` reported beside it, until a new pre-registered criterion supersedes it |
 | q8 | The hub neighbour behind the repeated helix line | decided 2026-11-09: fixed in 25.3 (R8), not parked |
 
@@ -379,6 +427,56 @@ task-25.5-substring-bre-metas; 5 of 5, each frontmatter `id` equal to its stem, 
 - **What approval does not change:** the build order stays [[#ordering]] (3.7, plan-26, plan-27,
   then 25.1-25.5, before plan-24), and every task still records RED at HEAD after its
   dependencies merge. {#approval-order}
+- **Amended 2026-11-13 ([[#rev-round-6]]):** the build order is the amended [[#ordering]]. 25.1
+  goes ahead of 26.7 and plan-27 (D-Q2). 25.1b is added and needs its own ch-bsd round and
+  `approved` before it builds. 25.2 builds only on L34's pass. 25.4 and 25.5 are closed, superseded
+  by 16.5 (L42). Plan-24's D1 hold is superseded (D-Q5), so "before plan-24" now means before
+  plan-24's re-plan after the charter decision. Every task still records RED at HEAD after its
+  dependencies merge. {#approval-order-amended}
 
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+
+## Revision round 6 (2026-11-13, the plan review's decisions) {#rev-round-6}
+
+Folds [[plan-review-2026-11-13]] (rev 6, `1cf3b9f`): the user's D-Q2, D-Q5 and D-Q6 and the
+lead's L15, L16, L19, L24, L34, L39, L42, L43 and L44. Spec text only. Each task's own revision
+section carries the detail. {#rev-round-6-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q2]]
+rel: implements -> [[plan-review-2026-11-13#d-q5]]
+rel: implements -> [[plan-review-2026-11-13#d-q6]]
+rel: implements -> [[plan-review-2026-11-13#d-q7]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-pop-r4-d1614a8#x4]]
+
+| item | change | anchor |
+|---|---|---|
+| D-Q2: 25.1 ships alone in 0.83.0 | the 26.7 / plan-27 order is waived for 25.1 on the record; `#ordering` and `#approval-order` amended; 25.1's header and its 26.7 edge amended | [[#ordering]], [[#approval-order-amended]], [[task-25.1-recall-hook-byte-budget#rev-dq2]] |
+| D-Q2 + L15 + D-Q6 + L39 + L44: revision 8 becomes 25.1b | new task (drafting): R12-R14 / AC-16-AC-18 from the 25.1 branch at `69da299`, with amends to 25.1 R3, R8, R9, AC-9 and AC-14 by name; `depends-on 10.3`; the kind-label clause restated so 10.6 adds labels later (no 10.6 edge); the `still in play` line owned here with two member kinds; R0 per-leg timing and R15 under L44's band; plan-2's #s-2 / #m-4 riders | [[#tasks]], [[task-25.1b-hook-output-ladder-and-spill]] |
+| L19, L34, L43: 25.2 | an R0 replay of the gate over the labelled and R12 explicit uses before any build, with L34's bands; the else-branch is pre-decided (not built; bug-165 to the T3 backlog) | [[task-25.2-thin-prompt-gate#rev-round-4]] |
+| L16, L43: 25.3 | R7's repeat memory moves to `stm/<session>.emitted/helix.json` and resets at 10.3's marker; the helix half depends on 10.3 and drops with 25.2 if L43 fires; the STM half always builds | q6, [[task-25.3-stm-ref-admission-and-helix-repeat#rev-round-4]] |
+| L42, L24, D-Q7, bsd-pop-r4 X4: 25.4 / 25.5 | closed as superseded by 16.5 (its R3 floor; L32). Under the floor nothing of either task remains to build. Their premise, "every agent grep reaches `rmx grep`", was false while `learn.off` exists (L24). bug-167 and bug-174 close when 16.5 lands. The reopen trigger is no longer 25.5 R4's queued re-measure: L49 O-4 moved it to task 16.4's report ([[task-16.4-measurement]], its `#r4-reopen` section; a doc-level link, so master's gate does not depend on merge order). The closing lines in the two task files are written by their owner | [[#tasks]], [[#acceptance-amended]], [[#non-goals]] |
+| D-Q5: plan-24 D1 superseded | "before plan-24" reads as before plan-24's re-plan; no plan-25 task waits on the mod | [[#approval-order-amended]] |
+| plan acceptance | the `fixed` list amended, and the cliquedb bus reply for bug-167 named | [[#acceptance-amended]] |
+| status | plan stays `approved` for 25.1-25.3. 25.1b is `drafting` and needs its own ch-bsd round and `approved` before it builds (the d9co route) | [[#tasks]] |
+
+## Revision round 7 (2026-11-13, ch-bsd joint spec review r1; lead ruling L54) {#rev-round-7}
+
+rel: derives-from -> [[bsd-spec-t3ab-ff1d453-369e0b5]]
+rel: implements -> [[plan-review-2026-11-13#lead]]
+
+| finding | change | anchor |
+|---|---|---|
+| M9 pre-L49 reopen trigger | the bug-174 reopen trigger is task 16.4's report (L49 O-4), not 25.5 R4's re-measure | [[#rev-round-6]] |
+| r2 m6 the 16.4 anchor exists only on spec-wave-t56 | the link is doc-level, with the section named in a code span | [[#rev-round-6]] |
+| M9 bug-182's split case had no status | under O5's split, R15 fixes the controllable share and bug-182 stays open on the T4 backlog for the wait share | [[#acceptance-amended]] |
+| B1, S1-S5, M3-M5 (25.1b), S10 and M4 (25.2) | folded in each task | [[task-25.1b-hook-output-ladder-and-spill#rev-round-1]], [[task-25.2-thin-prompt-gate#rev-round-5]] |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | the plan stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

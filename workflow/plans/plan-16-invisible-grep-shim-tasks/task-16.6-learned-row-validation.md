@@ -8,13 +8,19 @@ metadata:
   status: pending
   created: 2026-10-07
   revised: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 16.6: the learned-evidence sidecar, its verifier, read-time marks and the backfill {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
-> Status: Pending (amendment d9cl, 2026-10-15: AC-9d check 6, the single `log=False` caller,
+> Status: Pending (**revision round 15, 2026-11-13**: freshness against bug-185 R6's merged
+> replay fold and AC-8 (plan review L31, L2; bsd-pop-r2 N7): the rebuild's `link_state` fold
+> keeps bug-185's `None`-weight rule through this slice's row-pass rewrite; R1f's deletion list
+> is unchanged, because bug-185 and bug-216 R13 add no per-event replay leg (lead ruling: d9bu
+> wins); R13's events join the row pass, and this slice defines their fold rules in one table
+> 17.4 imports (`edge_records.FOLD_RULES`; bsd-spec-t4 r1 S5); see
+> [[#rev-round-15]]. Earlier: amendment d9cl, 2026-10-15: AC-9d check 6, the single `log=False` caller,
 > [[#rev-amend-d9cl]]; revision round 14, 2026-10-15, d9ch (b): the dump's dead-end sidecar skip
 > stated, [[#rev-round-14]]; revision round 11, 2026-10-15, answering the r11 diff check
 > `bsd-plan16-22-spec-diffcheck-r11-d8188ee` s-1(i) and d9cc, [[#rev-round-11]]; revision round
@@ -42,6 +48,9 @@ metadata:
 > before plan-22's 22.1a ([[plan-review-2026-10-14#t8-wave1]]).
 > **Depends on:** plan-23 task 23.1 (queue + `bind(partition_name)` drain), plan-23 task 23.0 (the shared
 > test sandbox). It does NOT depend on task 16.1 (d6d, [[plan-review-2026-10-14#t8-amendments]]).
+> **Round 15:** also bug-185 merged ([[task-bug185-bulk-gmd-ingest]], plan review `#queue` item 5,
+> before this slice's item 8): its R6 changes the fold this slice rewrites around, and its AC-8
+> adds a caller of the path R1f deletes. Order (L2, L21): 23.4 → this slice → 17.1, then 22.1a.
 > Task 16.1 depends on THIS task: its learn-time provenance write (16.1 R10) needs this table.
 
 rel: part-of -> [[plan-16-invisible-grep-shim]]
@@ -65,6 +74,86 @@ rel: motivates -> [[task-22.2-repair-then-remove]]
 rel: motivates -> [[task-22.3-bug-086-global-repair]]
 rel: specifies -> [[task-22.1-audit-classes#r1-verify]]
 rel: related-to -> [[task-23.4-option-a-measurement]]
+
+## Revision round 15 (2026-11-13): freshness against bug-185 {#rev-round-15}
+
+Source: [[plan-review-2026-11-13#lead]] L31 ([[bsd-pop-r2-d99f41c#n7]]: "bug-185 R6 (item 5)
+rewrites the replay fold that 16.6 makes 'the one replay path'"), with L2 and L21 for the
+order. bug-185 builds before this slice (`#queue` item 5 vs item 8) and was itself revised the
+same day ([[task-bug185-bulk-gmd-ingest#rev-round-2]]). Read on dev master `1cf3b9f`; no store
+opened. Requirements otherwise unchanged; the rounds below are unchanged history.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-pop-r2-d99f41c#n7]]
+rel: depends-on -> [[task-bug185-bulk-gmd-ingest#r6]]
+
+- **bug-185 R6 (b) is a LINK-pass rule, and this slice keeps it.**
+  [[task-bug185-bulk-gmd-ingest#r6]] changes `rebuild_index_from_log`'s `link_state` fold: a
+  later `link` event with weight `None` keeps the previous `link`'s weight; `unlink` still
+  resets. This slice's ONE row pass ([[#r1d]]) replaces pass 3's `evidence_events` loop and
+  applies row ops, and does not touch the `link_state` pass. AC-9d check 3's scope ("the link
+  pass and the row pass … no `get_entity`, no constant-kind `name_to_id` lookup") is satisfied by
+  R6 (b), which resolves by the event's kinds. At RED the implementer re-reads the merged fold
+  and records its sha. bug-185's AC-8 `rebuild_index_from_log` tests and AC-2's replay-fidelity
+  checks must stay green through this slice: they are the regression guard for the fold.
+- **No per-event replay leg reaches this slice from bug-185** (lead ruling, 2026-11-13: d9bu
+  wins). bug-185's AC-8 and AC-11 replay through `rebuild_index_from_log` only
+  ([[task-bug185-bulk-gmd-ingest#ac-8]]), so R1f's deletion list and AC-12's scan are unchanged
+  by bug-185. If a merged bug-185 or bug-216 still calls `_apply_event_body` or
+  `apply_log_delta`, that call is a d9bu violation in that task. It is reported, not quietly
+  absorbed by R1f.
+- **bug-185 R6 (a) adds no new event op.** `bulk_link(update_weight=True)` logs ordinary `link`
+  events with a weight for already-set bits. `FOLD_RULES` (below) and this slice's `ROW_OPS`
+  are unchanged by it.
+- **bug-216 R13 (lead decision, 2026-11-13; it replaces the open item this round first
+  inherited from bug-185).** [[task-bug216-rule-docs-in-graph]] R13 (`#r13` on its branch until it merges) logs bug-216's per-file
+  `rel:`-evidence clear and its pending-ref add / delete / per-file-clear writes as facts.log
+  events, and bug-185 R8 (e) emits the same events from its batched writes
+  ([[task-bug185-bulk-gmd-ingest#open-replay-216]]). For this slice that means:
+  - **Their rules in the one rebuild path (bsd-spec-t4 r1 S5, lead ruling).** bug-216's merged
+    rebuild applies them in timestamp order (`rebuild_index_from_log`'s docstring:
+    "EVIDENCE: replayed in log order, together with `rel_evidence_clear`"). This slice keeps
+    those rules through its row-pass rewrite:
+    - **`rel_evidence_clear` is NOT count-neutral.** In the ONE row pass ([[#r1d]]) it acts at
+      its position. It removes the evidence copies of its partition and `file` whose `detail`
+      starts with `rel: ` and that come BEFORE it in `(ts, log position)` order (bsd-spec-t4 r2
+      M5: the rebuild's stable sort on `ts`, so ties fall in log order; 17.4's fold uses the
+      same rule). That is the
+      predicate of `Store.clear_rel_evidence`. It names a file, not an edge, so it is applied
+      by `_row_pass_events`' order but stays outside `ROW_OPS` and `row_event` (d9bl's builder
+      is for edge-keyed row ops). AC-9c's ordering case gains a `rel_evidence_clear` at `ts 2`
+      between a `rel:` append at `ts 1` (removed) and one at `ts 3` (kept). Mutation: the
+      clear applied after all appends FAILS (the `ts 3` copy is removed). A tie case: an
+      append and a clear, both at `ts 2`, with the append EARLIER in the log, so the clear
+      removes it; then the same pair with the clear earlier, so the append stays. Mutation:
+      ties broken against log order FAILS.
+    - **`pending_ref`, `pending_ref_delete`, `pending_refs_clear`** fold to the `pending_refs`
+      table in timestamp order, with a source's `tombstone` dropping its rows, exactly as
+      bug-216's rebuild does. They touch no evidence, link or entity row.
+  - **One fold table, which 17.4 imports (r1 S5).** This slice adds
+    `edge_records.BASE_FOLD_OPS` (below) and `edge_records.FOLD_RULES: dict[str, str]`, the
+    one statement of each non-HEAD replay op's
+    rule for an independent count fold:
+    - `learned_provenance` and `learned_provenance_move`: `"ignored"` (sidecar only; r10 s-3's
+      rule, moved here from the old `factslog-restore.py` row);
+    - `rel_evidence_clear`: `"evidence_clear_by_file"` (the predicate above);
+    - the three pending ops: `"pending_table"` (ignored for the entities / links / evidence
+      counts; `pending_refs` is not in 17.4's count check).
+
+    **This slice does NOT edit `scripts/factslog-restore.py`.** That file does not exist until
+    17.4, which `#queue` item 8 builds after this slice. 17.4 imports `FOLD_RULES`
+    ([[task-17.4-factslog-backup-snapshot#rev-round-15]]). A unit test asserts that
+    `rebuild_index_from_log`'s AST-read dispatch set EQUALS `edge_records.BASE_FOLD_OPS`
+    ∪ `FOLD_RULES`' keys (r2 M5). `BASE_FOLD_OPS` is the frozenset of the 11 ops at HEAD before
+    bug-216: `entity`, `tombstone`, `protect`, `noise`, `link`, `unlink`, `evidence`, `track`,
+    `untrack`, `memory_content`, `linkage_type`. This slice defines it in `edge_records`, and
+    17.4 imports both. 22.2 and 22.6 add their ops' rules to `FOLD_RULES` when they add the
+    ops; plan-22's `FOLD_OPS` file rows are its owner's to repoint (the lead is told). Mutation: drop `rel_evidence_clear` from `FOLD_RULES` FAILS. bug-216's AC-14 rebuild legs must stay green through the rewrite.
+  - **R13 applies in `rebuild_index_from_log` only** (lead ruling, 2026-11-13: d9bu wins over
+    R13's first "both replay paths" text). bug-216 adds no `_apply_event_body` branch and no
+    per-event test leg, so R1f gains nothing from R13.
+  - **bug-185 R10's (bug-221) unlinks are `unlink` events.** That op is already in the link
+    pass, so neither `ROW_OPS` nor `FOLD_OPS` changes for it.
 
 ## Amendment (d9cl) {#rev-amend-d9cl}
 
@@ -1116,7 +1205,7 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 |------|--------|
 | `src/refmatrix/duckdb_catalog.py` | `learned_evidence` DDL + primary key |
 | `src/refmatrix/store.py` | `dump_catalog_to_log` emits one `learned_provenance` event per sidecar row of a dumped evidence row after each partition's `evidence` events, with its evidence row's `ts`, and counts the dead-end rows it skips `provenance_not_dumped` (R1d, r4 b-2, d9av; round 14); `add_learned_provenance` (+ `learned_provenance` events); `move_learned_provenance` (+ `learned_provenance_move` event); DELETE `apply_log_delta`, `_apply_one_event`, `_apply_event_body`, `_replay_concept` and rewrite the `add_memory` comment that names them ([[#r1f]], d9bu); both ops in `rebuild_index_from_log`'s ONE timestamp-ordered row pass, which replaces pass 3's separate `evidence_events` loop and keeps Pass 2b (`_row_pass_events`, R1d, d9av; r8 m-1); Pass 2b calling `edge_records.resolve_c_kind`; `_row_skip` / `row_skips` ([[#r1d-one-format]], d9bl); `verify_evidence_rows` stats split (`missing_file`, `out_of_range`, `reader_rule`); `grep_evidence` enqueues R4 candidates for learned rows |
-| `src/refmatrix/edge_records.py` | `ROW_OPS` (this slice's two ops), `row_event`, `row_key`, `resolve_c_kind` (Pass 2b's rule, extracted) ([[#r1d-one-format]], d9bl); 22.2 and 22.6 add their ops to `ROW_OPS` |
+| `src/refmatrix/edge_records.py` | `ROW_OPS` (this slice's two ops), `row_event`, `row_key`, `resolve_c_kind` (Pass 2b's rule, extracted) ([[#r1d-one-format]], d9bl); 22.2 and 22.6 add their ops to `ROW_OPS`; (round 15) `BASE_FOLD_OPS` and `FOLD_RULES` ([[#rev-round-15]]) |
 | `src/refmatrix/learned_verify.py` (new) | R2: `Rules`, `Unverifiable`, `UNVERIFIABLE_REASONS`, `verify_argv`, `matching_lines`, `permissive_matching_lines`, `hash_line`, `verify` |
 | `src/refmatrix/replica_merge.py` | none: R1c is RETIRED (d9ay) |
 | `src/refmatrix/daemon.py` | DELETE `REPLICA_REBUILD_DELTA_BYTES` and its comment ([[#r1f]], d9bu); R4 drain consumer (pre-step + batch apply) on plan-23's drain; R5 backfill op; R1b call in `_learn_grep_hits` |
@@ -1127,7 +1216,7 @@ The audit/prune/repair acceptance moved to plan-22. {#acceptance-moved}
 | `tests/test_bug117_rebuild_non_concept.py` | DELETE `test_the_incremental_replay_resolves_non_concept_rows` ([[#r1f]], d9bu); the rebuild tests stay unchanged |
 | `tests/test_memory_content_log.py` | module docstring names `rebuild_index_from_log` only ([[#r1f]]) |
 | `tests/test_incremental_replay_retired.py` (new) | AC-12: the text scan (`src/refmatrix/`, `scripts/`, `eval/`) + AST scan (`tests/`, names, attributes and string constants) and its two-mode fixture-tree self-check (r10 m-3) |
-| `scripts/factslog-restore.py` (plan-17 task 17.4's) | `learned_provenance`, `learned_provenance_move` added to `FOLD_OPS`, each with its stated fold rule (r10 s-3): COUNT-NEUTRAL, named in `FOLD_OPS` as ignored for the `entities` / `links` / `evidence` counts, because both touch only the `learned_evidence` sidecar, which 17.4's count check does not compare; 22.6 AC-6d runs the fold-equals-rebuild check over logs holding them. In the same commit as the replay branch: 17.4's AST test pins `FOLD_OPS` to `rebuild_index_from_log`'s op set, and an op missing from it fails restore verification loudly (`unknown event op`) ([[task-17.4-factslog-backup-snapshot#r6-restore]]; ns17-r9-2) |
+| `scripts/factslog-restore.py` (plan-17 task 17.4's) | **NOT edited by this slice** (round 15, bsd-spec-t4 r1 S5): the file does not exist until 17.4, which builds after this slice. The rules this row used to add to `FOLD_OPS` (`learned_provenance`, `learned_provenance_move`: COUNT-NEUTRAL, sidecar only, r10 s-3) now live in `edge_records.FOLD_RULES` with bug-216 R13's four ops, and 17.4 imports them ([[task-17.4-factslog-backup-snapshot#rev-round-15]]). 22.6 AC-6d's fold-equals-rebuild check runs over logs holding them |
 
 ## Test strategy {#test-strategy}
 
@@ -1172,3 +1261,11 @@ repair them if possible") made re-pointing the DEFAULT and moved it, with the wh
 The read-time marks (d-b) are writes on a READ path, so they never take `_store_lock` inline. They
 go through plan-23's queue and its bounded drain (the 0.72.3 lesson in
 `project_grep_learn_wall_and_queue`). {#d-b-write-path}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

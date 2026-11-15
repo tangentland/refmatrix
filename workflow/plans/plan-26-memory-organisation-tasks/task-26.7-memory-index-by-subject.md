@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-26-memory-organisation
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 26.7: build 19.3 {#root}
@@ -16,12 +16,16 @@ metadata:
 > Status: Pending
 > Depends on: [[task-26.1-layout-module-and-index-walk]], [[task-26.6-compile-subject-hygiene]]
 > (live subjects, the `stale` mark), task 23.0 (sandbox; done). It does NOT wait on 19.2: see
-> [[#plan-19-delta]].
+> [[#plan-19-delta]]. Since rev 3 (2026-11-13): task 25.1 rev 7 merged, which ships in 0.83.0
+> ahead of this task by user decision D-Q2 ([[plan-review-2026-11-13#d-q2]]); AC-E runs its pack.
+> The 26.6 R3 residual follows this task ([[task-26.6-compile-subject-hygiene#r3-residual]], L1).
 
 rel: part-of -> [[plan-26-memory-organisation]]
 rel: realizes -> [[task-19.3-subject-tiered-index]]
 rel: depends-on -> [[task-26.6-compile-subject-hygiene]]
 rel: depends-on -> [[task-26.1-layout-module-and-index-walk]]
+rel: depends-on -> [[task-25.1-recall-hook-byte-budget#r4]]
+rel: derives-from -> [[plan-review-2026-11-13#d-q2]]
 
 ## Requirements {#requirements}
 
@@ -70,6 +74,7 @@ because plan Q6 defers to 19.3.
 - **AC-D: marker-gated (r2 s2).** The 19.3 render runs only in a memdir with `.memory-layout`.
   An un-organised dir gets HEAD's render (26.1 AC-9), so the deploy does not re-render fleet
   indexes before plan-27 backs them up. Test: one twin with the marker and one without.
+- **AC-E: 25.1's curated-hook lookup survives the regroup (D-Q2, rev 3).** See [[#ac-e]].
 
 ## Files to Create / Modify {#files}
 
@@ -83,6 +88,7 @@ because plan Q6 defers to 19.3.
 | `src/refmatrix/cli.py` | `rmx memory index --check-reach` |
 | `tests/test_memory_index.py` | extend |
 | `tests/test_memory_index_reach.py` | create |
+| `tests/test_memory_index.py`, plus one end-to-end case through `rmx memory recall --pack` | AC-E (rev 3) |
 
 ## Test Strategy {#test-strategy}
 
@@ -112,3 +118,69 @@ Answers [[bsd-plan26-27-spec-review-r2-8af766a]].
 | finding | change | anchor |
 |---|---|---|
 | s2 (the deploy re-renders fleet indexes) | The 19.3 render is marker-gated; twin test | AC-D |
+
+## Revision round 3 (2026-11-13): D-Q2 {#rev-round-3}
+
+Answers [[plan-review-2026-11-13#d-q2]] (spec gap G6, [[plan-review-2026-11-13#spec-gaps]]).
+Evidence: `workflow/review-output/pop-2026-11-13/contra-a.md` Ca-1. The user's D-Q2 ships 25.1
+rev 7 in 0.83.0, before this task. That waives, on the record, the order "26.7 (19.3) closes
+before 25.1 starts" ([[plan-26-memory-organisation#overlap-37]]). The price of the waiver is this
+AC: 25.1's pack reads curated hooks out of the index that this task regroups. Status is unchanged
+(`pending`).
+
+rel: derives-from -> [[plan-review-2026-11-13#d-q2]]
+
+| row | change | anchor |
+|---|---|---|
+| D-Q2 / Ca-1 (25.1 ships before the regroup; no 26.7 AC protects its hook lookup) | AC-E; 25.1 rev 7 merged is a dependency | [[#ac-e]], header |
+| L1 (26.6 R3 residual after 26.7) | Header records the order; no AC change | header |
+| Q8 open (brief rule) | No line here changes under Q8 b | [[#q8-b]] |
+
+### AC-E: the curated-hook lookup survives the regroup {#ac-e}
+
+25.1's pack builds its hook map with `memory_index.load_hooks(memdir)` and looks a row up by its
+memory id first, then by its path relative to the memdir
+([[task-25.1-recall-hook-byte-budget#r4]]). The 19.3 render changes which index lines exist:
+- subject blocks;
+- a memory listed under two subjects;
+- tier folds;
+- type lines for memories in no live subject.
+
+Because `load_hooks` lets an index hook replace the sidecar value, a render line that carries a
+different or a cut hook would rewrite a curated hook (bug-193's family).
+
+The fixture copies an organised memdir, with curated hooks on at least five memories, chosen so
+that each of these is covered:
+- a memory listed in one subject block;
+- a memory in two subject blocks;
+- a memory folded behind a tier fold;
+- a memory in no live subject (on its type line);
+- a memory that 26.5 moved (AC-C).
+
+- **(a)** `load_hooks(memdir)` returns the same hook for each of those ids before the 19.3 render
+  and after it, byte-identical. A hook is never replaced by subject-line text, by a fold line, or
+  by a cut ending in `…`.
+- **(b)** Two consecutive renders leave `.memory_hooks.json` byte-identical, and
+  `rmx memory index --check` reads in sync after the second (idempotent, bug-050).
+- **(c)** In the task 23.0 sandbox, the real `rmx memory recall --pack` (25.1 R3/R4), run over that
+  memdir's store, prints each named hit's curated hook and not its first sentence. This is 25.1
+  AC-9's id-keyed case re-run on the regrouped dir.
+- **(d)** On the marker-off twin, 25.1 AC-9's path-keyed case passes unchanged (AC-D).
+- **Mutations, each killed:**
+  - a subject-block member line rendered with a shortened hook that `load_hooks` reads back kills
+    (a);
+  - dropping folded entries from `save_hooks` kills (a) and (c) for the folded memory;
+  - keying the 19.3 render's hooks by path kills (c) for the moved memory.
+
+### Lines that change under Q8 b {#q8-b}
+
+None. The index and its hooks live on the file side. Save-state pointer lines are rendered from
+files, whether or not save-states are bridged.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

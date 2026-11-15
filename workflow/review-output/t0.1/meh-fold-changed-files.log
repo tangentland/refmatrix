@@ -1,0 +1,6 @@
+# sha fff91a8296a897b6a6aed2911919eccc5ab11388 (= fff91a8, GREEN) + uncommitted MEH-1..3 fold; cwd /Volumes/littlebig/refmatrix-t01 layout=symlinked .venv-eval
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 75%]
+........................                                                 [100%]
+96 passed in 23.63s
+EXIT=0

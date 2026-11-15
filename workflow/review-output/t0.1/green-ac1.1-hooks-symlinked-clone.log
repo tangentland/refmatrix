@@ -1,0 +1,14 @@
+sha=de4531c clone=/Volumes/littlebig/refmatrix-t01-green (symlinked .venv-eval)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t01-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 1 item
+
+tests/test_repo_hooks_in_sync.py s                                       [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:22: hooks belong to another checkout of this commit
+============================== 1 skipped in 0.11s ==============================
+pytest exit=0

@@ -7,13 +7,15 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-11-09
+  updated: 2026-11-14
 ---
 
 # Task 19.1: pack recall under the budget {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13: nothing left to build
+> here**: R1-R8 are built by 25.1 and the folded riders by 25.1b ([[#rev-2026-11-13]]). The
+> scheduling text below is history.
 > Depends on: 23.0 (test sandbox); 19.5 R1 (the threshold probe: the default budget, per-hook vs
 > per-event, and the PreCompact verdict; a manual probe that runs in Wave 1 BEFORE 19.1, see the
 > plan's [[plan-19-adaptive-memory-budget#tasks]] row for 19.5; re-review #m-1); 21.1 (the named emitters and event schema, R8). Scheduled after 23.1 in the Wave 1 order
@@ -302,4 +304,24 @@ rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 | R6 `memory get --scope` (AC-7) | 25.1 R6, AC-11 | |
 | R8 spans (AC-6) | 25.1 R9, AC-10 | |
 | AC-9 isolation, AC-10 mutations | 25.1 AC-13, AC-14 | all twelve mutations carried |
-| folded riders #w1c-s2, #w1c-m4 | not realized; stay with 19.1 | |
+| folded riders #w1c-s2, #w1c-m4 | not realized; stay with 19.1 | 2026-11-13: moved to [[task-25.1b-hook-output-ladder-and-spill]] ([[#rev-2026-11-13]]) |
+
+## Revision (2026-11-13, the plan review: D-Q6, L14) {#rev-2026-11-13}
+
+Record only. {#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q6]]
+rel: related-to -> [[task-25.1b-hook-output-ladder-and-spill]]
+
+| item | record |
+|---|---|
+| #w1c-s2, #w1c-m4 (plan-2 r9 #s-2 / #m-4) | hosted by [[task-25.1b-hook-output-ladder-and-spill]] R16 / R17, with their ACs carried (AC-22, AC-23). Plan-2 closes when they land there (D-Q6) |
+| this task | fully realized: R1-R8 by 25.1 ([[#rev-plan25]]), the riders by 25.1b. Not built on its own; its header's Wave 1 slot and C11 window are history |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

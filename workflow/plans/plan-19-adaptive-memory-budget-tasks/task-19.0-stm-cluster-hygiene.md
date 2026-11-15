@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-14
 ---
 
 # Task 19.0: STM cluster hygiene {#root}
@@ -19,7 +19,9 @@ metadata:
 > them; the dependency is the merge, not a sha on the bug-109 branch (it landed: `0c7d0e0`,
 > 0.78.0, bug-109 r1-r4; round 6 re-read R0, R5 and R7 against it). Scheduled no later than
 > Wave 2 (d5e); in the Wave 1 order it runs once 23.0 is in
-> ([[plan-review-2026-10-14#t8-wave1]]). Hard prerequisite of 19.6.
+> ([[plan-review-2026-10-14#t8-wave1]]). Hard prerequisite of 19.6. **2026-11-13 (L41,
+> [[#rev-2026-11-13]]):** R1 is built by 25.3's STM half; this task's remainder (R0, R1's rebuild
+> remainder, R2-R7) builds after that half merges, in queue item 4.
 
 rel: part-of -> [[plan-19-adaptive-memory-budget]]
 rel: derives-from -> [[plan-review-2026-10-14#t5-stm-hygiene]]
@@ -925,3 +927,28 @@ rel: related-to -> [[task-25.3-stm-ref-admission-and-helix-repeat]]
 | R1 rebuild path | partly: 25.3 R5 FILTERS stored refs shape-only in `rebuild_focus` and the composite render | re-extraction from `detail` remains 19.0's |
 | R1 unterminated scripts rule | [[task-25.3-stm-ref-admission-and-helix-repeat#r2]] | same rule |
 | R0, R2-R7 | not realized; stay with 19.0 | |
+
+## Revision (2026-11-13, the plan review: L41) {#rev-2026-11-13}
+
+Record of order and ownership. No requirement or AC changes here. {#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-pop-r3-b19f583#r6]]
+rel: derives-from -> [[bsd-pop-r3-b19f583#r7]]
+rel: derives-from -> [[bsd-pop-r4-d1614a8#x2]]
+rel: depends-on -> [[task-25.3-stm-ref-admission-and-helix-repeat]]
+
+| item | record |
+|---|---|
+| order | after [[task-25.3-stm-ref-admission-and-helix-repeat]]'s STM half (R1-R5) merges, NOT after its helix half. The ACs here assume R1 is built (AC-4's pre-check: "with R1 built and R2 disabled, this AC fails"). The helix half may drop under L43, and that must not block this task |
+| scope | R0, R1's rebuild remainder (re-extraction from `detail` through `stm.command_refs(…, root=None)`, per [[#rev-plan25]]), R2-R7 |
+| bugs | bug-100 (R5), bug-103 (R2) and bug-104 (R1, with 25.3) are owned here and ride queue item 4. They leave the backlog, and their registry fix columns point here (the registry is the lead's) |
+| plan-24 D1 | not affected: D1 never named 19.0 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

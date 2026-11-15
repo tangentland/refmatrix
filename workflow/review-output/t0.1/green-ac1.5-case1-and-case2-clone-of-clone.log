@@ -1,0 +1,31 @@
+sha=de4531c clone=/Volumes/littlebig/refmatrix-t01-cofc (clone of a clone, symlinked .venv-eval, origin /Volumes/littlebig/refmatrix-t01)
+pyc-guard: recompiled 11 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01-cofc/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-t01-cofc
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collecting ... collected 19 items
+
+tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate PASSED [  5%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_populated_own_dir_is_chosen_with_no_fallback_line PASSED [ 10%]
+tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_dir_falls_back_to_the_origin_and_says_empty PASSED [ 15%]
+tests/test_lint_gmd_memdir_fallback.py::test_an_absent_own_dir_falls_back_to_the_origin_and_says_absent PASSED [ 21%]
+tests/test_lint_gmd_memdir_fallback.py::test_origin_spellings_canonicalise_to_one_origin_and_slug PASSED [ 26%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[scp] PASSED [ 31%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[https] PASSED [ 36%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[file] PASSED [ 42%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_chain_of_clones_is_walked_to_the_first_populated_dir PASSED [ 47%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_chain_names_an_empty_intermediate_dir_as_empty PASSED [ 52%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_cycle_of_origins_returns_no_dir_and_says_cycle PASSED [ 57%]
+tests/test_lint_gmd_memdir_fallback.py::test_the_walk_stops_at_the_bound_of_five_origins PASSED [ 63%]
+tests/test_lint_gmd_memdir_fallback.py::test_the_fifth_origin_is_inside_the_bound PASSED [ 68%]
+tests/test_lint_gmd_memdir_fallback.py::test_a_checkout_with_no_origin_stops_with_no_dir PASSED [ 73%]
+tests/test_lint_gmd_memdir_fallback.py::test_an_origin_that_is_not_a_checkout_stops_with_no_dir PASSED [ 78%]
+tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script PASSED [ 84%]
+tests/test_lint_gmd_memdir_fallback.py::test_the_script_calls_the_resolver_under_python3 PASSED [ 89%]
+tests/test_lint_gmd_memdir_fallback.py::test_the_script_holds_no_slug_derivation PASSED [ 94%]
+tests/test_lint_gmd_memdir_fallback.py::test_the_script_reads_no_origin PASSED [100%]
+
+============================== 19 passed in 7.07s ==============================
+pytest exit=0

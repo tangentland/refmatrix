@@ -237,54 +237,85 @@ def _fresh_pointer_dir():
 
 # R6 (ch-bsd r1 b2, 2026-10-15): every skip is NAMED here, or the session fails
 # (`rmx_sandbox.SkipGate`). The main-tree baseline run (pytest-baseline-23ad703.log) skips
-# none; the entries are CLONE-ONLY: a littlebig clone has no `.venv-eval/` of its own (the
-# dev `rmx` those end-to-end tests spawn) and its hooks are installed for another checkout.
-# They are allowed ONLY in a checkout without `.venv-eval/`: in the main tree each of them
-# skipping fails the session like any other unpinned skip.
-_CLONE_NO_VENV = "clone-only: the dev venv rmx (<checkout>/.venv-eval/bin/rmx) is not built"
-_CLONE_HOOKS = "clone-only: the installed hooks belong to another checkout of this commit"
-_CLONE_ONLY_SKIPS = {
-    "tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon":
-        _CLONE_NO_VENV,
-    "tests/test_brief_real_daemon.py::test_brief_runs_end_to_end_through_a_real_daemon":
-        _CLONE_NO_VENV,
-    "tests/test_brief_real_daemon.py::test_saved_briefs_do_not_grow_the_corpus_on_rerun":
-        _CLONE_NO_VENV,
-    "tests/test_brief_real_daemon.py::test_the_gmd_flag_does_not_crash_through_a_real_daemon":
-        _CLONE_NO_VENV,
-    "tests/test_grep_argv_order_e2e.py::test_a_directory_walk_keeps_its_files_GROUPED":
-        _CLONE_NO_VENV,
-    "tests/test_grep_argv_order_e2e.py::test_a_named_file_still_wins_its_argv_slot_against_a_walk":
-        _CLONE_NO_VENV,
-    "tests/test_grep_argv_order_e2e.py::test_named_paths_come_back_in_argument_order_not_fanout_order":
-        _CLONE_NO_VENV,
-    "tests/test_grep_argv_order_e2e.py::test_the_tool_itself_is_the_one_that_scrambles":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_a_directory_with_no_match_gets_a_zero_row_per_file":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_a_directory_with_some_matches_keeps_its_zero_rows":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_directory_is_not_a_bare_zero":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_a_missing_file_beside_a_match_still_exits_2":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_a_missing_file_exits_2_and_says_so":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_two_spellings_keep_their_own_prefix_on_n":
-        _CLONE_NO_VENV,
-    "tests/test_grep_count_rows_e2e.py::test_two_spellings_of_one_file_are_two_rows":
-        _CLONE_NO_VENV,
+# none; the entries are CLONE-ONLY: a littlebig clone may have no dev `rmx` of its own (the
+# end-to-end tests below spawn `<checkout>/.venv-eval/bin/rmx`) and its committed
+# `.claude/settings.json` names the hooks of another checkout.
+#
+# bug-215 (T0.1' R1.1/R1.2, 2026-11-15): until then ONE test, `(_REPO / ".venv-eval").is_dir()`,
+# switched all 19 pins, and each pin's value was a description ("clone-only: the dev venv rmx …
+# is not built", "clone-only: the installed hooks belong to another checkout …") that equalled
+# none of the reasons the tests skip with, while `SkipGate` matched by nodeid only. A clone whose
+# `.venv-eval` is a SYMLINK to the main tree's passed the `is_dir()` test, every pin was dropped,
+# and the hooks skip failed every run there (exit 1, SKIPPED-UNPINNED
+# test_installed_hooks_match_generated); a pinned test that began skipping for a NEW reason
+# passed unseen. Now each pin is allowed by ITS OWN condition, and its value is the test's own
+# `reason=` string verbatim, which `SkipGate` requires to be EQUAL to the skip's reason. A test
+# whose `reason=` text changes updates its pin here in the same commit.
+#
+# The 18 dev-venv pins are allowed only while `<checkout>/.venv-eval/bin/rmx` does not exist
+# (a symlinked venv that resolves outside the checkout satisfies this only if it lacks
+# `bin/rmx`). Stage 2 (T0.2, bug-253's helper) retires them and this condition with them.
+_BRIEF = "tests/test_brief_real_daemon.py::"
+_ARGV = "tests/test_grep_argv_order_e2e.py::"
+_COUNT = "tests/test_grep_count_rows_e2e.py::"
+_VENV_RMX_PINS = {
+    _BRIEF + "test_an_unknown_class_fails_loudly_through_the_daemon": "dev rmx not built",
+    _BRIEF + "test_brief_runs_end_to_end_through_a_real_daemon": "dev rmx not built",
+    _BRIEF + "test_saved_briefs_do_not_grow_the_corpus_on_rerun": "dev rmx not built",
+    _BRIEF + "test_the_gmd_flag_does_not_crash_through_a_real_daemon": "dev rmx not built",
+    _ARGV + "test_a_directory_walk_keeps_its_files_GROUPED": "dev venv rmx not built",
+    _ARGV + "test_a_named_file_still_wins_its_argv_slot_against_a_walk":
+        "dev venv rmx not built",
+    _ARGV + "test_named_paths_come_back_in_argument_order_not_fanout_order":
+        "dev venv rmx not built",
+    # Its condition is `not (RMX.exists() and HAS_RG)`: pinned only for the missing venv rmx. In
+    # a checkout WITH the venv rmx a missing `rg` skips it unpinned and fails the session.
+    _ARGV + "test_the_tool_itself_is_the_one_that_scrambles": "needs rmx + rg",
+    _COUNT + "test_a_directory_with_no_match_gets_a_zero_row_per_file":
+        "dev venv rmx or /usr/bin/grep missing",
+    _COUNT + "test_a_directory_with_some_matches_keeps_its_zero_rows":
+        "dev venv rmx or /usr/bin/grep missing",
+    _COUNT + "test_a_missing_file_beside_a_directory_is_not_a_bare_zero":
+        "dev venv rmx or /usr/bin/grep missing",
+    _COUNT + "test_a_missing_file_beside_a_match_still_exits_2":
+        "dev venv rmx or /usr/bin/grep missing",
+    _COUNT + "test_a_missing_file_exits_2_and_says_so": "dev venv rmx or /usr/bin/grep missing",
+    _COUNT + "test_two_spellings_keep_their_own_prefix_on_n":
+        "dev venv rmx or /usr/bin/grep missing",
+    _COUNT + "test_two_spellings_of_one_file_are_two_rows":
+        "dev venv rmx or /usr/bin/grep missing",
     "tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor":
-        _CLONE_NO_VENV,
+        "dev venv rmx not built",
     "tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing":
-        _CLONE_NO_VENV,
+        "needs the dev venv's rmx console script",
     "tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag":
-        _CLONE_NO_VENV,
-    "tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated":
-        _CLONE_HOOKS,
+        "dev venv rmx not built",
 }
-ALLOWED_SKIPS = {} if (_REPO / ".venv-eval").is_dir() else dict(_CLONE_ONLY_SKIPS)
+# Allowed only when the installed hooks belong to another checkout, decided as
+# tests/test_repo_hooks_in_sync.py decides it (`_OWNER is not None and _OWNER != REPO`). Its
+# other skip, "not an rmx-hooks-managed checkout", is deliberately NOT pinned.
+_FOREIGN_HOOKS_PINS = {
+    "tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated":
+        "hooks belong to another checkout of this commit",
+}
 
+
+def allowed_skips(checkout: Path) -> dict:
+    """The pins (`nodeid -> the test's own reason`) allowed in `checkout`, each by its own
+    condition (bug-215, T0.1' R1.1). Pure: reads the checkout, writes nothing."""
+    from refmatrix import hooks as hooks_mod
+
+    checkout = Path(checkout).resolve()      # the hooks test compares against a resolved REPO
+    allowed: dict = {}
+    if not (checkout / ".venv-eval" / "bin" / "rmx").exists():
+        allowed.update(_VENV_RMX_PINS)
+    owner = hooks_mod.installed_root(checkout)
+    if owner is not None and owner != checkout:
+        allowed.update(_FOREIGN_HOOKS_PINS)
+    return allowed
+
+
+ALLOWED_SKIPS = allowed_skips(_REPO)
 
 def pytest_configure(config):
     config.addinivalue_line(

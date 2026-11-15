@@ -5,27 +5,36 @@ title: "Task 21.5: a tool-level `used` signal: derived at report time by joining
 tags: [task, plan-21, telemetry, recall-events, used, stm, agent-usage]
 metadata:
   node_type: task
-  status: pending
+  status: approved
   plan: plan-21-agent-context-usage
   created: 2026-11-11
-  updated: 2026-11-13
-  revision: 3.1
+  updated: 2026-11-14
+  revision: 4
 ---
 
 # Task 21.5: a tool-level `used` signal {#root}
 
 > Plan: [[plan-21-agent-context-usage]]
-> Status: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1 (DIRTY 18) and its addendum
+> Status: **Approved, rev 4 (2026-11-14, [[#approval]]): phase M is approved to build; phase B stays FROZEN until the charter decision** ([[#decision-no-build]]). History: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1 (DIRTY 18) and its addendum
 > against 24.6 r5 ([[#rev-2]]). Rev 3 (2026-11-13) answers spec review r2 (DIRTY 14, NO-GO on
 > b-1: the Bash leg re-opened the clone leg D12 rules out) and re-runs [[#why-data]] under the
 > fix ([[#rev-3]]). Rev 3.1 (the same day) folds in the user's OD-4 and OD-5 decisions (OD-5: a
 > decay kernel replaces the hard window, [[#d18]]) and re-runs the data under it on two corpora
 > ([[#rev-3-1]]). It needs a spec re-review before approval; the user allowed AC-15's cliquedb
 > copy and runs R12's sample as a pilot in parallel ([[#ofu-cliquedb]], [[#ofu-pilot]]).
-> Wave: now. The user prioritised it on 2026-11-11, after reading `rmx telemetry --agent-usage`.
+> **Rev 4 (2026-11-13, D-Q4, L35; [[#rev-4]]).** The pilot fired R12's lowest band (`p_w` 0.07
+> CAUSED, 0.19 CAUSED+INFORMED, below 0.50). Rev 4 folds the pilot's seven matcher changes,
+> drops `bash_name` under R12's own stratum rule, and adds the R12 re-measure on the revised
+> matcher ([[#r14]]). **Decision: no build until the handhold experiment reports**
+> ([[#decision-no-build]]). The task now has two phases: phase M (the re-measure, queue item 7,
+> before the experiment starts) and phase B (the build, frozen per D-Q3).
+> Wave: phase M in queue item 7 after the m1 confirm (L36); phase B after the charter decision.
+> The user prioritised it on 2026-11-11, after reading `rmx telemetry --agent-usage`.
 > Depends on: 21.1 (completed: the ONE recall-event schema, `emit_recall_events`,
 > `delivered_in_session`, R12's three explicit evidences, the `--agent-usage` report), and 23.0
-> (completed: the shared test sandbox).
+> (completed: the shared test sandbox). Phase M depends on the m1 r2-lite confirm (G32, L36).
+> Phase B also depends on 19.0 R2 (the `origin` ladder; rev 4's only-`parent`-credits rule needs
+> it) and 10.3 (the compaction marker that bounds a unit's segment, [[#d7]]).
 > Touches the interfaces of 19.0 R2 and 19.2 (pending), 19.6 (pending), 24.6 (pending; amended
 > to r6 with rev 2 and to r7 with rev 3) and 25.1 (pending). [[#open-for-user]] lists what
 > still needs the user.
@@ -45,6 +54,11 @@ rel: derives-from -> [[bsd-task-21.5-spec-r1-15e8f64]]
 rel: derives-from -> [[bsd-task-21.5-spec-r2-540ab50]]
 rel: reinforces -> [[feedback_no_silent_failures]]
 rel: reinforces -> [[feedback_go_no_go_ranges_not_predrop]]
+rel: derives-from -> [[measurement-task-21.5-r12-pilot-2026-11-13#matcher-changes]]
+rel: derives-from -> [[plan-review-2026-11-13#d-q4]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-19.0-stm-cluster-hygiene#requirements]]
+rel: related-to -> [[plan-28-handhold-outcome-experiment]]
 
 ## Why {#why}
 
@@ -188,6 +202,32 @@ the bias does not hold there or the cliquedb credits are mostly coincidence. [[#
 bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this to the user.
 {#why-data-kernel-reading}
 
+## Decision row (rev 4): no build until the handhold experiment reports {#decision-no-build}
+
+rel: derives-from -> [[plan-review-2026-11-13#d-q4]]
+rel: derives-from -> [[plan-review-2026-11-13#d-q3]]
+
+- **The decision (D-Q4; the user, 2026-11-13: "q-3-7 your recommendations", Q4 → a).** The
+  user's order stands: 21.5 decision → handhold experiment ([[plan-28-handhold-outcome-experiment]]).
+  The 21.5 decision is **no build until the experiment reports**. Phase B (R1-R13 in `src/`, every
+  AC below) starts only after plan-28 reports and the user takes the charter decision (G18). Phase
+  M ([[#r14]], the R12 re-measure on the revised matcher, L35) runs before the experiment starts.
+  D-Q3 lists the 21.5 build among the frozen work, so the two decisions agree. {#dnb-decision}
+- **No consumer counts `tool` credits meanwhile (L18, L27; contra-b CB-9).** 19.6's Table C,
+  10.2 R7's nested outcome and plan-28's `used` outcome count only R12 explicit uses plus
+  `cited_in_answer`. 19.2 adds no column. d21-5a's binding (19.6's scorer calls `tool_touches`,
+  [[#od-4]]) stays as a definition. Its `tool` clause has no implementation until phase B, and it
+  enters no verdict until R12's band on the BUILT matcher's post-deploy window reads the top row.
+  {#dnb-consumers}
+- **What phase M decides.** R14's band reading is recorded for the charter decision. It governs
+  what phase B builds once unfrozen; it never starts phase B ([[#r14]]'s action table).
+  {#dnb-phase-m}
+- **Why not build now.** The pilot's verdict was that, as specified, the matcher measures proximity, not
+  use ([[measurement-task-21.5-r12-pilot-2026-11-13#verdict]]); about 90% of headline credits
+  were touches the agent would have made anyway. A revised matcher that has not been
+  re-measured would ship a counter that nothing may read. The experiment measures the outcome the
+  counter was a proxy for. {#dnb-why}
+
 ## Decisions this task carries {#decisions}
 
 1. **D1: derive at report time; never emit at hook time.** {#d1}
@@ -215,7 +255,8 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
    - The ring is refmatrix's own primitive. It is keyed by the same Claude session id as the
      events (R9's resolver), and both the shell hook and 24.6's mod observe write it.
    - The transcript is Claude Code's internal format. It lives outside the store root and holds
-     raw prompts (d8f). It is read only by R12's labeller, locally.
+     raw prompts (d8f). It is read only by R12's labeller and by phase M's prototype ([[#r14]],
+     a measurement), locally. Phase B's report never reads it.
    - **What the ring lost, and the fix (m-1, x-1).** Before this task the matcher's inputs lived
      in `detail`, a JSON string cut at `stm.DETAIL_MAX` (600); 16% of live Bash details reach
      the cut. [[#r1]] stores the matcher's inputs as their own fields, each with a larger cap
@@ -285,14 +326,28 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
    - One Read of a bsd report credited 7 delivered anchors of that file in r1's prototype, and
      833 of 927 delivered concepts have a path (mostly GMD anchors of workflow docs). Crediting
      per delivered event counts one act many times.
-   - **Lead decision.** A **delivered unit** is `(session, prompt, channel, file)` for items
-     with a path, and `(session, prompt, channel, key)` for items without one (`key` = `name`,
-     `kind`, `scope`). Every delivered anchor of a file in one prompt on one channel is one unit.
-     A tool call `T` that touches file `F` credits at most one unit per channel: the unit of `F`
-     from the most recent delivering prompt at or before `T`'s prompt. A Bash touching two
-     delivered files credits two units.
-   - The report prints `units` and `anchors_in_units` beside each other, so the collapse is
-     visible. The re-run gives 2,420 eligible events in 2,144 units ([[#why-data]]).
+   - **Lead decision, amended by rev 4 (pilot change 7a).** A **delivered unit** is the FIRST
+     delivery of a file on one channel in one session segment: `(session, segment, channel,
+     file)` for items with a path, and `(session, segment, channel, key)` for items without one
+     (`key` = `name`, `kind`, `scope`). A segment runs from the session's start, or from a
+     compaction, to the next compaction. Phase B reads compaction from 10.3's marker
+     (`stm.last_marker`); legacy data and phase M read it from a SessionStart recall row whose
+     source is `compact` or `clear`. Every delivered anchor of the file in that first delivering
+     prompt belongs to the unit (`anchors_in_units`).
+   - **Re-deliveries are not units (rev 4).** A later delivery of the same file (or key) on the
+     same channel in the same segment is counted `redelivered`. It forms no unit, so it is never
+     credited and is not in the denominator. The pilot found that rev 3's rule (credit the unit
+     from the most recent delivering prompt) gave a re-delivered file's credit to the later
+     unit. That credit then landed at lag 0 against a prompt that only repeated the item
+     ([[measurement-task-21.5-r12-pilot-2026-11-13#matcher-changes]], item 7). Lag is measured
+     from the unit's first delivery. This is the same "first full delivery" that 10.2's held set
+     uses (h1), so after 10.2 ships a re-delivery is a names-line item, which is consistent.
+   - A tool call `T` that touches file `F` credits at most one unit per channel: the segment's
+     unit of `F`, when its delivery precedes `T`. A Bash touching two delivered files credits two
+     units.
+   - The report prints `units`, `anchors_in_units` and `redelivered` beside each other, so the
+     collapse is visible. Rev 3's re-run gave 2,420 eligible events in 2,144 per-prompt units
+     ([[#why-data]]); phase M re-counts under rev 4's unit.
 8. **D8: the headline excludes prior-touch; both numbers are printed (m-7).** {#d8}
    - A file the agent touched before the delivery and touches again after it is weak evidence
      that the delivery caused the second touch. In rev 3's re-run, 17 of 35 credited units are
@@ -371,10 +426,24 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
       itself carries `agent_id` (19.0 R2's rung 1, whose presence 19.0 R0 measures), and
       otherwise writes NO `origin` key; 19.0 R2's rungs 2 and 3 fill it when 19.0 ships. This
       task builds no ladder.
-    - **The join.** `parent` credits. `agent:*` credits nothing, counted `subagent_tool_events`.
-      `unattributed` credits nothing, counted `origin_unattributed`. An absent `origin` credits
-      and is counted `origin_unknown`, and the footer says the rate includes subagent tool
-      calls whose origin is unknown.
+    - **The join (rev 4, pilot change 2).** Only `parent` credits. `agent:*` credits nothing,
+      counted `subagent_tool_events`. `unattributed` credits nothing, counted
+      `origin_unattributed`. An absent `origin` also credits nothing, counted `origin_unknown`. Rev
+      3 credited it and printed a footer. In the pilot, 72 of 121 labelled headline pairs were
+      subagent touches, and 3 of those 72 were CAUSED+INFORMED
+      ([[measurement-task-21.5-r12-pilot-2026-11-13#breakdowns]]), so an unknown origin is mostly
+      a false credit. The shell hook's events get `origin` from 19.0 R2's ladder (queue item 4,
+      before phase B). After 19.0 ships, an absent `origin` marks a line written before it. The
+      footer line is dropped.
+    - **Deliveries made inside a subagent's call (rev 4, pilot change 7b).** A delivery on an
+      agent channel (its query.log row has `invocation` `agent` or `mcp`) is made by a tool call
+      in the ring: the Bash `rmx …` or `mcp__refmatrix__*` event whose `[t_start, t]` interval
+      holds the row's start. The unit takes that event's `origin`. A unit whose issuing call is
+      not `parent` is not eligible for tool credit (counted `delivery_origin_not_parent`), and
+      neither is one whose issuing call is not found (`delivery_origin_unfound`). The subagent
+      saw that delivery and the main loop did not. Prompt-time channels (`scan_prompt`,
+      `prompt_recall`) are main-loop by construction: a subagent receives no UserPromptSubmit.
+      Errors here can only lower the rate.
     - **The sample does not wait for 19.0 R2.** [[#r12]]'s labeller records each pair's origin
       from the transcript ([[#od-2]]), so precision is computed over main-loop pairs and the
       subagent share of credits is measured.
@@ -415,13 +484,35 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
       ref is taken as is. A ref that lands inside the project matches under `bash_path`,
       whatever the base (an absolute project path names a project file). A relative ref on a
       base outside the project counts `refs_outside_project`; one on an unknown base counts
-      `bash_base_unknown`; neither matches. A name token matches under `bash_name` only in a
-      simple command whose base is inside the project. A Bash call with any simple command
-      whose base is outside the project or unknown is counted once in
-      `bash_names_outside_project` (its tokens there were not matched).
+      `bash_base_unknown`; neither matches. Rev 3 matched a name token under `bash_name` in a
+      simple command based inside the project. Rev 4 drops that leg ([[#r3]]), and with it the
+      `bash_names_outside_project` count.
     - **Why the name leg too (lead).** A name in a command run inside a clone is the same act
       as a path there: the clone's copy of the symbol, run mostly by a worker that never saw the
-      delivery ([[#d13]]). Matching it would re-open the clone leg by name.
+      delivery ([[#d13]]). Matching it would re-open the clone leg by name. (Rev 4 drops
+      `bash_name` altogether, [[#r3]]. The base rule still governs Grep `name` and Glob.)
+    - **Bodies are data, not refs (rev 4, pilot change 4).** `bash_segments` takes no path or
+      name token from:
+      - a heredoc body (`<<WORD`, `<<-WORD`, `<<'WORD'`, `<<"WORD"`, up to its delimiter line);
+      - the value of `-m` / `--message` / `-F` / `--file` on `git commit`, `git tag` and
+        `git merge`;
+      - the value of `--title` / `--body` / `--body-file` on `gh`.
+
+      Each skipped body is counted `bodies_skipped`. The pilot found commit-message and heredoc
+      text naming delivered paths, which credited writing ABOUT a file as touching it.
+    - **A path built from a variable is unknown (rev 4, pilot change 4).** A ref token that holds
+      a shell expansion (`$VAR`, `${VAR}`, `$(…)`, a backtick) anywhere in it is counted
+      `refs_var_unknown` and never matched. The value of an assignment (`VAR=…`) is not a ref.
+      `cat $C/src/x.py` had resolved `src/x.py` against the project and reopened the clone leg.
+    - **A nested worktree is not the project (rev 4, pilot change 5).** A base is inside the
+      project only when it lies in the project's own checkout: under `logical_root`'s project dir
+      and not inside a nested git checkout under it. A nested checkout is a directory, at or
+      above the base and below the project dir, that holds its own `.git` entry; harness worktree
+      isolation puts one there. The check runs at report time. A base whose directory is gone
+      and that lies under a dot-directory of the project counts as outside. Refs resolved
+      against such a base count `refs_outside_project`. With R1's `cwd` recorded, a
+      worktree-isolated call's relative refs resolve against its worktree, never the project
+      (8 cliquedb pilot pairs had been resolved against the project through `cwd_fallback`).
     - **Grep and Glob (lead).** Their `path` input is their base (absent: `cwd`). Outside the
       project they match nothing, counted `refs_outside_project`; the Grep `name` and Glob legs
       apply only inside it.
@@ -450,7 +541,8 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
       `mcp__refmatrix__rmx_focus_note` are R12's explicit evidences: skipped and counted
       (`skipped_explicit_tool_calls`), as their Bash forms are. Every other
       `mcp__refmatrix__*` tool matches under `mcp_name`: a whole token of its string arguments
-      equals the item's `name`, by the `bash_name` tokeniser and gate. R1 records those
+      equals the item's `name`, by the name-leg tokeniser and gate (21.1 R12's `_NOTE_TOKEN_RE`,
+      `_matchable`). R1 records those
       arguments as `args`. Live from 24.6 R4 ([[#d6]]). Tools of other MCP servers stay
       unmatched, counted per tool.
 18. **D18: credit is weighted by a decay kernel on prompt lag, not cut at a window (the user,
@@ -569,7 +661,7 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
    | Grep | `name` | its base ([[#d15]]: `input_path`, else `cwd`) is inside the project, and a whole token of `pattern` equals the item's `name`; tokenised by 21.1 R12's `_NOTE_TOKEN_RE` and gated by `_matchable`, the focus-note matcher, not a new one |
    | Glob | `glob` | its base is inside the project, the item's `path` basename appears literally in the pattern's last component, AND `fnmatch(path, pattern)` (`**/*.py` alone matches nothing) |
    | Bash (and `kind = git` lines) | `bash_path` | a path in `command` (legacy: `detail`, plus the `refs` of a `tool` line), resolved against its simple command's base ([[#d15]]), lands inside the project and equals the item's `path` |
-   | Bash (and `kind = git` lines) | `bash_name` | in a simple command whose base is inside the project, a whole token equals the item's `name` (same tokeniser and gate) |
+   | Bash (and `kind = git` lines) | ~~`bash_name`~~ | **dropped in rev 4.** The pilot labelled it 0 CAUSED of 46, and 0 of 23 main-loop pairs (Wilson upper 0.14), which meets R12's per-stratum drop rule. Its hits were generic tokens, and 8 of 14 refmatrix lag 0-3 pairs were the user's own prompt words echoed back by scan_prompt's delivery ([[measurement-task-21.5-r12-pilot-2026-11-13#by-leg]]). A gated variant returns only as a new stratum with its own pre-registered gate and a fresh 50-pair draw ([[#r12]], "when drops leave too little") |
    | Agent, Task | `name` | a whole token of `prompt` equals the item's `name`. Live from 24.6 R4 ([[#d6]]) |
    | `mcp__refmatrix__*` except R12's three | `mcp_name` | a whole token of `args` equals the item's `name` (same tokeniser and gate). Live from 24.6 R4 ([[#d17]]) |
    | any other tool | none | not matched; counted per tool name in `tool_events_unmatched_by_tool` |
@@ -596,6 +688,12 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
    - **Memory items.** A memory's `path` is its `metadata.source_path` ([[#r2]]), so a Read of
      `memory/feedback_x.md` is a `path` match. Its `name` matches under the name rules.
    - **`result_mentions` is ignored** ([[#d10]]).
+   - **Two item kinds are out of the tool leg (rev 4, pilot change 6).** Term concepts (no path;
+     `kind = concept`, `path: null`) and grep-floor items (no `entity_id`, a relative-path
+     `name`) form no tool-eligible unit. They are counted `tool_excluded_kind` by kind and are
+     outside `units` and the score's denominator. Explicit uses of them ([[#r6]]) are still
+     printed under `used_explicit`, and 21.1's funnel still counts their deliveries. The pilot
+     labelled 0 of 64 such pairs CAUSED or INFORMED (term concepts 0/40, grep-floor 0/24).
 4. **R4: the prompt clock, order and window.** {#r4}
    - **Prompt-clock rows.** `telemetry.is_prompt_row(row)` is the ONE predicate: a `query.log`
      row of the session with `kind == "scan"`, or `kind == "recall"` with `session_start` and
@@ -611,7 +709,10 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
      time `x`. A prompt-time delivery (channel `scan_prompt` or `prompt_recall`) takes the index
      of the prompt holding its own row (by `query_id`); one with no such row is counted
      `prompt_unanchored` and takes `idx(D.ts)`. Every other delivery takes `idx(D.ts)`.
-     A tool event takes `idx(T.t_start)` (or `T.t`, counted `order_from_end`).
+     A tool event takes `idx(T.t_start)`. A tool line whose `t_start` is null credits nothing and
+     is counted `order_from_end` (rev 4, pilot change 3: ordering by the event's end credited 3
+     self-deliveries at lag 0, where the call that made the delivery was credited with using
+     it). Rev 3 fell back to `T.t` here.
    - **Credit conditions.** `T` can credit a unit `U` only when all of these hold:
      - same session (the ring union below);
      - `T.t_start` is strictly after the unit's first delivery `ts` (UTC, R10), decided by ONE
@@ -622,7 +723,8 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
      - `lag_turns = idx(T) − idx(U) ≥ 0`, with no upper bound; the credit's weight is
        `tool_used_weight(lag_turns, k=3, h=2)` ([[#d18]]; the user's OD-5 decision replaced rev
        2's `W = 2`);
-     - `T`'s `origin` is `parent` or absent ([[#d13]]).
+     - `T`'s `origin` is `parent` ([[#d13]], rev 4), and the unit is eligible for tool credit
+       (its kind, [[#r3]]; its delivering call's origin, [[#d13]]).
    - **Reads before delivery never count.** A match whose `T` precedes the unit sets
      `prior_touch` on that file (or key) for every LATER unit of it in the session. A credit
      with `prior_touch` is still a credit; the headline excludes it ([[#d8]]).
@@ -636,18 +738,24 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
    - Each unit is credited at most once. Its weight is the maximum of `w(lag_turns)` over its
      qualifying touches; its credit record keeps the touch that gave it (the earliest, since
      a later touch of the same unit never has a smaller lag).
-   - A `T` touching file `F` credits, on each channel, the unit of `F` from the most recent
-     delivering prompt at or before `idx(T)`. Units of `F` from the same prompt on different
-     channels (scan_prompt and prompt_recall answering one prompt) are each credited.
-   - Older units of `F` stay uncredited, so a file that scan_prompt re-delivers every prompt
-     lowers the per-unit rate. The report also prints a per-distinct-file rate
-     (`distinct_used / distinct_eligible`, files or no-path keys), so the re-delivery effect is
-     visible.
+   - A `T` touching file `F` credits, on each channel, the segment's unit of `F` (its first
+     delivery, [[#d7]] rev 4) when that delivery precedes `T`. Units of `F` first delivered in
+     the same prompt on different channels (scan_prompt and prompt_recall answering one prompt)
+     are each credited.
+   - Re-deliveries form no unit (`redelivered`, [[#d7]]), so a file that scan_prompt re-delivers
+     every prompt no longer lowers the per-unit rate. Rev 3's "older units stay uncredited" rule
+     is gone with them. The report still prints a per-distinct-file rate (`distinct_used /
+     distinct_eligible`, files or no-path keys, across segments).
 6. **R6: explicit uses are attributed to the delivering channel.** An R12 `used` event is
    counted under the channel of the delivered event its `ref_query_id` points to (looked up
    among the window's delivered events), and credits that event's unit. It is not counted under
    its own `channel` field, which is `context` for `context_by_name`. A `ref_query_id` with no
-   delivered event in the window is counted `explicit_ref_unresolved`. {#r6}
+   delivered event in the window is counted `explicit_ref_unresolved`. The rule's ONE
+   implementation is `attribute_explicit_use`, built first in plan-28's scorer
+   ([[task-28.3-outcome-scorer#r7]]) because plan-28 runs before phase B. Phase B MOVES it into
+   `src/refmatrix/telemetry.py` (phase M's precedent, lead ruling on r2-s3), and the scorer then
+   imports it from `refmatrix.telemetry`. `src/` never imports from `eval/`, and there is one
+   definition across both (28.3 AC-9). {#r6}
 7. **R7: a control (m-4).** {#r7}
    - The same matcher, kernel and ordering run over **control units**: `retrieved` items with no
      `delivered` event for the same `query_id` and key (retrieved, then trimmed, so the agent
@@ -705,10 +813,13 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
      `path_from_name`; `prompt_unanchored`, `prompt_rows_legacy`, `order_ambiguous`,
      `order_from_end`, `cwd_fallback`; `ring_unparseable`, `tool_from_terse`,
      `input_truncated`, `detail_truncated`, `refs_capped`; `skipped_explicit_tool_calls`,
-     `tool_events_unmatched_by_tool`, `refs_outside_project`, `bash_base_unknown`,
-     `bash_names_outside_project` ([[#d15]]); `origin_unknown`,
-     `subagent_tool_events`, `origin_unattributed`; `credited_abandoned`;
-     `result_mentions_present`; `explicit_ref_unresolved`.
+     `tool_events_unmatched_by_tool`, `refs_outside_project`, `bash_base_unknown`
+     ([[#d15]]); `origin_unknown`, `subagent_tool_events`, `origin_unattributed`;
+     `credited_abandoned`; `result_mentions_present`; `explicit_ref_unresolved`. Rev 4 adds
+     `redelivered` ([[#d7]]), `tool_excluded_kind` ([[#r3]]), `bodies_skipped` and
+     `refs_var_unknown` ([[#d15]]), `delivery_origin_not_parent` and
+     `delivery_origin_unfound` ([[#d13]]), and `legacy_tool_lines` ([[#r10]]), and retires
+     `bash_names_outside_project`.
 10. **R10: legacy data (the window the user already asked about).** {#r10}
     - **Events without the `path` key** (written before this task). Their path is resolved from
       the read snapshot by `entity_id` through the same `item_path` rules (memories by
@@ -723,16 +834,22 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
       path. A global id not found there is `path_unresolved`. On the re-run the 5 ids of the 6
       global deliveries are all in the global snapshot and none in the project's
       ([[#why-data]]).
-    - **Ring lines without `t`** are ordered by their local `ts`, converted with `time.mktime`
-      (ties per [[#r4]]).
+    - **Legacy tool lines credit nothing (rev 4).** A ring tool line written before this task has
+      no `t_start`, and a line written before 19.0 R2 has no `origin`. Rev 4 credits neither
+      ([[#r4]], [[#d13]]). Such lines are counted `legacy_tool_lines` and parsed only for the
+      counts below, which describe them. Rev 3 ordered them by their local `ts`; the pilot's
+      self-deliveries and its worktree pairs came from exactly that fallback.
     - **Ring lines without `tool`** take the tool from `terse`'s first token, counted
       `tool_from_terse` (m-3). `kind = git` lines are Bash calls (the git-milestone branch of
       the tool hook) and are read as `tool = Bash`, with `detail` as the command and their
       diffstat `refs` ignored ([[#r3]]). Post-task git lines carry `tool` and `command` from the
       builder ([[#r1]]).
     - **Query.log rows without `t`** start at `ts − latency_ms` ([[#r4]]).
-    - **What this gives.** A number for 2026-11-10 onward on the day it ships, marked
-      `legacy-ordered=<n>`, so it is not read as exact.
+    - **What this gives (rev 4).** On the day phase B ships, the window from 2026-11-10 onward
+      prints its delivery-side funnel and every exclusion count. It prints zero tool credits on
+      legacy lines (`legacy_tool_lines=<n>`). Tool credits start at phase B's deploy sha, which
+      is where R12's window starts anyway. The legacy window's matcher evidence is phase M's
+      ([[#r14]]), measured from transcripts.
 11. **R11: no hook emits.** After this task, a `used` event with an evidence other than R12's
     three appears in no `recall-events.jsonl`. `rmx focus hook` opens no `recall-events.jsonl`
     and makes no `delivered_in_session` call. R12's sentence "a `hook` call never emits `used`"
@@ -791,13 +908,123 @@ bands, labelled, decide; these counts do not. [[#kernel-for-user]] carries this 
       stratum below 0.50 is shown as such in the report's `match_on` split in every band.
     - **When drops leave too little.** After any drop, the remaining strata are judged again
       only on a fresh draw of at least 50 pairs of their own. Until then the result is
-      report-only. The Bash strata are the expected whole signal ([[#why-data]]); if both are
+      report-only. The `bash_path` stratum is the expected whole signal (the pilot: all of its
+      CAUSED+INFORMED pairs, [[measurement-task-21.5-r12-pilot-2026-11-13#by-leg]]); if it is
       dropped, the Read / Edit / Write `path` legs must reach 50 pairs alone before any band
       applies.
+    - **Rev 4.** The bands, the draw, the per-band rule and the stratum rule are unchanged
+      (L35). They are read twice: first by phase M on the legacy window ([[#r14]]), then here on
+      the BUILT matcher's post-deploy window. Only this second reading can open a 19.2 column.
 13. **R13: query.log rows carry a sub-second `t`.** `log_query.__enter__` records `time.time()`
     and the row writes it as `t` (the call's start). Additive: no reader requires it, and the
     second-resolution `ts` stays. It gives [[#r4]]'s prompt clock the resolution the ring's `t`
     has. {#r13}
+14. **R14: phase M, the R12 re-measure on the revised matcher, before the experiment starts
+    (L35, D-Q4).** {#r14}
+    - **Order.** R14 runs after the m1 r2-lite confirm (G32, L36) comes back CLEAN or MEH-only
+      and before plan-28's user-gated start. It is read-only. Nothing under `src/` changes and no
+      live store is opened. It reads read-only APFS clones (`cp -c`, `chmod a-w`) under a short
+      `mkdtemp()` root, deleted after. Counts, ids, labels and hashes are committed; prompt,
+      command, reply and memory text never are (d8f). {#r14-order}
+    - **The instrument.** A prototype committed at `eval/spikes/task-21.5-r12-remeasure/`
+      (`remeasure.py`, plus a GMD `PREREG.md`). Its matcher functions carry the names and
+      signatures phase B ships: `bash_segments`, `tool_touches`, `tool_used_weight`,
+      `prompt_clock`, `tool_after_delivery`. They implement rev 4's rules: the unit ([[#d7]]),
+      origin and delivering-call origin ([[#d13]]), bodies, variables and worktrees ([[#d15]]),
+      no `bash_name` and the excluded kinds ([[#r3]]), and ordering by `t_start` ([[#r4]]).
+      Phase B moves them into `src/refmatrix/telemetry.py`, and [[#ac-20]] holds the two equal.
+      **The prototype is tested before any band is read (lead ruling on r1 #s3).**
+      `tests/test_task21_5_phase_m_prototype.py` runs AC-19's case table, cases (a) to (h), plus
+      AC-6 (b)'s re-delivery case and AC-14's origin cases, against `remeasure.py`'s functions.
+      The table is a held-out fixture: written from this spec, before the prototype, and never
+      from the pilot's pairs. It must pass before the draw. The run's log
+      (`workflow/review-output/pytest-task21-5-phase-m.log`) and its sha are recorded in
+      `PREREG.md`. **Mutation:** `bash_name` left in `tool_touches`; case (g) fails, and the draw
+      does not run. {#r14-instrument}
+    - **Where the tool calls come from.** Phase B reads the ring ([[#d2]]). The legacy ring has
+      no `t_start`, `origin` or `cwd`, and rev 4 credits no line without them ([[#r10]]). So
+      phase M reads each session's tool calls from its local transcripts, which R12's labeller
+      already reads:
+      - main-loop calls come from `<session>.jsonl` (origin `parent`);
+      - subagent calls come from `<session>/subagents/agent-<id>.jsonl` (origin `agent:<id>`,
+        never credited, counted);
+      - `t_start` is the `tool_use` block's timestamp, and `cwd` is the entry's `cwd`;
+      - `tool_input` is read whole, and the effect of R1's 2,000-character cap is counted by
+        re-applying it.
+
+      Deliveries, the prompt clock and the control come from the store's own logs, as in R4-R7
+      (clones of `recall-events.jsonl`, `query.log`, the global events file and the read
+      snapshots). A session with deliveries and no transcript is counted `no_transcript` and
+      forms no unit. {#r14-source}
+    - **The transcript archive (lead ruling 2026-11-13, on the report's contradiction 7).**
+      Claude Code prunes old transcripts, so AC-20 would have nothing to replay. Phase M
+      therefore copies every transcript file it reads (the parent file and every subagent file)
+      and the per-call matcher inputs (`calls.jsonl`: `tool_name`, `tool_input`, `cwd`, call
+      hash) into a LOCAL archive at
+      `/Volumes/littlebig/refmatrix-measurement-archive/task-21.5-r12-remeasure/`:
+      - it is outside the repo and outside every watched tree, since no store's watch root
+        covers it;
+      - it is mode `0700`, and nothing in it is ever committed;
+      - only a manifest (one sha256 per archived file) and the call-hash list are committed.
+
+      **The archive's creation is announced to the user before the first copy.** The lead makes
+      the announcement, and its date is recorded in the measurement file. If the volume is not
+      mounted, phase M refuses to run; there is no fallback path. The archive is deleted only
+      on the user's word, after phase B's AC-20 has run. {#r14-archive}
+    - **Corpora and window (lead ruling on r1 #s3).** R14 runs on refmatrix and cliquedb, the
+      pilot's two corpora. **The sample frame excludes every pair the R12 pilot labelled**,
+      because the seven changes were fitted to those pairs. It does this by construction: only
+      sessions that START at or after an INSTANT enter the frame, up to phase M's clone time
+      (lead ruling on r2-m1). The instant is the pilot clone's recorded timestamp. The pilot
+      measurement records none, so the frame starts at the latest instant its clones can have
+      been taken: the commit time of the pilot measurement, `6725801`,
+      2026-11-13T11:35:59-08:00, because the clones were taken and deleted before that file was
+      written. If the pilot's working files turn out to hold an earlier clone timestamp,
+      `PREREG.md` may use it, recording the source. A later instant is never used. `PREREG.md`
+      records the instant used and its source. No pilot pair can be drawn, and the post-pilot
+      window may well yield `n_main < 50`; `PREREG.md` flags that as the likely, honest outcome
+      (the band table's first row). The pilot's own window is printed apart, unbanded, for comparison. cliquedb
+      is a fleet repo: its
+      store is copied read-only under the terms of AC-15's allowance ([[#ofu-cliquedb]]). The
+      lead ruled that those terms cover phase M ([[#o-4]]), and the lead tells the user.
+      {#r14-window}
+    - **Pre-registration.** `PREREG.md` is committed, and its sha recorded, BEFORE any pair is
+      drawn. It holds:
+      - the seed and the sort key;
+      - R12's draw: lag bands 0 / 1-3 / 4-6 / 7+, each band `min(available, max(20, share))`;
+      - the minimums: at least 50 headline main-loop pairs pooled over the two corpora, plus up
+        to 20 prior-touch and 20 control pairs per corpus as report-only strata;
+      - the rubric, the banded label (CAUSED+INFORMED, with CAUSED printed beside it; [[#o-2]])
+        and the band table below.
+
+      The pair list's sha256 is committed and frozen before labelling. No pair can overlap the
+      pilot's, because of the frame ([[#r14-window]]). {#r14-prereg}
+    - **Labels.** R14 uses the pilot's four labels (CAUSED / INFORMED / CONSISTENT /
+      UNRELATED). The pilot's open call (a subagent opening a file for its own brief) cannot
+      arise, because subagent calls are not credited. The labeller never reads the matcher
+      code ([[#od-2]]). A blind second rater labels 20% of the pairs, as in the m1 practice, and
+      agreement on CAUSED+INFORMED vs not is reported. The user spot-checks 10 pairs
+      ([[#od-2]]). That is a user step inside queue item 7, covered by the goal horizon's
+      catch-all for user steps (L45; r1 #m10). {#r14-labels}
+    - **Bands: R12's own (L35).** The bands are read on the pooled kernel-weighted `p_w` over
+      main-loop pairs (Kish `n_eff`), on CAUSED+INFORMED ([[#o-2]]), with the CAUSED-only `p_w`
+      printed beside it:
+
+      | condition | reading | what phase B builds once unfrozen (never before the charter decision) |
+      |---|---|---|
+      | `n_main < 50` pooled | not established (report-only) | the charter decision decides whether phase B builds; if it does, the matcher is report-only until R12's post-deploy reading |
+      | `p_w ≥ 0.80` and Wilson lower bound `≥ 0.65` | the instrument holds | rev 4 as written; 19.2 may add its column only after R12's post-deploy reading on the built matcher lands in the same row |
+      | `0.50 ≤ p_w`, and not the row above | report-only instrument | rev 4 as written, report-only; the stratum rule runs |
+      | `p_w < 0.50` | refuted again | the `tool` leg is not built. The charter decision chooses between a further matcher revision, re-measured the same way, and retiring the leg. The explicit-use rows ([[#r6]]) and 21.1's funnel are unaffected. d21-5a's `tool` clause has no matcher, which is recorded for plan-19's re-plan |
+
+      R12's per-band Wilson intervals, the `indistinguishable from control` line, the
+      per-stratum drop rule and the 20-pair minimum all apply. A stratum dropped here is
+      dropped from phase B's matcher by a revision row. {#r14-bands}
+    - **Output.** `workflow/measurements/task-21.5-r12-remeasure-<date>.md` (GMD,
+      `node_type: measurement`, provisional until a ch-bsd round). It gives the counts by
+      corpus, band, `match_on`, kind, channel and origin, every [[#r9]] count the prototype
+      computes, the band reading, and a band-by-band comparison with the pilot. If the measuring
+      agent returns text, the lead persists it. {#r14-output}
 
 ## Acceptance criteria {#acceptance}
 
@@ -808,6 +1035,13 @@ live-log guard, not a line count: `live_snapshot(...)` at the start and
 asserts that no ring file named after one of its minted session ids appears under a live `stm/`
 directory (a directory listing, never an open). Every minted session id and prompt is registered
 with `mark_token`, so 23.0's end-of-run growth check attributes any leak to the test. {#ac-preamble}
+
+**Rev 4 preamble: origin.** Phase B builds after 19.0 R2, and under rev 4 only `origin: parent`
+credits ([[#d13]]). Every tool event that an AC expects to credit is therefore produced by the
+real hook with 19.0 R2's real ladder, resolving to `parent` through the fixture's transcript
+(rung 3 after a completed search). A tool line with no `origin` key is hand-written as the shell
+hook wrote it before 19.0 R2 and is named as such where it is used (AC-9, AC-14). Every AC that
+expects a credit also asserts that the crediting event's `origin` is `parent`. {#ac-preamble-rev4}
 
 The ring and the events are produced by the REAL commands: `rmx focus hook --event
 tool-pre|tool|input` fed real-shaped envelopes on stdin, and `rmx scan-prompt` /
@@ -902,13 +1136,15 @@ hand-written line copies its producer's field set as that producer's spec states
    **RED at HEAD:** no block, no kernel.
 7. **AC-6 (R5, D7): the unit.** (a) scan-prompt delivers three anchors of `F` in prompt 1, then
    one Read of `F`: `units=1`, `anchors_in_units=3`, `used_tool=1`. (b) `F` delivered by
-   scan-prompt in prompts 1 and 2, one Read in prompt 2: per-unit `1/2`, distinct `1/1`. (c)
+   scan-prompt in prompts 1 and 2, one Read in prompt 2: `units=1`, `redelivered=1`, the
+   prompt-1 unit credited at `lag 1`, per-unit `1/1`, distinct `1/1` (rev 4, [[#d7]]); after a
+   compaction marker between prompts 2 and 3, a third delivery in prompt 3 is a new unit. (c)
    `F` delivered in prompt 3 by both scan_prompt and prompt_recall, then a Read: both channels
    credited, and the `any channel` row counts the file once. (d) Two Reads after one delivery:
    credited once. (e) One Bash touching delivered `F` and `G`: two units credited. **Under the
    kernel (D18):** (a) scores `1.000`, not `3.000` (one unit, one weight); (b) scores `1.000 /
-   2` per unit (the prompt-2 unit at lag 0; the prompt-1 unit is not credited, R5), not
-   `1.000 + 0.707`; (d) the two Reads at lag 0 and lag 5 weigh `1.000` (the maximum), not
+   1` (the prompt-1 unit at lag 1; the prompt-2 re-delivery forms no unit, rev 4), not
+   `1.000 / 2`; (d) the two Reads at lag 0 and lag 5 weigh `1.000` (the maximum), not
    `1.500` or `0.500`. **RED at HEAD:** no block. {#ac-6}
 8. **AC-7 (R3, D15): each matcher leg, positive and negative.** {#ac-7}
    - Through the real hook: a Grep with `path=F` is credited; a Grep whose pattern is
@@ -925,7 +1161,7 @@ hand-written line copies its producer's field set as that producer's spec states
      - `pushd <other-dir> && cat src/x.py` and `git -C <other-dir> diff src/x.py`: not
        credited, each counted;
      - `cd <other-dir> && grep -n x_symbol *.py` for a delivered name `x_symbol`: NOT credited
-       (`bash_names_outside_project=1`);
+       (rev 4: `bash_name` is dropped, so no Bash name token matches anywhere);
      - `cd <other-dir> && cat <project>/src/x.py` (absolute project path): credited
        `bash_path`;
      - `cd <other-dir> && cd <project> && cat src/x.py`: credited (the later `cd` wins);
@@ -933,7 +1169,8 @@ hand-written line copies its producer's field set as that producer's spec states
      - a Grep with `path=<other-dir>` and pattern `x_symbol`: not credited, counted.
    - **Git lines (r2 s-1).** A `git commit -m "touch x_symbol"` run in a tmp repo OUTSIDE the
      project, whose diffstat names `src/x.py`, credits nothing by path (the diffstat is never
-     matched); the same commit run in the project credits `x_symbol` by `bash_name`.
+     matched); the same commit run in the project credits nothing either (rev 4: `bash_name`
+     is dropped, and the `-m` value is a skipped body, `bodies_skipped=1`).
    - **Uncapped paths (r2 m-4).** A Bash command naming ten paths, the delivered one tenth,
      is credited `bash_path` (the shell `refs` would have kept only eight).
    - Unit legs, labelled as such, because their producer is 24.6 R4 ([[#d6]]):
@@ -976,8 +1213,9 @@ hand-written line copies its producer's field set as that producer's spec states
     | `path_from_name` | a pre-task grep-floor event (hw: no `entity_id`, `name` `src/x.py`, no `path` key) | 1 |
     | `prompt_unanchored` | a `scan_prompt` delivery (hw) whose `query_id` has no query.log row | 1 |
     | `prompt_rows_legacy` | one query.log prompt row without `t` (hw) | 1 |
-    | `order_ambiguous` | a legacy Read line without `t` (hw) in the same second as a delivery of its file | 1 |
-    | `order_from_end` | a real `tool` envelope with no `tool-pre` before it | 1 |
+    | `order_ambiguous` | a pre-task delivered event (hw, second-resolution `ts` only) and a real Read of its file whose `t_start` falls in the same second (rev 4: a legacy ring line no longer reaches the comparison) | 1 |
+    | `order_from_end` | a real `tool` envelope with no `tool-pre` before it (`t_start: null`; credits nothing, rev 4) | 1 |
+    | `legacy_tool_lines` | a legacy Read line of delivered `F` (hw: no `tool`, no `t`, no `t_start` key) and the legacy Bash line below; neither credits | 2 |
     | `cwd_fallback`, `refs_capped`, `detail_truncated` | ONE legacy Bash line (hw): no `cwd`, 8 `refs`, `detail` of exactly `DETAIL_MAX` | 1, 1, 1 |
     | `tool_from_terse` | the two legacy lines above (the Read and the Bash) | 2 |
     | `ring_unparseable` | a non-JSON ring line (hw) | 1 |
@@ -986,9 +1224,11 @@ hand-written line copies its producer's field set as that producer's spec states
     | `tool_events_unmatched_by_tool` | a real `rmx focus hook --event tool` envelope for `WebFetch` (the hook records what it is fed; the matcher lives in settings) | `WebFetch=1` |
     | `refs_outside_project` | a real Read of a path outside the project | 1 |
     | `bash_base_unknown` | a real Bash `cd "$D" && cat src/x.py` | 1 |
-    | `bash_names_outside_project` | a real Bash `cd <other-dir> && echo x_symbol`, `x_symbol` delivered, and the `cd "$D"` call above | 2 |
+    | `refs_var_unknown` | a real Bash `cat $C/src/x.py`, `src/x.py` delivered (rev 4; replaces the retired `bash_names_outside_project` row) | 1 |
+    | `bodies_skipped` | a real Bash `git commit -m "touch src/x.py"` run in the project | 1 |
     | `credited_abandoned` | a real `tool-pre` for a Read of delivered `F`, swept by the next real `input` hook | 1 |
-    | `origin_unknown` | the credits of this fixture whose tool line has no `origin` (all of them; the swept Read is one) | the number of credits, asserted equal to `used_tool` |
+    | `origin_unknown` | one post-R1 Read line of delivered `F` with no `origin` key (hw, as the shell hook wrote before 19.0 R2), which credits nothing (rev 4) | 1 |
+    | `redelivered`, `tool_excluded_kind`, `delivery_origin_not_parent`, `delivery_origin_unfound` | none here | 0 here; exact values in [[#ac-19]] |
     | `subagent_tool_events`, `origin_unattributed` | none here | 0 here; exact values in [[#ac-14]] |
     | `result_mentions_present` | none here | 0 here; exact value in [[#ac-18]] |
     | `explicit_ref_unresolved` | none here | 0 here; exact value in [[#ac-8]] |
@@ -1028,10 +1268,12 @@ hand-written line copies its producer's field set as that producer's spec states
     construction; its RED is the mutations. {#ac-13}
 15. **AC-14 (R4, D13): origin.** Through the real hook: a tool event with `origin:
     "agent:a1"` (envelope `agent_id`) credits nothing and is counted `subagent_tool_events`; a
-    tool event with no `origin` is credited and counted `origin_unknown`, and the footer says
-    the rate includes subagent tool calls of unknown origin. A ring line with `origin:
-    "unattributed"` (hand-written; 19.0 R2's value, no producer yet) credits nothing, counted
-    `origin_unattributed`. **RED at HEAD:** no origin field, no footer line. {#ac-14}
+    tool event with no `origin` (hand-written, as the shell hook wrote before 19.0 R2) is NOT
+    credited and is counted `origin_unknown`, with no footer line (rev 4, [[#d13]]); a real
+    hook event that 19.0 R2's ladder resolves to `parent` is credited. A ring line with `origin:
+    "unattributed"` (19.0 R2's rung-3 value) credits nothing, counted `origin_unattributed`.
+    **RED at HEAD:** no origin field. **Mutation:** an absent `origin` credited (rev 3's rule)
+    makes the hand-written line credit. {#ac-14}
 16. **AC-15: run once on real data (the benchmark path IS the production path).** {#ac-15}
     - The dev-tree report (`.venv-eval`) is run against APFS clones, made under a `mkdtemp()`
       root, of this project's `.refmatrix/` `query.log`, `recall-events.jsonl`, `stm/*.jsonl`,
@@ -1051,6 +1293,10 @@ hand-written line copies its producer's field set as that producer's spec states
     - It is not a pass/fail gate on the number. It IS a gate on the run: exit 0, the identity
       holds, and the global reconciling line is non-zero when the global file holds events for
       this root.
+    - **Rev 4.** Legacy lines credit nothing ([[#r10]]), so on the pre-deploy range this run
+      checks the funnel, the counts and the identity, and its tool credits are 0 by
+      construction (`legacy_tool_lines` carries them). Real-data evidence for the matcher comes
+      from [[#ac-20]].
 17. **AC-16 (D6, R8): legs without a producer are labelled, not zero.** With the real
     generated matcher (`hooks.FOCUS_TOOL_MATCHER`) and a ring holding no Agent and no `mcp__*`
     events, the leg table prints `Agent: 0 events, not-yet-producing (live from 24.6 R4)` and
@@ -1069,6 +1315,46 @@ hand-written line copies its producer's field set as that producer's spec states
     `result_mentions: ["S"]` (hand-written; 24.6's producer is not built) for a delivered `S`
     with no other touch credits nothing and is counted `result_mentions_present=1`. **RED at
     HEAD:** no count. {#ac-18}
+20. **AC-19 (rev 4: the pilot's matcher changes, each positive and negative).** Through the real
+    hook, `cwd` = the project dir, origin `parent` per [[#ac-preamble-rev4]], `src/x.py`
+    delivered with symbol `x_symbol`: {#ac-19}
+    - **(a) Bodies (change 4).** `cat > /tmp/n <<'EOF'` with a body naming `src/x.py`: not
+      credited, `bodies_skipped=1`. `git commit -m "fix src/x.py"`: not credited,
+      `bodies_skipped=1`. `sed -n 1,5p src/x.py <<< ""`: credited `bash_path` (only the body is
+      data).
+    - **(b) Variables (change 4).** `C=/elsewhere; cat $C/src/x.py`: not credited,
+      `refs_var_unknown=1`. `cat ${HOME}/x`: counted, never matched.
+    - **(c) Nested worktree (change 5).** A tmp git worktree is created under the project dir
+      (its root holds a `.git` FILE). A Bash `cat src/x.py` with `cwd` = that worktree: not
+      credited, `refs_outside_project=1`. A Grep with `path` = the worktree and pattern
+      `x_symbol`: not credited. The same Bash with `cwd` = the project dir: credited.
+    - **(d) Excluded kinds (change 6).** A delivered term concept `widget` and a delivered
+      grep-floor item `src/y.py`, then a Grep for `widget` and a Read of `src/y.py`: neither is
+      credited; `tool_excluded_kind` prints `term_concept=1 grep_floor=1`; `units` excludes both.
+      A real `rmx context widget` afterwards is still printed under `used_explicit`.
+    - **(e) Re-delivery (change 7a).** As [[#ac-6]] (b).
+    - **(f) Delivering-call origin (change 7b).** A real `rmx context x_symbol` Bash call whose
+      envelope carries `agent_id: "a1"` delivers on the agent channel, then a main-loop Read of
+      `src/x.py`: not credited, `delivery_origin_not_parent=1`. The same delivery made by a
+      `parent` call: the Read is credited. A hand-written agent-channel query.log row with no
+      issuing ring event: its unit is not credited, `delivery_origin_unfound=1`.
+    - **(g) `bash_name` dropped (change 1).** `grep -n x_symbol *.py`, with the base in the
+      project and no literal path of a delivered file: not credited. `grep -n x_symbol
+      src/x.py`: credited `bash_path` (the path, not the name).
+    - **(h) Ordering and origin (changes 3, 2).** Asserted in [[#ac-9]] (`order_from_end`,
+      `origin_unknown`) and [[#ac-14]].
+
+    **RED at HEAD:** no matcher. Each case is RED against rev 3's rules too, and that is
+    recorded per case in the RED run.
+21. **AC-20 (R14): phase B's matcher reproduces phase M's.** This is a run on real data, like
+    [[#ac-15]], not a pytest case, because its inputs are local transcripts (d8f). The built
+    `telemetry.tool_touches` is replayed over phase M's archived calls (`calls.jsonl`, checked
+    against the committed `calls.sha256`) and phase M's frozen unit set. It must give the same
+    `match_on` for every (call, unit) pair: equal counts per `match_on`, and an equal sha256 of
+    the sorted (call hash, unit key, `match_on`) list. A difference is a defect in one of the
+    two and is resolved before merge, as in 10.2 R8. A missing or hash-mismatched archive fails
+    the run loudly; it is never skipped. The result goes into the implementation summary.
+    {#ac-20}
 
 ## Mutations {#mutations}
 
@@ -1080,7 +1366,8 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
   unit weighted by its last or summed touches: AC-5 (a), (d) (D18).
 - The control scored binary: AC-10.
 - The clock built from ring `input` lines: AC-5 (b) (lag 4, weight 0.707, not lag 5).
-- Every older unit of the file credited: AC-6 (b) per-unit reads `2/2`.
+- A re-delivery made a unit, or credited instead of the first delivery (rev 3's "most recent
+  delivering prompt"): AC-6 (b) reads `units=2` or credits at `lag 0`.
 - Credit per delivered event instead of per unit: AC-6 (a) reads `used_tool=3`.
 - `prior_touch` credits counted in the headline: AC-4 (b).
 - The explicit skip removed: AC-7 credits `rmx context S`, and AC-8's `used_headline`
@@ -1092,8 +1379,15 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 - Global legacy events resolved against the project snapshot: AC-9's collision row (r2 s-2).
 - The Bash base taken from `cwd` only (rev 2's rule): AC-7's `cd <other-dir>`, `pushd` and
   `git -C` cases credit (r2 b-1).
-- Name tokens matched in every simple command: AC-7's `cd <other-dir> && grep -n x_symbol`
-  case credits.
+- `bash_name` restored, in any simple command: AC-7's `cd <other-dir> && grep -n x_symbol`
+  case, the in-project commit case and AC-19 (g) credit.
+- An absent `origin` credited: AC-14 (rev 4).
+- A null `t_start` falling back to `t`: AC-9's `order_from_end` row credits (rev 4).
+- Heredoc or `-m` bodies tokenised: AC-19 (a) credits.
+- An expansion stripped from a ref (`$C/src/x.py` read as `src/x.py`): AC-19 (b) credits.
+- The nested-checkout check removed: AC-19 (c) credits.
+- Term concepts or grep-floor items admitted to the tool leg: AC-19 (d) credits.
+- A delivery's issuing-call origin ignored: AC-19 (f) credits.
 - A git line matched on its diffstat `refs`: AC-7's out-of-project commit credits (r2 s-1).
 - Bash paths read from the 8 `refs`: AC-7's ten-path case misses (r2 m-4).
 - Every `mcp__refmatrix__` tool skipped: AC-7's `rmx_grep` unit leg returns `explicit` (r2
@@ -1125,10 +1419,22 @@ Each mutation must make at least one AC FAIL, not hang. Each restore runs as its
 | `src/refmatrix/context.py` | `_item` / `bundle_items` carry `item_path`; `ITEM_META_FIELDS` gains `path` and `source_path`; `annotate_items` fills `path` and `source_path` in its one catalog query (`context.py:1781`) (R2; r2 m-6) |
 | `src/refmatrix/store.py` | `Store.item_meta` selects `e.path` and the memory's `metadata->>'source_path'` (R2) |
 | `src/refmatrix/hooks.py` | `FOCUS_TOOL_MATCHER` constant, used by the generator; generated output byte-identical (D6) |
-| `src/refmatrix/telemetry.py` | `path` appended to `RECALL_EVENT_FIELDS_V1`; `item_path`, with relative `Entity.path` joined to the store root's parent, and `_item_fields` passing `path` (`telemetry.py:1386`) (R2; r2 m-6); `bash_segments` / `BashSegment` (D15); `tool_after_delivery` (R4; r2 m-1); `UsageIdentityBroken` (R9); `log_query` writes `t` (R13); `is_prompt_row`, `prompt_clock`, `PROMPT_PAIR_S` (R4); `tool_used_weight`, `TOOL_USED_PLATEAU_K = 3`, `TOOL_USED_HALF_LIFE_H = 2`, `TOOL_USED_SENSITIVITY_K = 4` (D18); `tool_touches`, `ToolTouches`, `ring_tool_call` (R3); `derive_tool_used(root, *, logical_root, global_root, since, until) -> ToolUsed` returning per-unit credit records (`unit`, `tool`, `match_on`, `ref_query_id`, `lag_turns`, `lag_s`, `prior_touch`, `origin`) plus the R9 counts, never written to any file; global legacy events resolved against `global_root`'s snapshot (R4-R7, R9, R10; r2 s-2); the `used by channel` block, the leg table, the reconciling line and the identity check in `agent_usage_report(..., logical_root=None)` (R8, R9, D11) |
+| `src/refmatrix/telemetry.py` | `path` appended to `RECALL_EVENT_FIELDS_V1`; `item_path`, with relative `Entity.path` joined to the store root's parent, and `_item_fields` passing `path` (`telemetry.py:1386`) (R2; r2 m-6); `bash_segments` / `BashSegment` (D15); `tool_after_delivery` (R4; r2 m-1); `UsageIdentityBroken` (R9); `log_query` writes `t` (R13); `is_prompt_row`, `prompt_clock`, `PROMPT_PAIR_S` (R4); `tool_used_weight`, `TOOL_USED_PLATEAU_K = 3`, `TOOL_USED_HALF_LIFE_H = 2`, `TOOL_USED_SENSITIVITY_K = 4` (D18); `tool_touches`, `ToolTouches`, `ring_tool_call` (R3); `derive_tool_used(root, *, logical_root, global_root, since, until) -> ToolUsed` returning per-unit credit records (`unit`, `tool`, `match_on`, `ref_query_id`, `lag_turns`, `lag_s`, `prior_touch`, `origin`) plus the R9 counts, never written to any file; global legacy events resolved against `global_root`'s snapshot (R4-R7, R9, R10; r2 s-2); the `used by channel` block, the leg table, the reconciling line and the identity check in `agent_usage_report(..., logical_root=None)` (R8, R9, D11); `attribute_explicit_use` MOVED here from `eval/production/handhold/score.py`, which then imports it (R6; r2-s3) |
 | `workflow/plans/plan-21-agent-context-usage-tasks/task-21.1-context-usage-telemetry.md` | R10's field table gains a `path` row (null allowed; absent before 21.5); a revision row naming this task (D3) |
-| `tests/test_task21_5_tool_used.py` | AC-1 to AC-18 except AC-15 |
-| `workflow/implementation_summaries/task-21.5-tool-used-signal.md` | AC-15's run; the deploy sha that opens R12's window |
+| `tests/test_task21_5_tool_used.py` | AC-1 to AC-19 except AC-15 (AC-20 is a real-data run, not a test) |
+| `workflow/implementation_summaries/task-21.5-tool-used-signal.md` | AC-15's run; AC-20's parity run; the deploy sha that opens R12's window |
+
+**Phase M (R14), before the experiment; no `src/` change:**
+
+| file | change |
+|---|---|
+| `eval/spikes/task-21.5-r12-remeasure/remeasure.py` (new) | the prototype: rev 4's matcher functions under phase B's names, the transcript-sourced tool calls, the draw, the R9 counts it can compute ([[#r14]]) |
+| `eval/spikes/task-21.5-r12-remeasure/PREREG.md` (new, GMD) | seed, sort key, the post-pilot frame, draw, rubric, banded label, band table, and the prototype test run's log sha; committed and its sha recorded before the draw |
+| `tests/test_task21_5_phase_m_prototype.py` (new) | the held-out case table against `remeasure.py`, run before the draw ([[#r14-instrument]]) |
+| `eval/spikes/task-21.5-r12-remeasure/pairs.sha256`, `calls.sha256`, `labels.csv` (new) | the frozen pair-list hash, the call-hash list for AC-20, labels by pair id (no text) |
+| `workflow/measurements/task-21.5-r12-remeasure-<date>.md` (new, GMD) | the counts, the band reading and the comparison with the pilot ([[#r14-output]]) |
+| `/Volumes/littlebig/refmatrix-measurement-archive/task-21.5-r12-remeasure/` (LOCAL, `0700`, never committed; creation announced to the user) | the archived transcripts and `calls.jsonl` that AC-20 replays ([[#r14-archive]]) |
+| `eval/spikes/task-21.5-r12-remeasure/archive-manifest.sha256` (new) | one sha256 per archived file |
 
 `verbs.py` does not change (D5). `rmx install-hooks --check` stays clean because the generated
 hook commands are byte-identical (AC-16). 24.2a's `rmx_focus_observe` calls `stm.tool_event_fields`
@@ -1144,7 +1450,10 @@ when it is built; this task does not build it.
   `tool_touches` alone is allowed in addition, never instead, except for the two legs whose
   producer is 24.6 (AC-7's labelled unit legs).
 - **RED first.** The test file is run against unfixed HEAD and its failures are read: every AC
-  except AC-13 must fail there, for the stated reason.
+  except AC-13 must fail there, for the stated reason. AC-19's cases are also recorded RED
+  against rev 3's rules ([[#ac-19]]).
+- **Phase M has no test file.** It is a pre-registered measurement ([[#r14]]). Its prototype's
+  functions become phase B's, and [[#ac-20]] holds them equal.
 - **Output.** Runs are captured to `workflow/review-output/pytest-task21-5.log`.
 - **Regression.** The full suite runs before merge: the builder move touches the focus hook,
   `log_query` touches every query.log writer, and 21.1's schema tests must pass unmodified
@@ -1177,7 +1486,8 @@ when it is built; this task does not build it.
      signature takes Claude Code's own input, so the scorer needs no ring); the evidence is
      named `tool` everywhere; a memory's path is its `memory_content.metadata.source_path`
      (memories have no `Entity.path`); 21.1 R12's reservation names `tool` (owned here) and
-     `cited_in_answer` (still 19.6's, transcript-only). The definition's wording does not
+     `cited_in_answer` (then 19.6's, transcript-only; since L56 it is hosted by plan-28's
+     [[task-28.3-outcome-scorer#r7]], lifted from the frozen 19.6 and kept to its memory scope). The definition's wording does not
      change beyond the evidence's name; its source and owner do. The rename is applied in the
      same change to 19.6's read-back paragraph, 21.1 R12's reservation and 19.2 R1's mention.
    - **The kernel does not reach 19.6.** 19.6's clause is "later in the same session", with no
@@ -1249,16 +1559,35 @@ read ([[#kernel-for-user]]).
    - **The user's hand-labelled pilot of R12's sample** ([[#ofu-pilot]]) tests the plateau and
      the cliquedb finding before implementation, without holding approval.
 
+## Definition of done {#done}
+
+- **Phase M (queue item 7, before plan-28 starts):** the prototype's held-out test passes and
+  its log is recorded; `PREREG.md` is committed and its sha recorded before the draw; the pair
+  list is frozen; labels are committed by pair id; the measurement file is
+  written with the band reading ([[#r14-output]]); a ch-bsd round over it CLEAN or MEH-only; the
+  band reading recorded in plan-28's pre-registration as an input to the charter decision, never
+  as one of plan-28's outcomes. {#done-m}
+- **Phase B (after the charter decision, only if it keeps the `tool` leg):** RED run recorded
+  (AC-19's cases against rev 3 as well); GREEN; the mutation table in the implementation summary
+  at `workflow/implementation_summaries/task-21.5-tool-used-signal.md`, with AC-15's and AC-20's
+  runs and the deploy sha that opens R12's window; committed on branch
+  `task-21.5-tool-used-signal`, merged `--no-ff` to `master`. {#done-b}
+
 ## Non-goals {#non-goals}
 
-- `cited_in_answer`: a delivered name in the assistant's reply. It stays 19.6's
-  transcript-only evidence.
+- `cited_in_answer`: a delivered name in the assistant's reply. It is not this task's. It is
+  transcript-only evidence, defined by 19.6 and, per L56, implemented and owned by plan-28's
+  [[task-28.3-outcome-scorer#r7]], lifted from the frozen 19.6 (D-Q3) and kept to 19.6's
+  memory scope. 19.6 imports it when unfrozen.
 - Any change to R12's three explicit evidences, their lookup, or their destination.
 - Any change to what is delivered. That is 19.1's and 25.1's business; this task is the
   instrument they will be judged by.
 - Widening the shell hook matcher ([[#d6]]), building 19.0 R2's origin ladder ([[#d13]]), or a
   clone-path leg ([[#d12]]).
 - A live counter of any kind ([[#d4]], [[#od-3]]).
+- Building anything before the handhold experiment reports ([[#decision-no-build]]). Phase M
+  changes no `src/`.
+- Reading transcripts in phase B's report. Phase M reads them as a measurement ([[#d2]]).
 
 ## Revision 2 (2026-11-11, ch-bsd spec r1 + its addendum vs 24.6 r5) {#rev-2}
 
@@ -1350,3 +1679,105 @@ rename in 19.6, 21.1 and 19.2; the 21.5 and 21.6 rows of the plan and the deferr
 is [[#kernel-for-user]]. The user then allowed the cliquedb copy and chose a hand-labelled pilot
 of R12's sample in parallel with approval ([[#ofu-cliquedb]], [[#ofu-pilot]]).
 {#rev-3-1-note}
+
+## Revision 4 (2026-11-13, D-Q4, L35, the R12 pilot; plan-review G16) {#rev-4}
+
+rel: derives-from -> [[plan-review-2026-11-13#d-q4]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-11-13#spec-gaps]]
+rel: derives-from -> [[measurement-task-21.5-r12-pilot-2026-11-13#matcher-changes]]
+rel: derives-from -> [[measurement-task-21.5-r12-pilot-2026-11-13#review-m1]]
+
+The pilot fired R12's lowest band (`p_w` 0.073 CAUSED, 0.194 CAUSED+INFORMED, main loop;
+[[measurement-task-21.5-r12-pilot-2026-11-13#p-w]]). R12 says that band means "the matcher or the
+kernel is revised and re-measured". Contra-b CB-8 found that rev 3.1 had not been revised. The
+user's D-Q4 then set the order: rev 4 folds the pilot's seven matcher changes and drops or gates
+`bash_name`, and the 21.5 decision is "no build until the experiment reports". L35 adds the
+re-measure, with the spec's own bands, before the experiment starts. The kernel (D18) is
+unchanged: the pilot's every band was under 20 main-loop pairs, so R12's band rule for `k` and `h`
+did not fire. {#rev-4-lead}
+
+| driver | disposition | where |
+|---|---|---|
+| pilot change 1: drop or gate `bash_name` (0/46 CAUSED; main loop 0/23, Wilson upper 0.14) | dropped, because R12's pre-registered per-stratum rule (≥ 20 main-loop pairs, upper bound < 0.50) is met; a gated variant returns only as a new stratum with its own gate and a fresh 50-pair draw; `bash_names_outside_project` retired | [[#r3]], [[#d15]], [[#ac-7]], [[#ac-19]] |
+| pilot change 2: exclude subagent touches until origin is live | only `origin: parent` credits; absent credits nothing; phase B depends on 19.0 R2 (queue item 4) for the shell hook's origin | [[#d13]], [[#r4]], [[#ac-preamble-rev4]], [[#ac-9]], [[#ac-14]] |
+| pilot change 3: order by the call's start | a null `t_start` credits nothing (no fallback to `t`); legacy lines credit nothing | [[#r4]], [[#r10]], [[#ac-9]] |
+| pilot change 4: heredoc and commit-message bodies; a path in a shell variable | bodies skipped (`bodies_skipped`); an expanded ref is unknown (`refs_var_unknown`) | [[#d15]], [[#ac-19]] |
+| pilot change 5: a worktree-isolated subagent's relative paths | a base in a nested checkout under the project is outside; R1's `cwd` is the base | [[#d15]], [[#ac-19]] |
+| pilot change 6: term-concept and grep-floor items (0/64 C+I) | out of the tool leg, counted `tool_excluded_kind`; explicit uses still printed | [[#r3]], [[#ac-19]] |
+| pilot change 7a: R5 credits a re-delivered file's later unit | a unit is the FIRST delivery per segment; re-deliveries counted, never units (O-1) | [[#d7]], [[#r5]], [[#ac-6]] |
+| pilot change 7b: a subagent's own delivery and the main loop's unit both credit one touch | change 2 removes the subagent touch; an agent-channel unit takes its issuing call's origin, and only `parent` units are tool-eligible | [[#d13]], [[#ac-19]] |
+| D-Q4: no build until the experiment reports | decision row; phase M / phase B split; phase B frozen (D-Q3 agrees) | [[#decision-no-build]], [[#done]] |
+| L35: the R12 re-measure on the revised matcher, with the spec's bands, before the experiment | R14, read-only, transcript-sourced, pre-registered; R12's table; the band governs phase B once unfrozen | [[#r14]], [[#ac-20]] |
+| L18, L27 (contra-b CB-9): no consumer counts the refuted matcher | 19.6 Table C, 10.2 R7 and plan-28 count only R12 explicit uses + `cited_in_answer`; 19.2 adds nothing | [[#dnb-consumers]] |
+| CB-8: plan-21's 21.5 row says "now" | the row is restated in the same commit as this revision | [[plan-21-agent-context-usage#tasks]] |
+| D-Q5: plan-24 D1 superseded; plan-24 re-planned after the charter decision | the Agent and `mcp__refmatrix__` legs stay "live from 24.6 R4" and print `not-yet-producing`; 24.6 is not queued, so they stay unproduced through phase B unless the re-plan queues it | [[#d6]], [[#d17]] |
+| m1 review of the pilot ([[measurement-task-21.5-r12-pilot-2026-11-13#review-m1]]) | "proximity, not use" holds for "caused the touch"; the rubric cannot see a detour a delivery prevented, which is what plan-28 measures; phase M adds a blind second rater on 20% | [[#r14-labels]] |
+{#rev-4-table}
+
+### Under Q8 b {#q8-b}
+
+"Q8" here is the save-state question of the open-questions ledger, session 37b7498f. It is not
+the bug-216 confirm of session f0521bff. No requirement changes under Q8 b. A save-state that is no longer bridged is no longer a
+`kind=memory` delivery, so it simply stops forming units. [[#r2]]'s memory path rule and
+[[#r14]]'s method are unchanged.
+
+### Lead rulings on the rev-4 open items (2026-11-13) {#rev-4-open}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+**Decision rows.** The lead ruled on the user's pattern and chose option (a) on all four items.
+The user is told and may overturn any of them, which would be a dated revision before phase M's
+`PREREG.md` is frozen. The options are kept below as the record. {#rev-4-rulings}
+
+| item | ruling | effect in this spec |
+|---|---|---|
+| O-1 | (a) a unit is the first delivery per segment; re-deliveries form no unit | [[#d7]], [[#r5]], [[#ac-6]] as written |
+| O-2 | (a) the bands read CAUSED+INFORMED, with CAUSED printed beside it | [[#r14-prereg]], [[#r14-bands]]; R12's post-deploy reading uses the same label |
+| O-3 | (a) Grep `name`, Agent / Task `name` and `mcp_name` stay as strata, `underpowered` with no consumer weight until each has 20 labelled main-loop pairs | [[#r3]], [[#r12]] (stratum rule) |
+| O-4 | (a) phase M's cliquedb copy is covered by AC-15's allowance terms; the lead tells the user | [[#r14-window]] |
+| contradiction 7 (lead) | transcripts used by phase M are archived locally, outside the repo and every watched tree, never committed; the archive's creation is announced to the user | [[#r14-archive]] |
+{#rev-4-rulings-table}
+
+1. **O-1, the unit after change 7a. RULED (a).** (a, recommended) A unit is the first delivery per segment,
+   and re-deliveries form no unit. This matches 10.2's h1 and leaves re-deliveries out of the
+   denominator. (b) Keep per-prompt units, but credit the EARLIEST uncredited one. That is
+   closer to rev 3, but re-deliveries stay in the denominator and keep lowering the rate.
+   {#o-1}
+2. **O-2, the label the bands read. RULED (a).** (a, recommended) CAUSED+INFORMED, with CAUSED printed
+   beside it. R12's yes/no label ("plausibly caused") was operationalised by the pilot's rubric
+   as two labels, and the pilot reported both. (b) CAUSED only, which is stricter: a consumer
+   weight then rests on cause alone. {#o-2}
+3. **O-3, the other name legs. RULED (a).** (Grep `name`, Agent / Task `name`, `mcp_name`). The pilot sampled
+   none of them, but they share `bash_name`'s tokeniser and its prompt-echo confound. (a,
+   recommended) Keep them as strata, which are `underpowered` until each has 20 labelled
+   main-loop pairs and carry no consumer weight until then. (b) Drop them with `bash_name` on
+   the same mechanism. {#o-3}
+4. **O-4, cliquedb in phase M. RULED (a).** The user's allowance ([[#ofu-cliquedb]]) names AC-15. The pilot
+   also copied cliquedb at the user's direction. (a, recommended) Treat phase M as covered by the
+   same terms (read-only APFS clone, counts only, deleted after) and say so to the user when
+   phase M starts. (b) Ask the user first. {#o-4}
+
+### Revision r1 of rev 4 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-4-r1}
+
+| finding | disposition | where |
+|---|---|---|
+| s3 phase M re-measures on the data its changes were fitted to; the prototype is untested | the frame is sessions starting after the pilot's clone time, so no pilot pair can be drawn; a held-out case table runs against the prototype before the draw | [[#r14-window]], [[#r14-instrument]], [[#r14-prereg]], [[#done-m]] |
+| m4 a second implementation of R6's attribution | `attribute_explicit_use` in 28.3 is canonical; phase B imports it | [[#r6]] |
+| m10 the user's spot-check is unmarked as a user step | marked, under L45's catch-all | [[#r14-labels]] |
+| m8 plan-21's row says rev 3 | it says rev 4 | [[plan-21-agent-context-usage#tasks]] |
+| joint t3a/t3b review m8 (L56): "`cited_in_answer` stays 19.6's" | the owner is plan-28's 28.3 R7, lifted from the frozen 19.6; 21.1's twin line is the lead's (master-only) | [[#non-goals]], [[#od-4]] |
+
+### Revision r2 of rev 4 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-4-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s3 phase B told to import from `eval/` | phase B MOVES `attribute_explicit_use` into `telemetry.py`; the scorer imports it from there | [[#r6]] |
+| r2-m1 the frame starts at a date, not an instant | it starts at the pilot clone's latest possible instant, the pilot measurement's commit `6725801` (2026-11-13T11:35:59-08:00), or an earlier recorded clone time; `n_main < 50` flagged as likely | [[#r14-window]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. **Scope of the approval:** phase M (R14, the re-measure) is approved to build in queue item 7, after the m1 confirm (G32). **Phase B (R1-R13, every AC) stays FROZEN** until plan-28 reports and the user takes the charter decision (D-Q4, D-Q3, [[#decision-no-build]]). Approval does not unfreeze it. {#approval-row}

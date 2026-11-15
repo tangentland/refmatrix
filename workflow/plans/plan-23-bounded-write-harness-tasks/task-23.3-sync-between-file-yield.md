@@ -7,21 +7,31 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 23.3: the between-file yield in `_sync_paths` {#root}
 
 > Plan: [plan-23-bounded-write-harness](../plan-23-bounded-write-harness.md)
-> Status: Pending (**revision round 6, 2026-11-09**: freshness fold of
+> Status: Pending (**revision round 8, 2026-11-13**: freshness against the revised bug-185 (plan
+> review L31, L3, L4, L1): the GMD phase wraps FOUR bug-185 entry points (`gmd_finish` added);
+> AC-4b's hold count is `2 × documents + 1`; the gate narrowed; each document's tail and hash
+> stamp sit in its own pass-2 step, and `gmd_finish` holds only the skipped-document residue
+> (lead ruling, option 1, [[task-bug185-bulk-gmd-ingest#open-finish-stop]]); see
+> [[#rev-round-8]]. Revision
+> round 7, 2026-11-09: bug-185 r1 m5 (AC-4b only), see [[#rev-round-7]]. Revision round 6,
+> 2026-11-09: freshness fold of
 > [[bsd-plan23-3-5-freshness-62a2465]] (b1, s1, m1, m4): each GMD document is its own
 > `bounded_steps` step and AC-4b counts its writes; all FIVE daemon sync sites plus `cli.py`'s
 > `flush_queue` caller; facts re-stamped at HEAD `2a4448b`; R9 measures the per-file batch
 > against pre-registered bands; see [[#rev-round-6]]. Earlier: revision round 5, 2026-10-14: nm23-r4-3, see [[#rev-round-5]]; round 3:
 > ns23-r3-3, see [[#rev-round-3]]; round 2: nb23-3 and nb23-4, see [[#rev-round-2]])
 > Depends on: 23.1 (`bounded_steps`, `bind`), 23.2 (recorder), 23.0 (sandbox), and bug-185's
-> bulk GMD ingest ([[task-bug185-bulk-gmd-ingest]], merged after plan-26; AC-4b needs it).
-> Build order (round 6): 3.7 → bug-178 → plan-26 → bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5.
+> bulk GMD ingest ([[task-bug185-bulk-gmd-ingest]], revision round 2, merged after bug-216;
+> AC-4b needs it).
+> Build order (round 8; L1, L3, L4): 3.7 → bug-178 → 26.1 + 26.2 (merged) → bug-216 → bug-185
+> → 23.2 → 23.1 → 23.3 ∥ 23.5 (23.5's R9/AC-9 after the 26.6 R3 residual). Round 6's
+> "→ plan-26 →" is superseded.
 
 rel: part-of -> [[plan-23-bounded-write-harness]]
 rel: depends-on -> [[task-23.1-queue-and-drain]]
@@ -136,7 +146,35 @@ the same shape.
      two-pass call does. A stop between steps leaves a document without its hash, so the next
      sync's resume gate re-ingests it, as a crash does today. `_sync_paths` still stamps no GMD
      path. Each step's write count is flat in the document's anchor count because bug-185
-     ([[task-bug185-bulk-gmd-ingest]]) makes the writes bulk. AC-4b asserts both;
+     ([[task-bug185-bulk-gmd-ingest]]) makes the writes bulk. AC-4b asserts both.
+     **Round 8 (L31; lead ruling, option 1, on
+     [[task-bug185-bulk-gmd-ingest#open-finish-stop]]):**
+     - each document's pass-2 step also runs that document's share of bug-216's tail (pending
+       resolution for its names, `denotes` for its id and minted names), bulk by bug-185 R8;
+     - the document's hash stamp is written LAST in that same step (bug-185 R2 steps 8-9). That
+       is R4's rule: the stamp sits in the last step that owes the document work;
+     - then ONE `gmd_finish` step for the batch ([[task-bug185-bulk-gmd-ingest#r7]]). It holds
+       only the residue for documents skipped as unchanged, then `stamp_derive("gmd")` as its
+       last write. It writes no content hash, and it always runs, even when it has nothing
+       else to write.
+
+     **Placements (bsd-spec-t4 r1 S4):**
+     - `gmd_prepare` does no store I/O and runs OFF the lock, before the steps, so it takes
+       no hold.
+     - Every touched GMD document gets a `gmd_pass1_document` step. Its resume gate (the
+       stored-hash read, where HEAD's pass 1 does it) skips an unchanged document, which writes
+       nothing in that step and gets no pass-2 step.
+     - Each admitted document gets one `gmd_pass2_document` step.
+     - `stamp_derive("gmd")` is inside the `gmd_finish` step and is not a step of its own.
+
+     **Formula:** GMD-phase holds = `N + A + 1`, where `N` = touched GMD documents and `A` =
+     those the resume gate admits. When every touched document changed, as in AC-4b's
+     re-sync fixtures, `A = N` and the count is `2N + 1`. A stop at ANY GMD step boundary, whether a
+     crash, a `cancel` or a `budget_s` stop, leaves every document whose pass-2 step committed
+     complete and stamped, and every other document unstamped for the next sync to
+     re-process. So a batch larger than one budget still makes progress on every sync. A stop
+     before `gmd_finish` only delays the residue. This task adds nothing inside the entry
+     points;
    - tldr: one step;
    - the ADR map build: one step;
    - `.pseudo` and `.md` semantics: one file per step;
@@ -256,13 +294,31 @@ the same shape.
      both carrying the SAME number of `rel:` lines (round 7: 10, as bug-185's AC-3 fixtures).
      - Re-syncing each executes the same number of statements per hold (± 2), counted by 23.2's
        recorder, and 0 single-row entity / concept upserts (23.2 R3's counter).
-     - Each document is its own pass-1 step and its own pass-2 step: the recorder's hold count
-       is `2 × documents` for the GMD phase.
+     - **Hold count, from [[#r1]]'s formula `N + A + 1`.** `gmd_prepare` is off the lock;
+       `stamp_derive` is inside `gmd_finish`. Every fixture document is changed (`A = N`), so
+       the recorder counts `2N + 1` holds for the GMD phase. A second run adds one unchanged
+       document (`N + 1` touched, `A = N`) and counts `2N + 2`. The count is re-checked against
+       the lead's option-1 ruling: the per-document tail adds statements inside each pass-2
+       step, not steps.
+     - **The tail's statements are constant per document.** Both fixtures carry the same 3
+       unresolved `rel:` lines, and the pending table is read once per batch (bug-185 R8 (b)).
+       The generator pins each document's distinct `link_denotes` name count at ≤ 450 (its
+       id, tags, title tokens, mention names, and the batch ids bug-185 R2 step 8 (b)'s
+       intersection adds; bug-185 R8 (d), r1 M2), and the test asserts that count first. So the
+       ± 2 per-hold bound holds for the pass-2 steps and for the `gmd_finish` step alike.
      - Two GMD documents that link each other, both new in the same sync, resolve the links in
        both directions (AC-6's row diff against HEAD).
      - Mutations, each must FAIL: the GMD batch back to one step for all documents (hold count
        1); the per-row pass-1 `upsert_entity` loop restored (statements scale with anchors,
-       single-row counter > 0).
+       single-row counter > 0); (round 8) `gmd_finish` folded into the last document's pass-2
+       step (hold count `2N`); (r1 S4) `stamp_derive("gmd")` run as its own step (hold count
+       `2N + 2`); (r1 S1) the stamp committed in a step BEFORE the tail's step. Each pass-2 step
+       is split in two, the body and the stamp in the first and the tail in the second, so the
+       hold count becomes `3N + 1`, and a `cancel` checked before the
+       tail's step leaves a stamped document whose tail never ran, so the next sync skips it
+       and its pending row stays unresolved. This replaces round 8's "stamp before the tail
+       inside one step" mutation, which cannot fail: inside one transaction both writes roll
+       back together, and `cancel` is checked only before a hold.
      - RED at HEAD: the single-row upsert counter is > 0 and scales with the anchor count (200
        vs 50 anchors; the exact count depends on the fixture's anchor naming, since each
        multi-part name adds variant upserts, round 7). Needs bug-185 merged to go GREEN
@@ -418,3 +474,44 @@ history.
 | m5 (a) which task cuts the per-document pass-1 / pass-2 seam | [[#ac-4b]]; [[task-bug185-bulk-gmd-ingest#r7]] | bug-185 provides `gmd_prepare` / `gmd_pass1_document` / `gmd_pass2_document`; [[#r1]]'s per-document steps wrap them and add nothing inside |
 
 rel: derives-from -> [[bsd-bug185-spec-r1-da67220#m5]]
+
+## Revision round 8 (2026-11-13): freshness against the revised bug-185 {#rev-round-8}
+
+Source: [[plan-review-2026-11-13#lead]] L31 ([[bsd-pop-r2-d99f41c#n17]]: "23.3 consumes bug-185's R7
+entry points"), with L1, L3 and L4 for the order. bug-185 was revised the same day
+([[task-bug185-bulk-gmd-ingest#rev-round-2]]): it follows bug-216's resolver, makes bug-216's
+pending-ref and `denotes` writes bulk, and adds a fourth entry point, `gmd_finish`. Read on dev
+master `1cf3b9f` and bug-216's branch at `f75cbc3`; no store opened. Rounds 6 and 7 above are
+unchanged history.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-pop-r2-d99f41c#n17]]
+rel: derives-from -> [[task-bug185-bulk-gmd-ingest#rev-round-2]]
+
+| finding | answered at | rationale |
+|---|---|---|
+| L31 / N17: bug-216 adds a batch-level tail (pending resolution, `denotes`) that 23.3's per-document steps did not cover | [[#r1]] (one `gmd_finish` step), [[#ac-4b]] (`2 × documents + 1`; equal unresolved-line count; fold mutation) | with no step of its own, the tail runs either outside every bounded step or inside the last document's step, which then grows with the batch's pending rows |
+| a stop before the batch tail leaves stamped documents without their tail | [[#r1]] (per-document tail before the stamp; `gmd_finish` = skipped-document residue; lead ruling option 1, the first ruling, option 2, withdrawn because it livelocks under `budget_s`), [[#ac-4b]] (hold count re-checked; stamp-before-tail mutation); [[task-bug185-bulk-gmd-ingest#open-finish-stop]], [[task-bug185-bulk-gmd-ingest#ac-13]] | the fix lives in bug-185's entry points, where the hash stamp sits, so it is decided there, once, for both callers; option 1 keeps R4's rule and per-document progress |
+| L4 / L3 / L1: the build order in the header | header | "plan-26 merged" narrowed to 26.1 + 26.2; bug-216 before bug-185; 23.5 R9 after the 26.6 R3 residual |
+| the header named round 6 while round 7 existed (Cc-9's class) | header | status lines match the newest round |
+
+### Round 8, continued: bsd-spec-t4 r1 (2026-11-13) {#rev-round-8-r1}
+
+Source: the ch-bsd spec review of `spec-wave-t4` at `db701e8` (DIRTY 1B/5S/7M), its S1, S4 and M2
+for this file, with the lead's rulings.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | answered at |
+|---|---|
+| S4 (the `2N + 1` count rested on two unstated placements) | [[#r1]] (placements + formula `N + A + 1`), [[#ac-4b]] (derived count; `stamp_derive`-as-step mutation) |
+| S1 (the stamp-before-tail mutation could not fail inside one step) | [[#ac-4b]] (replaced by the split-step mutation); bug-185 AC-13 tests the order with no transaction open |
+| M2 (the 450-name bound counted anchors only) | [[#ac-4b]] (distinct-name count pinned and asserted) |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

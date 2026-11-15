@@ -8,13 +8,16 @@ metadata:
   status: pending
   created: 2026-10-07
   revised: 2026-10-14
+  updated: 2026-11-13
 ---
 
 # Task 16.5: the explicit command stops re-rendering grep {#root}
 
 > Plan: [plan-16-invisible-grep-shim](../plan-16-invisible-grep-shim.md)
 > Status: Pending (revision after the 2026-10-14 decision log; revision 6, answering spec review
-> r5 `bsd-plan16-spec-review-r5-cd7c923`)
+> r5 `bsd-plan16-spec-review-r5-cd7c923`; revision round 7, 2026-11-13: supersedes 25.4/25.5 and
+> closes bug-167/bug-174, the floor keeps bug-216's re-includes, [[#rev-round-7]]; revision round
+> 8: bug-222, [[#rev-round-8]])
 > **Wave:** 2, last of plan-16's chain ([[plan-16-invisible-grep-shim#waves]]).
 > Depends on: [[task-16.1-argv-faithful-learner]], [[task-16.2-invisible-shim]] (16.2 provides its
 > differential fixture and its spawn rules). Tests run in plan-23 task 23.0's sandbox.
@@ -28,6 +31,39 @@ rel: amends -> [[bsd-plan16-spec-review-r4-33809ab]]
 rel: amends -> [[bsd-plan16-spec-review-r5-cd7c923]]
 rel: derives-from -> [[plan-review-2026-10-14#t7]]
 rel: implements -> [[plan-review-2026-10-14#t7-fixes]]
+
+## Revision round 8 (2026-11-13) {#rev-round-8}
+
+Answers `bsd-spec-t56-r1-fecda59` M5: bug-222 (logged after this branch's base; plan-review L48
+gives it to 16.5 R2) is folded.
+
+| finding | answered in |
+|---|---|
+| M5 bug-222 (`rmx grep -c -F -- '---'` on a pipe: "no PATTERN given") | [[#r5]] bug-222 rows; [[#r8]] `fixed by task-16.5 R2` row |
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Revision round 7 (2026-11-13) {#rev-round-7}
+
+Applies D-Q7 and L32, L42 and L5 of the 2026-11-13 plan review
+([[plan-review-2026-11-13#decisions]], [[plan-review-2026-11-13#lead]]; contra-d CD-1, CD-5, CD-8;
+spec-wave G23 and G24's task side). Later rows win.
+
+| finding / decision | answered in |
+|---|---|
+| D-Q7 / L32 / L42 (16.5 wins on the named-path and stdin legs; the path-less index leg keeps R3's floor for BRE metas; 25.4/25.5 close as superseded; bug-167 and bug-174 close when 16.5 lands) | [[#r8]] two new `fixed by` rows; AC-5i; [[task-25.4-grep-bre-translation#closed]], [[task-25.5-substring-bre-metas#closed]] |
+| G24 (cliquedb told on the bus when 16.5 ships: bug-167 was its field report's item 5) | [[#done-r7]] |
+| L5 (the floor's pruning flags are 16.1 R1b's; bug-216 re-includes a hidden-dir rule doc) | [[#r3]] floor bullet; AC-5h |
+
+rel: supersedes -> [[task-25.4-grep-bre-translation]]
+rel: supersedes -> [[task-25.5-substring-bre-metas]]
+rel: derives-from -> [[plan-review-2026-11-13#decisions]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[task-16.1-argv-faithful-learner#r1b-reincludes]]
+
+On merge of this task, the cliquedb session is told on the bus (one message, naming the merge
+sha and the release) that bug-167 and bug-174 are closed by 16.5 and that `rmx grep` with a path
+or a pipe now runs the platform grep. {#done-r7}
 
 ## Revision 6 changelog {#revision-6}
 
@@ -207,6 +243,10 @@ Otherwise, and on an index miss when [[#d-4]] allows a floor, the FLOOR runs:
 `grep -r <16.1 R1b pruning flags FIRST> <-E/-F from d-4> <grep_argv> <project_root>`.
 - That is the real grep with every caller flag (`-A/-B/-C`, `--include`, `-m`, `-x`, `-v`, `-L`,
   `-o`, `-NUM`, …), so bug-077's case rule and BRE are the tool's own.
+- The pruning flags are 16.1 R1b's, its re-include rule included (round 7, L5;
+  [[task-16.1-argv-faithful-learner#r1b-reincludes]]), with `project_root` as the operand: a
+  re-included file below a dot-dir (bug-216's `!path` lines and built-in rule-doc includes) is
+  searched by the floor, and the rest of the dot-dir is not.
 - The floor runs as a CHILD (not an exec), because `--limit` caps its stdout ([[#d-4]]). stderr is
   passed through. The child always runs to completion: rmx prints the first N lines and drains
   the rest unprinted, so grep's own exit code is known (it is never killed at the cap). The exit
@@ -258,6 +298,9 @@ concepts with a BRE meta beside `forgone_index_share`.
   `--file=pats.txt f.txt` (named), `-f pats.txt f.txt`, `-f pats.txt -f pats2.txt f.txt`,
   `-e a -e b f.txt`, `-d skip alpha f.txt sub`, `--binary-files text alpha f.txt`,
   `--label L -H alpha` over a pipe, `-i foo -- --limit 3` (`--limit` and `3` are operands).
+- **bug-222 rows (round 8):** over a pipe of `a\n---\n`, `-c -F -- '---'` (count 1, exit 0) and
+  `-c -- '--x'` (count 0, exit 1); both byte-equal to `/usr/bin/grep` with the exit code. At HEAD
+  the first prints `Error: grep: no PATTERN given`, exit 2, so the row has power.
 - **s-r5-1 and bug-102 rows:** `-e --help f.txt` (grep searches for `--help`), `-ekey f.txt`,
   `-fkeys.txt f.txt`, `-fkcode f.txt` (grep's `-f kcode`, never rmx's `-k code`), and
   `--context alpha f.txt` (`--context` takes no space value: `alpha` is the pattern).
@@ -295,10 +338,17 @@ A test greps `docs/`, `README.md`, the templates and `rmx grep --help` for `rmx 
 name a directory without `-r`, for `-f '-` / `--flags`, and for "ignore-case (default ON", and fails
 on any it finds.
 
-**R8. bug registry, precisely (#s-r3-4).**
+**R8. bug registry, precisely (#s-r3-4).** {#r8}
 - `superseded by task-16.5 (code deleted)`: bug-058, 059, 060, 062, 063, 064, 066, 079; r4 #b-2,
   #b-3, #b-4, #m-4; r5 #s-2.
 - `fixed by task-16.5 R3`: bug-081.
+- `fixed by task-16.5 R1-R3` (round 7, L42): bug-167 (a named path or a pipe execs grep, whose
+  BRE reads `\|` and every other escape; a path-less pattern with a backslash goes to the floor;
+  the `\|` refusal is deleted) and bug-174 (an unescaped `. * [ ] ^ $` is grep's own on the
+  named-path and pipe legs, and condition 1 floors it on the path-less leg). Their planned fixes,
+  tasks 25.4 and 25.5, are superseded ([[#rev-round-7]]).
+- `fixed by task-16.5 R2` (round 8): bug-222 (a piped `rmx grep` execs the real grep on
+  `grep_argv`, so a pattern starting with `-` after `--` is grep's; `_grep_stdin` is deleted).
 - `fixed by task-16.5 R4` (with 16.1 R1's `value` column as the one table): bug-102, the
   `--context` space-value entry in `_GREP_VALUE_FLAGS` (`cli.py:5540`).
 - bug-076, 077, 078, 083 and 084 stay as they are, because their code is kept.
@@ -370,6 +420,15 @@ on any it finds.
    - 5f (m-r5-2). With learning ON: `--no-fallback alpha_doc_only` exits 1 with today's line and
      empty stdout; `--no-fallback -A2 alpha` is refused, exit 2.
    - 5g. `--via-replica -A2 alpha` runs the floor and prints the one d-4 note.
+   - 5h (round 7, L5). The tmp project re-includes `!.notes/keep.md` and lists `.notes` in its
+     ignore file; `alpha$` sits at a line end in `.notes/keep.md`, `.notes/drop.md` and
+     `.claude/agents/x.md`. `rmx grep 'alpha$'` (a floor route) prints `.notes/keep.md`'s line and
+     neither of the other two. Mutation "the floor drops 16.1's re-include rule": FAILS.
+   - 5i (round 7, L42; bug-167, bug-174). Each matches `/usr/bin/grep` byte for byte, with its exit
+     code: `rmx grep -n 'B0\|group_key' f.txt`; `rmx grep 'foo\.py' f.txt` (matches `foo.py`,
+     not the literal `foo\.py`); `rmx grep 'a.b' f.txt` (matches `axb`); and the path-less
+     `rmx grep -rn 'a.b'` matches the floor's `axb` line, not only a literal `a.b`. Before the
+     change, all four differ (AC-1's power rule).
 6. **The deletions are real.** `rg -w` over `src/ tests/ bin/` for each deleted symbol returns
    nothing. That catches in-function imports, which `--collect-only` misses. The grep section's line
    count before and after goes in the summary.
@@ -447,3 +506,11 @@ plus 16.5's spawn guard). Pre-registered mutations:
 | remove the sandbox guard's store check | the guard's own test |
 
 {#tests}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]

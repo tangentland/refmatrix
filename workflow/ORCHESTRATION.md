@@ -18,8 +18,7 @@ user: Q23-Q26 = a; [[workflow-practice-review-2026-11-15]]). CLAUDE.md
 rel: derives-from -> [[workflow-practice-review-2026-11-15]]
 rel: amends -> [[tdd-governance]]
 rel: amends -> [[PLANNING_WORKFLOW]]
-rel: depends-on -> [[plan-review-2026-11-13#lead]]
-rel: depends-on -> [[open-questions]]
+rel: depends-on -> [[plan-of-plans#ledgers]]
 
 ## 1. Roles {#roles}
 
@@ -72,7 +71,7 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 2. **Spec review r1.** ch-bsd, full depth, in its own clone; the report is written in that clone
    or returned as text.
 3. **Ruling.** The lead persists the report ([[#reports]]) and writes `L<n>` in
-   [[plan-review-2026-11-13#lead]]: each finding folded, deferred (with an owner) or overruled,
+   [[plan-of-plans#rulings]] (L125 on; L1-L124 in [[plan-review-2026-11-13#lead]]): each finding folded, deferred (with an owner) or overruled,
    with the reason.
 4. **Revision** by the same author on Fable, with a fold table per spec.
 5. **Confirm-lite r2..rN** until MEH-only GO; the MEHs fold before the merge.
@@ -94,7 +93,7 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
    mutation must make a test FAIL, not hang. The table goes in the summary.
 4. **Verify** — the task's files + the family + every test that imports a changed module
    (until 29.4 R6 derives families, list them by grep and say how). **No branch full suite**:
-   the full suite runs once per minor release, on merged `master`; a patch release gates on the
+   the full suite runs once per major release, on merged `master`; a minor release gates on the
    narrower set ([[#release]]); failures compared **by
    E line** with the last release's full-suite log, never by test name. (The user, 2026-11-15:
    "it's taken most of the day to get one patch release out" — 0.83.1 ran four full suites;
@@ -113,14 +112,15 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 1. **Release commit** on `master`: bump `pyproject.toml` and `src/refmatrix/__init__.py` only.
    **Pick the version by scope** (the user, 2026-11-15): a change that alters behaviour on a
    shared path — ingest, the store, the daemon ops, a hook's output, the CLI's contract — or
-   whose changed modules are imported by most of the suite is a **minor** release (`0.N.0`); a
-   fix confined to a few modules with no such change is a **patch** (`0.N.x`). When unsure, it is
-   minor.
+   whose changed modules are imported by most of the suite is a **major** release (`0.N.0`); a
+   fix confined to a few modules with no such change is a **minor** release (`0.N.x`). When unsure,
+   it is major. (The user's terms, L119 and 2026-11-15: "targeted testing for minor releases and
+   full testing for majors".)
 2. **The gate on merged `master`, by release kind:**
-   - **minor (`0.N.0`): the full suite**, compared by E line with the previous release's log.
+   - **major (`0.N.0`): the full suite**, compared by E line with the previous release's log.
      A clone cannot see failures that need the dev tree's live `.refmatrix/`, so a green branch
      run is evidence, not the gate.
-   - **patch (`0.N.x`): the narrower set** — the task's tests, its family, and every test that
+   - **minor (`0.N.x`): the targeted set** — the task's tests, its family, and every test that
      imports a changed module (until 29.4 R6 derives families, listed by grep and named in the
      release commit), run on merged `master`, compared by E line.
    - Never a branch full suite ([[#task]]).
@@ -133,12 +133,21 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 
 ## 5. Lead discipline {#discipline}
 
+- **The POP is the source of truth** (the user, 2026-11-15; consolidation finding F1). Every
+  commit that changes state updates [[plan-of-plans]] in the same commit: a ruling that changes
+  order or scope, an admission or a move to post-mod, a merge, a release, a status flip. Review
+  docs, `L<n>` rows and triage files are evidence the POP row links to; they never hold state the
+  POP lacks. A plan or task file's `metadata.status` follows the POP, not the other way. **Every
+  `L<n>`, `plan-N D<n>` and `Q<n>` is entered in [[plan-of-plans#ledgers]] first, then amended
+  into a plan** (the user, 2026-11-15). **The POP is a living doc:** it holds current state only.
+  A finished item (done, applied, answered, superseded) is appended whole to [[pop-finished]],
+  then deleted from the POP in the same commit. {#pop-truth}
 - **Measure before deciding**, read-only: copy `.refmatrix/catalog.read.duckdb` to the
   scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`; never `Store()`
   on a live slot. State go/no-go bands before measuring. {#measure}
-- **Ledgers.** Every ruling is an `L<n>` row; every question to the user is a `Q<n>` in
-  [[open-questions]] or a plan's own `Dk`; each reply that asks anything ends with the ids still
-  open. {#ledgers}
+- **Ledgers.** Every ruling is an `L<n>` row, every plan decision a `plan-N D<n>` row, every
+  question to the user a `Q<n>` row, all in [[plan-of-plans#ledgers]], entered there before any
+  plan is amended; each reply that asks anything ends with the ids still open. {#ledgers}
 - **Registry at once.** Every defect anyone finds gets a `workflow/bug_registry.md` row from the
   lead in the same turn, even when its fix is out of scope. {#registry}
 - **Reports** ([[#reports]]): the lead persists every review. {#reports-rule}

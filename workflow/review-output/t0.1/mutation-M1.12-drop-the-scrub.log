@@ -1,0 +1,44 @@
+# sha 3d1e2f15e28685648ba0fffb97b7e4e3edce6740 + M1.12 (scripts/gmd_memdir.py _git_env returns os.environ unscrubbed);  1 file changed, 1 insertion(+), 1 deletion(-)
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t01/src/refmatrix as checked-hash (bug-037)
+.........F.........                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_a_chain_resolves_under_an_exported_git_dir_of_an_unrelated_repo _____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0')
+home = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/home')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e5498d0>
+
+    def test_a_chain_resolves_under_an_exported_git_dir_of_an_unrelated_repo(tmp_path, home,
+                                                                             monkeypatch):
+        """ch-bsd T0.1' r1 MEH-1 (L126): the gate can run from inside a git hook, where git exports
+        `GIT_DIR` / `GIT_WORK_TREE` for the repo being committed (the bug-212 E1 class). Every
+        `git -C <checkout>` the walk makes must still read THAT checkout, not the exported repo:
+        the resolver strips git's locating variables. Here they name an unrelated repo whose origin
+        is non-local, so a resolver that keeps them reads that origin for every hop and stops on
+        `non-local origin` with no dir (mutation M1.12, "drop the scrub")."""
+        gm = load_gmd_memdir()
+        clone_b = _checkout(tmp_path / "clone_b")
+        used = _populate(home, clone_b)
+        clone_a = _checkout(tmp_path / "clone_a", origin=str(clone_b))
+        root = _checkout(tmp_path / "chk_chain", origin=str(clone_a))
+        unrelated = _checkout(tmp_path / "unrelated_repo",
+                              origin="git@example.invalid:owner/unrelated.git")
+        monkeypatch.setenv("GIT_DIR", str(unrelated / ".git"))
+        monkeypatch.setenv("GIT_WORK_TREE", str(unrelated))
+        chosen, note = _resolve(gm, root, home)
+>       assert chosen == used.resolve(), (
+            f"with GIT_DIR/GIT_WORK_TREE exported for {unrelated}, the chain {root} -> {clone_a} -> "
+            f"{clone_b} must still resolve to clone B's dir: chosen={chosen} note={note!r}")
+E       AssertionError: with GIT_DIR/GIT_WORK_TREE exported for /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/unrelated_repo, the chain /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/chk_chain -> /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/clone_a -> /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/clone_b must still resolve to clone B's dir: chosen=None note='memory dir for /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/chk_chain absent (/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/home/.claude/projects/-private-var-folders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1837-test-a-chain-resolves-under-an0-chk-chain/memory); /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/chk_chain is not a checkout (it lies inside the checkout /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolves_under_an0/unrelated_repo); no memory dir; memory-id refs will surface as dangling-doc'
+E       assert None == PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolve...ders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1837-test-a-chain-resolves-under-an0-clone-b/memory')
+E        +  where PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolve...ders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1837-test-a-chain-resolves-under-an0-clone-b/memory') = resolve()
+E        +    where resolve = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1837/test_a_chain_resolve...ders-js-71d0ymjj56b2mbf40rvwk84r0000gn-T-pytest-of-tholley-pytest-1837-test-a-chain-resolves-under-an0-clone-b/memory').resolve
+
+tests/test_lint_gmd_memdir_fallback.py:260: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_resolves_under_an_exported_git_dir_of_an_unrelated_repo
+1 failed, 18 passed in 5.34s
+EXIT=1
+# after restore (git checkout -- scripts/gmd_memdir.py; __pycache__ cleared)
+git diff --stat: []
+scrub line present: 1

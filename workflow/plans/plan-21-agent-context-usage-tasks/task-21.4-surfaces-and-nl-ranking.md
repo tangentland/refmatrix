@@ -7,14 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-11-14
 ---
 
 # Task 21.4: NL ranking, then the surfaces {#root}
 
 > Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
-> Wave: 3
+> Wave: 3 (history; 2026-11-13: queue item 6, after 21.2, [[#rev-2026-11-13]])
 > Depends on: 21.1 (the `internal` source, the shared pytest-temp predicate the draw filters
 > with), 21.2, 23.0 (sandbox). The docs change LAST, so they never promise what the tool cannot do.
 
@@ -67,11 +67,14 @@ ranks`) so those callers reuse it rather than building their own.
      `invocation=internal` rows and the 2026-10-07T11:06:35-11:07:13 replay window excluded. The
      global `~/.refmatrix/query.log` is never read (it holds other trees' queries).
    - **Who drafts:** a dedicated agent whose brief forbids reading the ranking code
-     (`src/refmatrix/context.py`, `src/refmatrix/reranker.py`, and the rerank ops in `daemon.py`);
+     (`src/refmatrix/context.py`, `src/refmatrix/reranker.py`, the rerank ops in `daemon.py`, and,
+     since bug-216 R9 made them part of ranking (lead, 2026-11-13), the typed-edge candidate
+     expansion and the PageRank edge-set code that bug-216 changed: the `denotes` walk and fold);
      its tool-call list is kept with the set's provenance, and a check fails the set if any Read of
      those paths appears. A question whose gold lies in those files is excluded. The tuner (the
      agent or session doing R3) never edits the set.
-   - **Approval:** the user approves the drafted set (redacted form) before it is frozen.
+   - **Approval (user-gated):** the user approves the drafted set (redacted form) before it is
+     frozen. The goal stops here for the user (L45; bsd-spec-t3ab M6).
    - **Privacy (d8f):** the RAW set stays local under `eval/production/context_nl/raw/`
      (gitignored). Committed: the sha256 of the raw set's canonical JSON, recorded in
      [[#frozen-hash]], and a REDACTED fixture (absolute paths, hostnames and non-refmatrix tree names
@@ -101,7 +104,9 @@ ranks`) so those callers reuse it rather than building their own.
      `hooks.py:1017`), the MCP tool description, plan-16 R3 / task 16.3.
    - The PRIMER keeps "plain english" only if R2/R3 support it.
    - Plan-16's `rmx_search` mention is corrected.
-   - The regenerated `.refmatrix/CLAUDE.md` ships in the C11 install-hooks window (bsd #m-5).
+   - The regenerated `.refmatrix/CLAUDE.md` ships in the C11 install-hooks window (bsd #m-5): the
+     first user-gated window after R4 lands, 10.4's (queue item 6), else 16.3's (item 10). The
+     lead lists it in the plan review's G31 (lead, 2026-11-13).
 
 ## The frozen hash {#frozen-hash}
 
@@ -180,3 +185,62 @@ Answers [[bsd-plan19-21-spec-rereview-32dde06]] and [[plan-review-2026-10-14#t9]
 | d9h (question set from this project's `query.log` only) | R1 source |
 | re-review #b-2 / d9g (legacy rows, fixture rows) as they reach the draw | R1 source (`row_provenance` classes) |
 | re-review #m-4 (question text kept) | R1 "question-text exception" |
+
+## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
+
+Three requirement changes, no AC change: the Q8 constraint on the doc stratum's gold, which the
+spec wave's rule required and Q9 / L60 keeps ([[#q8]]), and the lead's 2026-11-13 rulings on R1's forbidden list and
+R4's install window. A third ruling adds a note on the fold re-score (all listed at the end).
+{#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q3]]
+rel: implements -> [[plan-review-2026-11-13#d-q5]]
+rel: related-to -> [[task-bug216-rule-docs-in-graph]]
+
+| item | record |
+|---|---|
+| D-Q5 | plan-24 D1's hold on 21.2-21.4 is superseded. This task builds now on the current surfaces: the CLI, the MCP tool description, the PRIMER generator, `_install_briefing`. The MCP description stays a surface until plan-24's re-plan after the charter decision |
+| D-Q3 | pull-side work proceeds. Queue item 6, after 21.2 |
+| doc stratum gold (`doc-id#anchor`) under bug-216 R6 | anchored targets keep concept-first, so the gold's meaning is unchanged |
+| ranking under bug-216 R9 | `denotes` is a zero-cost hop in `build_context`'s degree walk, and PageRank folds a concept's typed in-edges onto its `denotes` target, so doc ranks move when bug-216 goes live. R2's table and every R3 candidate run on ONE catalog copy taken after bug-216's live re-derive (queue item 1, user-gated, with R10's pending refs resolved). Otherwise bug-216's movement would be scored as a 21.4 win or loss. The copy is also taken BEFORE G22 rev 2's gate deploys ([[#q8-copy-order]]) |
+| bug-216 R11 (CLAUDE.md and `.claude/PROJECT_PROFILE.md` ingested when they carry GMD frontmatter) | CLAUDE.md is one of R4's five surfaces and is now also a ranked doc, so R4's rule sentence enters the corpus. No conflict. AC-4 still reads the committed file |
+
+**Ruled by the lead, 2026-11-13** (each on the recommended option):
+- **O-a (folded into R1):** the drafting agent's forbidden list adds bug-216's typed-edge
+  candidate expansion and PageRank edge-set code (the `denotes` walk and fold), by d4c's own rule.
+- **O-b (a note, no requirement change):** C9 makes this set THE ranking-eval harness, but L29's
+  per-type evaluation of bug-216's PageRank fold (plan review G30) runs in the measurement lane
+  before this harness exists (item 6). G30 therefore scores with its own pre-registered per-type
+  bands. Once this set is frozen ([[#frozen-hash]]), this harness RE-SCORES the fold on both
+  routes and records the result in `REPORT.md` beside G30's numbers. The re-score is a
+  measurement and gates nothing in 21.4.
+- **O-c (folded into R4's last bullet):** the regenerated `.refmatrix/CLAUDE.md` rides the first
+  user-gated install window after R4 lands (10.4's, else 16.3's). The lead adds it to G31.
+
+## Q8 / Q9: `workflow/` in the store {#q8}
+
+Q8 is answered (a), and Q9 refined it for `workflow/` (L60, G22 rev 2). `workflow/` stays ingested
+in the project partition and is DEMOTED by design: one gate in `pagerank.py` drops operational ids
+(`workflow/`-path docs, their anchors and the concepts that `denote` them) from PageRank adjacency,
+`concept_df`, the mentions BM25 statistics and co-occurrence. Context and scan then rank those hits
+last unless the query names that doc or anchor. So R1's doc stratum still draws gold only from GMD
+docs OUTSIDE `workflow/`. A gold section under `workflow/` would measure G22's demotion, not 21.4's
+ranking. The restriction is not lifted. Save-states are never gold (R1: memories and sessions are
+out). {#q8-b}
+
+**The catalog copy's order** (bsd-spec-t3ab r3 m4). 21.4's ONE catalog copy, which R2's table and
+every R3 candidate use, is taken after bug-216's live re-derive (queue item 1) and BEFORE G22 rev
+2's gate deploys (item 6 precedes item 9). `REPORT.md` records the deployed sha the copy was taken
+at. If G22 has landed by the time the copy is taken, the run records that, and the measurement
+re-scores on a pre-G22 copy (built from the last pre-G22 deployed sha in a throwaway store),
+rather than attributing G22's rank shift to a 21.4 candidate. {#q8-copy-order}
+
+rel: depends-on -> [[plan-review-2026-11-13#lead]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

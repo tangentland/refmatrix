@@ -7,13 +7,15 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-14
 ---
 
 # Task 19.5: measure delivery, not production {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13:** R1 is built (25.1
+> R0); R2-R4 are FROZEN until the handhold outcome experiment reports; the folded rider moves to
+> 25.1b R0 ([[#rev-2026-11-13]]).
 > Depends on: R1 (the probe) depends on nothing and runs FIRST: it sets 19.1's default and decides
 > PreCompact (d5d). R2/R3 run after 19.1–19.3 and 21.1 (the recall-event schema), in 23.0's
 > sandbox.
@@ -198,3 +200,25 @@ rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
 |---|---|---|
 | R1 threshold probe | [[task-25.1-recall-hook-byte-budget#r0]] | run as 25.1 R0, with three recorded outcomes (per-hook; per-event split; per-event residual below the minimum useful recall); table in `workflow/measurements/hook-output-cap-probe.md` |
 | R2-R4 | not realized; stay with 19.5 | |
+
+## Revision (2026-11-13, the plan review: L26, D-Q3, D-Q5) {#rev-2026-11-13}
+
+Record only. {#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#lead]]
+rel: implements -> [[plan-review-2026-11-13#d-q3]]
+rel: derives-from -> [[bsd-pop-r2-d99f41c#n1]]
+
+| item | record |
+|---|---|
+| R1 | built as 25.1 R0 ([[#rev-plan25]]), on hooks. Plan-24 D1's hold on it is superseded (D-Q5) |
+| R2-R4 | FROZEN with 19.2 (L26): they depend on 19.1-19.3 (header) and R4's baseline serves only frozen 19.6 work |
+| folded rider #w1c-rider (plan-2 r5: rerank never ran on scan-prompt at 5 s) | re-hosted by the lead (2026-11-13, 25.1b O4) in [[task-25.1b-hook-output-ladder-and-spill#r0]], which records the rerank leg's outcome and reports the rate. It is plan-2's third rider and closes there, not here |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

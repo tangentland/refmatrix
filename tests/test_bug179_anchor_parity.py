@@ -120,17 +120,33 @@ def _run_lint(*targets: Path | str, lint: Path = LINT, cwd: Path = REPO):
     return p.returncode, p.stdout + p.stderr
 
 
-def _memdir(root: Path) -> Path:
-    """The memory dir `scripts/lint-gmd.sh` adds to its scope, computed the
-    same way (`tr '/_' '--'` over ROOT)."""
-    slug = str(root).replace("/", "-").replace("_", "-")
-    return Path.home() / ".claude" / "projects" / slug / "memory"
+def _scope_paths(home: "Path | None" = None) -> tuple[list[Path], list[Path]]:
+    """The scope `scripts/lint-gmd.sh` lints: its fixed roots plus the memory dir it adds.
 
-
-def _scope_paths() -> tuple[list[Path], list[Path]]:
-    paths = [REPO / s for s in SCOPE]
-    mem = _memdir(REPO)
-    return paths, ([mem] if mem.is_dir() else [])
+    bug-254 (2026-11-15, T0.1' ruling L124): this used to rebuild the slug rule
+    (`tr '/_' '--'` over ROOT) against `Path.home()`. Under the task-23.0 sandbox `Path.home()`
+    is the decoy home, where no memory dir ever exists, so all four scope tests (AC-5, both
+    AC-5b, AC-6) linted WITHOUT the memory dir the gate scans, and passed, in every checkout
+    (workflow/review-output/t0.1/base-bug254-scope-probe-symlinked-clone.log: 'memory dirs []'
+    while the gate would add 326 memory files). The memory dir is now the one the gate's own
+    resolver (`scripts/gmd_memdir.py`) names, read against the REAL home
+    (`RMX_SANDBOX_REAL_HOME`, a read-only existence check), as the repo-scope test reads it. A
+    scope with no memory dir is never linted narrower in silence: it fails, with the resolver's
+    line, because the gate itself would fail there on every memory-id ref."""
+    from tests.test_gmd_lint_requires_version import load_gmd_memdir
+    gm = load_gmd_memdir()
+    home = Path(home) if home is not None else Path(os.environ["RMX_SANDBOX_REAL_HOME"])
+    chosen, note = gm.resolve_memdir(REPO, home)
+    if chosen is None:
+        pytest.fail(f"bug-254: the gate's resolver finds no memory dir for {REPO} under {home}; "
+                    "the gate would lint this tree with every memory-id ref dangling, and this "
+                    "test will not lint a narrower scope than the gate's in silence. "
+                    f"Resolver: {note!r}", pytrace=False)
+    chosen = Path(chosen)
+    assert chosen.is_dir() and any(chosen.glob("*.md")), (
+        f"bug-254: the resolver named {chosen} for {REPO}, but it holds no *.md: the scope "
+        "would silently lose the memory dir the gate scans")
+    return [REPO / s for s in SCOPE], [chosen]
 
 
 def _error_texts(out: str) -> set[str]:
@@ -338,6 +354,33 @@ def test_ac5_real_corpus_has_parity_over_the_gate_scope():
     assert divergent == [], shown
 
 
+def test_bug254_the_scope_carries_the_memory_dir_the_gate_scans():
+    """bug-254: the scope the AC-5/5b/6 tests lint includes exactly the memory dir the gate's
+    resolver names for this checkout under the real home. At the base the old `_memdir` read the
+    sandbox's decoy `Path.home()` and returned no dir, in every checkout."""
+    from tests.test_gmd_lint_requires_version import load_gmd_memdir
+    gm = load_gmd_memdir()
+    real_home = Path(os.environ["RMX_SANDBOX_REAL_HOME"])
+    chosen, note = gm.resolve_memdir(REPO, real_home)
+    assert chosen is not None, f"the gate itself has no memory dir here: {note!r}"
+    _paths, mem = _scope_paths()
+    assert mem == [Path(chosen)], (
+        f"the scope tests lint memory dirs {mem}, the gate scans {chosen}: the two scopes differ")
+
+
+def test_bug254_a_scope_with_no_memory_dir_fails_loudly(tmp_path):
+    """bug-254: when the resolver finds no memory dir (here: a home with none at any slug on
+    this checkout's origin chain), building the scope FAILS with the resolver's line; it is
+    never a scope quietly linted without the memory dir."""
+    empty_home = tmp_path / "home"
+    (empty_home / ".claude" / "projects").mkdir(parents=True)
+    with pytest.raises(pytest.fail.Exception) as ei:
+        _scope_paths(home=empty_home)
+    msg = str(ei.value)
+    assert "bug-254" in msg and "no memory dir" in msg, msg
+    assert str(REPO) in msg, msg
+
+
 # ---------------------------------------------------------------- AC-5b (R4)
 
 def _fence_aware_lines(path: Path):
@@ -505,6 +548,9 @@ def _gate_root(*, lint_src: str | None, doc: str, venv: bool = True) -> Path:
     shutil.copy2(LINT_GMD_SH, root / "scripts" / "lint-gmd.sh")
     if PARITY.is_file():
         shutil.copy2(PARITY, root / "scripts" / "check-gmd-parity.py")
+    # T0.1' R1.4: lint-gmd.sh asks scripts/gmd_memdir.py for its memory dir; a gate root that
+    # copies the script copies its resolver.
+    shutil.copy2(REPO / "scripts" / "gmd_memdir.py", root / "scripts" / "gmd_memdir.py")
     (root / "tools" / "gmd").mkdir(parents=True)
     (root / "tools" / "gmd" / "lint.py").write_text(
         lint_src if lint_src is not None else LINT.read_text())

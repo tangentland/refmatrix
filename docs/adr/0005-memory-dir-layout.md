@@ -157,9 +157,18 @@ the caller's cwd (plan-26 B2; [[task-26.5-memory-organise-verb]] AC-1).
 - The path is never `.resolve()`d: a symlinked memdir (viascope's) resolves outside `projects/`
   and the lookup would fail.
 - A path that is not under `~/.claude/projects/<slug>/` is a hard error that names the fix. It
-  never silently becomes "no store".
+  never silently becomes "no store". This hard error is the organise verb's (26.5 AC-1). R-264a
+  (`ingest-gmd --as-memory` on a file or subdir) refuses only when no memdir is found, with its own
+  `Error:` line, and resolves no store. An explicit `--as-memory` call keeps its current store
+  behaviour (amended 2026-11-13, rev 8, bsd-spec-t2-r2 n3).
 - A well-formed slug that matches no store root is **file-only**: files are organised, the
   bridge is not run, and the output says so.
+- **The flagless-walk carve-out (amended 2026-11-13, bug-220, [[#amendments]]).** A walk WITHOUT
+  `--as-memory` that reaches a memory dir never hard-errors on it. It resolves the store from the
+  memdir's unresolved form with a non-raising variant of the same resolver. A slug that matches no
+  root, or a marker dir with no slug form, is file-only there: counted and named, the walk
+  continues. The home memdir (the hub's global store) is held, counted and named, until plan-27
+  Q4 is answered ([[task-26.5-memory-organise-verb#r-220c]]). {#store-resolution-walk}
 - The resolved store's memory lands in that store's own default (ACTIVE) partition, which is
   where ADR-0003 already puts memory ([[refmatrix/adr-0003-canonical-partition-layout#co-reside]]).
   This ADR does not touch the partition layout.
@@ -234,6 +243,17 @@ viascope2 and cliquet while `_ss_update_index` kept appending.
   removes dot-path and `README.md` files (0 found fleet-wide) and only ADDS nested entries. It is
   deliberately ungated: gating `collect` would keep viascope's index wipe.
 - **The save-state mtype correction in the store** ([[#authority]]). It writes no file.
+- **Classification by location, on walks without `--as-memory` (amended 2026-11-13, bug-220,
+  [[#amendments]]).** A GMD file inside a memory dir that such a walk reaches is never ingested as
+  a `kind=doc` twin. It is collected and bridged as `kind=memory`, after the walk's own ingest
+  returns and outside its writer lock, into the store its memdir resolves to, per
+  [[#store-resolution-walk]]. Another store is reached by starting a detached job on its daemon,
+  never by waiting on it and never by opening it in-process. A memory dir here is the `~/.claude/projects/<slug>/memory` shape,
+  or the nearest ancestor with a marker, matched on both the as-given and the resolved path
+  ([[task-26.5-memory-organise-verb#bug220-route]]). It runs after the ignore predicate, so a
+  pruned dot-dir is never reached. It is ungated because it is store-side. The only file write it
+  can cause is the memory path's `MEMORY.md` regeneration in an organised dir, which is already
+  marker-gated. An explicit `--as-memory` call is unchanged.
 
 **The trade, stated.** An un-organised dir keeps the old prose-dropping compaction until it is
 organised behind its own backup (plan-27). In viascope that means prose loss on a save-state,
@@ -290,8 +310,8 @@ honest same-day signal.
 
 ## Open questions {#open}
 
-- **Marker encoding.** This ADR fixes the marker's three fields and the version value `1`. The
-  file's serialisation is left to 26.1 (`is_organised`) and 26.5 (the writer), which must agree.
+- **Marker encoding.** CLOSED 2026-11-09 by [[#marker-encoding]] (one JSON object, `layout == 1`).
+  This entry is kept as a record.
 - **Scheduled compile.** Registering the compile on 17.2's nightly tick stays with plan-17/19
   ([[plan-26-memory-organisation#plan-19]]); this ADR does not depend on it.
 
@@ -320,18 +340,91 @@ as a new section placed after `## Required GMD frontmatter {#frontmatter}`:
 ```markdown
 ## Where a memory file goes {#placement}
 
-Write a new memory into its type folder: `feedback/`, `project/`, `reference/`, `user/` or
-`guardrail/`, named by its `metadata.type` (create `user/` or `guardrail/` on first use).
-Impressions go in `impressions/`. Save-states are written by `rmx save-state`; never hand-write
-into `savestates/`. The filename stem still equals the frontmatter `id`; the folder is never part
-of the id, and moving a file never changes which memory it is. Never make a folder for a topic:
-a topic is a subject (`rel: part-of`), and one memory can belong to many. Never move memory
-files by hand: `rmx memory organise` moves them, with a backup. Index links in `MEMORY.md`
-include the folder (`- [Title](feedback/feedback_x.md) — hook`). Layout and rules:
-refmatrix ADR-0005.
+First look for a `.memory-layout` file in the memory dir. It marks the dir as organised.
+
+- **Organised dir (the marker is present).** Write a new memory into its type folder:
+  `feedback/`, `project/`, `reference/`, `user/` or `guardrail/`, named by its `metadata.type`
+  (create `user/` or `guardrail/` on first use). Impressions go in `impressions/`. Index links in
+  `MEMORY.md` include the folder (`- [Title](feedback/feedback_x.md) — hook`).
+- **Flat dir (no marker).** Write at the top level, as before, and link it without a folder.
+  `rmx memory organise` files it later, behind a backup. Never create a type folder in a flat dir
+  by hand.
+
+In every dir: save-states are written by `rmx save-state`, so never hand-write into
+`savestates/`. The filename stem still equals the frontmatter `id`. The folder is never part of
+the id, and moving a file never changes which memory it is. Never make a folder for a topic: a
+topic is a subject (`rel: part-of`), and one memory can belong to many. Never move memory files
+by hand: `rmx memory organise` moves them, with a backup. Layout and rules: refmatrix ADR-0005.
+```
+
+**Why the marker condition (amended 2026-11-13, L11, [[#amendments]]).** After 26.8, only the
+refmatrix dir is organised. Every other dir stays flat until plan-27 backs it up and organises
+it ([[#marker]]). An unconditional "write into the type folder" would send agents in other
+projects into folders that no backup covers. It would also contradict the deployed `/save-state`
+command, which already gates on the marker (`src/refmatrix/templates/commands/save-state.md`,
+"Where a file goes"). The user approves this text at 26.8 AC-8.
+{#appendix-memory-rules-why}
+
+### A.2: proposed forget-flow step 5 (put to the user at 26.8 AC-8) {#appendix-forget-step}
+
+`MEMORY-RULES.md#forget` ends at "4. Delete the file". The bridge never forgets a memory whose
+file was deleted: no path in `ingest_gmd.py` removes a row for a vanished file (read
+2026-11-13), and [[plan-26-memory-organisation#measured]] says the same. So a forgotten memory
+stays in the store and recall keeps returning it. L12 puts this step to the user in the same
+MEMORY-RULES window as the text above. The user may accept it, change it or decline it. A
+removal from the store is a deliberate deletion, which
+[[feedback_decay_never_loses_knowledge]] allows only on an explicit request such as "forget X".
+
+```markdown
+5. Remove it from the store: `rmx memory forget <id>`, run in the project root. The bridge
+   never forgets a deleted file, so without this step recall keeps returning the memory.
 ```
 
 The validation gate is unchanged by this layout. The PostToolUse lint hook
 (`~/.claude/hooks/lint-memory-gmd.sh`, wired since 2026-11-09 by refmatrix bug-183) matches
 `*/memory/*.md` in a shell `case`, where `*` also matches `/`, so a file in a type folder is
 linted exactly like a top-level one. `MEMORY.md` stays excluded.
+
+## Amendments {#amendments}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+- **2026-11-13 (plan-review L11, L12, L37; spec gaps G4 and G19).** The status stays Proposed. {#amend-2026-11-13}
+  - Appendix A's MEMORY-RULES text carries the marker condition (L11; `contra-a.md` Ca-4).
+  - Appendix A.2 proposes forget-flow step 5 for the user's decision at 26.8 AC-8 (L12; Ca-9).
+  - [[#marker]]'s every-dir list gains classification by location (bug-220, L37), scoped to
+    walks without `--as-memory`.
+  - [[#store-resolution]] gains [[#store-resolution-walk]]. A walk without `--as-memory` that
+    reaches a memdir with no resolvable store treats it as file-only and never hard-errors; the
+    home memdir is held per plan-27 Q4. This IS a resolution-rule change, for that walk only. The
+    hard error still governs every explicit memdir argument. (Corrected in rev 7, answering
+    [[bsd-spec-t2-b5fe2d3#s2]]; the first wording of this entry said no resolution rule
+    changed.)
+  - Rev 8 (answering [[bsd-spec-t2-r2-091dec9]]): the hard error is named as the organise verb's
+    alone, and R-264a's refusal is "no memdir found" only (n3). The walk reaches another store
+    through a detached job, never by waiting on it or opening it (t1, n5).
+  - The marker-encoding open question is marked closed.
+  - No folder, identity or gating rule changes. The reroute is ungated because it is store-side,
+    and its only possible file write is already marker-gated.
+
+## Lines that change under plan-review Q8 b {#q8-b}
+
+Q8 is open ([[open-questions]]). This ADR holds under Q8 a or c. Under Q8 b (save-states kept
+out at ingest), three things change:
+- [[#authority]]'s "the bridge stores that mtype and counts each override";
+- [[#marker]]'s every-dir "save-state mtype correction in the store".
+
+- [[#marker]]'s classification-by-location bullet: a rerouted save-state is skipped and counted,
+  not bridged (rev 7, bsd-spec-t2 m1).
+
+The first two lose their store side, because no save-state row is written. The file-side rewrite
+by `organise --apply` stays.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | the document's own status is unchanged; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

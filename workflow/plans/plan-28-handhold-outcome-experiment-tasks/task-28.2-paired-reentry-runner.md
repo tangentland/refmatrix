@@ -1,0 +1,310 @@
+---
+gmd: "0.1"
+id: task-28.2-paired-reentry-runner
+title: "Task 28.2: the paired re-entry runner: real handoffs resumed by fresh agents on littlebig clones cut at the task's start commit, under cells A+dedupe, A+full, B and C set by the runner (the experiment's only leg, L83), after a new session and after /clear, with every memory read filtered to the task's start"
+tags: [task, plan-28, experiment, paired, clones, littlebig, handoff, hooks]
+metadata:
+  node_type: task
+  status: pending
+  plan: plan-28-handhold-outcome-experiment
+  created: 2026-11-13
+  updated: 2026-11-14
+---
+
+# Task 28.2: the paired re-entry runner {#root}
+
+> Plan: [[plan-28-handhold-outcome-experiment]]
+> Status: Pending: approved to build (2026-11-14, [[#approval]]; spec wave 2026-11-13, G17; r1 fold of `bsd-spec-t3c`, [[#rev-r1]]).
+> Depends on: [[task-28.1-session-arms-and-push-switch]] (the paired override and the as-of
+> filter).
+> Builds `eval/production/handhold/`. R0 is a probe whose answers can change R2's mechanics. If an
+> answer is "no", the task stops, and the lead re-specifies it through a dated revision and a
+> ch-bsd round before 28.4 freezes anything. Meanwhile the goal continues with the items that do
+> not depend on it.
+
+rel: part-of -> [[plan-28-handhold-outcome-experiment]]
+rel: depends-on -> [[task-28.1-session-arms-and-push-switch]]
+rel: derives-from -> [[exploration-handhold-outcome-experiment#assignment]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: reinforces -> [[feedback_isolate_work_in_littlebig_clones]]
+rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
+rel: reinforces -> [[feedback_never_search_from_root]]
+
+## Why {#why}
+
+The primary outcome is orientation cost at a re-entry, on the paired leg (Q3; L20 adds the
+new-session trigger beside `/clear`). Session-level randomisation dilutes continuity, so this leg
+holds the task and the starting commit fixed and varies only the cell and the trigger. Four
+hazards shape it:
+- **Leakage.** Later commits, later memories and later global rows record how many past tasks
+  ended. A fresh agent that can reach them is not resuming; it is reading the answer. The r1
+  review found two leaks, git refs and the global store, that the first draft did not guard.
+- **Unequal leakage.** Whatever leaks through the hooks reaches A and B and not C. That biases
+  the primary B-vs-C contrast toward the handholds.
+- **Fleet pollution.** A clone's store must never register with the hub or with launchd.
+- **Pinning.** The runner, not a period record, sets each run's cell (28.1 a6).
+{#why-body}
+
+## Requirements {#requirements}
+
+1. **R0 Probe first (a measurement; nothing is built on an unproven mechanic).** On one
+   synthetic task in a tmp git repo on littlebig, establish and record: {#r0}
+   - (a) the three `RMX_HANDHOLD_*` values exported by the runner reach the hooks, the MCP
+     server process and the agent's Bash calls in a real `claude` session, as the SessionStart
+     row's `arm_source: paired` and `arm_run` show. **The as-of filter is also probed end to
+     end (r2-s1)** against the clone's real daemon and the hub's real global store, both started
+     before the session. A memory written to the global store after the probe's as-of is absent
+     from the paired run's recall, `memory get` and `rmx context`, in an A cell and under C's
+     env (`RUN` + `AS_OF`, no `CELL`). The same calls without the env return it;
+   - (b) a `/clear` re-entry can be driven unattended (through a `screen` session that `stuff`s
+     the text and then sends a separate `\r`, or headless) and fires SessionStart with source
+     `clear`, while a fresh process fires `startup`;
+   - (c) arm C's profile turns off every rmx hook for the session, project and user level alike
+     (the probe checks a generated clone settings file carrying `disableAllHooks: true`, or the
+     reap path of `rmx install-hooks` plus the user-level hooks); with no `.refmatrix/PRIMER.md`
+     generated in a C clone, CLAUDE.md's import resolves to nothing and Claude Code starts
+     cleanly; the MCP server stays (pull);
+   - (d) the memory dir Claude Code reads for a clone path
+     (`~/.claude/projects/<clone-slug>/memory`) can be populated by the runner and is bridged
+     into the clone's store;
+   - (e) a clone's store and daemon: the daemon runs unsupervised, appears in no hub registry
+     and no launchd label, and stops at teardown (`rmx daemon status`, `rmx hub status` and the
+     launchd domain, each read before and after);
+   - (f) the cost of one run (tokens, wall time);
+   - (g) whether the session id survives `/clear` (r1 #s2). If it does not, every record of
+     the run is keyed on the runner's run id (`arm_run`), never on the session id;
+   - (h) which paths outside the clone an agent's tool calls reach in practice: the source
+     repo, the real memory dir and `~/.refmatrix`. This sizes R5's leak control.
+2. **R1 The task set.** Candidates are real handoffs: refmatrix's `workflow/past_handoffs/` and
+   save-states, and cliquedb's, read through a local read-only clone of the repo. Each task
+   records:
+   - its start sha (the commit the handoff was written at) and that commit's time, which is the
+     task's as-of;
+   - its handoff and save-state as of that sha;
+   - its reference continuation (the files changed by the next session's commits, from git);
+   - its resume prompt, ONE fixed template for all tasks.
+
+   A task is excluded when its continuation deployed, touched a live store or a fleet repo, or
+   needed the user mid-task. The draw (seed, date range, count per project) and the task-id
+   list's sha256 are frozen by 28.4. Calibration tasks are drawn apart and never reused. {#r1}
+3. **R2 One run.** For each task × cell (`A+dedupe`, `A+full`, `B`, `C`; all four since L83, because
+   every reading, 10.2's nested one included, comes from this series) × trigger: {#r2}
+   - **The clone is cut at the start sha (r1 #s1).** A new clone at
+     `/Volumes/littlebig/<project>-handhold-<run-id>`, where `<run-id>` is the ONE run-id format,
+     `r-` plus six zero-padded digits (`r-000001`), which 28.1 R3's `^[a-z0-9-]{8,64}$` accepts
+     (r2-s2). The same id is exported as `RMX_HANDHOLD_RUN` and keys every archive path. The
+     clone is built so that the start sha is the only
+     head and no later commit is reachable or even present:
+     - clone, then reset ONE local branch to the start sha;
+     - delete every other ref (remote-tracking refs, tags, notes, stash) and remove the remote;
+     - expire the reflog, then `git gc --prune=now`.
+
+     It is verified before the run: `git rev-list --all` equals `git rev-list <start-sha>`, and
+     `git cat-file --batch-all-objects --batch-check` lists no commit outside that set. A
+     failed check aborts the run.
+   - **Store.** Built by the deployed `rmx` ingest under the clone, as R0 (e) established.
+   - **The memory snapshot carries no later knowledge.** The clone's memory dir gets only the
+     project's memory files whose `created` AND `updated` are before the task's as-of, and only
+     save-states and handoffs from before it. Each excluded file is counted, by reason. Arm C
+     gets the same dir, because Claude Code's own memory index is not a refmatrix handhold.
+   - **Every memory read is filtered to the as-of (r1 #s1).** The runner exports
+     `RMX_HANDHOLD_AS_OF` = the task's as-of into the `claude` process in EVERY cell, so 28.1
+     R4's filter applies to the global store and to every pull path, in C too.
+   - **Cell (r1 #s2).** For `A+dedupe`, `A+full` and `B` the runner exports `RMX_HANDHOLD_CELL` and
+     `RMX_HANDHOLD_RUN`. `C` gets the generated bare profile from R0 (c), plus
+     `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF`. No period record is used.
+   - **Validated before launch, checked after (r3 m1).** Before it launches `claude`, the
+     runner parses the exact env it will export with 28.1's `arms.parse_paired` (the same
+     parser `paired_override` uses). On any parse failure it refuses to start the run (exit 1,
+     the reason on stderr) and creates no clone. After launch it reads the run's SessionStart
+     row and aborts unless the row shows the cell set (C: no rmx hook row at all). At the end,
+     any `arm_error` anywhere in the run's telemetry, on the SessionStart row or any pull row,
+     marks the run `arm_error`: it is aborted if still running, excluded from every reading,
+     and counted per cell.
+   - **Trigger.** For `new-session`, a fresh process gets the resume prompt. For `clear`, a
+     fresh process gets ONE fixed warm-up prompt (template frozen by 28.4), then `/clear`, then
+     the resume prompt.
+   - **Stop.** At the endpoint 28.3 detects, or at a cap of tool calls and wall time frozen by
+     28.4. A run stopped at the cap is `censored`.
+   - **Archive (lead ruling 2026-11-13, on the report's contradiction 7).** The transcript (the
+     parent file and every subagent file) and the clone store's telemetry are copied to a LOCAL
+     archive at `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/paired/<run-id>/`:
+     - it is outside the repo and outside every watched tree;
+     - it is mode `0700`, and nothing in it is ever committed;
+     - only the run id, the cell, the trigger, the task id and a sha256 manifest are committed.
+
+     **The archive's creation is announced to the user before the first run.** The lead makes
+     the announcement, and its date is recorded in the implementation summary. If the volume is
+     not mounted, the runner refuses (R4). The archive is deleted only on the user's word, after
+     28.5's report.
+   - **Teardown.** The daemon is stopped, and the clone and the clone's memory dir are removed.
+     The hub, launchd and registry state are verified unchanged against the pre-run reading. A
+     teardown mismatch stops the series loudly.
+4. **R3 Order and blinding of the series.** The run order is shuffled by a frozen seed, so time
+   trends spread across cells. Runs execute any time after 28.5 starts the series. The series
+   is not time-boxed (L83): it ends when the frozen n of paired tasks per cell is reached, or
+   when the user pauses or stops it. The scorer never
+   sees the cell (28.3 R6). {#r3}
+5. **R4 Isolation.** No experiment agent writes outside its clone and its clone memory dir, and
+   no live store is opened. Every `find` is scoped to the clone. The runner refuses a clone path
+   outside `/Volumes/littlebig/`, and refuses when the volume is not mounted. {#r4}
+6. **R5 Leak control.** A run's transcript is scanned (by 28.3's scorer) for tool calls whose
+   paths fall outside the clone, the clone memory dir and the archive. A run that reads the
+   source repo, the real project memory dir, or a global store file is `leak_suspect`. It is
+   excluded from the primary reading and counted per cell. 28.4 freezes the rule that unequal
+   exclusion across cells voids the primary reading. {#r5}
+
+## Acceptance criteria {#acceptance}
+
+The runner's mechanics are tested without a model, through a stub `claude` executable that
+records its argv and env and writes a synthetic transcript. The stub lives in `tests/`, is
+registered in `workflow/test_mock_registry.md` as an external dependency, and is never in `src/`.
+R0's probe and AC-6 use the real `claude`. Every AC names its mutation. {#acceptance-lead}
+
+1. **AC-1 The memory snapshot.** A fixture memory dir holds files created and updated before,
+   after, and straddling the as-of (created before, updated after). Only the "before" files are
+   copied. The straddling one is excluded and counted `updated_after_start`. **Mutation:** a
+   filter on `created` only, which copies the straddling file. {#ac-1}
+2. **AC-2 The cell reaches the process.** For each of `A+dedupe`, `A+full` and `B`, the stub sees
+   `RMX_HANDHOLD_CELL`, `RMX_HANDHOLD_RUN` and `RMX_HANDHOLD_AS_OF` in its environment, with the
+   values set. For `C` it sees the run id and as-of, and no cell. A stubbed SessionStart row
+   whose cell differs from the one set aborts the run. **Mutations:** the cell not exported, so
+   the row mismatch aborts; the as-of not exported in `C`, so AC-2 fails on C's environment.
+   {#ac-2}
+3. **AC-3 Arm C's profile.** The clone settings generated for `C` carry the R0 (c) mechanism,
+   produced by the generator of record: a re-run is byte-equal, and no hand-written settings file
+   exists. A and B clones carry the generated full hook set. **Mutation:** one rmx hook left in
+   the C profile; the check that C carries no rmx hook fails. {#ac-3}
+4. **AC-4 Teardown.** After a run, the clone, the clone memory dir and the daemon are gone, and
+   the hub registry and launchd domain readings equal the pre-run readings. **Mutation:** the
+   daemon left running; AC-4 fails on the reading. {#ac-4}
+5. **AC-5 Refusals.** The runner exits 1 before creating any clone when the clone path is
+   outside `/Volumes/littlebig/`, when the volume is unmounted, or when the clone still has a
+   remote or a ref other than the start branch. **Mutation:** the path check removed; a clone is
+   created under the tmp root and AC-5 fails. {#ac-5}
+6. **AC-6 One real run per cell and trigger** on a calibration task, with the real `claude`: eight
+   runs (four cells × two triggers, L83) whose transcripts and SessionStart sources match their trigger, whose rows match their
+   cell (C: no rmx hook row), and whose teardowns are clean. It is recorded in the implementation
+   summary and is 28.4's calibration input. **Mutation:** the `clear` trigger driven without
+   `/clear`; the SessionStart source reads `startup` and AC-6 fails. {#ac-6}
+7. **AC-7 The clone is cut at the start sha (r1 #s1).** In a fixture repo with five commits after
+   the start sha, a tag on one of them and a remote-tracking branch, the built clone's
+   `git rev-list --all` equals `git rev-list <start-sha>`, and no later commit object is
+   present. **Mutations:** the `git gc --prune=now` step skipped, so a later commit object is
+   still present; tags kept, so a later commit is reachable. {#ac-7}
+8. **AC-8 Leak control.** A synthetic transcript with one Read of a file under the source repo
+   marks the run `leak_suspect`, and it is excluded and counted. A Read inside the clone does
+   not. **Mutation:** the scan limited to Bash calls; the Read leak passes unflagged. {#ac-8}
+9. **AC-9 Validation before launch, exclusion after (r3 m1).**
+   - A run whose env would carry an unparseable `RMX_HANDHOLD_AS_OF`, or `RMX_HANDHOLD_RUN=r-0001`,
+     is refused before any clone or process starts: exit 1, with the reason on stderr.
+   - A stubbed C run whose pull rows carry `arm_error` is excluded and counted
+     `arm_error=1` under C.
+   - A clean run is kept.
+
+   **Mutation:** the runner ignores `arm_error` on pull rows, so the C run is kept and AC-9
+   fails. {#ac-9}
+
+## Files {#files}
+
+| file | change |
+|---|---|
+| `eval/production/handhold/paired_runner.py` (new) | R1's task draw, R2's run (clone cut, snapshot, env, trigger, archive, teardown), R3's order, R4's refusals |
+| `eval/production/handhold/bare_profile.py` (new) | arm C's generated clone settings (R0 (c)'s mechanism) |
+| `tests/test_task28_2_paired_runner.py` (new) | AC-1 to AC-5, AC-7 to AC-9 |
+| `tests/fixtures/handhold/fake_claude` (new, test-only) | the stub executable; registered in `workflow/test_mock_registry.md` |
+| `workflow/measurements/handhold-paired-probe-<date>.md` (new, GMD) | R0's answers (a)-(h), counts only |
+| `/Volumes/littlebig/refmatrix-measurement-archive/plan-28/paired/` (LOCAL, `0700`, never committed; creation announced to the user) | R2's archive |
+
+## Test strategy {#test-strategy}
+
+- RED first on AC-1 to AC-5 and AC-7 to AC-9 (no runner exists). AC-6 is a real run, recorded.
+- The only mock is the external `claude` binary, and only in the stubbed ACs. The store, the
+  ingest, the daemon, git and the hooks generator are real.
+- Output is captured to `workflow/review-output/pytest-task28-2.log`.
+
+## Definition of done {#done}
+
+- R0 recorded (a)-(h); AC-1 to AC-5 and AC-7 to AC-9 RED then GREEN; AC-6's eight runs recorded with
+  clean teardowns.
+- Implementation summary at `workflow/implementation_summaries/task-28.2-paired-reentry-runner.md`.
+- Committed on branch `task-28.2-paired-reentry-runner`, merged `--no-ff` to `master`.
+
+## Revision r1 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-r1}
+
+| finding | disposition | where |
+|---|---|---|
+| s1 git refs and the global store leak later knowledge, and unequally across cells | the clone is cut at the start sha with no later commit reachable or present; every cell runs with the as-of filter (28.1 R4); leak control by transcript scan | [[#r2]], [[#r5]], [[#ac-7]], [[#ac-8]], [[#ac-2]] |
+| s2 the paired cell cannot be pinned through a period record; `/clear` may change the id | the runner sets the cell by env (28.1 a6); R0 (g) probes id survival; records key on the run id | [[#r0]], [[#r2]], [[#ac-2]] |
+| m3 ACs without a named mutation | every AC names one | [[#acceptance]] |
+| m10 who re-specs after a "no" in R0 | the lead, by a dated revision and a ch-bsd round; the goal continues meanwhile | header |
+
+## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+
+| finding | disposition | where |
+|---|---|---|
+| r2-s1 the as-of filter is never probed on the global leg | R0 (a) probes it end to end against the real daemon and global store, in an A cell and under C's env | [[#r0]] |
+| r2-s2 the run-id format is unnamed | `r-` plus six zero-padded digits, used by the clone path, the env and the archive | [[#r2]] |
+
+## Revision r3 (2026-11-14, `bsd-spec-t3c` r3 MEH-only; lead rulings) {#rev-r3}
+
+| finding | disposition | where |
+|---|---|---|
+| r3 m1 a bad `AS_OF` with a valid cell runs on; C's `arm_error` sits only on pull rows | the runner parses its env with `arms.parse_paired` before launch and refuses on failure; any `arm_error` in the run's telemetry excludes the run, counted per cell; AC-9 | [[#r2]], [[#ac-9]] |
+
+## Approval (2026-11-14) {#approval}
+
+rel: derives-from -> [[bsd-spec-t3c-r3-c5d1b79]]
+rel: derives-from -> [[plan-review-2026-11-13#goal-horizon]]
+
+**Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/11M, r2 DIRTY 0B/3S/7M and r3 MEH-only; every finding is folded, as each spec's revision tables show. This task is `pending`, which means approved to build in plan-28's order. {#approval-row}
+
+## Revision L79 (2026-11-14, the user: "the plan 28 arms should only be 3 days"; Q11 answered (a)) {#rev-l79}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite ch-bsd round.
+
+| change | where |
+|---|---|
+| the paired leg is unchanged, and not time-boxed by the 3-day session period | [[#r3]] |
+
+
+**Refinement (dev master `8d88d29`; the user, the same day: "3 real days will be sufficent", Q11 a):** the period is 3 CALENDAR days from its start, with the arms concurrent. A pause does NOT extend it: the period ends 3 calendar days (72 hours) after the start, whatever was paused, and paused time is not made up. The "active days" wording is replaced. The rest of L79 is unchanged. {#rev-l79-refined}
+
+## Revision L80 (2026-11-14, `bsd-spec-t3c` L79 confirm-lite 0B/1S/4M; lead ruling L80) {#rev-l80}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | disposition | where |
+|---|---|---|
+| m3 the #rev-l79 table did not render; "Q11 assumed" | blank line added; "Q11 answered (a)" | [[#rev-l79]] |
+
+## Approval of the L79/L80/L82 amendment (2026-11-14, d9co) {#approval-l79-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The 3-calendar-day session period (L79, Q11 answered a), the orchestrator-run start under L78 (L80) and the end committed with the start (L82) are approved by the lead on the user's pattern (d9co) after the L80 confirm-lite MEH-only (0B/0S/2M), folded at `49a603c` per L82 with no further round | `workflow/bullshit/2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md` (with the L79 confirm-lite `2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md`, over `spec-wave-t3c` `be03148..d42c72b`) | status unchanged; Q14 (where the verdicts come from) may amend this plan again |
+
+rel: derives-from -> [[bsd-spec-t3c-r5-l80-d42c72b]]
+
+## Revision L83 (2026-11-14, the user, Q14: "drop the live part"; lead ruling L83) {#rev-l83}
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+The status stays `pending` pending a confirm-lite. The paired series is now the experiment's
+only leg.
+
+| change | where |
+|---|---|
+| the cells are all four (`A+dedupe`, `A+full`, `B`, `C`); P-6 is superseded, because 10.2's nested reading comes from this series | title, [[#r2]], [[#ac-2]] |
+| the series is not time-boxed: it ends when the frozen n per cell is reached or the user pauses or stops it; the 3-day period wording is gone | [[#r3]] |
+| AC-6's real calibration runs are eight (four cells × two triggers) | [[#ac-6]], [[#done]] |
+
+## Approval of the L83/L86/L87/L89 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The paired-only design (L83, Q14 "drop the live part"), the arms contract with 10.2 and the paired minima (L86), the paired-run units and the non-inferiority rule for shrink (L87) and the first-match push verdict (L89) are approved by the lead on the user's pattern (d9co) after the L86+L87 confirm-lite MEH-only (0B/0S/3M), folded at `224aac7` per L89 with no further round | `workflow/bullshit/2026-11-14-0225-spec-t3c-r8-l87-1a219cb.md` (r6 and r7 in the same ledger, over `spec-wave-t3c` `1e89050..1a219cb`) | status unchanged |
+
+rel: derives-from -> [[bsd-spec-t3c-r8-l87-1a219cb]]

@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   plan: plan-27-memory-fleet-rollout
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Task 27.5: cliquedb, staged {#root}
@@ -18,6 +18,7 @@ metadata:
 
 rel: part-of -> [[plan-27-memory-fleet-rollout]]
 rel: related-to -> [[task-26.4-savestate-mtype-normalisation]]
+rel: depends-on -> [[task-26.5-memory-organise-verb#r-202b]]
 
 ## Requirements {#requirements}
 
@@ -47,6 +48,27 @@ itself.
    - `rmx recall-state` resumes.
 4. **AC-4: report back on the bus** with the counts and the tarball path.
 
+5. **AC-5: bug-202's two anchor sets, live (rev 7, 2026-11-13).** Only if
+   [[task-26.5-memory-organise-verb#r-202a]] found the files. If 26.5 took R-202c (not found),
+   this AC records "not applicable" with the 26.5 log path, and nothing runs. {#r-202b-live}
+   - **Why here.** The only `guardrail-*` memory files on disk are in cliquedb's memdir
+     ([[task-26.5-memory-organise-verb#bug202-why]]). The restore therefore runs inside this
+     task's session-boundary window, after AC-2's acknowledgement, never as a separate apply.
+   - **Only the two named files, from the row's store root.** For each found file, run the
+     single-file bridge that 26.5 built, `rmx ingest-gmd --as-memory --force-rebridge <file>`,
+     with the cwd set to the root of the store R-202a recorded for the row (refmatrix's on
+     2026-11-13). The bridge writes the caller's store, so the cwd is the target. The log records
+     `rmx version -v` and the resolved store before the run. Never a full organise, and no other
+     file (rev 8, bsd-spec-t2-r2 n6).
+   - **Same store, or stop.** The restore must write the store that holds the row (R-202a
+     recorded it; it was refmatrix's on 2026-11-13). If the file's memdir resolves to a different
+     store from the row's, the restore does not run. Instead, log a bug row (a cross-store memory
+     row) and report it to the user.
+   - **Check, by name and count.** Read through the row's store's daemon: the memory's `x#…`
+     anchor concepts equal the file's `{#anchor}` set, by name and count. Before the restore the
+     set is empty. Record both reads.
+   - The bug-202 row's restore note is closed with the result and the log path.
+
 ## Files to Create / Modify {#files}
 
 - Modify the live dir through the verb only.
@@ -64,3 +86,38 @@ Answers [[bsd-plan26-27-spec-review-r1-96feccd]].
 |---|---|---|
 | S8 (an idle timer is not a session boundary) | Explicit acknowledgement plus a process check only | AC-2 |
 | B2, B4 | `--store-from-memdir`; prose carried | AC-2 |
+
+## Lines that change under plan-review Q8 b (2026-11-13) {#q8-b}
+
+Q8 is open ([[open-questions]]). This spec holds under Q8 a or c. Under Q8 b (save-states kept
+out at ingest), AC-3's `rmx memory recall` of `savestate_7c4e19d2a8f3` cannot pass, and with it
+goes its point that "the type rewrite reached the store". It is replaced by `rmx recall-state`
+alone, plus a check that the file's `metadata.type` was rewritten. AC-1's 4 type rewrites (file
+edits) stay.
+
+rel: derives-from -> [[plan-27-memory-fleet-rollout#q8-b]]
+
+## Revision round 7 (2026-11-13) {#rev-round-7}
+
+Answers [[bsd-spec-t2-b5fe2d3#s4]] with the lead's ruling. 26.5's restore was a full organise
+apply that could run out of order, or in another project's dir. It moves here, to AC-5: only the
+two named files, through the single-file bridge, at this task's session boundary, checked by name
+and count. Status is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-b5fe2d3]]
+
+## Revision round 8 (2026-11-13) {#rev-round-8}
+
+Answers [[bsd-spec-t2-r2-091dec9#n6]]. AC-5 pins the cwd: the root of the store holding the row,
+recorded with `rmx version -v` and the resolved store. A cross-store row still stops it. Status
+is unchanged (`pending`).
+
+rel: derives-from -> [[bsd-spec-t2-r2-091dec9]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-spec-t2-r8-e3cd4c7.md` (over `spec-wave-t2` up to `e3cd4c7`; r1-r7 in the same ledger) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t2-r8-e3cd4c7]]

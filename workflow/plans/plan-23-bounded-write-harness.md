@@ -7,13 +7,18 @@ metadata:
   node_type: plan
   status: in-progress
   created: 2026-10-07
-  updated: 2026-11-09
+  updated: 2026-11-13
 ---
 
 # Plan 23: the bounded-write harness {#root}
 
 **Date:** 2026-10-07, revised 2026-10-14.
-**Status:** Drafting (revision round 12, 2026-11-09: the 23.3 + 23.5 freshness review
+**Status:** In progress (frontmatter `in-progress`): 23.0 is completed (0.79.1, merged
+`d4bf001`); 23.1, 23.2, 23.3, 23.4 and 23.5 are pending, with their specs written. **Revision
+round 13 (2026-11-13):** the build order follows the 2026-11-13 plan review (L1, L3, L4, L21,
+L31), 23.3 is re-read against the revised bug-185, and the body status lines match the
+frontmatter (Cc-9); see [[#rev-round-13]]. The "Drafting" status this line carried through
+round 12 is superseded. Earlier: revision round 12, 2026-11-09: the 23.3 + 23.5 freshness review
 [[bsd-plan23-3-5-freshness-62a2465]] (1B/2S/4M) folded:
 - 23.3 makes each GMD document its own step and covers all five daemon sync sites;
 - 23.5 re-walks the op set after 3.7 merges;
@@ -135,15 +140,28 @@ Recorded in round 12 from [[bsd-plan23-3-5-freshness-62a2465#order]]. It extends
 [[task-23.1-queue-and-drain#merge-order]] with the bulk GMD task and the two tasks the user put in
 scope ([[plan-of-plans#goal-2026-11-09-scope]]):
 
-1. **3.7** (`task-3.7-verb-it-backlog`).
-2. **bug-178** ([[task-bug178-bulk-write-helper]], `backend.bulk_write`).
-3. **plan-26** (26.1 and 26.2 edit `ingest_gmd.py`; 26.6 adds the `memory_compile` hold).
-4. **bug-185, bulk GMD ingest** ([[task-bug185-bulk-gmd-ingest]]). A standalone bug release:
-   it needs neither the harness nor the recorder, and it is the largest single cut in live hold
-   time.
-5. **23.2**, then **23.1** (+R11).
-6. **23.3 ∥ 23.5.** 23.3 with per-document GMD steps and AC-4b, which needs bug-185. 23.5 with
-   R1.3's re-walk on the merged 3.7 tree. 23.5 R9 runs after 26.6 is merged.
+1. **3.7** (`task-3.7-verb-it-backlog`). Merged `91ddbe0`.
+2. **bug-178** ([[task-bug178-bulk-write-helper]], `backend.bulk_write`). Merged `76ec748`.
+3. **26.1 + 26.2** (round 13, L4: narrowed from "plan-26"; they edit `ingest_gmd.py`; merged
+   `9b2c4ac`, `05164ce`). 26.6 (the `memory_compile` op) is merged too, `8a867bc`. The plan-26
+   tasks still to come gate nothing here except 23.5 R9 (item 6).
+4. **bug-216** ([[task-bug216-rule-docs-in-graph]], round 13, L3; plan review `#queue` item 1)
+   and then **bug-185, bulk GMD ingest** ([[task-bug185-bulk-gmd-ingest]], with its round-2
+   freshness revision). bug-185 is a standalone bug release: it needs neither the harness nor
+   the recorder, and it is the largest single cut in live hold time.
+5. **23.2**, then **23.1** (+R11; bug-177).
+6. **23.3 ∥ 23.5.** 23.3 with per-document GMD steps plus the `gmd_finish` step and AC-4b,
+   which needs bug-185 (round 13, L31). 23.5 with R1.3's re-walk on the merged 3.7 tree.
+   **23.5 R9/AC-9 runs after the 26.6 R3 residual (after 26.7)** (round 13, L1); "after 26.6 is
+   merged" is superseded, since 26.6's GREEN is merged but its R3 render is not built.
+7. **23.4** (read-only, on a cliquet copy) runs before plan-17's 17.1 is built, because its
+   verdict is what reopens 17.1 (round 13, L21; plan review `#queue` item 8, measurement lane).
+   23.1 is still not gated on it.
+
+This is plan review `#queue` item 5 (and item 8's head for 23.4).
+
+rel: depends-on -> [[task-bug216-rule-docs-in-graph]]
+rel: derives-from -> [[plan-review-2026-11-13#queue]]
 
 rel: depends-on -> [[task-bug185-bulk-gmd-ingest]]
 
@@ -151,10 +169,12 @@ rel: depends-on -> [[task-bug185-bulk-gmd-ingest]]
 
 - 23.0 and 23.4: none; they run in parallel.
 - 23.2 → 23.0. 23.1 → 23.2, 23.0, and the bug-105 hotfix MERGED TO `master` (not a sha list;
-  nb23-r4-1). 23.3 → 23.1, and bug-185's bulk GMD ingest (round 12; AC-4b). 23.5 → 23.1, 23.2, 23.0, and bug-115/116 (0.78.2) MERGED TO `master`
+  nb23-r4-1). 23.3 → 23.1, and bug-185's bulk GMD ingest (round 12; AC-4b; round 13: bug-185's
+  round-2 revision, on bug-216). 23.5 → 23.1, 23.2, 23.0, and bug-115/116 (0.78.2) MERGED TO `master`
   (round 7, d9az; satisfied at `23ad703`, round 8), and **bug-112 FIXED and reachable from
-  `master`** (round 9, nb23-r9-2; the same gate as 18.3's header; OPEN at `b84fd8d`: the fix
-  `backend.open_duckdb` is on branch `bugs-112-113-118`, `7c38c46` + `0fed0d5`). 23.5 does NOT
+  `master`** (round 9, nb23-r9-2; the same gate as 18.3's header; SATISFIED: merge `74f8f98`,
+  0.79.0, round 12; round 9's "OPEN at `b84fd8d`" clause struck in round 13, Cc-9). 23.5's
+  R9/AC-9 also wait for the 26.6 R3 residual (round 13, L1). 23.5 does NOT
   depend on plan-18 (Wave 4; ns23-r9-1): its obligations on plan-18's shared catalog-hold
   helper are a hand-off list, [[task-23.5-read-path-and-holder-bounds#cross-plan-18]].
 - Downstream (from [[plan-review-2026-10-14#t8-wave1]]): after 23.1, 16.6's Wave 1 slice → 22.1a →
@@ -467,3 +487,28 @@ per-finding answers: [[task-23.3-sync-between-file-yield#rev-round-6]],
 | order | [[#merge-order]]: 3.7 → bug-178 → plan-26 → bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5 (23.5 R9 after 26.6) |
 
 rel: derives-from -> [[bsd-plan23-3-5-freshness-62a2465]]
+
+## Revision round 13 (2026-11-13) {#rev-round-13}
+
+Source: [[plan-review-2026-11-13#lead]] (L1, L3, L4, L21, L31) and its contra-c findings Cc-1,
+Cc-2, Cc-6, Cc-7 and Cc-9. Facts re-read on dev master `1cf3b9f` (every merge sha above passes
+`git merge-base --is-ancestor`). The round-12 table above is unchanged history.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | answered at |
+|---|---|
+| Cc-9 (body "Drafting" vs frontmatter `in-progress`; "OPEN at `b84fd8d`") | status line; [[#dependencies]] (struck) |
+| L4 / Cc-7 ("plan-26 merged" over-broad) | [[#merge-order]] item 3; [[task-23.1-queue-and-drain#rev-round-15]]; [[task-23.2-lock-hold-fixture#rev-round-5]]; [[task-bug185-bulk-gmd-ingest#rev-round-2]] |
+| L3 / Cc-1 (bug-185 must follow bug-216) | [[#merge-order]] item 4; [[task-bug185-bulk-gmd-ingest#rev-round-2]] |
+| L1 / Cc-2 (23.5 R9/AC-9 needs the 26.6 R3 residual) | [[#merge-order]] item 6; [[#dependencies]]; [[task-23.5-read-path-and-holder-bounds#rev-round-14]] |
+| L31 / bsd-pop-r2 N17 (23.3 vs the revised bug-185) | [[#merge-order]] item 6; [[task-23.3-sync-between-file-yield#rev-round-8]] |
+| L21 / Cc-6 (23.4 had no slot; plan-17 waits on its verdict) | [[#merge-order]] item 7 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `in-progress`; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

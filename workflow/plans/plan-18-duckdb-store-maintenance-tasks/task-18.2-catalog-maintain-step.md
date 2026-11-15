@@ -7,7 +7,7 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-15
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 18.2: the `catalog_maintain` step {#root}
@@ -15,8 +15,9 @@ metadata:
 > Plan: [plan-18-duckdb-store-maintenance](../plan-18-duckdb-store-maintenance.md)
 > Status: Pending (spec written 2026-10-15; revised the same day for the 18.1 verdict, see
 > [[#rev-18-1-verdict]]; revision round 2 the same day for ch-bsd plan-18 r1, see
-> [[#rev-round-2]]; revision round 3 for ch-bsd plan-18 r2, see [[#rev-round-3]]; re-review
-> pending)
+> [[#rev-round-2]]; revision round 3 for ch-bsd plan-18 r2, see [[#rev-round-3]]. Approved by
+> d9co after ch-bsd plan-18 r4 rated it clean; round 3's "re-review pending" is superseded.
+> Revision round 5, 2026-11-13: status marks only, see [[#rev-round-5]])
 > Wave: 4 ([[plan-review-2026-10-14#t10-waves]]: "plan-18 as a 17.2 step").
 > Depends on: 17.2 (the `maintenance_steps` registry, `maintain.json`, the step obligations of
 > 17.2 R2); 17.1 R11 / R12 (the single-flight reply and `runs.jsonl` line shapes it copies);
@@ -721,7 +722,7 @@ All tests run in the 23.0 sandbox, on real tmp daemons with short roots, with 23
 |---|---|
 | d9bc (a reason to run) | [[#r12-reason]]; R2 (b2); the ledger's `reasons` / `reason_detail` (R6); [[#ac-15]]; R9's reason text |
 | d9bg (growth default; Q4: `requires_arming=False` stands) | header; [[#why]]; [[#r5-band]] default `growth`; R9 states Q4 answered; [[#ac-13]] pins `growth` |
-| d9bq (PROVISIONAL; amends d9bg: baseline = 18.1 `rewrite_bytes`, reset after each reclaim, one definition) | [[#r5-band]] rewritten as the one definition 18.3 uses: `--baseline-from` takes `rewrite_bytes`, a rehearsal seeds a missing one, a reclaim resets it, never a `file_bytes`; the corrected under-read figures in [[#why]]; [[#ac-16]] |
+| d9bq (PROVISIONAL at the time, CONFIRMED plan-18 r4; amends d9bg: baseline = 18.1 `rewrite_bytes`, reset after each reclaim, one definition) | [[#r5-band]] rewritten as the one definition 18.3 uses: `--baseline-from` takes `rewrite_bytes`, a rehearsal seeds a missing one, a reclaim resets it, never a `file_bytes`; the corrected under-read figures in [[#why]]; [[#ac-16]] |
 | the user's convergence rule | [[#r11-hold-helper]]: one `_catalog_hold` helper; the snapshot tick (R8) and `_op_checkpoint` ported onto it; 18.3 extends it; [[#ac-17]] |
 | 18.3's tick step | R9 names it; this step never calls the reclaim, so AC-1's one hold stands |
 | line numbers | R7, R8 and R9 cite `daemon.py` at `23ad703` |
@@ -767,3 +768,19 @@ rel: derives-from -> [[bsd-plan18-r3-spec-diffcheck-1318b30]]
 |---|---|
 | N3-B2 (the single case-insensitive CHECKPOINT rule flags six op-name and message strings, two at module level) | [[#r11-hold-helper]]: the two-leg rule (leg 1 any non-docstring constant, case-sensitive; leg 2 the first argument of `execute` / `executemany` / `sql` / `_exec`, case-insensitive); the op name is a statement under neither leg; the census stated as exactly 10 constants in the 9 functions named, measured by `census2.py`. [[#ac-17]]: the mutation "a lowercase `con.execute("checkpoint")` in a `Store` method FAILS (leg 2)". 18.3 AC-14 inherits the rule unchanged |
 
+## Revision round 5 (2026-11-13): status marks {#rev-round-5}
+
+Source: plan review G25 / L25 ([[plan-review-2026-11-13#lead]]) and contra-c Cc-9. The header's
+"re-review pending" is replaced by the approval of record (d9co,
+[[plan-review-2026-10-14#t12-approvals]]). The d9bq row's PROVISIONAL mark gains its
+confirmation. Nothing else changed.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

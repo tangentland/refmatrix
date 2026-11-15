@@ -7,12 +7,16 @@ metadata:
   node_type: plan
   status: approved
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Plan 18: DuckDB store maintenance {#root}
 
-> Status: DRAFTING. 18.1 ran 2026-10-15 and is IN-PROGRESS (ch-bsd r1 remedy, d9br;
+> Status: **Approved** (d9co, 2026-10-15, after ch-bsd plan-18 r4; frontmatter `approved`).
+> 18.1 is COMPLETED (ch-bsd 18.1 r3 CLEAN `8281a7f`, merged `530660e`); 18.2 and 18.3 are
+> pending. d9be-d9bw are CONFIRMED, and the PROVISIONAL marks below are struck as of revision
+> round 4 (2026-11-13; Cc-9, plan review G25); see [[#rev-round-4]]. History before that: the
+> status was DRAFTING, and 18.1 was IN-PROGRESS (ch-bsd r1 remedy, d9br;
 > [[#verdict-18-1]]). 18.2 and 18.3 were rewritten 2026-10-15 for the 18.1 verdict (d9be-d9bt):
 > 18.3 is an IN-DAEMON rewrite-and-swap on one shared hold helper (`Daemon._catalog_hold`, built
 > by 18.2 R11), gated on bug-112's fix; there is no offline route. C12 is lifted (d9be). Split
@@ -99,7 +103,7 @@ So C12's "measure + CHECKPOINT" by itself reclaims nothing. The plan becomes:
 |---|---|---|---|
 | 18.1 | `eval/catalog_maint/measure_catalogs.py`. It copies each registered store's snapshot in a child, then in fresh children reads `PRAGMA database_size`, times a 3× `COPY FROM DATABASE` rehearsal and gates it. Its pre-registered Tables A-C give a per-store band and a fleet verdict. | Finds and bands a 95 %-deleted fixture (d9bh); `r` comes from the rewrite, not the proxy; the live root is untouched (no socket, no descriptor, `/bin/cp` argv); the gate can fail; one opener per path; a failed store is counted (`INCOMPLETE`); the band constants are pinned; mutations FAIL | Wave 4 (read-only, could run earlier: Q2) / 23.0 |
 | 18.2 | ONE catalog-hold helper (`catalog_maint.CatalogHold`, `Daemon._catalog_hold`), with the snapshot tick and `_op_checkpoint` ported onto it; the `catalog_maintain` daemon op + verb + CLI/MCP on it, registered on 17.2's `maintenance_steps` with `requires_arming=False` (Q4, d9bg) and `after_idle` on `vectors_maintain` / `memory_compile`. REASON-GATED (d9bc): a hold only for `hand` or `wal_unfolded`, else `skipped:no_reason` with the reason logged. Bands on GROWTH against the store's live size (18.1 `rewrite_bytes`, reset by each reclaim, re-seeded by an A0 rehearsal; d9bq, d9bw a): A2 needs `file ≥ 2 ×` baseline AND `file − baseline ≥ 64 MiB` (Table A's A2 edge when the baseline is measured, not "exactly" after). WAL gate, bounded lock wait, one hold of CHECKPOINT + PRAGMA, Table D hold bands with a downgrade. Health and the hub row get `catalog_reclaim_due` / `catalog_wal_large` / `catalog_hold_over`. | One hold within 50 ms of the recorder; 2 statements; `skipped:lock_busy` within 2 s behind a 10 s holder; `refused:wal_large`; D2 downgrade; lock-free status; dry run; no fallback; `invoked_by`; registration and order; hot-row news; snapshot hold measured; constants pinned (`growth`, the 64 MiB floor); reason gate (no hold without a reason); baseline from `rewrite_bytes`, never overwritten by a file, cliquet A0; one helper (AST over every `src/refmatrix/*.py`, exemptions by qualified function name, a staged list that 18.3 empties; lock order by an observable that can fail; holder named through 23.5's `_inflight`; one alarm; `after_locked`); one locked `catalog_state.json` writer (one string-constant AST rule); mutations FAIL | Wave 4 / 17.2, 17.1 R11-R12 shapes, 23.0, 23.2, 18.1 (its re-taken jsonl for the baselines, d9br) |
-| 18.3 | IN-DAEMON reclaim (d9bf, amended by d9bp; PROVISIONAL). `rmx catalog reclaim`: an idle rehearsal on a snapshot copy in children; then a confirmed real run as ONE hold on 18.2's helper: flush, CHECKPOINT, `COPY FROM DATABASE` into a sibling new file, the shared gate (d9br; its sequence leg on session-stable invariants, 18.1 r2 S-1), a sentinel row, close, link the old slot to `backups/`, `os.replace`, THE reopen (the bug branch's `Daemon._reopen_writer` as merged, through bug-112's `open_duckdb` and `_install_writer_store`, under `_store_lock`), whose `verify` reads the sentinel + identity back BEFORE the open's first write, snapshot refresh; rollback on any failure (close the reopened writer and move its `.wal` aside BEFORE the restore, CHECKPOINT right after the rollback reopen), THE immediate writer-lost exit (shared with bug-113's fix) if the rollback fails; crash residue swept. Phase A (rewrite + gate + sentinel) is bounded at 5 s by a flag, a 50 ms re-interrupt and a per-statement check. A LOADED measurement (tmp daemon, 6 measured readers) decides feasibility per store; a store over it is `refused:rewrite_too_slow` and stays unreclaimed with a hot row and a bug-registry row, and the user decides (d9bw b; no offline route). After a hand run per store, an ARMED tick step uses 18.2's A2 band as its reason. The init rebind and both rotation-bootstrap branches move onto the helper; `rmx compact` is retired onto the verb. | Round trip in the daemon (≥ 50 % smaller, gate equal, pid unchanged, ONE hold, sequence continues, post-run writes reach the new file, frozen slot / marker / `facts.log` / offsets / `vectors/` untouched, backup kept); one gate variant per leg; deadline interrupt (one long statement, and a gap between statements) and `rewrite_too_slow`; rollback including a cached-old-database reopen caught by the sentinel; failed rollback exits 2 and reboots whole; crash consistency at every swap AND rollback point, judged by the full gate; residue swept; no zombie writer; rehearsal and real run match 18.1 (2 %, ±25 %); preconditions refuse before any hold; hold over 10 s disables; F5 (snapshot refreshed, `store_bytes` falls, no stale inode held); armed, reason-gated tick step with a one-backup cap; surfaces; `rmx compact` retired; one helper (AST); lock order; bug-112's swap write-loss reproduced against the fix; loaded measurement on the product path; mutations FAIL | Wave 4 / bug-112 FIX merged (branch `bugs-112-113-118`), 23.1 R1.6, 18.2, 17.2, 23.0, 23.2; R14's loaded verdict before the rollout |
+| 18.3 | IN-DAEMON reclaim (d9bf, amended by d9bp; both CONFIRMED, plan-18 r4). `rmx catalog reclaim`: an idle rehearsal on a snapshot copy in children; then a confirmed real run as ONE hold on 18.2's helper: flush, CHECKPOINT, `COPY FROM DATABASE` into a sibling new file, the shared gate (d9br; its sequence leg on session-stable invariants, 18.1 r2 S-1), a sentinel row, close, link the old slot to `backups/`, `os.replace`, THE reopen (the bug branch's `Daemon._reopen_writer` as merged, through bug-112's `open_duckdb` and `_install_writer_store`, under `_store_lock`), whose `verify` reads the sentinel + identity back BEFORE the open's first write, snapshot refresh; rollback on any failure (close the reopened writer and move its `.wal` aside BEFORE the restore, CHECKPOINT right after the rollback reopen), THE immediate writer-lost exit (shared with bug-113's fix) if the rollback fails; crash residue swept. Phase A (rewrite + gate + sentinel) is bounded at 5 s by a flag, a 50 ms re-interrupt and a per-statement check. A LOADED measurement (tmp daemon, 6 measured readers) decides feasibility per store; a store over it is `refused:rewrite_too_slow` and stays unreclaimed with a hot row and a bug-registry row, and the user decides (d9bw b; no offline route). After a hand run per store, an ARMED tick step uses 18.2's A2 band as its reason. The init rebind and both rotation-bootstrap branches move onto the helper; `rmx compact` is retired onto the verb. | Round trip in the daemon (≥ 50 % smaller, gate equal, pid unchanged, ONE hold, sequence continues, post-run writes reach the new file, frozen slot / marker / `facts.log` / offsets / `vectors/` untouched, backup kept); one gate variant per leg; deadline interrupt (one long statement, and a gap between statements) and `rewrite_too_slow`; rollback including a cached-old-database reopen caught by the sentinel; failed rollback exits 2 and reboots whole; crash consistency at every swap AND rollback point, judged by the full gate; residue swept; no zombie writer; rehearsal and real run match 18.1 (2 %, ±25 %); preconditions refuse before any hold; hold over 10 s disables; F5 (snapshot refreshed, `store_bytes` falls, no stale inode held); armed, reason-gated tick step with a one-backup cap; surfaces; `rmx compact` retired; one helper (AST); lock order; bug-112's swap write-loss reproduced against the fix; loaded measurement on the product path; mutations FAIL | Wave 4 / bug-112 FIX merged (branch `bugs-112-113-118`), 23.1 R1.6, 18.2, 17.2, 23.0, 23.2; R14's loaded verdict before the rollout |
 
 ## Pre-registered thresholds (2026-10-15, before any data) {#thresholds}
 
@@ -238,10 +242,10 @@ section and the status lines are the orchestrator's and were not edited here.
 | source | change |
 |---|---|
 | d9be | [[#questions]] Q1 and Q3 answered; [[#thresholds]] Table C note |
-| d9bf + d9bp (PROVISIONAL) | [[#tasks]] 18.3 row rewritten (in-daemon, sentinel, loaded feasibility, no offline route); [[#open]] slot-rotation and op-shape answers; [[#contract-answers]] (a second registered step; no launchd tests) |
-| d9bg + d9bq (PROVISIONAL) | [[#tasks]] 18.2 row (growth on `rewrite_bytes`, reason gate); Q4 answered |
+| d9bf + d9bp (PROVISIONAL at the time; CONFIRMED, plan-18 r4) | [[#tasks]] 18.3 row rewritten (in-daemon, sentinel, loaded feasibility, no offline route); [[#open]] slot-rotation and op-shape answers; [[#contract-answers]] (a second registered step; no launchd tests) |
+| d9bg + d9bq (PROVISIONAL at the time; CONFIRMED, plan-18 r4) | [[#tasks]] 18.2 row (growth on `rewrite_bytes`, reason gate); Q4 answered |
 | d9bc | 18.2 R12 (the reason gate), and 18.3 R9's trigger |
-| d9br (PROVISIONAL) | one six-leg gate shared by 18.1 and 18.3; 2 % bytes tolerance |
+| d9br (PROVISIONAL at the time; CONFIRMED, plan-18 r4) | one six-leg gate shared by 18.1 and 18.3; 2 % bytes tolerance |
 | the user's convergence rule | [[task-18.2-catalog-maintain-step#r11-hold-helper]], used by 18.3 R8 |
 | anchors | the plan links to `#r6-untouched` / `#r9-not-nightly` move to [[task-18.3-offline-reclaim#r13-untouched]] / [[task-18.3-offline-reclaim#r9-tick-step]] |
 | new questions | [[#questions-rev]] |
@@ -285,3 +289,29 @@ setting `st.writer_lock` inside it and answering how the init rebind's legacy `c
 fallback (no slot letter) installs.
 
 rel: related-to -> [[task-23.1-queue-and-drain#r1-6-proposed]]
+
+## Revision round 4 (2026-11-13): status lines {#rev-round-4}
+
+Source: contra-c Cc-9 ("`plan-18…:8` `status: approved` vs `:15` 'Status: DRAFTING …' and
+`:102` 'PROVISIONAL'"), plan review G25 and L25 ([[plan-review-2026-11-13#lead]]). Status
+text only; no requirement, AC or threshold changed. The confirmation record is
+[[plan-review-2026-10-14#t12-approvals]] (d9be-d9bw "CONFIRMED … plan-18 r4"; d9co approves the
+18.2 and 18.3 specs). History rows keep their round's wording, with the confirmation added.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
+
+| mark | where | now |
+|---|---|---|
+| DRAFTING; 18.1 IN-PROGRESS | status line | Approved (d9co); 18.1 COMPLETED (`530660e`) |
+| 18.3 "PROVISIONAL" | [[#tasks]] 18.3 row | CONFIRMED (d9bf, d9bp) |
+| d9bf/d9bp, d9bg/d9bq, d9br "(PROVISIONAL)" | [[#rev-18-1-verdict]] table | "PROVISIONAL at the time; CONFIRMED, plan-18 r4" |
+| 18.2 / 18.3 headers | [[task-18.2-catalog-maintain-step#rev-round-5]], [[task-18.3-offline-reclaim#rev-round-6]] | same |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `approved` |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]
