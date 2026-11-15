@@ -15,8 +15,9 @@ metadata:
 **Date:** 2026-11-14, revised 2026-11-15. **Status:** drafting: the plan and six task specs under
 `workflow/plans/plan-30-materialisation-tasks/`, written by ch-architect on Fable 5.2. ch-bsd's
 spec review r1 was DIRTY (0 BULLSHIT, 3 SKETCHY, 5 MEH; [[bsd-plan30-spec-r1]]); ruling L116
-folded all eight, and [[#rev-note-2]] says where. A confirm-lite r2 is pending. Nothing here is
-approved.
+folded all eight, and [[#rev-note-2]] says where. The confirm-lite r2 was MEH-only (0 BULLSHIT, 0 SKETCHY, 4 MEH), GO
+([[bsd-plan30-spec-r2]]); its four are folded ([[#rev-note-3]]). plan-30 D1-D3 are with the user.
+Nothing here is approved until they are answered.
 **Origin:** the user asked for "a plan for materialization changes" from the measurement report
 [[perf-bitmap-materialisation-2026-11-14]], then "add the adjacency change too" (bug-243).
 **Sequencing:** after plan-29. Plan-29 splits `cli.py` and `store.py` and adds the census kit, the
@@ -28,6 +29,7 @@ rel: depends-on -> [[plan-29-code-quality]]
 rel: depends-on -> [[bug_registry#registry]]
 rel: derives-from -> [[perf-bitmap-materialisation-2026-11-14#recommendation]]
 rel: related-to -> [[bsd-plan30-spec-r1]]
+rel: related-to -> [[bsd-plan30-spec-r2]]
 rel: catalogs -> [[task-30.0-disk-tier-probe]]
 rel: catalogs -> [[task-30.1-adjacency-mapping-adapter]]
 rel: catalogs -> [[task-30.2-vectorised-adjacency-build]]
@@ -270,7 +272,8 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
     reading those inputs from the snapshot with the build's own read step, not by per-partition
     marks set on the write path ([[task-30.4-daemon-adjacency-ppr-op#r3-why-not-marks]]). Ruling
     L116 named per-partition versions; this keeps the purpose and changes the mechanism, for
-    two reasons read from the code. It is the lead's to overrule.
+    two reasons read from the code. **Accepted** by ch-bsd r2 ([[bsd-plan30-spec-r2]]) and by
+    the lead (ruling L117, written on `master` at the merge).
 13. **plan-30 D13 (round 2):** only the hook's op creates demand for a key, and at most 2 keys
     are live. A `context` degree walk reads a live key and never creates one
     ([[task-30.4-daemon-adjacency-ppr-op#r7]]).
@@ -344,3 +347,16 @@ and a partition's graph is written under other partitions' bindings too.
 
 **plan-30 D1, D2 and D3** are unchanged in substance. D1's text now says that a failed service
 or publish is never answered as "behind". {#rev-note-2-decisions}
+
+## Revision note 3 (2026-11-15, ch-bsd r2: GO with four MEHs) {#rev-note-3}
+
+| Finding ([[bsd-plan30-spec-r2]]) | Task | Answered in |
+|---|---|---|
+| M1: digest before the operational filter | 30.4, 30.2 | the digest is of the effective edges, after the fold and the filters ([[task-30.4-daemon-adjacency-ppr-op#r3-inputs]]); 30.2 names that stage |
+| M2: census scope; `partition=None` reaches the writer's binding | 30.4 | scope stated; `partition` required in `open_snapshot_store` and in the op ([[task-30.4-daemon-adjacency-ppr-op#ac-17]]) |
+| M3: which service time the 2% band reads | 30.4 | the replay's worst case ([[task-30.4-daemon-adjacency-ppr-op#r0]]) |
+| M4: AC-4's leg answered `building` | 30.4 | the entry is built first ([[task-30.4-daemon-adjacency-ppr-op#ac-4]]) |
+{#rev-note-3-table}
+
+plan-30 D12 is accepted (ch-bsd r2; lead, ruling L117). plan-30 D1, D2 and D3 are open, with the
+user. {#rev-note-3-decisions}

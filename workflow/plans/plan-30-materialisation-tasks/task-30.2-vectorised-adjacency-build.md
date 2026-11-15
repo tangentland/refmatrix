@@ -121,12 +121,17 @@ in the old order must not be served as the new one. {#r1-shape}
   store and returns one object: the `mentions` fragment's values, the typed rows as arrays, the
   operational ids, the linkage ids it resolved (or their absence), and the parameters. It is
   where [[#r2]]'s failures raise.
-- `assemble_adjacency(inputs)` touches no store. It is a pure function of that object.
+- `assemble_adjacency(inputs)` touches no store. It is a pure function of that object, in two
+  named stages: `effective_edges(inputs)` returns the edge list the graph is made of, as three
+  arrays (a, b, weight), after the `denotes` fold and after the filters of [[#model]] (self-loops,
+  non-positive weights, every edge with an operational endpoint); the reduction then
+  symmetrises, sorts and sums that list into the CSR and takes nothing else.
 - `build_adjacency` is their composition and nothing else.
 This is the build's own structure, used in this release: the targeted cases of [[#ac-1]] that
 no ingest produces are driven through `assemble_adjacency` directly. It is also the seam 30.4
-needs: its service reads the inputs at every publish and assembles only when they differ, and
-it must read exactly what the build reads. {#r1-two-steps}
+needs: its service reads the inputs at every publish, digests their effective edges, and
+reduces only when the digest differs, so it must read and keep exactly what the build reads
+and keeps. {#r1-two-steps}
 
 ### R2: a failed read raises {#r2}
 
@@ -193,8 +198,8 @@ mutations named in [[#mutations]]), or **gate** (a check on the final tree). The
 - **AC-1 (characterization, with one RED leg): the edge set equals the oracle's.** The oracle
   is the base body, so at the base the equality holds; mutations 1-11 are what prove the test
   can fail. The RED leg: the value `build_adjacency` returns is a `CSRAdjacency` (a dict at the
-  base), and `assemble_adjacency(read_adjacency_inputs(store))` equals it (neither function
-  exists at the base). On the fixture store and on the targeted stores
+  base), `assemble_adjacency(read_adjacency_inputs(store))` equals it, and the reduction of
+  `effective_edges(inputs)` equals that (none of the three functions exists at the base). On the fixture store and on the targeted stores
   below, for each of 3 mentions modes × `exclude_operational` true and false × `link_weight` 2.0
   and 1.0: the node sets are equal; the directed edge sets are equal; every weight is equal
   within 1e-12 relative. The number of weights that are not bit-equal is recorded (0 is
@@ -308,7 +313,7 @@ At `6676f39`. R0 re-runs it.
 | `cached_adjacency` | `context.py`'s degree walk; after this task the four of [[#r4]] | `tests/test_adjacency_cache.py` (11 sites) |
 | `CSRAdjacency.from_dict` (removed) | `pagerank.py::cached_adjacency` | `tests/test_adjacency_cache.py`, 30.1's tests |
 | `pagerank.pagerank` | `pagerank.py::compute`, `daemon.py::_op_pagerank` | R0 lists |
-| `read_adjacency_inputs`, `assemble_adjacency` (new) | `pagerank.py::build_adjacency`; in release C, 30.4's service | `tests/test_adjacency_build.py` |
+| `read_adjacency_inputs`, `effective_edges`, `assemble_adjacency` (new) | `pagerank.py::build_adjacency`; in release C, 30.4's service | `tests/test_adjacency_build.py` |
 | `pagerank.compute` | none found in `src/`; R0 confirms | `tests/test_v2_features.py`, R0 lists |
 | `scan._ppr_rerank`, `_enrich_rerank`, `_net_rerank` (gain the reason list) | `scan.py::scan_prompt`; `_net_rerank` calls `_ppr_rerank` twice | `tests/test_scan_prompt_dedup.py` (5 sites); `eval/spike_hypertree/m4_render_tokens.py` (1) |
 | `scan_prompt` (`trace["rerank"]`, the warning line) | `cli/session_cmds.py::scan_prompt_cmd`; R0 lists the eval callers | R0 lists |
@@ -391,3 +396,9 @@ At `6676f39`. R0 re-runs it.
 | S2 (30.4), the part that lands here: the memory band priced one build | [[#r0-memory-bands]]: the band is on T = K × E + P, live keys times entry bytes plus one build's peak; AC-8 records E, P and T |
 | S2 (30.4), the part that lands here: rebuild only what changed | [[#r1-two-steps]]: the build is a read step and a pure assemble step, so 30.4 can compare inputs with the build's own read |
 {#rev-note-2-table}
+
+## Revision note 3 (2026-11-15, ch-bsd r2) {#rev-note-3}
+
+One change, from 30.4's M1 ([[bsd-plan30-spec-r2]]): [[#r1-two-steps]] names the assemble's first
+stage, `effective_edges`, so that 30.4 digests the edges after the fold and the operational
+filter. Nothing else in this spec changed. {#rev-note-3-body}

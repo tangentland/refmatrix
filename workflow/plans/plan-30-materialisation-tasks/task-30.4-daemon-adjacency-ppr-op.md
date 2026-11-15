@@ -26,7 +26,8 @@ metadata:
 > Fixes bug-243.
 > User gates: plan-30 D1 (may the op answer from a graph that is behind). The spec is written
 > to the recommendation, (a); (b) and (c) change two numbers in [[#r4]] and nothing else.
-> Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]).
+> Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]), and after ch-bsd r2
+> ([[#rev-note-3]]).
 
 rel: part-of -> [[plan-30-materialisation]]
 rel: implements -> [[plan-30-materialisation#t4]]
@@ -107,7 +108,8 @@ hook (one-shot):  scan_prompt ─▶ _ppr_rerank ─▶ daemon op ppr_rank  ─�
    ([[task-30.2-vectorised-adjacency-build#r0-memory-bands]]). Under a go row the service builds
    in the daemon process. Under the no-go row it takes [[#r3-child]].
 3. **The cost of the input check**, on the production-scale store of item 6: the time to read a
-   key's inputs and digest them ([[#r3-inputs]]), and the time to assemble, each as a median and
+   key's inputs, take their effective edges and digest them ([[#r3-inputs]]), and the time to
+   reduce them to the CSR, each as a median and
    p90 over 7 or more runs, two sessions minutes apart, loads printed.
 
    | Read-and-digest median | Action |
@@ -129,7 +131,10 @@ hook (one-shot):  scan_prompt ─▶ _ppr_rerank ─▶ daemon op ppr_rank  ─�
      assemble seconds per day, summed over keys; and the share of prompts answered fresh,
      answered behind within the bound, and `unavailable` by reason.
    - Counts only; no prompt text.
-5. **Bands for the policy, stated now.** "Service time" is the sum over all live keys.
+5. **Bands for the policy, stated now.** "Service time" is the sum over all live keys, **from
+   the replay's worst case**: an assemble for every live key at every publish. The estimated
+   split is printed beside it and decides nothing, because its attribution of writes to
+   partitions is not reliable.
 
    | Result | Action |
    |---|---|
@@ -181,7 +186,10 @@ ADRs it builds on. {#r1-body}
   (device, inode, modification time in nanoseconds, size), under the lock.
 - `Daemon.open_snapshot_store(partition)` opens a private read-only store on the snapshot file
   (through `_open_read_store(partition, allow_mirror=False)`, so the swap gate still counts it)
-  and returns it with its sequence. It reads the two counters before and after the open; the
+  and returns it with its sequence. **`partition` is required: `None` raises.** With no
+  partition `_open_read_store` falls back to the writer's current binding
+  (`self._st()._partition_name`), which is a read of the writer and the bug-098 transient
+  binding. It reads the two counters before and after the open; the
   sequence is `end` when all four reads are equal **and** the opened file's identity equals the
   recorded one. Otherwise the sequence is unknown (`None`), with the cause: `overlap` (a
   replace was in progress) or `foreign` (the file is not the one this daemon published). It
@@ -213,9 +221,10 @@ stopped with it.
   1. opens the snapshot with `Daemon.open_snapshot_store` ([[#r2]]). On `overlap` it opens
      again, **at most 3 times**, a short pause apart. On `foreign`, or after the third
      `overlap`, the attempt is a failed build with that cause;
-  2. reads the build's inputs from that store and digests them ([[#r3-inputs]]);
+  2. reads the build's inputs from that store, takes their effective edges, and digests them
+     ([[#r3-inputs]]);
   3. if the digest equals the entry's, sets `valid_seq` to the store's sequence and counts a
-     `revalidated`; otherwise assembles the CSR from the inputs it has just read, and swaps the
+     `revalidated`; otherwise reduces the edges it has just computed to the CSR, and swaps the
      entry in, as one reference assignment, counting a `built`;
   4. closes the store.
   It runs one key at a time. If a publish arrived meanwhile it goes round again, after the
@@ -223,7 +232,8 @@ stopped with it.
 - **It never reads the writer.** Nothing in `adjacency_service`, and nothing the service calls
   to build, touches the daemon's writer store: not `Daemon.store`, not `Daemon._st()`, not a
   `Store(` open of a slot file, not `_store_lock`, not `_snapshot_lock`. Its only store is the
-  one `open_snapshot_store` returns. [[#ac-17]] tests where the data came from; a census
+  one `open_snapshot_store` returns, **always for a named partition**: the service's keys
+  carry the partition by name and it never opens with none. [[#ac-17]] tests where the data came from; a census
   forbids the access.
 - **A failed build** (the read or the assemble raises; the snapshot's sequence cannot be
   established) is logged, recorded through `Daemon.record_sync_error` under the route
@@ -244,22 +254,24 @@ stopped with it.
   disabled`. Both settings are tested.
 {#r3-list}
 
-**The inputs, and why the check is exact.** 30.2 splits the build into two steps
-([[task-30.2-vectorised-adjacency-build#r1-two-steps]]): `read_adjacency_inputs` returns
-everything `build_adjacency` reads from the store (the `mentions` fragment's values, the typed
-rows, the operational ids, the linkage ids it resolved, the parameters), and
-`assemble_adjacency` is a pure function of that object. The service calls the same
-`read_adjacency_inputs` and digests the object:
-- every field `assemble_adjacency` consumes is in the digest; a test walks the object's fields
-  and fails on one that is not ([[#ac-18]]);
-- the typed rows are digested independent of row order, because `entity_links` is read without
-  an order;
-- the operational ids are digested **restricted to ids that occur as an endpoint** in the
-  fragment's values or the typed rows. The exclusion can only change the graph through an
-  endpoint, and without the restriction every new session card in any partition would change
-  the digest of every key.
-Equal digests mean `assemble_adjacency` would return the graph the entry already holds. There
-is no second definition of what the build reads. {#r3-inputs}
+**The inputs, and why the check is exact.** 30.2 splits the build into steps
+([[task-30.2-vectorised-adjacency-build#r1-two-steps]]): `read_adjacency_inputs` does every read
+of the store; `effective_edges` turns what was read into the edge list the graph is made of,
+after the `denotes` fold and after the filters (self-loops, non-positive weights, and every
+edge with an operational endpoint); the reduction sorts and sums that list into the CSR. The
+service calls the same `read_adjacency_inputs` and `effective_edges`, and digests the edge
+list:
+- the digest is of the edges **after** the operational filter. A session-card mention bit in
+  the project's fragment (`build_adjacency`'s comment says a code partition's fragment can carry
+  them) changes what was read and does not change the graph; digested before the filter, every
+  session ingest would cost an assemble for nothing;
+- it is of the edges after the fold, so a `denotes` row that is added or removed changes it
+  exactly when it changes where a typed row's weight lands;
+- it is independent of the order of the list, because `entity_links` is read without an order,
+  and it counts repeats, because parallel edges sum;
+- the reduction's only argument is that list, so equal digests mean the reduction would return
+  the graph the entry already holds.
+There is no second definition of what the build reads or of what it keeps. {#r3-inputs}
 
 **Why not a mark per partition set by the write path** (the form ruling L116 names). Two facts
 of the base code make it unsound:
@@ -289,6 +301,9 @@ Registered in the daemon's op table and in `CLI_OPS`; not a write op.
 
 - **Arguments:** `partition`, `seed_ids`, `k`, `alpha`, `eps`, `link_weight`, `clique_weight`,
   `coverage_alpha`, `kinds`, `include_seeds`: the parameters of `rank_related_for_prompt`.
+  **`partition` is required.** A request without one is an error reply (the client's
+  `daemon-error`); the op never substitutes the writer's binding, and the client always sends
+  its store's partition name.
 - **Which graph** (plan-30 D1, option a). With the entry valid at the current sequence: serve
   it. With a newer publish pending: wait up to `RMX_PPR_WAIT_S` (default 0.25) for the service;
   then serve the newest entry if it was superseded no more than `RMX_ADJ_MAX_BEHIND_S` (default
@@ -443,10 +458,11 @@ short temp root inside 23.0's sandbox. The fixture store and seed sets are
   Test: `test_behind_policy`. {#ac-3}
 - **AC-4 (RED): the op is served while the writer is held, and names come from a read store.**
   With `_store_lock` held by another thread for the whole test, 20 `ppr_rank` calls all return
-  `ranked`, each inside the client timeout. With the lock FREE and no read store to be had (the
-  mirror off, and no snapshot or reader-slot file for `_open_read_store` to open), the op
-  answers `unavailable: names-unavailable` and the writer store's connection was not used
-  (counted by a wrapper on the writer's connection). Test:
+  `ranked`, each inside the client timeout. Then, in this order: the entry is built and valid
+  (the daemon runs with the mirror off); the snapshot file and the reader-slot files are
+  removed, so that `_open_read_store` has nothing to open; the lock is FREE; the op is called.
+  It answers `unavailable: names-unavailable` (not `building`: the entry exists) and the writer
+  store's connection was not used (counted by a wrapper on the writer's connection). Test:
   `test_op_never_reads_the_writer`. {#ac-4}
 - **AC-5 (RED): one dial, bounded.** With the daemon's cli pool filled by blocked ops, 50 client
   calls each return a ranking (path `inprocess`, reason `daemon-busy`); none dials twice (a
@@ -529,10 +545,16 @@ short temp root inside 23.0's sandbox. The fixture store and seed sets are
   2. Make the first request for the key. Wait for the entry. **The entry's CSR does not hold
      E**, `built_seq` is the publish of step 1, and the op's ranking is the pre-E ranking.
   3. Publish. Wait for the entry. It holds E and `built_seq` moved.
-  And a census family forbids writer access anywhere in `adjacency_service` and in what the
-  service calls to build: `.store` on a daemon, `_st(`, a `Store(` construction, `_writer_lock`,
-  `_store_lock`, `_snapshot_lock`. Its allow list is empty, and it has one planted site per
-  form, each failing it by name. Test: `test_entry_is_built_from_the_published_snapshot`. {#ac-17}
+  And a census family forbids writer access. **Its scope is `adjacency_service.py` and the three
+  build steps in `pagerank.py`** (`read_adjacency_inputs`, `effective_edges`,
+  `assemble_adjacency`). It does not scan `Daemon._open_read_store`, which must construct a
+  read-only `Store` to open the snapshot; that function's one reach into the writer, the
+  partition default, is closed by the required argument and tested directly:
+  `open_snapshot_store(None)` raises, and `ppr_rank` without a partition is an error reply. In
+  scope, the forbidden forms are `.store` on a daemon, `_st(`, a `Store(` construction,
+  `_writer_lock`, `_store_lock`, `_snapshot_lock`. The allow list is empty, and there is one
+  planted site per form, each failing it by name. Tests:
+  `test_entry_is_built_from_the_published_snapshot`, `test_partition_is_required`. {#ac-17}
 - **AC-18 (RED): the input check is exact, and a write elsewhere costs no assemble.**
   - **Sound.** For every operation of 30.0's probe table that applies to a daemon store
     ([[task-30.0-disk-tier-probe#r1-table]]) and every targeted change of 30.2's AC-1
@@ -540,14 +562,18 @@ short temp root inside 23.0's sandbox. The fixture store and seed sets are
     Whenever a fresh `build_adjacency` on the new snapshot differs from the previous entry's
     graph, the service assembled, and the new entry equals the fresh build. Recorded as changes
     detected of changes made; a miss fails.
-  - **Complete over the inputs.** For each field of the object `read_adjacency_inputs` returns,
-    changing that field changes the digest. The test walks the object's fields, so a field
-    added later and left out of the digest fails by name.
-  - **A write elsewhere.** A memory added in another partition, a session card ingested into a
-    sessions partition (a new operational entity that is not an endpoint here), and a no-op
-    publish: after each, the project key's `valid_seq` moved, `revalidated` grew by one,
-    `built` did not grow, and the op answers with `behind == 0`.
-  - **Order.** The same typed rows returned in a different order give the same digest.
+  - **The digest is of the effective edges.** On edge lists built by hand: adding an edge,
+    removing one, changing one weight, and repeating one each change the digest; any
+    permutation of the list does not. The service's digest input is the value `effective_edges`
+    returned (asserted by identity in the test), which is the reduction's only argument.
+  - **A write elsewhere.** After each of these, the project key's `valid_seq` moved,
+    `revalidated` grew by one, `built` did not grow, and the op answers with `behind == 0`:
+    a memory added in another partition; a session card ingested into a sessions partition;
+    **a session card whose ingest also writes a mention bit for it into the project's
+    fragment** (the project fragment's values changed, the graph did not); a no-op publish.
+  - **An endpoint changes sides.** An entity that is an endpoint here is renamed into the
+    operational pattern, and back: each time the service assembled, and the entry equals a
+    fresh build.
   Test: `test_input_check` (parametrised). {#ac-18}
 - **AC-19 (RED): live keys are bounded.** With `RMX_ADJ_MAX_KEYS=2`: a third key's request
   answers `unavailable: capacity`, is counted, and no key is evicted; after one key has been
@@ -623,15 +649,19 @@ Each alone, seen RED (not hung) on the named AC, reverted in its own command.
     the failed replace).
 22. the reopen has no bound → AC-20 (`test_reopen_is_bounded` fails on its count).
 23. a failed publish sets no state → AC-20 (the op answers `behind`).
-24. the digest leaves out the typed rows → AC-18 (sound; complete).
-25. the digest takes the operational ids unrestricted → AC-18 (a write elsewhere: `built` grew).
-26. the digest hashes the typed rows in arrival order → AC-18 (order).
+24. the digest leaves out the weights → AC-18 (sound; the hand-built lists).
+25. the digest is taken before the operational filter → AC-18 (a write elsewhere: `built` grew
+    on the session card with a project-fragment bit).
+26. the digest hashes the edges in arrival order → AC-18 (a permutation changes it).
 27. the service sets `valid_seq` without reading the inputs → AC-18 (sound) and AC-2.
 28. the provider registers demand → AC-9 (`test_context_walk_registers_no_demand`).
 29. the cap is not enforced → AC-19.
 30. `open_snapshot_store` does not compare the file's identity → AC-21.
 31. `names-unavailable` is classed as an operating state → AC-6.
 32. the `merge-verb-aliases` branch is allow-listed without its condition → AC-14.
+33. `open_snapshot_store` accepts `partition=None` → AC-17 (`test_partition_is_required`).
+34. the digest is taken before the `denotes` fold and leaves the `denotes` rows out → AC-18
+    (sound: a removed `denotes` row moves a weight and is not detected).
 {#mutations-list}
 
 ## Test strategy {#test-strategy}
@@ -669,7 +699,7 @@ At `6676f39`. R0 re-runs it.
 | `scan.py::_ppr_rerank` | `scan.py::scan_prompt`; `scan.py::_net_rerank` (two fallbacks); `tests/test_scan_prompt_dedup.py`; `eval/spike_hypertree/m4_render_tokens.py` |
 | `ppr.py::rank_related_for_prompt` | `scan.py::_ppr_rerank`; the new op; tests as in 30.1 |
 | `pagerank.cached_adjacency` (called through `adjacency_for`) | `context.py`'s degree walk; after 30.2: `ppr.py` (two), `enrich.py`, `net.py` |
-| `pagerank.read_adjacency_inputs`, `pagerank.assemble_adjacency` (30.2's; called, not changed) | `pagerank.build_adjacency`; the service |
+| `pagerank.read_adjacency_inputs`, `pagerank.effective_edges`, `pagerank.assemble_adjacency` (30.2's; called, not changed) | `pagerank.build_adjacency`; the service |
 | `Daemon._snapshot_catalog` (the counters, the identity, the failure state, the wake) | the snapshot tick; `_op_snapshot`; R0 lists any other |
 | `_MemMirror.refresh` (sequence, provider) | daemon start; `_snapshot_catalog` |
 | `Daemon._open_read_store` (reached through the new `open_snapshot_store`; unchanged itself) | `_read_with_fallback` and the read ops that call it |
@@ -732,9 +762,8 @@ At `6676f39`. R0 re-runs it.
 - **Memory.** At most `RMX_ADJ_MAX_KEYS` entries, about 40 MB each at this store's size, plus
   one build's peak. 30.2's band prices that sum and decides in-process or child; AC-10 reads
   the daemon's resident memory against it.
-- **The digest and the build drift apart.** They cannot read different things: the service
-  calls the build's own read step. What could drift is a field the assemble uses and the digest
-  omits; AC-18 walks the fields.
+- **The digest and the build drift apart.** They cannot: the service calls the build's own read
+  and its own `effective_edges`, and digests the one value the reduction takes.
 - **The ranking comes from a graph one batch old.** plan-30 D1. The reply says so, and the row
   records it.
 - **Seeds are resolved on the hook's replica and ranked on the daemon's graph.** Entity ids are
@@ -768,7 +797,8 @@ At `6676f39`. R0 re-runs it.
   pair, moved under the lock that publishes, so "which graph is this" has an exact answer.
 - **plan-30 D12: a key is rebuilt when its inputs changed, decided by reading them, not by
   per-partition marks** ([[#r3-why-not-marks]]). This departs from the wording of ruling L116
-  ("per-partition versions") and keeps its purpose. It is the lead's to overrule.
+  ("per-partition versions") and keeps its purpose. **Accepted** by ch-bsd r2
+  ([[bsd-plan30-spec-r2]]) and by the lead (ruling L117, written on `master` at the merge).
 - **plan-30 D13: demand comes from the hook's op only, and live keys are capped at 2.** A
   degree walk reads a live key and never creates one. Without this, any `context` op on any
   partition would add a key that every publish then pays for.
@@ -797,3 +827,13 @@ Also changed in this round, not from a finding: the op takes its names through
 `_read_with_fallback(writer="never")`. Round 1 passed `writer_wait_s=0`, which reads the writer
 whenever its lock is free; that contradicted the spec's own "never reads the writer".
 {#rev-note-2-also}
+
+## Revision note 3 (2026-11-15, ch-bsd r2: GO with four MEHs) {#rev-note-3}
+
+| Finding ([[bsd-plan30-spec-r2]]) | Answered in |
+|---|---|
+| M1: the digest was taken before the operational filter | [[#r3-inputs]]: the digest is of `effective_edges`' output, after the fold and the filters; [[#ac-18]] gains the session card that writes a project-fragment bit, and an endpoint renamed into and out of the operational pattern; mutations 25 and 34 |
+| M2: the census scope, and the writer's binding behind `partition=None` | [[#ac-17]] states the scope (`adjacency_service.py` and the three build steps); `partition` is required in `open_snapshot_store` ([[#r2]]) and in the op ([[#r4]]); mutation 33 |
+| M3: which service time the 2% band reads | [[#r0]] item 5: the worst case |
+| M4: AC-4's no-read-store leg answered `building` | [[#ac-4]]: the entry is built first, then the read stores are removed |
+{#rev-note-3-table}
