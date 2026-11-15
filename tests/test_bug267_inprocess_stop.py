@@ -61,6 +61,21 @@ def _gone(pid: int, seconds: float) -> bool:
 
 # ---- (1) the in-process daemon ---------------------------------------------------------------
 
+_STOP_TESTS = ("test_the_stop_op_ends_the_serve_thread_not_the_process",
+               "test_the_stop_flag_ends_the_serve_thread_not_the_process")
+_DELIBERATE = "test_zz_the_session_keeps_its_own_status"
+
+
+def _first_e_line(out: str, test: str) -> str:
+    """The first `E ` line of `test`'s section in the child's FAILURES / ERRORS output."""
+    m = re.search(rf"^_+ (?:ERROR at \w+ of )?{re.escape(test)} _+$", out, re.M)
+    if m is None:
+        return "(no failure section)"
+    nxt = re.search(r"^(_{3,} .* _{3,}|=+ .* =+)$", out[m.end():], re.M)
+    body = out[m.end():m.end() + nxt.start()] if nxt else out[m.end():]
+    return next((ln.strip() for ln in body.splitlines() if ln.startswith("E ")), "(no E line)")
+
+
 def test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status(tmp_path):
     tree = _inner_tree(tmp_path, "case_inprocess_stop")
     info = tmp_path / "case-info.json"
@@ -75,14 +90,27 @@ def test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status(
                         "after its in-process daemons were stopped (a hang at interpreter "
                         "shutdown: leaked pool workers joined by atexit?)\n" + out[-3000:])
         out = (r.stdout or "") + (r.stderr or "")
-        # ch-bsd T0.2 r1 B1 (L169): the child serves REAL daemons with no `signal.signal`
-        # double; a serve thread that fails is named by its own E line, first.
-        failed = [ln.strip() for ln in out.splitlines()
-                  if ln.startswith("E ") and "deliberate" not in ln
-                  and ("Error" in ln or "assert" in ln.lower())]
-        assert not failed, (
-            f"the child's in-process daemon tests failed (exit {r.returncode}): {failed[0]}\n"
-            + out[-3000:])
+        # Judged by WHICH test failed, from the child's `-rA` outcome lines, never by E-line
+        # text: pytest prints two E lines for the deliberate `assert False, "deliberate: …"`
+        # (the message and `assert False`), and a text filter kept one of them on correct code
+        # (lead, 2026-11-15, green-l169-red-nodes.log at be7ddb2). The two stop tests must
+        # PASS and only the deliberate test may fail; a stop test that failed is named by the
+        # first E line of its own section (at 1121b4e: the serve thread's ValueError).
+        outcomes = dict((m.group(2), m.group(1)) for m in re.finditer(
+            r"^(PASSED|FAILED|ERROR) tests/test_case\.py::(\w+)", out, re.M))
+        bad = {t: outcomes.get(t, "no outcome") for t in _STOP_TESTS
+               if outcomes.get(t) != "PASSED"}
+        if outcomes and bad:
+            why = {t: _first_e_line(out, t) for t in bad}
+            pytest.fail(
+                f"the child's in-process daemon tests did not pass (exit {r.returncode}): "
+                + "; ".join(f"{t}: {o}: {why[t]}" for t, o in bad.items()) + "\n"
+                + out[-3000:])
+        others = {t: o for t, o in outcomes.items()
+                  if t not in _STOP_TESTS and t != _DELIBERATE and o != "PASSED"}
+        assert not others, f"unexpected child outcomes {others}:\n{out[-3000:]}"
+        assert not outcomes or outcomes.get(_DELIBERATE) == "FAILED", (
+            f"the deliberate test did not fail ({outcomes.get(_DELIBERATE)}):\n{out[-3000:]}")
         summary = re.search(r"^=+ .*\b1 failed, 2 passed\b.* =+$", out, re.M)
         assert summary is not None, (
             f"the child session never printed its summary (exit {r.returncode}): stopping an "
