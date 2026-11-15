@@ -183,10 +183,10 @@ rides on these tasks. {#non-goals-list}
 7. **plan-29 D27 = (a)** (lead, L109): R7's release re-derives the passes a real pass-file edit
    leaves behind, in deploy B under its own go ([[task-29.2-mypy-gate#d27]]); `consolidate.py`'s rows
    and its one silent handler are held ([[task-29.3-converge-shapes#c-pass-rows-held]], L110).
-8. **plan-29 D23 decided (user, 2026-11-14, L113): (b) re-key** the learned and protected rows on
-   `cli.py` / `store.py` through a store op driven by 29.5 R8's line map; an unplaceable line falls back
-   to its namespace's top-level file (`cli/__init__.py`, `store.py`), counted, never dropped. The op is
-   task 29.7, specified and reviewed before 29.5's phase-1 merge. **plan-29 D19 confirmed by the user**
-   (L113): `store` stays a module ([[task-29.5-split-giant-modules#decisions]]).
+8. **plan-29 D23 decided (user, 2026-11-14): (a) accept the loss, recorded** (L115, which replaced
+   L113's (b) after the count: 3 attached learned rows + 1 protected entity on `cli.py` / `store.py`;
+   15,965 already orphaned by bug-107, [[measurement-learned-rows-cli-store-2026-11-14]]). 29.5 exports
+   them in full before the merge and records the loss. No task 29.7. **plan-29 D19 confirmed by the
+   user** (L113): `store` stays a module ([[task-29.5-split-giant-modules#decisions]]).
 
 Recorded as L104-L111 in [[plan-review-2026-11-13#lead]]. Next: 29.1. {#decisions-next}
