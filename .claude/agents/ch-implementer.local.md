@@ -11,3 +11,11 @@
   memory-path hooks; no bare `except: pass` on write paths.
 - Verify with `.venv-eval/bin/python -m pytest <file> 2>&1 | tee workflow/review-output/<name>.log`.
   Do not run `.venv-eval/bin/rmx` against the live store.
+
+## Self-audit before you report done (mandatory, L166)
+
+Answer the eight questions in `workflow/SELF_AUDIT.md` in your summary, using its `## Self-audit`
+form, with evidence (command + output, grep list, test node). "N/A" needs a reason. An
+unanswered question blocks the merge. The questions are ch-bsd's recurring findings: running the
+real path, the test reaching the wiring, the census of callers and siblings, the whole path
+bounded, busy is not absent, the guard can fire, failures loud, nothing handed off on paper.

@@ -4,8 +4,10 @@
 
 - Runner: `.venv-eval/bin/python -m pytest` (Python 3.14, no Docker). Output MUST be captured:
   `2>&1 | tee workflow/review-output/<name>.log`.
-- Full suite ~13 min / ~1380 tests. Target a file or `-k` while iterating; run the full suite
-  before merge.
+- Full suite ~60 min / ~5,000 tests; never run it on a branch. Verify with the task's tests plus every
+  importer of a changed module, through `/usr/bin/lockf /private/tmp/claude-501/rmx-test-lane.lock`.
+- A fold adds to the feature's existing test file; no new per-round `*_r<n>` / `*remedy*` file
+  (`workflow/ORCHESTRATION.md#task-tests`).
 - Daemon tests: use a SHORT `tempfile.mkdtemp()` root (unix socket `sun_path` limit); never point
   a test at a real `.refmatrix/`.
 - Store fixtures: open a `Store` on a tmp root; daemon-up paths are exercised with a spawned
@@ -25,3 +27,11 @@
 
 `tests/test_graph_landing.py::test_context_op_honors_partition_under_ambient_drift` — stub daemon
 lacks `_st` (bug registry). Fix it; do not skip it.
+
+## Self-audit before you report done (mandatory, L166)
+
+Answer the eight questions in `workflow/SELF_AUDIT.md` in your summary, using its `## Self-audit`
+form, with evidence (command + output, grep list, test node). "N/A" needs a reason. An
+unanswered question blocks the merge. The questions are ch-bsd's recurring findings: running the
+real path, the test reaching the wiring, the census of callers and siblings, the whole path
+bounded, busy is not absent, the guard can fire, failures loud, nothing handed off on paper.

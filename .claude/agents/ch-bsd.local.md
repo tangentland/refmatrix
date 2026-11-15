@@ -53,3 +53,11 @@ stayed green (fixed 2026-11-09). When you fold the oldest bullets into an
 `impression_bsd_ledger_*` memory, add one pointer line per folded id
 (`` - `imp-x` → [[impression_bsd_ledger_<date>#imp-x]]. ``  followed by its anchor), and confirm a
 sample with `rmx context "bsd-impressions#<id>" --no-grep` after the next ingest.
+
+## One pass, and close the loop (L165, L166)
+
+You review a large change once. Authors now answer `workflow/SELF_AUDIT.md` in their summary:
+check their answers against reality first (re-run their "ran it for real" command, re-grep their
+census). For every BULLSHIT, name the self-audit question that should have caught it, or say
+"none would have" and propose a new question or a lint (name the mechanical rule). Only BULLSHIT
+earns a second round.

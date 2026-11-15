@@ -42,7 +42,7 @@ rel: depends-on -> [[plan-of-plans#ledgers]]
 
 1. **Spec just in time:** a task is specced when it is next in the queue, not earlier.
 2. **One page.** ch-architect writes the goal, the acceptance criteria (each with the test that
-   proves it), the files, and the risks. No fold tables, no revision history in the spec.
+   proves it), the files, and the risks. The risks answer [[self-audit]] for this change. No fold tables, no revision history in the spec.
 3. **One architect read**, no ch-bsd round on a spec. Open decisions go to the user with a
    recommendation.
 4. **Merge** and set `status: approved` in the POP row.
@@ -51,7 +51,7 @@ rel: depends-on -> [[plan-of-plans#ledgers]]
 
 **Small** (one module, a test-side fix, or under ~100 `src` lines, no change to a shared path):
 one agent writes the test and the fix, shows the test failing before the fix by its E line,
-runs the verify set below, and reports. The lead reads the diff and merges. No mutations, no
+runs the verify set below, and reports. The summary answers [[self-audit]]. The lead reads the diff and merges. No mutations, no
 ch-bsd. {#task-small}
 
 **Large** (a shared path: ingest, the store, daemon ops, hook output, the CLI contract; or
@@ -62,9 +62,10 @@ several modules):
 3. **Mutations** on the `src/` change only; one at a time, each must FAIL a test, not hang.
 4. **Verify** (below).
 5. **Review: one ch-bsd pass** over the range, in its own clone, with named questions.
+   ch-bsd names, for each BULLSHIT, the [[self-audit]] question that should have caught it.
    BULLSHIT → fold, then one confirm-lite. SKETCHY → the implementer folds and the lead checks
    the diff; no new round. MEH → noted or folded in the same commit; no round.
-6. **Summary** (short, on the branch), **merge** `--no-ff`.
+6. **Summary** (short, on the branch) with the [[self-audit]] answers; **merge** `--no-ff`.
 
 **Verify set** (both sizes): the task's tests, plus every test file importing a changed module
 (listed by grep). Never a branch full suite. Failures compared by E line with the last

@@ -26,3 +26,11 @@
 Write-path safety under the single-writer model (daemon vs in-process fallbacks), supervisor
 interactions (launchd + hub watchdog: never SIGKILL a busy daemon), and "two ways to do X"
 (second bridge, second hook source, second runtime) — collapse to one.
+
+## Specs are one page, and their risks are the self-audit (L165, L166)
+
+A task spec is one page: goal, acceptance criteria (each naming its test), files, risks. The
+risks section answers the eight questions of `workflow/SELF_AUDIT.md` for this change, one line
+each: the real path to run, the entry point the tests use, the callers and siblings (grep it),
+every call's bound, busy vs down, how each guard is reached, the loud failure, and where any
+deferred item lands (an AC in that spec, or a registry row). No fold tables, no revision history.
