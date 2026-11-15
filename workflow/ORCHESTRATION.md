@@ -18,8 +18,7 @@ user: Q23-Q26 = a; [[workflow-practice-review-2026-11-15]]). CLAUDE.md
 rel: derives-from -> [[workflow-practice-review-2026-11-15]]
 rel: amends -> [[tdd-governance]]
 rel: amends -> [[PLANNING_WORKFLOW]]
-rel: depends-on -> [[rulings#lead]]
-rel: depends-on -> [[open-questions]]
+rel: depends-on -> [[plan-of-plans#ledgers]]
 
 ## 1. Roles {#roles}
 
@@ -72,7 +71,7 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 2. **Spec review r1.** ch-bsd, full depth, in its own clone; the report is written in that clone
    or returned as text.
 3. **Ruling.** The lead persists the report ([[#reports]]) and writes `L<n>` in
-   [[rulings#lead]] (L125 on; L1-L124 in [[plan-review-2026-11-13#lead]]): each finding folded, deferred (with an owner) or overruled,
+   [[plan-of-plans#rulings]] (L125 on; L1-L124 in [[plan-review-2026-11-13#lead]]): each finding folded, deferred (with an owner) or overruled,
    with the reason.
 4. **Revision** by the same author on Fable, with a fold table per spec.
 5. **Confirm-lite r2..rN** until MEH-only GO; the MEHs fold before the merge.
@@ -137,13 +136,15 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
   commit that changes state updates [[plan-of-plans]] in the same commit: a ruling that changes
   order or scope, an admission or a move to post-mod, a merge, a release, a status flip. Review
   docs, `L<n>` rows and triage files are evidence the POP row links to; they never hold state the
-  POP lacks. A plan or task file's `metadata.status` follows the POP, not the other way. {#pop-truth}
+  POP lacks. A plan or task file's `metadata.status` follows the POP, not the other way. **Every
+  `L<n>`, `plan-N D<n>` and `Q<n>` is entered in [[plan-of-plans#ledgers]] first, then amended
+  into a plan** (the user, 2026-11-15). {#pop-truth}
 - **Measure before deciding**, read-only: copy `.refmatrix/catalog.read.duckdb` to the
   scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`; never `Store()`
   on a live slot. State go/no-go bands before measuring. {#measure}
-- **Ledgers.** Every ruling is an `L<n>` row; every question to the user is a `Q<n>` in
-  [[open-questions]] or a plan's own `Dk`; each reply that asks anything ends with the ids still
-  open. {#ledgers}
+- **Ledgers.** Every ruling is an `L<n>` row, every plan decision a `plan-N D<n>` row, every
+  question to the user a `Q<n>` row, all in [[plan-of-plans#ledgers]], entered there before any
+  plan is amended; each reply that asks anything ends with the ids still open. {#ledgers}
 - **Registry at once.** Every defect anyone finds gets a `workflow/bug_registry.md` row from the
   lead in the same turn, even when its fix is out of scope. {#registry}
 - **Reports** ([[#reports]]): the lead persists every review. {#reports-rule}
