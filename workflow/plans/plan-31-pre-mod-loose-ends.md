@@ -58,12 +58,24 @@ A lint rule: in `workflow/bullshit/IMPRESSIONS.md` and the impression ledgers, e
 `- 20YY-MM-DD` bullet ends with exactly one `{#id}`; a cut bullet fails the lint. RED with a
 truncated-bullet fixture. About an hour. {#t3-body}
 
+**Spec:** [[task-31.3-ledger-anchor-guard]] (approved by L140 on ch-bsd r2's MEH-only GO). It is
+a third step in `scripts/lint-gmd.sh`, not a rule in the vendored linter, and it builds the one
+shared helper for the gate's test trees. The census found 15 whole dated bullets in six folded
+ledgers that never had an id; `plan-31 D7` (decided, [[plan-of-plans#decisions]]) gives them
+ids, and that edit lands before the task's GREEN starts (applied 2026-11-15). {#t3-spec}
+
 ### 31.4 Retire the warnings nobody acts on {#t4}
 
 The repo lint carries 89 standing warnings. Each warning class is either made an error (and its
 instances fixed) or retired from the linter, with the reason recorded; the target is zero standing
 warnings, so a new warning is read. Busywork removed, not added: no per-warning fixing of a class
 that is retired. {#t4-body}
+
+**Spec:** [[task-31.4-retire-standing-warnings]] (approved by L140 on ch-bsd r2's MEH-only GO).
+The 89 are four classes: `unknown-memory-type` 47, `rel-target-shape` 28, `ambiguous-stem` 9,
+`unknown-verb` 5; 52 of them sit in the memory dir. All four fail the gate through one opt-in
+linter flag and none is retired (`plan-31 D8`-`D10`, decided, [[plan-of-plans#decisions]]; D10
+is the user's consent to change the upstream GMD linter, Q37 = a). {#t4-spec}
 
 ### 31.5 Scan-prompt injection: measure each block's use, then cut and tighten (Q27 = b) {#t5}
 
@@ -110,14 +122,33 @@ value, it's worth considering taking action." {#t5-ask}
    the 21.5 used-signal method (a later tool call or the reply touches an injected item; the
    2026-11-13 pilot found 7% caused, 19% caused + informed across all blocks, but did not split
    by block). Go/no-go bands are written before the run: a block used on under 5% of prompts is
-   cut to on-change-only or dropped; 5-15% is shrunk; over 15% is kept and tightened.
+   cut to on-change-only or dropped; 5-15% is shrunk; over 15% is kept; tightened only by the
+   member filter (R2.0) and the shrink knobs (amended by ruling L140: the per-item tighten had
+   no knob or test and was dropped; [[task-31.5-scan-prompt-block-measure#actions-removed]]).
 2. **Cut and tighten** by the bands. Already clear without measuring: no stopword or typo tokens
    as STM topic members; no topic without a real symbol or file member; no repeat of an unchanged
    block ([[feedback_injection_presentation_rules]]); most relevant first under the cap.
 3. **Ablation only if a band is ambiguous:** replay real prompts with the block removed and
    compare the agent's actions (task 21.7's method).
 
-Runs right after 0.83.1, ahead of plan-10's dedup; feeds 21.5 phase M and 30.6. {#t5-body}
+Runs after 0.84.0 (which superseded the undeployed 0.83.1, L119); feeds 21.5 phase M and 30.6.
+Plan-10's dedupe, which step 1 expected to follow it, is post-mod (ruling L128 in
+[[plan-of-plans#rulings]]). {#t5-body}
+
+**Spec:** [[task-31.5-scan-prompt-block-measure]] (approved by L140 on ch-bsd r2's MEH-only GO).
+Five sub-steps (S0 capture, S0b discovery-call scoring, S1 bands, S2 cut, S3 conditional
+ablation) over two releases with a measurement window of 400 to 800 prompts between them.
+Three things in the steps above are corrected there:
+
+- the "59% of bytes, 100% repeated" figure is one probe payload of 2026-10-01, not the corpus
+  (about 11% of scan bytes);
+- a class `followed` is added beside `ignored` / `avoidable` / `uncovered`, so that a fetch of
+  a path the injection delivered is a candidate credit to the injection instead of a count
+  against the agent;
+- the capture stores block payload text, which carries prompt terms, locally in every store;
+  its directory ignores itself (bug-261), and release A also takes bug-256.
+
+`plan-31 D1`-`D6` are decided ([[plan-of-plans#decisions]]). {#t5-spec}
 
 ### 31.6 Lint and ingest resolve a wikilink target the same way (bug-251, Q30 = a) {#t6}
 
@@ -138,6 +169,22 @@ target doc the lint accepts. {#t6-body}
 
 31.3 and 31.4 are small and may run at any point after 0.83.1. 31.1 after 0.83.1 (it changes
 0.83.1's S2 test input). 31.5 right after 0.83.1. 31.2 after 29.5. 31.6 any time (it touches `tools/gmd/` and the GMD ingest's target resolution; not `store.py`). All before the mod transition. {#order-list}
+
+**Amended 2026-11-15 by the 31.3 / 31.4 / 31.5 specs** (0.83.1 above reads 0.84.0, L119). The
+order of record is row 5 and row 14 of [[plan-of-plans#queue]]; this is what the specs add:
+
+- **31.5's release A, then 31.3 → 31.4 → 31.1 → 31.6.** 31.3 before 31.4: both edit
+  `scripts/lint-gmd.sh`, and 31.3 builds the shared gate-tree helper the later tasks use. The
+  lead's `plan-31 D7` edit lands before 31.3's GREEN starts.
+- **31.4 and 31.6 are never in flight together:** both change `tools/gmd/lint.py`, which is
+  vendored from the upstream GMD repository
+  ([[task-31.4-retire-standing-warnings#overlap-31-6]]). 31.6's upstream commit is made on top
+  of 31.4's.
+- **31.5 is two releases.** Release A (the capture, the composite member filter, bug-256) ships
+  first, because its window is counted in prompts (400 to 800) and accrues while plan-29 and
+  the rest of plan-31 are built. The scorer is built during the window. Release B (the cuts)
+  follows the read of the bands (queue row 14).
+{#order-amended}
 
 ## Out of scope {#out-of-scope}
 
