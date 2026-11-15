@@ -86,7 +86,7 @@ rel: depends-on -> [[orchestration]]
 
 ## Post-mod list {#post-mod}
 
-Admitted after the mod transition, not before (each with why it waits):
+Admitted after the mod transition, not before (each with why it waits). **Every item here is re-evaluated against the mod design before it is built (L127): keep, re-spec onto the mod surface, merge, or drop.**
 
 - **Branch-aware GMD lint** (resolve links against the target branch ∪ `master`; bug-249's shape) —
   the code-span-then-wikilink workaround is cheap and rare.
@@ -196,6 +196,7 @@ the row here ([[orchestration#pop-truth]]). A row that is resolved and applied i
 |---|---|---|---|---|
 | L125 | 2026-11-15 | the user: "for p31, once bsd is happy they are approved" | plan-31's plan and task specs are **approved on ch-bsd MEH-only GO**, the MEHs folded before the merge; no separate user approval. Their `plan-31 D<n>` decisions are entered in [[#decisions]] first and take the architect's recommendation, **except** a decision that changes a store on disk (31.2's fate for the existing orphaned learned rows; any fleet re-derive or reingest 31.6 needs), which goes to the user ([[orchestration#release]] step 4) | plan-31 row; `plan-31-pre-mod-loose-ends.md` at merge |
 | L126 | 2026-11-15 | ch-bsd r1 of T0.1' (MEH-only 5, GO; [[bsd-t01-r1-fff91a8]]) | GO; mutations M1.1-M1.11 recorded by the reviewer. MEH-1: RED adds a chained-clone case run with `GIT_DIR`/`GIT_WORK_TREE` exported at an unrelated repo, plus M1.12 'drop the scrub' (must turn it red). MEH-2: the three gate-root helpers copy the resolver unconditionally, stale comment dropped. MEH-3: the mock-registry row states the current clone behaviour. MEH-4: the summary keeps `task-t0.1-skip-gate-memdir.md`; `#t0-1-files` is amended. MEH-5: anchored to stage 2, no fold now. The lead checks the fold (small MEHs, [[orchestration#task]] step 5); then merge `--no-ff` | T0.1' branch; `task-t0-suite-trust-sweep#t0-1-files` |
+| L127 | 2026-11-15 | the user: "all of the post-mod feature work needs to be re-evaluated to make sure they are still relevant to the design" | Every post-mod item ([[#post-mod]], plus the post-mod plans 16, 17, 18, 22 except 22.6 R4, 28, the frozen parts of 19, 21.3 / 21.6 / 21.7, 25.1b) is re-evaluated against the mod design before any is built: each gets **keep** (as specced), **re-spec** (onto the mod's surface), **merge** (into another item or a plan-24 task) or **drop**, with a one-line reason, entered here first. It runs with the plan-24 freshness revision, because that revision fixes the design it is measured against (Q33); until then no post-mod item is scheduled | [[#post-mod]] header; plan-24 revision brief |
 {#rulings-table}
 
 ### Plan decisions {#decisions}
