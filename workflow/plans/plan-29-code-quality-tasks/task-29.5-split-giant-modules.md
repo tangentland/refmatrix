@@ -28,7 +28,7 @@ metadata:
 > plan-29 D17 (the size default, with a sixth criterion); plan-29 D4 = (c) (a normalised derive
 > hash, in 29.2); `plan-review-fable D4` (a standing go that excludes this task's release);
 > `plan-review-fable-store D5` (duckdb 1.5.3 before baselines).
-> **Still open, the user's:** **plan-29 D23** (the learned rows at the merge, [[#decisions]]).
+> **plan-29 D23 decided (user, 2026-11-14, L113): (b) re-key via the line map**, op in task 29.7 ([[#decisions]]).
 > User gates: the window's start (the lead announces it; the user may hold it); **each phase's
 > merge into the dev tree, which is a store event** ([[#r9-store-event]]); this task's release,
 > which needs its own go; and plan-29 D23.
@@ -1009,7 +1009,7 @@ For `store.py` this is what every edit to `store.py` already does today under bu
      live slot. The query is R0 item 12's count query with the same `WHERE` clause and
      `SELECT *` in place of the count, so the export's row count must equal the count; R0
      writes both out in full. What the store loses is then still readable.
-3. **Decide the rows, before the merge** (plan-29 D23, the user's): re-key them to their new
+3. **The rows are re-keyed** (plan-29 D23 = (b), the user's, L113): re-key them to their new
    paths through a store op, or accept the loss as recorded in step 2. The merge does not
    start without the answer.
 4. **Take the watcher out.** The dev store's daemon is restarted without its file watcher (the
@@ -1027,8 +1027,10 @@ For `store.py` this is what every edit to `store.py` already does today under bu
    running and an empty change queue, read twice a minute apart (the status commands at the
    deployed version are written down by R0), and only then counts. Both counts, the time of
    each, the backup path and D23's answer go in the summary ([[#ac-15]]).
-7. If D23's answer is to re-key: the op runs here, from the map's line table, and the count
-   after it equals the count before.
+7. D23 is (b): task 29.7's op runs here (or at the point 29.7's spec orders it relative to the
+   post-commit sync and `purge_path`), from the map's line table; unplaceable lines fall back to
+   `cli/__init__.py` / `store.py` and are counted. The count after it equals the count before,
+   reported as mapped + fallback.
 {#r9-store-event-steps}
 
 #### Stamps under an unmapped pass name (only if R0 item 8 counts any) {#r9-restamp}
@@ -1324,7 +1326,7 @@ No spec under `workflow/plans/` is edited by this task: the citation and pin pas
 - **Changing the fork-safety re-exec** ([[#fact-argv]]). Running it as `-m` would put the
   current directory first on the daemon's import path; today's form does not. That is a
   behaviour question for another task, and the naming census makes today's form safe.
-- **Deciding plan-29 D23.** It is the user's.
+- **The re-key op itself.** It is task 29.7 (plan-29 D23 = (b), L113).
 - **Fixing bug-107.** It is open and is plan-22's; this task makes its cost at one merge visible
   and puts the choice to the user.
 {#out-of-scope-list}
@@ -1344,7 +1346,7 @@ L107 to L110); all in [[plan-review-2026-11-13#lead]]. The last row is open.
 | plan-29 D24 (this spec's) | accepted by the lead (ruling L107), recorded in ADR 0006; not put to the user | [[#fact-identity]], [[#ac-4]] |
 | the re-stamp (rulings L107, then L108) | L107 gave each fleet event its own re-stamp. **L108 superseded its 29.5 half:** the store split flips no pass, so this task has no re-stamp unless R0 item 8 counts a stamp under an unmapped pass name, and then never through `stamp_derive` | [[#fact-derive]], [[#r9-restamp]], [[#ac-17]] |
 | plan-29 D27 (29.2's) | (a), by the lead (ruling L109): pass-file edits ship in deploy B of 29.2 R7's release, whose closing step re-derives the affected passes on every store with `rmx reingest`, under its own go. Narrowed by L110: `consolidate.py` is not edited in deploy B | [[#r6]]: 16 declared pass-module rows are edited there, not here; they read `behind_code` only inside that release's window. The 6 `consolidate.py` rows are held; the compile scopes never flip |
-| **plan-29 D23** | **open**; asked at the store event with R0's count in hand; with a zero count it does not arise | [[#r9-store-event]] step 3 |
+| **plan-29 D23** | **decided (b), re-key via the line map** (user, 2026-11-14, L113); op in task 29.7; with a zero count it does not run | [[#r9-store-event]] steps 3 and 7 |
 {#user-decisions-table}
 
 ## Decisions taken in this spec {#decisions}
@@ -1376,7 +1378,7 @@ L107 to L110); all in [[plan-review-2026-11-13#lead]]. The last row is open.
     passes; then `verbs.py` alone is split here, in a phase 2b.
   - The alternatives that were not taken: (a) split all three in 29.5 whatever the criteria
     say; (b) split none and decide later.
-- **plan-29 D23 (open, for the user): the learned and protected rows keyed on `cli.py` and
+- **plan-29 D23 (decided (b), user 2026-11-14, L113; fallback to the namespace's top-level file for an unplaceable line; op in task 29.7): the learned and protected rows keyed on `cli.py` and
   `store.py` when a phase merges.**
   - **What happens with no decision:** bug-107. The rows are purged with the path, and their
     evidence is vacuumed.
@@ -1403,7 +1405,7 @@ L107 to L110); all in [[plan-review-2026-11-13#lead]]. The last row is open.
     reader depends on it (three readers, each sorted or keyed). Restoring the order by code
     would be new behaviour written only to satisfy a gate.
 - **plan-29 D19: `Store` is composed from mixins in flat sibling modules; `store` does not
-  become a package.**
+  become a package.** (Confirmed by the user, 2026-11-14, L113.)
   - **Why:** `refmatrix.store` stays a module with the same `__file__`, so the 15 module-level
     patches, the 27 path literals and the derive hash's "beside `store.__file__`" rule keep
     working. Method bodies move verbatim (`self.` calls are unaffected; there is no name
