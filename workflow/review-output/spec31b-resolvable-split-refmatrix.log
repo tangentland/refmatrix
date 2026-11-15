@@ -3,9 +3,9 @@ not: E (no entity of the learner's kind and that name): 42
 not: F (file not on disk): 254
 orphans: 30131
 resolvable: 29824
-resolvable, line holds the pattern (literal): 9634
-resolvable, line holds the pattern (regex only): 3011
-resolvable, line no longer holds the pattern: 17179
+resolvable, line holds the pattern (literal): 9635
+resolvable, line holds the pattern (regex only): 3012
+resolvable, line no longer holds the pattern: 17177
 resolvable rows equal to a row already attached to that entity: 9
 resolvable: 2697 (concept, entity) pairs on 407 files
 not resolvable by C: 2 file(s): src/refmatrix/cli.py 9; src/refmatrix/store.py 2

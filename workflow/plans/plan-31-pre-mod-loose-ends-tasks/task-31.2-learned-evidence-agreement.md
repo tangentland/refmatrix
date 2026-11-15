@@ -148,7 +148,7 @@ tree as it stands when the script runs (output
 | not resolvable: no entity of the learner's kind and that name (E) | 42 | 42 | `workflow/bullshit/last_run.log` 23, `pyproject.toml` 19 (files the ingest does not index) |
 | not resolvable: the file is not on disk (F) | 0 | 254 | `workflow/plan-review-2026-10-14.md` 207, `workflow/plan-review-2026-10-07.md` 47 |
 | **deleted with a manifest** | 53 | **307** | |
-| of the resolvable: the recorded line still holds the pattern | not split | 12,645 (literal 9,634, regex only 3,011) | the rest, 17,179, no longer hold it |
+| of the resolvable: the recorded line still holds the pattern | not split | 12,647 (literal 9,635, regex only 3,012) | the rest, 17,177, no longer hold it; these three counts are from the run of the committed log, taken later the same day |
 {#baseline-split-table}
 
 - **The split moves with the tree.** Between the two runs the dev tree's `master` removed
@@ -240,6 +240,19 @@ correct [[#layout]]'s file names in the summary. {#r0-body}
 them; the purge, `vacuum`, the replay and the census read them. A **learned file entity** is
 a `code` or `doc` entity with at least one learned evidence row, or one that is `protected`
 (today the same 405 rows, [[#baseline-learned-body]]). {#r1-body}
+
+- **The learner's kind rule is the third thing defined once** (ch-bsd r1 M12). The learner
+  decides `code` or `doc` from a literal suffix set of its own (`daemon.py:4598`), which is
+  not `ingest.CODE_EXTS`: `.sh`, for one, is code to the ingest and a doc to the learner.
+  [[#r7-rule]]'s condition E depends on that set, and `resolvable_split.py` copies it by
+  hand. The set moves into `edge_records.py` as `learner_kind(path)`; the learner, the
+  re-attach and the census script import it, and the script's copy goes at R0. The rule
+  itself is not changed here. {#r1-kind}
+- **A consequence that is already in the store:** all 8 `code` / `doc` pairs that share a
+  name are `.sh` files, a protected learner `doc` twin beside the ingest's `code` row. The
+  twin is a defect of its own and gets a registry row; the lead allocates the id. Condition E
+  matches the learner's twin, which is where a new learn of that file would write.
+  {#r1-twin}
 
 ### R2: a purge takes the evidence with the entity (I1) {#r2}
 
@@ -338,8 +351,12 @@ anything is deleted; then the purge runs as today, with [[#r2]]. {#r4-body}
   record: `{linkage, concept: {partition, kind, name, old_id} | null, dead_entity_id, file,
   line, span_end, detail, multiplicity, reason}`. It mirrors 22.2's `evidence_row` record,
   whose dead end is the concept; here the dead end is the entity. {#r4-orphan-record}
-- **No vectors file.** 22.2's manifest also saves the vector of each removed entity. The
-  vector of a file entity is derived from the file, and is not written here. {#r4-vectors}
+- **No vectors file, and the record says so.** 22.2's manifest also saves the vector of each
+  removed entity. The vector of a file entity is derived from the file, and is not written
+  here. Each `intent` record carries `vector: "not-saved: derived"` beside the row's
+  `vectors_updated_at`, so that 22.2's reader, when it exists, re-embeds a restored file
+  and does not read the absence as `vector_missing_at_intent`. ch-bsd accepted the
+  departure on that condition (r1 M13). {#r4-vectors}
 - **Logged:** one `learned_cleanup {partition, path, manifest, entities, links, evidence}`
   event, then the `tombstone`s. The replay needs only the `tombstone`s ([[#r6]]); the event is
   the record that the drop was audited. {#r4-event}
@@ -411,12 +428,16 @@ to their current entity; the rest are deleted with a manifest, never silently. {
 | # | Condition | Read from |
 |---|---|---|
 | C | its concept row exists and is a `query/` concept | `entities` by the row's `concept_id` |
-| E | exactly one entity has the concept's partition, the kind the learner gives the row's `file` (`code` for the learner's code suffixes, else `doc`) and `name` equal to the row's `file` | `entities`; the same `(kind, name)` a new learn of that file would write to |
 | F | the file is on disk | the row's `file`, against the project root unless absolute |
+| E | exactly one entity has the concept's partition, the kind the learner gives the row's `file` (`learner_kind`, [[#r1-kind]]) and `name` equal to the row's `file` | `entities`; the same `(kind, name)` a new learn of that file would write to |
 {#r7-rule}
 
 A row that fails is **not resolvable**; its reason is the first failing condition in the
-order C, E, F. {#r7-reason}
+order **C, F, E**. F is tested before E on purpose (ch-bsd r1 M16): `vacuum`'s step 2 purges
+the entities of files that are gone before step 3 runs, so in the product such a row has no
+entity either; with E first the dry run would say E where the census script, which reads a
+catalog copy and the disk, says F. With F first both give the same reason, and [[#ac-9]]
+compares the counts by reason, not only the totals. {#r7-reason}
 
 **Conditional on Q38** ([[plan-of-plans#questions]], open with the user): whether the line
 is part of "resolved". Both readings are written; the answer selects one and the other is
@@ -424,9 +445,10 @@ struck. {#r7-line}
 
 | | Q38 (a): matched to the current entity (the lead's recommendation) | Q38 (b): the line still holds the pattern |
 |---|---|---|
-| The rule | C, E, F | C, E, F and **L**: the recorded line of the current file holds the row's pattern, by the read path's own test (`store.verify_evidence_rows`) |
+| The rule | C, F, E | C, F, E and **L**: the recorded line of the current file holds the row's pattern, by the read path's own test (`store.verify_evidence_rows`) |
+| Is it testable as written | yes: three conditions on catalog rows and the disk | **not yet** (ch-bsd r1 M11). `verify_evidence_rows` takes `regex`, `ignore_case`, `word` and `variants` per call, and a learned row stores only its pattern, so L's flags are undefined. If (b) is chosen, the spec must first name the exact call and flags for a stored learned row, and `resolvable_split.py` must import that function; its count today (a literal match, else a regex match) is an estimate of L, not L |
 | A resolvable row whose line moved | re-attached, and left for the read path, which serves a learned row only where the line still matches, as it treats a row an edit kept ([[#r3]]) | not resolvable, reason L: to the manifest, then deleted |
-| Split on the second run | 29,824 re-attached, 307 deleted | 12,645 re-attached, 17,486 deleted |
+| Split on the second run | 29,824 re-attached, 307 deleted | 12,647 re-attached, 17,484 deleted |
 | `(concept, entity)` pairs restored | 2,697 | counted at R0 (not split here) |
 | What else changes | nothing | [[#r7-rule]] gains row L; AC-7 gains a row of class L; mutation "condition L dropped" is added; [[#r3]] is unchanged (an edit still keeps a learned row whose line moved, and the two rules then differ on purpose) |
 {#r7-line-table}
@@ -534,7 +556,8 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   gone), which is [[#fact-inbound-lost]]. {#ac-2}
 - **AC-3: a deleted file's learned rows are in a manifest before they go.** The fixture's
   deleted file, and a file that became ignored: a cleanup manifest exists whose `intent` record
-  holds the entity, the link and the evidence row by name, with a `commit` record after it
+  holds the entity, the link and the evidence row by name and the marker
+  `vector: "not-saved: derived"`, with a `commit` record after it
   ([[#r4-manifest]]); a `learned_cleanup` event names it; the rows
   are gone from the catalog; the sync report says `learned_manifested: 1`. **RED** at base
   (E line: no manifest; the rows are orphaned). {#ac-3}
@@ -582,7 +605,7 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
   `dump_catalog_to_log` and a rebuild. **RED** at base (E line: the changed file's purged row
   is back, 3 rows against 2, as in the probe). {#ac-8}
 - **AC-9: the dev store after its `vacuum`.** The run's `learned_reattached` and
-  `learned_deleted` equal the dry run's and `resolvable_split.py`'s on the copy taken just
+  `learned_deleted`, **by reason**, equal the dry run's and `resolvable_split.py`'s on the copy taken just
   before (29,824 and 307 on the second run of 2026-11-15, under Q38 (a); the tree will have
   moved again). On a fresh copy afterwards: evidence with either end gone 0; learned orphans
   0; `(concept, file)` pairs linked up by the split's pair count (2,697 on that run). The
@@ -591,7 +614,8 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 - **AC-10: the lock hold is bounded.** R0's timing, against its bands. **Measurement.**
   {#ac-10}
 - **AC-11: one definition.** A static test over the string constants of `src/refmatrix/*.py`
-  (docstrings excluded): the literal `learned from grep` occurs in `edge_records.py` only.
+  (docstrings excluded): the literal `learned from grep` occurs in `edge_records.py` only,
+  and so does the learner's code-suffix set ([[#r1-kind]]).
   A unit test: for patterns holding quotes, spaces and a `/`, the detail and the concept
   name the writer's helpers build satisfy `is_learned_evidence` and `is_learned_concept`.
   The `query/` prefix also appears in help text and is not counted. **RED** at base
@@ -653,6 +677,9 @@ and split in two, a file changed in place, one learned pattern on each. {#accept
 | 16 | re-attach binds to an entity of the same name in another partition | AC-7, with a two-partition leg |
 | 17 | condition C dropped (a row whose concept is gone is re-attached) | AC-7 |
 | 18 | condition E matches any `code` / `doc` entity of that name, not the learner's kind | AC-7, with a `doc` entity named like a `.py` file |
+| 30 | E is tested before F | AC-7 (the file-gone row's reason is E where F is asserted) |
+| 31 | the `intent` record omits the `vector` marker | AC-3, AC-15 |
+| 32 | the learner keeps its own suffix set | AC-11's static leg (the set occurs outside `edge_records.py`) |
 | 19 | the delete of the non-resolvable rows runs before the manifest write | AC-7's failing-delete leg |
 | 20 | the learned keep runs before the memory-anchor keep | AC-13's unreadable-metadata leg (a manifest is written) |
 | 21 | `-i` calls `purge_path` on whatever store it is handed | AC-14 |
@@ -753,6 +780,11 @@ The review read `a4d245a`; D14, the manifest form and bug-260's leg had already 
 | M7 "no restore command", two conditions | a test re-applies a manifest with existing store APIs; `vacuum`'s manifests fail closed, the counts manifest included | [[#ac-15]], [[#r5-derived]], [[#r7-delete]], [[#ac-6]], [[#ac-7]], mutations 27, 28 |
 | M8 AC-5's vacuum legs pass at base without concept-side evidence | every fixture carries evidence whose `concept_id` is the purged entity | [[#ac-5]] |
 | M9 "vacuum before any rebuild" is only a release note | the rebuild counts learned orphans and refuses without `--force` | [[#r9]], [[#ac-16]], mutation 29, [[#risk-rebuild-guard]] |
+| M11 (updated report) Q38 (b) is not testable as written | both readings kept; the table says what (b) would need first | [[#r7-line-table]] |
+| M12 the learner's kind rule is a second definition | `learner_kind` in `edge_records.py`; the `.sh` twin named for a registry row | [[#r1-kind]], [[#r1-twin]], [[#ac-11]], mutation 32 |
+| M13 the vectors departure, one condition | the `intent` record says the vector was not saved because it is derived | [[#r4-vectors]], [[#ac-3]], mutation 31 |
+| M14 Q39 withdrawn | folded at `9637f17` | [[#r3-invalidate]], [[#ac-14]] |
+| M16 the reason order | C, F, E in the rule and the script; AC-9 compares by reason | [[#r7-reason]], [[#ac-9]], mutation 30 |
 | M1 decisions not written as decided | D14 cited as decided; closures updated | header, [[#d14]] |
 | L136 (2) | bug-203 unconditional | [[#r3-invalidate]], [[#ac-14]], mutation 21 |
 | L134 (2), (4), (5) | folded at `da184bd` | [[#scope-22-6-body]], [[#r7-why]], [[#r4-vectors]] |
@@ -770,7 +802,7 @@ cites them and records none of its own. {#decisions-rule}
 - **Q38, open with the user** ([[plan-of-plans#questions]]): what "resolved" means. (a)
   matched to the current entity: 29,824 re-attached and 307 deleted on the second run
   (30,078 and 53 on the first, the numbers the question quotes). (b) the line must still hold
-  the pattern: 12,645 re-attached and 17,486 deleted (the question quotes 13,067 and 17,064,
+  the pattern: 12,647 re-attached and 17,484 deleted (the question quotes 13,067 and 17,064,
   taken before the line count was split by resolvable row). Both are written at
   [[#r7-line-table]]. {#q38}
 - **Ruling L136 (2):** Q39 is withdrawn. This task routes `rmx sync -i` to the writer

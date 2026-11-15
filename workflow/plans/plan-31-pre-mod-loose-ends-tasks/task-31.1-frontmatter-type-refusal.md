@@ -361,7 +361,10 @@ unless said otherwise. {#acceptance-intro}
   [[#tests-helper]]): one `[frontmatter-parity]` finding naming the file
   and "ingester only"; (iii) the repo scope: 0 findings. **RED** at base (E line: no such
   finding kind; (ii) returns nothing). (ii) is the must-fail input that proves the check can
-  fail ([[feedback_clean_corpus_hides_a_dead_gate]]). {#ac-10}
+  fail ([[feedback_clean_corpus_hides_a_dead_gate]]). The lint with its check removed is a
+  test double of the unit's dependency, and gets its own row in
+  `workflow/test_mock_registry.md` beside [[#r4-registry]]'s; the lead allocates the id
+  (ch-bsd r1 M15). {#ac-10}
 
 ## Must-fail mutations {#mutations}
 
@@ -491,6 +494,7 @@ The review read `a4d245a`; some findings were already folded at `d788602`.
 | M2 the non-UTF-8 count is measured; AC-5's fixture must sniff as GMD | the risk cites `unreadable` 0; the fixture's head is stated | [[#risk-louder]], [[#ac-5]] |
 | S3 / L139 the linter order | 31.4 → 31.1 → 31.6, each upstream commit on the previous | header, [[#r3-order]], [[#risk-upstream]] |
 | L133 M8 name 31.4's linter change | `--strict` and the `session/recall-state` enum line | [[#r3-order]] |
+| M15 (updated report) AC-10 (ii)'s lint double needs a mock-registry row | stated, for the lead to number | [[#ac-10]] |
 | L133 B2 the shared gate-tree helper | `tests/gmd_gate_tree.py`; no fourth copy | [[#tests-helper]], [[#ac-10]] |
 | bug-255, bug-258 (the lead; L132) | folded at `d788602` | [[#r3]], [[#r5]], [[#ac-7]], [[#ac-9]], [[#ac-10]] |
 {#rev-r1-table}
