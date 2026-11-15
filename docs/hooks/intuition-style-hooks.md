@@ -26,7 +26,7 @@ store somewhere in scope (the memory partition defaults to
 | `SessionStart` | `rmx -p intuition memory recall --session-start --json` | Inject the top-k recent memories at session boot |
 | `UserPromptSubmit` | `rmx memory recall --stdin-json --k 5 --json` | Pull memories matching the user's prompt (reads the hook's stdin JSON envelope natively) |
 | `PreCompact` | `rmx -p intuition memory recall --recent --since 1h --json` | Surface this session's recent observations before compaction |
-| `Stop` | `rmx focus summarize --promote --timeout 5` | Graduate the turn's STM digest to durable memory (bounded; a busy daemon skips loudly) |
+| `Stop` | `rmx focus summarize --promote --timeout 8` | Graduate the turn's STM digest to durable memory (bounded; a busy daemon skips loudly) |
 
 `--json` makes the output friendlier for piping into your prompt
 context; drop it for human-readable Rich tables.
@@ -126,7 +126,7 @@ observations intact.
 The generator emits three Stop entries: a foreground `rmx sync --flush-queue --async >/dev/null`
 (the daemon's ACK; it prints any sync error the daemon has recorded on stderr and exits 1, task
 26.2 r2 #b2-1), a `rmx focus hook --event say` capture of the assistant's last message into STM, and
-`rmx focus summarize --promote --timeout 5`, which condenses the session's STM (topics,
+`rmx focus summarize --promote --timeout 8`, which condenses the session's STM (topics,
 milestones, intent arc, top symbols) into a `session/digest` memory through the daemon —
 upserted by name, so it never grows the store. `--timeout 5` bounds the daemon write: on a busy
 daemon the hook fails loud and the next PreCompact / `rmx save-state` promote catches up

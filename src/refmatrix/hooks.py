@@ -294,9 +294,12 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                     # (feedback_save_state_includes_promote). Memory path
                     # → foreground, loud.
                     # bounded: 55 s live on a busy daemon (bsd-plan2-r2 #s-1);
-                    # past 5 s it fails loud and PreCompact/save-state catch up
+                    # past the bound it fails loud and PreCompact/save-state
+                    # catch up. 8 s, not 5 (the user, 2026-11-15): post-commit
+                    # GMD re-ingests held the writer past 5 s four times in six
+                    # minutes (bug-177 seen 3); the real fix is 23.1's queue.
                     *([{"type": "command",
-                        "command": HOOK_ENV + "rmx focus summarize --promote --timeout 5"}]
+                        "command": HOOK_ENV + "rmx focus summarize --promote --timeout 8"}]
                       if stop_promote else []),
                 ]}
             ],
