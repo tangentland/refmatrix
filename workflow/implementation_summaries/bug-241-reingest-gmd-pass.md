@@ -139,7 +139,8 @@ running", which tells an agent to start one and retry the same wrong call. {#bug
   same helper itself, before `_store(write=True)`, and renders it as one `Error:` line, exit 1.
   `rmx ingest <dir>` and `rmx_ingest(path=<dir>)` are unchanged. {#bug-240-cli}
 - **Not done (flag).** A path that does not exist still reaches the daemon from the verb/op routes
-  unchanged (the CLI refuses it via click). Outside bug-240's ruling; noted for the lead.
+  unchanged (the CLI refuses it via click). Outside bug-240's ruling; the lead logs it as a
+  separate bug, not in 0.83.1.
   {#bug-240-not-done}
 
 ### Runs and mutations {#bug-240-runs}
