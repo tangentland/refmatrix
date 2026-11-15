@@ -1,0 +1,44 @@
+...................................F.....                                [100%]
+=================================== FAILURES ===================================
+___________ test_t0_8_an_end_row_never_pairs_with_a_later_query_row ____________
+
+R = PosixPath('/private/tmp/rmx-_0mlvvm0/r/36/.refmatrix')
+
+    def test_t0_8_an_end_row_never_pairs_with_a_later_query_row(R):
+        """ch-bsd r1 S1 (d), ruling L143 (the window is "after only", Q1 answered from 613 real
+        pairs: 610 at 0 s, 3 at 1 s, none with the end row first). Call X died before `log_query`
+        exited: an end row at 10:05:00 and no query row. Call Y, same key, was killed after
+        `log_query` exited (a hook timeout): a query row at 10:05:01 and no end row. They are two
+        calls; X is counted on the cli.log leg. A symmetric window (M8.5) pairs X's end row with Y's
+        query row and X vanishes."""
+        cli = _end(R, "2026-10-05T10:05:00", _PROMPT_ARGV, "hook")
+        q = [_recall_qrow(R, "2026-10-05T10:05:01", invocation="hook", stdin_json=True)]
+        out = _run_logs(R, cli, q)
+        c = _cli_counters(out)
+>       assert (c.get("end_rows"), c.get("paired_with_query_log"), c.get("counted")) == (1, 0, 1), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=1 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 1
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=hook
+E             memory_recall prompt_recall: 1 p50=40ms p95=40ms
+E         outcomes:
+E           prompt_recall: ok=1 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory_recall end_rows=1 paired_with_query_log=1 counted=0 ts_unparseable=0 query_ts_unparseable=0 internal_excluded=0 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert (1, 1, 0) == (1, 0, 1)
+E         
+E         At index 1 diff: 1 != 0
+E         Use -v to get more diff
+
+tests/test_task21_1_agent_usage_report.py:686: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_agent_usage_report.py::test_t0_8_an_end_row_never_pairs_with_a_later_query_row
+1 failed, 40 passed in 1.96s

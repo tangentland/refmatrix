@@ -141,3 +141,48 @@ synthetic AC-8.2 assertions are not reached at base. Their base E line (`chan('p
 is unchanged. The M8.2 run shows the synthetic block still fails on its own when the fixture
 block passes. Revised mutation map: M8.1 → both AC-6 nodes + the new node at `:551`; M8.2 → the
 new node at `:601`.
+
+## Ruling L143 fold: ch-bsd r1 S1 / S2 {#l143}
+
+Synced to GREEN `e314b19` (ff-only), then added six nodes (commit `aca629c`). Like the
+GREEN-tip fold they follow, they pass at `e314b19`. Each is proven by its mutation instead.
+
+rel: amends -> [[#mutations]] {ruling: "L143"}
+
+| Node | Fixture |
+|------|---------|
+| `test_t0_8_a_same_key_burst_pairs_one_to_one_earliest_first` | 7 prompt_recall hook calls, one cwd: query rows 00,00,01,01,02,02 (the live shape: 6 same-key rows each within 1 s of the previous), end rows 00,01,01,02,02,03 + a lost-query call at 03 → `end_rows=7 paired=6 counted=1` |
+| `test_t0_8_an_end_row_never_pairs_with_a_later_query_row` | cli-only call at :00, query-only call (same key) at :01 → `1 0 1` |
+| `test_t0_8_the_pairing_key_holds_cwd_invocation_and_channel[cwd/invocation/channel]` | query-only call A, cli-only call B 1 s later, differing only in the one component → `1 0 1` |
+| `test_t0_8_cli_log_counters_internal_and_unparseable_ts` | agent recall + `source=internal` recall + prompt_recall end row with `ts …+99:99`; one session_start query row with a bad `ts` → `internal_excluded=1 ts_unparseable=1 query_ts_unparseable=1 end_rows=2 counted=2`; prompt_recall line 1; recall line 1, no `internal=` |
+| `test_t0_8_cli_log_counters_with_include_internal` | the same store, `--include-internal` → `end_rows=3 counted=3 internal_excluded=0`, both ts counters 1; recall line `2 … agent=1 internal=1` |
+
+Runs (each `lockf`-wrapped, `timeout 300`, file only, logs in `workflow/review-output/t0.8/s1s2/`):
+- at `e314b19` + tests (`head.log`): exit 0, 41 collected, 41 passed;
+- after the loop (`after-restore.log`): exit 0, 41 passed.
+
+Each mutation was applied by an exact-anchor script (each anchor counted 1) and restored with
+`git checkout -- src/refmatrix/telemetry.py` in its own command. After the loop, `__pycache__` was
+cleared under `src/` and `tests/`, and `git diff --stat` was empty. None hung.
+
+| Mutation | Change | Exit / result | Node red | E line |
+|----------|--------|---------------|----------|--------|
+| M8.5 | window symmetric: `abs(t - qt) <= 1` | 1 / 1 failed 40 passed | `…never_pairs_with_a_later_query_row` | `:686` `E assert (1, 1, 0) == (1, 0, 1)` |
+| M8.6 | one-to-one removed: `del times[hit]` → `pass` | 1 / 1 failed 40 passed | `…same_key_burst…` | `:671` `E assert (7, 7, 0) == (7, 6, 1)` |
+| M8.13 | latest eligible matched (`reversed(list(enumerate(…)))`) | 1 / 1 failed 40 passed | `…same_key_burst…` | `:671` `E assert (7, 5, 2) == (7, 6, 1)` |
+| M8.14 | cwd dropped from the key, both sides | 1 / 1 failed 40 passed | `…key_holds…[cwd]` | `:713` `E assert (1, 1, 0) == (1, 0, 1)` |
+| M8.15 | invocation dropped, both sides | 1 / 1 failed 40 passed | `…key_holds…[invocation]` | `:713` same |
+| M8.16 | channel dropped, both sides | 1 / 1 failed 40 passed | `…key_holds…[channel]` | `:713` same |
+| M8.7 | `internal_excluded={0}` | 1 / 1 failed 40 passed | `…counters_internal_and_unparseable_ts` | `:743` `{'internal_excluded': 0} != {'internal_excluded': 1}` |
+| M8.8 | internal filter removed (`if False:`) | 1 / 1 failed 40 passed | `…counters_internal_and_unparseable_ts` | `:743` `{'counted': 3} != {'counted': 2}`, `{'internal_excluded': 0} != 1`, `{'end_rows': 3} != 2` |
+| M8.9 | bad-ts end row dropped (neither counted nor kept) | 1 / 2 failed 39 passed | both counter nodes | `:743` `{'ts_unparseable': 0} != 1`, `{'counted': 1} != 2`; `:760` `{'counted': 2} != 3` |
+| M8.9q | bad-ts query row skipped uncounted (`q_bad_ts += 1` removed) | 1 / 2 failed 39 passed | both counter nodes | `:743` and `:760` `{'query_ts_unparseable': 0} != {'query_ts_unparseable': 1}` |
+
+The S2 nodes pin GREEN's line shape (`cli.log: memory_recall end_rows=… paired_with_query_log=…
+counted=… ts_unparseable=… query_ts_unparseable=… internal_excluded=…` and
+`  cli.log memory_recall <channel>: <n> invocation <inv>=<n>`). The exact counters are what
+ch-bsd S2 asked for. A later reformat of that line must update these parsers.
+
+**Not pinned, on purpose:** a bad-`ts` query row that HAS an end row. The docstring says that
+call may be counted on both legs. Pinning it would freeze a double count, so the S2 fixture's
+bad query row has no end row.
