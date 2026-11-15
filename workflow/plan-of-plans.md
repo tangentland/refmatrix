@@ -482,10 +482,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q49**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q50**. Open: Q49. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q49 | 2026-11-15 | The user: isolated agents take only small changes, but "we tend to message agents quite a bit with addendums … one option is using the hub daemons and the bus". The hub bus already pushes into a live Claude Code session as native context (MCP `notifications/claude/channel`, memory `project_claude_channel_push_works`). The obstacle: `~/.refmatrix/hub.sock` is `srwxr-xr-x`, so `rmxtestN` cannot connect, and opening it would expose every hub op (global-memory writes included). Unknown: does headless `claude -p` receive channel pushes mid-run? | (a) **probe, then a restricted bus socket (recommended):** first a read-only probe of whether `claude -p` and an interactive `claude` (under `screen`, as `rmxtest1`) receive a channel push mid-run; then a small task: the hub serves a second socket, `bus.sock`, carrying ONLY bus ops, with the caller identified by its peer uid (`getpeereid`), so `rmxtestN` reads only `agent:<its-name>` and publishes only to `lead`; the agents' refmatrix MCP server points at it with channels on; the lead publishes addendums with `rmx_bus_pub`; (b) a file inbox now, no hub change: the lead drops addendums in the agent's `inbox/` (via sudo) and the brief tells the agent to read it after each commit and each test run (polling, works with `-p` today); (c) no addendums to isolated agents: a changed brief means a fresh run | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
