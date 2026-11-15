@@ -1,0 +1,29 @@
+# sha eb9ae87 (RED fold on GREEN 1121b4e), clone /Volumes/littlebig/refmatrix-t02-red2 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug241_r2_l112.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 1 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 9 items
+
+tests/test_bug241_r2_l112.py .........                                   [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[metadata-code+docs: markdown/gmd]
+PASSED tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[call_graph-code+docs: markdown/gmd]
+PASSED tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[none-code+docs: tldr/tree]
+PASSED tests/test_bug241_r2_l112.py::test_s2_the_ingest_op_result_counts_a_failed_gmd_pass[metadata]
+PASSED tests/test_bug241_r2_l112.py::test_s2_the_ingest_op_result_counts_a_failed_gmd_pass[none]
+PASSED tests/test_bug241_r2_l112.py::test_s2_rmx_ingest_fails_loudly_naming_the_gmd_pass[daemon]
+PASSED tests/test_bug241_r2_l112.py::test_s2_rmx_ingest_fails_loudly_naming_the_gmd_pass[in_process]
+PASSED tests/test_bug241_r2_l112.py::test_s2_guard_a_clean_tree_ingests_quietly
+PASSED tests/test_bug241_r2_l112.py::test_m1_a_file_target_is_refused_naming_sync_while_the_daemon_is_busy
+============================== 9 passed in 33.04s ==============================
+# exit 0
