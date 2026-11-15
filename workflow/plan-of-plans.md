@@ -472,10 +472,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q43**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q44**. Open: Q43. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q43 | 2026-11-15 | Act on [[test-suite-audit-2026-11-15]]? | (a) **after T0.2 and T0.3 merge (they edit the same test files), two small-fix agents:** one deletes the 7 detail-pinning source-text tests and the 2 confirmed duplicates and trims 3 assertions; one makes the waits cheap (short test-daemon shutdown, test-sized budgets keeping one real-default test each, gated small ingest job instead of 350 docs, modelsrv probe), ~60 → ~45 min release suite (recommended); (b) deletions only; (c) neither now | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
