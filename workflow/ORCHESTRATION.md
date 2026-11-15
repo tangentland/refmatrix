@@ -133,6 +133,11 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 
 ## 5. Lead discipline {#discipline}
 
+- **The POP is the source of truth** (the user, 2026-11-15; consolidation finding F1). Every
+  commit that changes state updates [[plan-of-plans]] in the same commit: a ruling that changes
+  order or scope, an admission or a move to post-mod, a merge, a release, a status flip. Review
+  docs, `L<n>` rows and triage files are evidence the POP row links to; they never hold state the
+  POP lacks. A plan or task file's `metadata.status` follows the POP, not the other way. {#pop-truth}
 - **Measure before deciding**, read-only: copy `.refmatrix/catalog.read.duckdb` to the
   scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`; never `Store()`
   on a live slot. State go/no-go bands before measuring. {#measure}

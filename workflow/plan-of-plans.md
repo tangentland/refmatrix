@@ -9,7 +9,7 @@ metadata:
 
 # Plan of Plans — sequenced execution order + status {#root}
 
-**Single source of truth for what to implement next, and the status of every plan.** All plans
+**Single source of truth for what to implement next, and the status of every plan** (the user, 2026-11-15: "the source of truth must be the POP"; every state change updates this file in the same commit, [[orchestration#pop-truth]]). All plans
 live in `workflow/plans/` and never move — a plan's lifecycle is tracked by the `status` field in
 its GMD frontmatter (`metadata.status`), mirrored in the table below. `@ch-gap-master` keeps this
 current.
