@@ -1,7 +1,7 @@
 ---
 gmd: "0.1"
 id: red-report-31.5-s0-capture
-title: "RED report: task 31.5 S0, the injection capture (release A) and bug-256"
+title: "RED report: task 31.5 S0, the injection capture (release A), bug-256 and the R2.0 member filter"
 tags: [report, red, plan-31, task-31.5, scan-prompt, injection-capture, bug-256]
 metadata:
   node_type: report
@@ -10,15 +10,17 @@ metadata:
   base: 606c0c8
 ---
 
-# RED report: task 31.5 S0, the injection capture (release A) and bug-256 {#root}
+# RED report: task 31.5 S0, the injection capture (release A), bug-256 and the R2.0 member filter {#root}
 
-The RED tests for 31.5 step 0 are in `tests/test_injection_capture.py` on branch
+The RED tests for 31.5 step 0 are in `tests/test_injection_capture.py`, and those for R2.0
+(AC-2.0, release A, added on the lead's instruction) in `tests/test_stm_composite_members.py`, on branch
 `task-31.5-s0-capture` in `/Volumes/littlebig/refmatrix-315`, based on `606c0c8`. Nothing in
 `src/` is touched, and no fix is sketched anywhere. No mock or patch is used.
 
 rel: specified-by -> [[task-31.5-scan-prompt-block-measure#s0]]
 rel: depends-on -> [[task-31.5-scan-prompt-block-measure#s0-acceptance]]
 rel: depends-on -> [[task-31.5-scan-prompt-block-measure#mutations]]
+rel: specified-by -> [[task-31.5-scan-prompt-block-measure#ac-2-0]]
 rel: related-to -> [[bug_registry#registry]]
 
 ## Runs {#runs}
@@ -28,6 +30,7 @@ rel: related-to -> [[bug_registry#registry]]
 | `red-base.log` | `pytest tests/test_injection_capture.py -q -rA` | 1 | 32 | 27 failed, 5 passed |
 | `red-base-ac08.log` | the same, `-k prompt_text_appears` (after the AC-0.8 fixture fix) | 1 | 32 (31 deselected) | 1 failed |
 | `red-base-r1.log` | the first full run, before the AC-0.8 fixture fix | 1 | 32 | 27 failed, 5 passed (AC-0.8 failed on its own fixture check) |
+| `red-base-ac20.log` | `pytest tests/test_stm_composite_members.py -q -rA` | 1 | 4 | 3 failed, 1 passed |
 | `guard-ac06-existing-base.log` | `tests/test_scanorder_r2_l120.py::test_s3_a_composite_the_cap_dropped_is_delivered_when_there_is_room` | 0 | 1 | 1 passed |
 | `probe.log` | an uncommitted probe file (deleted), kept for the defect below | 0 | 1 | 1 passed |
 {#runs-table}
@@ -75,6 +78,10 @@ The query ids and tmp paths are shortened below. {#nodes-lead}
 | 0.18 | `test_the_capture_switch_leaves_telemetry_on[marker]` | RED | the same |
 | 0.18 | `test_no_telemetry_implies_no_capture` | RED | the same |
 | 0.18 | `test_the_mode_file_selects_the_path` | RED | `no capture record for query_id <qid> …` |
+| 2.0 | `test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held]` | RED | ``store holds `question`: True; printed members ['scan-prompt', 'store.py', 'the', 'buigger', 'question'], expected ['question', 'scan-prompt', 'store.py'] …`` |
+| 2.0 | `test_stopwords_and_unknown_plain_words_are_not_printed_as_members[not-held]` | RED | ``store holds `question`: False; printed members ['scan-prompt', 'store.py', 'the', 'buigger', 'question'], expected ['scan-prompt', 'store.py'] …`` |
+| 2.0 | `test_a_topic_with_no_printable_member_is_not_emitted` | RED | `a topic with no printable member was emitted: … ## Topic 1: the … Members: the, buigger, and, zorbleplain` |
+| 2.0 | `test_the_focus_graph_is_unchanged_by_the_filter` | green (characterization) | — |
 | R0.5 step 3 | `test_the_cost_prompt_set_is_forty_synthetic_prompts` | RED | `…/tests/fixtures/injection_capture/prompts.txt does not exist (spec #files: new in release A)` |
 {#nodes-table}
 
@@ -105,6 +112,7 @@ now satisfied at base, and the node fails on the missing record. {#nodes-fixture
 | M0-12 step 1: switch ignored; step 2: it also disables the `query.log` row | `test_the_capture_switch_leaves_telemetry_on[env]`, `[marker]` (no dir; one more `query.log` row; the call's events) |
 | M0-13 the verb's pack branch writes a record | `test_a_verb_recall_with_pack_writes_no_capture_record` |
 | M0-14 step 1: `names` builds the skipped bundles | `test_names_mode_records_later_bundles_as_not_built` (`capture_built == 0`; `not_built` present) |
+| M2-1 step 1: keep stoplist words; step 2: keep unknown plain words | both `test_stopwords_and_unknown_plain_words_are_not_printed_as_members` params (`the`; `buigger`, and `question` when not held) and `test_a_topic_with_no_printable_member_is_not_emitted` |
 | M0-14 step 2: the mode file ignored | `test_the_mode_file_selects_the_path`. Both words are written to the file, so neither release default can hide an ignored file |
 {#mutations-table}
 
@@ -194,9 +202,13 @@ around it.
 
 ## Not followable as written {#not-followable}
 
-- **AC-2.0, the member filter (R2.0), ships in release A** per `#files-release`, but it is in
-  S2, which the brief excluded. I asked the lead and have no answer yet, so its RED
-  (`tests/test_stm_composite_members.py`, M2-1) is not written.
+- **AC-2.0's empty-topic case cannot reach the filter through the public path.** The 0.84.0
+  grounded-topic gate (`_has_grounded_member`) runs first, and every member it accepts is
+  identifier-shaped, so it is printable. `test_a_topic_with_no_printable_member_is_not_emitted`
+  therefore calls `composite._render_gmd` directly, which is where `#census` puts the filter. A
+  GREEN that put the filter anywhere else would fail this test while behaving correctly.
+  Whether a composite with zero emitted topics prints its header at all is not specified, and
+  is not pinned.
 - **AC-0.12, 0.13, 0.14, 0.17** are gates and measurements. They have no RED.
 - **AC-0.16's input.** A corrupt focus graph works only when the call carries no session; see
   the defect below. The test runs with no session, so only the composite reads the ring.
