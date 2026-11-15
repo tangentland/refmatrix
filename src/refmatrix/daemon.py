@@ -6229,10 +6229,15 @@ def _op_embed(d: Daemon, args: dict) -> dict:
 
     Routes through bg_pool (CPU-heavy under the model). Honors
     cooperative shutdown via `d._shutdown_event`."""
-    try:
-        emb = d._embedder()
-    except ImportError as exc:
-        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+    # Once the stop began, `_model_client` refuses to build a model client (bug-272), so
+    # no embedder is asked for: phase 2 of the locked op returns `cancelled` with the
+    # pending row count before it would touch one.
+    emb = None
+    if not d._stop_began():
+        try:
+            emb = d._embedder()
+        except ImportError as exc:
+            return {"ok": False, "error": f"dense extra not installed: {exc}"}
     from refmatrix import embedder as embmod
 
     kinds = args.get("kinds") or ["code", "doc", "concept", "memory"]

@@ -758,10 +758,15 @@ def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
             #
             # `on_fallback` runs FIRST (ch-bsd t03 r1 M4, ruling L177, 2026-11-15): the
             # daemon's refuses the fallback once its stop began (bug-269) by raising, and
-            # the warning below claimed a load that then never happened. A refusal now
-            # leaves no "falling back" line; the caller logs the refusal instead.
+            # the warning below claimed a load that then never happened. A refusal is said
+            # with its cause and no load claim, then re-raised.
             if on_fallback is not None:
-                on_fallback()
+                try:
+                    on_fallback()
+                except Exception as refusal:  # noqa: BLE001 — said, then re-raised
+                    warn(f"subprocess embedder unavailable ({exc!r}); no in-process "
+                         f"fallback: {refusal}")
+                    raise
             warn(f"subprocess embedder unavailable ({exc!r}); falling back to in-process "
                  "model -- this process now carries the model's RSS. Set "
                  "RMX_EMBED_SUBPROC=0 to silence this, or investigate the spawn failure.")

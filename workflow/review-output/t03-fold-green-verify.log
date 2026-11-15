@@ -1,0 +1,331 @@
+# mini-lane slot=rmxtest1 sha=1bb7e9d3f2e2284ac08ea53ef771d2964fd88eb9 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 14:18:56 load={ 3.00 3.04 3.10 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-fold-green-verify.Vi5Y/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+.....................................................F.................. [ 22%]
+.............................FF.............s........................... [ 25%]
+........................................................................ [ 28%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 56%]
+........................................................................ [ 59%]
+........................................................................ [ 62%]
+........................................................................ [ 65%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 82%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................................................ [ 93%]
+........................................................................ [ 96%]
+........................................................................ [ 99%]
+.....................                                                    [100%]SkipGate: 1 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_declared_python_floor.py::test_every_src_module_compiles_on_the_declared_floor: Skipped: no python3.10 on this machine — the declared floor cannot be checked here. This skip is the finding: install it, or raise requires-python to a version that is checked.
+
+=================================== FAILURES ===================================
+_______________________ test_op_embed_cooperative_cancel _______________________
+
+root = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-36/test_op_embed_cooperative_canc0/.refmatrix')
+
+    def shared_embedder(root, *, remote: "Callable[[], object] | None" = None,
+                        log: "Callable[[str], None] | None" = None,
+                        on_fallback: "Callable[[], None] | None" = None):
+        """THE embedder accessor (task 3.7 #fam-graph-read-recall). Returns a loaded embedder
+        for the store at `root`: by default the out-of-process worker (the hub's shared worker
+        when it is up, else a private one), else the in-process model.
+    
+        `Daemon._embedder` passes its own `remote` builder (over its cached worker client),
+        `log` and `on_fallback` (which drops its private worker); a daemonless caller — the
+        verb's C4a branch — passes none and gets a worker client of its own, closed at exit.
+        A daemonless caller whose worker could not serve gets ONE cached in-process model for
+        as long as that client stays the process's choice (bug-173, remedy r4,
+        `_load_process_inproc_standin`), never a fresh load per call.
+        Raises ImportError when the [dense] extra is missing; callers surface that cleanly."""
+        import logging
+    
+        from refmatrix.subproc import subproc_embed_enabled
+        say = log or logging.getLogger(__name__).info
+        # What the operator must see goes out at WARNING when nothing was injected (remedy r3,
+        # ch-bsd r2 #m-1): `rmx mcp` and the CLI configure no logging, and Python's lastResort
+        # handler prints WARNING and above to stderr, as for `verbs.memory_partition`'s notice
+        # and `embedder`'s degraded-extraction line. At INFO the rebuild and the in-process
+        # fallback reached no one. An injected `log` (the daemon's file) gets both lines.
+        warn = log or logging.getLogger(__name__).warning
+        if subproc_embed_enabled():
+            client = None
+            try:
+                if remote is not None:
+>                   e = remote()
+                        ^^^^^^^^
+
+src/refmatrix/recall.py:739: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/daemon.py:950: in <lambda>
+    e = recall_mod.shared_embedder(self.root, remote=lambda: self._remote_embedder(),
+                                                             ^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/daemon.py:960: in _remote_embedder
+    return remote_embedder(self._model_client("embed"))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.daemon.Daemon object at 0x10e6eb8c0>, role = 'embed'
+
+    def _model_client(self, role: str):
+        """Return a client for `role` — the hub's shared worker when one is
+        listening, otherwise a private worker of our own.
+    
+        The hub hosts one embedder and one reranker for the whole fleet
+        because the models are identical and only the stores differ; seven
+        daemons each holding both was ~6.5 GB to serve one person typing in
+        one project. Falling back to a private worker rather than failing is
+        the rule that keeps the hub from becoming a single point of failure
+        for every store's dense retrieval.
+        """
+        attr = "_embed_worker" if role == "embed" else "_rerank_worker"
+        with self._worker_lock:
+            existing = getattr(self, attr, None)
+            if existing is not None:
+                return existing
+            from refmatrix.recall import new_model_client
+            client = new_model_client(role, log=self._log, stderr=self.log_fh)
+            setattr(self, attr, client)
+        if self._stop_began():
+            # bug-272 (ch-bsd t03 r1 M1, ruling L177, 2026-11-15): serve_forever sets
+            # `_shutdown_event` BEFORE `_close_workers` reads these slots, and
+            # `new_model_client` can take up to PROBE_TIMEOUT_S on a mute hub. So either
+            # `_close_workers` read the slot after this assignment and retires the client,
+            # or the event was already set when this check ran: no client built across a
+            # stop serves. Retired (not closed), it refuses every call, so none can spawn
+            # a model process into the stopping daemon; the slot keeps it so later callers
+            # get the same refusal instead of another hub probe.
+            retire = getattr(client, "retire", None)
+            if retire is not None:
+                retire(timeout=2.0, abandon_in_flight=True)
+            else:
+                client.close(timeout=2.0)
+>           raise RuntimeError(f"daemon stopping: no new {role} model client")
+E           RuntimeError: daemon stopping: no new embed model client
+
+src/refmatrix/daemon.py:995: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-36/test_op_embed_cooperative_canc0')
+
+    def test_op_embed_cooperative_cancel(tmp_path):
+        from refmatrix.daemon import _op_embed
+    
+        d = _make_daemon(tmp_path)
+        s = d.store
+        for i in range(3):
+            s.upsert_entity(kind="code", name=f"f{i}.py", tldr=f"file {i}")
+        d._shutdown_event.set()
+>       result = _op_embed(d, {"kinds": ["code"]})
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_daemon_dense_ops.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/daemon.py:6233: in _op_embed
+    emb = d._embedder()
+          ^^^^^^^^^^^^^
+src/refmatrix/daemon.py:950: in _embedder
+    e = recall_mod.shared_embedder(self.root, remote=lambda: self._remote_embedder(),
+src/refmatrix/recall.py:764: in shared_embedder
+    on_fallback()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _drop_private_worker() -> None:
+        if self._stop_began():
+            # bug-269: the stop abandoned the worker's load (`_close_workers`);
+            # loading the model in-process now would put it in a stopping daemon.
+>           raise RuntimeError("daemon stopping: no in-process embedder fallback")
+E           RuntimeError: daemon stopping: no in-process embedder fallback
+
+src/refmatrix/daemon.py:941: RuntimeError
+_____ test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-36/test_close_workers_does_not_wa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e52baf0>
+
+    def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_path, monkeypatch):
+        """bug-278 (ch-bsd t03 r1 B1). With the hub up, `_embed_worker` is a `SharedWorkerClient`;
+        its `close()` takes `_lock`, which `call()` holds through send/recv, so a stop waited for the
+        in-flight call's own timeout (SHARED_OP_TIMEOUT_S = 45 s per role in production). Here the
+        call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call may fail
+        (the client was abandoned) but not by its own TimeoutError, and an abandoned client must not
+        reconnect to the hub."""
+        from refmatrix import modelsrv
+        CALL_TIMEOUT_S = 20.0
+        short = tempfile.mkdtemp(prefix="sh", dir=os.environ.get("RMX_SANDBOX_ROOT") or None)
+        sock = os.path.join(short, "m.sock")
+        monkeypatch.setenv("RMX_MODEL_SOCK", sock)
+        hub = _MuteHub(sock)
+        d = _make_daemon(tmp_path)
+        c = modelsrv.SharedWorkerClient("embed", timeout=CALL_TIMEOUT_S)
+        d._embed_worker, d._rerank_worker = c, None
+        events: list = []
+    
+        def inflight():
+            try:
+                c.call("embed", {"texts": ["x"]}, timeout=CALL_TIMEOUT_S)
+                events.append(("call", "returned"))
+            except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+                events.append(("call", type(exc).__name__))
+    
+        th = threading.Thread(target=inflight, daemon=True)
+        th.start()
+        try:
+            assert hub.got_request.wait(_GUARD_S), "the in-flight call never reached the hub"
+            closer = threading.Thread(target=lambda: (d._close_workers(),
+                                                      events.append(("close", "returned"))),
+                                      daemon=True)
+            closer.start()
+            closer.join(_GUARD_S)
+            th.join(_GUARD_S)
+            assert not closer.is_alive() and not th.is_alive(), f"hang guard: {events}"
+            call_end = dict(events)["call"]
+>           assert call_end != "TimeoutError", (
+                f"bug-278: the stop waited out the in-flight shared call: it ended by its own "
+                f"TimeoutError ({CALL_TIMEOUT_S:.0f} s) and only then did _close_workers return; "
+                f"order {events}")
+E               AssertionError: bug-278: the stop waited out the in-flight shared call: it ended by its own TimeoutError (20 s) and only then did _close_workers return; order [('call', 'TimeoutError'), ('close', 'returned')]
+E               assert 'TimeoutError' != 'TimeoutError'
+
+tests/test_daemon_shutdown.py:270: AssertionError
+_______________ test_a_stop_during_warmup_abandons_the_held_load _______________
+
+    def test_a_stop_during_warmup_abandons_the_held_load():
+        """bug-269 (ruling L161), with ch-bsd t03 r1 S1/S2 folded in. A real sandbox daemon whose
+        embed worker's cold load is held open; the stop op is sent during the hold. Outcomes:
+        the daemon exits while the load is still held; the held worker is already dead then (the
+        stop killed it: M3); this launch spawned exactly one embed worker and the warm-up hit
+        `not respawning` (the retired flag: M4); the reranker warm-up was skipped and never spawned
+        (M5); the in-process embedder fallback refused and loaded nothing (M6)."""
+        from tests import task21_1_support as h
+        root = Path(os.environ["REFMATRIX_ROOT"])
+        hold = root.parent / "t269-hold"
+        hold.mkdir()
+        pre = root.parent / "t269_preload.py"
+        pre.write_text(textwrap.dedent(_PRELOAD))
+        d = h.SandboxDaemon(root, RMX_SANDBOX_PRELOAD=str(pre), T269_HOLD_DIR=str(hold),
+                            T269_HOLD_S=str(_HOLD_S))
+    
+        def log() -> str:
+            return (root / "rmxd.log").read_bytes()[d.log_offset:].decode(errors="replace")
+    
+        def wait(pred, what):
+            end = time.monotonic() + _GUARD_S
+            while time.monotonic() < end:
+                if pred():
+                    return
+                time.sleep(0.05)
+            raise AssertionError(f"hang guard: {what}; daemon rc={d.proc.poll()}; log:\n{log()}")
+    
+        try:
+            wait(lambda: (hold / "held").exists(), "the embed worker never entered its held load")
+            held_pid = int((hold / "held").read_text())
+            assert d.proc.poll() is None, "the daemon exited before the stop was sent"
+            dm.call(root, "stop", {}, timeout=2.0, retries=0)
+            wait(lambda: d.proc.poll() is not None or (hold / "released").exists(),
+                 "neither the daemon exit nor the end of the hold")
+            exited_first = d.proc.poll() is not None and not (hold / "released").exists()
+            held_dead = not _pid_alive(held_pid)
+            if not exited_first:
+                wait(lambda: d.proc.poll() is not None, "the daemon never exited after the hold")
+            text = log()
+            assert exited_first, (
+                f"bug-269: the stop waited out the warm-up: the held load was released (after the "
+                f"{_HOLD_S:.0f} s hold) before the daemon exited; log:\n{text}")
+            assert held_dead, (
+                f"the stop left the held embed worker pid={held_pid} alive (it was not killed); "
+                f"log:\n{text}")
+>           assert text.count("worker[embed] spawned") == 1 and "not respawning" in text, (
+                f"the abandoned embed client respawned, or its holder never saw it retired; "
+                f"log:\n{text}")
+E               AssertionError: the abandoned embed client respawned, or its holder never saw it retired; log:
+E                 2026-11-15T14:33:21 daemon starting pid=35103 root=/private/tmp/rmx-rngd88de/r/607/.refmatrix
+E                 2026-11-15T14:33:21 store opened backend=duckdb
+E                 2026-11-15T14:33:21 repaired idx_entity_links_lk_concept rows=0
+E                 2026-11-15T14:33:21 rotation bootstrapped: A=catalog.A.duckdb B=catalog.B.duckdb active=A log_offset=0
+E                 2026-11-15T14:33:21 mem mirror ready
+E                 2026-11-15T14:33:21 pools cli=4 bg=12 disp=20
+E                 2026-11-15T14:33:21 worker[embed] spawned pid=35105 model=default python=/Users/rmxtest1/.venv-lane/bin/python venv=/Users/rmxtest1/.venv-lane
+E                 2026-11-15T14:33:24 worker[embed] retire: the lock is still held after 2.0s (a call or the warm-up's load in flight); abandoning it, killing pid=35105
+E                 2026-11-15T14:33:24 worker[embed] died on op=info (EOFError('worker closed')); respawning
+E                 2026-11-15T14:33:24 worker[embed] closed
+E                 2026-11-15T14:33:24 embedder warmup failed: RuntimeError('daemon stopping: no in-process embedder fallback')
+E                 2026-11-15T14:33:24 reranker warmup skipped: the daemon is stopping
+E                 2026-11-15T14:33:24 daemon stopped
+E                 
+E               assert (1 == 1 and 'not respawning' in "2026-11-15T14:33:21 daemon starting pid=35103 root=/private/tmp/rmx-rngd88de/r/607/.refmatrix\n2026-11-15T14:33:21 st... fallback')\n2026-11-15T14:33:24 reranker warmup skipped: the daemon is stopping\n2026-11-15T14:33:24 daemon stopped\n")
+E                +  where 1 = <built-in method count of str object at 0x11d17b000>('worker[embed] spawned')
+E                +    where <built-in method count of str object at 0x11d17b000> = "2026-11-15T14:33:21 daemon starting pid=35103 root=/private/tmp/rmx-rngd88de/r/607/.refmatrix\n2026-11-15T14:33:21 st... fallback')\n2026-11-15T14:33:24 reranker warmup skipped: the daemon is stopping\n2026-11-15T14:33:24 daemon stopped\n".count
+
+tests/test_daemon_shutdown.py:363: AssertionError
+=============================== warnings summary ===============================
+tests/test_graph_landing.py:9
+  /Users/rmxtest1/lane/runs/t03-fold-green-verify.Vi5Y/tests/test_graph_landing.py:9: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+  test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/rmxtest1/lane/runs/t03-fold-green-verify.Vi5Y/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=29634) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-357 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify.Vi5Y/tests/test_rerank_budget_real_clients.py", line 442, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify.Vi5Y/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_daemon_dense_ops.py::test_op_embed_cooperative_cancel - Run...
+FAILED tests/test_daemon_shutdown.py::test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub
+FAILED tests/test_daemon_shutdown.py::test_a_stop_during_warmup_abandons_the_held_load
+3 failed, 2537 passed, 1 skipped, 5 warnings in 2891.25s (0:48:11)
+exit 1
