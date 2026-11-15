@@ -14,6 +14,7 @@ metadata:
 # Task 10.5: precondition for the names-only dedupe {#root}
 
 > Plan: [[plan-10-injection-dedup]]
+> **Post-mod with 25.1b** (L128, Q32 = a; re-evaluated against the mod first, L127 and L129; [[plan-of-plans#post-mod]]).
 > Status: Pending. Part 1 (the design replay) PASSED for names-only; part 2 (the read-back probe)
 > is to run, with its bands written below before any probe. The id keeps its first name
 > (`versioned-block-gate`) because other docs address it; the block diff it first gated is closed
@@ -30,6 +31,7 @@ rel: depends-on -> [[feedback_measure_the_path_users_run]]
 rel: motivates -> [[task-10.2-plan-10-injection-dedup]]
 rel: related-to -> [[task-19.6-phased-context-and-topic-cache#ranges]]
 rel: depends-on -> [[open-questions]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-10 · bands"}
 
 ## Why {#why}
 

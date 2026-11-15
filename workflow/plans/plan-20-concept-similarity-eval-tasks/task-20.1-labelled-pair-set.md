@@ -16,6 +16,7 @@ metadata:
 > Depends on: —
 
 rel: part-of -> [[plan-20-concept-similarity-eval]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-20 · 20.1"}
 
 ## Why {#why}
 

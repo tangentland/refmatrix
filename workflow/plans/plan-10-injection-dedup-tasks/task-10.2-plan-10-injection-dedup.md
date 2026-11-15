@@ -14,6 +14,7 @@ metadata:
 # Task 10.2: names-only dedupe {#root}
 
 > Plan: [[plan-10-injection-dedup]]
+> **Post-mod with 25.1b** (L128, Q32 = a; re-evaluated against the mod first, L127 and L129; [[plan-of-plans#post-mod]]).
 > Status: Pending (rewritten 2026-11-13 onto names-only, Q13; revision round 6 the same day
 > re-specs it against 25.1b, [[#rev-round-6]]; ch-bsd spec review next). It is built only after
 > [[task-10.5-versioned-block-gate]]'s precondition. The design replay PASSED (v1, v2) on 25.1 rev
@@ -42,6 +43,7 @@ rel: derives-from -> [[measurement-injection-already-held-2026-11-13#design-repl
 rel: related-to -> [[task-21.5-tool-used-signal]]
 rel: related-to -> [[exploration-handhold-outcome-experiment#assignment]]
 rel: depends-on -> [[open-questions]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-10 · bands"}
 
 ## Why {#why}
 

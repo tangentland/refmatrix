@@ -50,6 +50,7 @@ rel: specifies -> [[task-28.2-paired-reentry-runner]]
 rel: specifies -> [[task-28.3-outcome-scorer]]
 rel: specifies -> [[task-28.4-preregistration-freeze]]
 rel: specifies -> [[task-28.5-run-and-report]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-28 · G18"}
 
 ## Context {#context}
 

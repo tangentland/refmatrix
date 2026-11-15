@@ -14,6 +14,7 @@ metadata:
 # Task 10.4: non-human prompt predicate {#root}
 
 > Plan: [[plan-10-injection-dedup]]
+> **Post-mod with 25.1b** (L128, Q32 = a; re-evaluated against the mod first, L127 and L129; [[plan-of-plans#post-mod]]).
 > Status: Pending (drafted 2026-11-13; rev 3 the same day: no injection gate, Q10; ch-bsd spec
 > review next). The id keeps "gate" because other docs address it.
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (curator status's budget and the hook

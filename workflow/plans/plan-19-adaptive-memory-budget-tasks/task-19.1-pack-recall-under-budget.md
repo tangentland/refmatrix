@@ -5,7 +5,7 @@ title: "Task 19.1: memory recall packs its hits under a UTF-8 byte budget, witho
 tags: [task, memory, recall, hooks, budget]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   created: 2026-10-07
   updated: 2026-11-14
 ---

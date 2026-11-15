@@ -5,7 +5,7 @@ title: "Plan 21: the agent uses rmx context because it answers — telemetry, pr
 tags: [plan, context, agent, telemetry, ranking]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-10-07
   updated: 2026-11-13
 ---
@@ -13,7 +13,7 @@ metadata:
 # Plan 21: agent context usage {#root}
 
 **Date:** 2026-10-07 (revised 2026-10-14 after the Wave 0 decision log)
-**Status:** Drafting. Task specs 21.1–21.4 were revised against the plan-21 spec review r1
+**Status:** In progress: 21.1 shipped in 0.80.0 (`535231e`). Task specs 21.1–21.4 were revised against the plan-21 spec review r1
 (`3104a81`, NEEDS-REVISION, 3B/13S/7M) and the 2026-10-14 decision log; the next step is the
 re-review of this revision.
 **Origin:**

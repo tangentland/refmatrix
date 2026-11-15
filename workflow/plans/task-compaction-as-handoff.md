@@ -12,7 +12,8 @@ metadata:
 # Task: compaction as a handoff {#root}
 
 > Status: drafting (2026-11-14). The user asked for compaction to behave like save-state → /clear
-> → recall-state without the compacted session, and chose Q17 a (automatic). Queued right after
+> → recall-state without the compacted session, and chose Q17 a (automatic). **Post-mod** (Q28 = a;
+> re-evaluated against the mod first, L127 and L129; [[plan-of-plans#post-mod]]). It was first queued right after
 > 0.83.0, which ships 25.1 (it drops the PreCompact recall command and adds recall-state on
 > `compact`). A ch-bsd spec round precedes approval.
 

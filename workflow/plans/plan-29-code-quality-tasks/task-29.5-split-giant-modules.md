@@ -45,6 +45,7 @@ rel: reinforces -> [[feedback_family_list_misses_generated_checks]]
 rel: reinforces -> [[feedback_compare_failures_by_error_not_name]]
 rel: reinforces -> [[feedback_commit_before_mutation_revert]]
 rel: reinforces -> [[feedback_no_silent_failures]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-29 · 29.5 R0"}
 
 **How other documents are cited here.** As in [[task-29.4-suite-health#citing]]: **T0**, the
 **queue review**, the **store review** and the **memory review** are not on this spec's

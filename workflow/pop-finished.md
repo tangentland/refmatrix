@@ -248,3 +248,43 @@ three `plan-review-fable-2026-11-14-*` reviews, both freeze triages, triage-3 an
 `plan-of-plans#queue`. [[open-questions]] (Q1-Q22, history) is archived with them. Rulings, decisions and questions live in [[plan-of-plans#ledgers]]. {#archive-2026-11-15-body}
 
 Done in one commit: the POP body replaced by arch-triage's draft (`triage-3` `d3550c9`, against `8b80f1d`), the removed content appended above, 16 files' links to the removed `#sequence` anchors repointed here, the eleven docs moved to `workflow/archive/` with a banner and `status: archived`, and `handoff.md`'s queue replaced by a pointer.
+
+### Pending-status rows applied by the bookkeeping pass (2026-11-15) {#pending-status-applied-2026-11-15}
+
+Rows of the POP's `#pending-status` table whose edit is made (branch `bookkeeping-1115`), as they
+stood. Two more rows were applied in part and stay in the POP for the part that is left: plan-31's
+wording (its status waits for its spec merge), and the decision-row citations (eleven files cite
+their row; plan-24's and 26.5's wait).
+
+| file | edit | evidence |
+|---|---|---|
+| `plan-3-verbs-parity.md`; `task-3.7-verb-it-backlog.md` | `status: in-progress` → `completed` | D-Q6; `91ddbe0` |
+| `plan-9-context-cost-telemetry.md` | `status: in-progress` → `completed` | D-Q6 |
+| `task-25.1-recall-hook-byte-budget.md` | `status: pending` → `completed` | `d44e359`, `d1be40a`; 0.83.0 `af83867` |
+| `task-26.1-…`, `task-26.4-…` | `status: pending` → `completed` | `9b2c4ac` + `25af9ca`; `0c74872` |
+| `task-19.1-pack-recall-under-budget.md` | `status: pending` → `completed` (its own text: "nothing left to build here") | L14; `d44e359` |
+| `plan-21-…`, `plan-25-…`, `plan-26-…`, `plan-29-…` | `status: approved` → `in-progress`; plan-21's body "Drafting" and plan-25's "not started" removed | `535231e`; `d44e359`; `9432b83`; `3b930e4` |
+| `task-29.4-suite-health.md`; `task-t0-suite-trust-sweep.md` | `status` → `in-progress`; plan-29 `#decisions-next` "Next: 29.1" → "Next: 29.4 stage 2" | `3b930e4`, `a0c7560`; L118 |
+| `task-bug178-…`, `task-bug179-…`, `task-bug195-…`, `task-bug216-rule-docs-in-graph.md` | `status: approved` → `completed` | `76ec748`, `aea4098`, `102524d`, `7aed8df` |
+| `task-bug216-rule-docs-in-graph.md` | add the order edge to bug-185 and L50's wording, owed at the bug-216 merge | L57 M6, L62 M4 |
+| `task-bug218-…`, `task-dq1-…` | body "Status: Drafting" → "Approved" (frontmatter already says so); the dq1 spec's queue slot: after plan-30 release C | L69, L74, L128 |
+| `task-7.4-plan-7-longmemeval.md` | status note "dense blocked on bug-030" → "the dense re-run is T0.6" | bug-030 fixed 2026-09-16 |
+| `task-compaction-as-handoff.md`, `task-agent-start-context.md`, `task-linked-readonly-store.md` | "queued right after 0.83.0" → "post-mod" | Q28 = a; L128 |
+| `task-10.2-…`, `task-10.4-…`, `task-10.5-…`, `task-10.6-…` | header line: post-mod with 25.1b | L128 |
+{#pending-status-applied-table}
+
+### Pending status applied by the lead (2026-11-15) {#pending-status-lead-2026-11-15}
+
+| file | edit | evidence | why it stayed |
+|---|---|---|---|
+| `.claude/PROJECT_PROFILE.md` `#corpus` | "unverified until a Claude Code restart" → verified: spawned agents are offered the read-only MCP tools | **stays:** an agent-instruction file that `CLAUDE.md` imports; left for the lead or the user to edit, not a subagent | [[plan-review-fable-2026-11-14-queue#st-3]] |
+{#pending-status-lead-2026-11-15-table}
+
+Applied: `.claude/PROJECT_PROFILE.md` `#corpus` now states the read-only MCP tools are offered to spawned agents (verified 2026-11-14, L85).
+
+### Question withdrawn (Q39) {#q39}
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q39 | 2026-11-15 | bug-203 (`rmx sync -i` reaches the read replica when a daemon is up) is not on the freeze line; 31.2 rewrites what `sync -i` does, and arch-31b wrote the routing fix in (AC-14). Admit it into 31.2? | (a) admit it into 31.2 (recommended: the same lines are rewritten anyway; leaving it means re-opening them after the mod); (b) cut it from 31.2, bug-203 stays post-mod | **withdrawn** by the lead (L136): bug-203 is already pre-mod via T4 (queue step 13); which step routes `sync -i` is sequencing, ruled: 31.2 |
+{#q39-table}
