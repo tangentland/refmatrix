@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-30-materialisation
   created: 2026-11-14
-  updated: 2026-11-14
+  updated: 2026-11-15
 ---
 
 # Task 30.2: the vectorised adjacency build {#root}
@@ -21,6 +21,7 @@ metadata:
 > Ships in release B with 30.1 and 30.3: it edits `pagerank.py`, a derive-pass file
 > ([[plan-30-materialisation#releases]]).
 > User gates: release B's re-derive (plan-30 D2).
+> Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]).
 
 rel: part-of -> [[plan-30-materialisation]]
 rel: implements -> [[plan-30-materialisation#t2]]
@@ -84,15 +85,24 @@ ascending id. Today the order follows `entity_links`, which is read without `ORD
    minutes apart, the 1-minute load printed at each end); **peak memory** of one build in a fresh
    process (`tracemalloc` peak and the `ru_maxrss` delta); nodes and directed edges.
 4. **Memory bands, stated now.** The dict build peaks at 272 MB traced today
-   ([[perf-bitmap-materialisation-2026-11-14#q1]]), and the daemon already runs it. For the new
-   build's peak:
+   ([[perf-bitmap-materialisation-2026-11-14#q1]]), and the daemon already runs it, briefly.
+   30.4's service is not brief: it holds an entry per live key for as long as the key is live,
+   and builds one more beside them. So the band is on the sum, not on one build:
 
-   | Peak traced | Action |
+   **T = K × E + P**, where E is one entry's bytes (the CSR's arrays, its index and the node
+   array, measured by item 3 on the production-scale copy), K is 30.4's cap on live keys
+   (`RMX_ADJ_MAX_KEYS`, default 2), and P is one build's peak traced memory, the inputs it read
+   included.
+
+   | T | Action |
    |---|---|
    | at or under today's dict-build peak, re-measured in item 3 | go; 30.4 builds in the daemon process |
-   | above it, up to 400 MB | the build's temporaries are reduced (item 3's script lists the largest live arrays at the peak) and it is re-measured; go only once it is under today's peak |
-   | above 400 MB after that | no-go for an in-daemon build; 30.4 takes the out-of-process variant its spec names |
+   | above it, up to 400 MB | P's temporaries are reduced (item 3's script lists the largest live arrays at the peak), or K is lowered to 1, and it is re-measured; go only once T is under today's peak |
+   | above 400 MB after that | no-go for an in-daemon build; 30.4 takes the out-of-process variant its spec names, and the daemon then holds K × E only, which must itself be under today's peak |
    {#r0-memory-bands}
+
+   From the report's numbers, before re-measuring: E is about 40 MB, so K × E is about 80 MB;
+   P is not measured. Release B alone holds no entry (K = 0); the band binds release C.
 5. Record the fixture's golden rankings with the ORACLE adjacency ([[#r3]]), for [[#ac-3]].
 
 ### R1: the build {#r1}
@@ -105,6 +115,18 @@ from the fetched rows on SQLite. An empty partition gives an empty `CSRAdjacency
 
 `pagerank._ADJ_SHAPE` changes, because the row order is part of the shape: a cached adjacency
 in the old order must not be served as the new one. {#r1-shape}
+
+**Two steps.** The build is `assemble_adjacency(read_adjacency_inputs(store, …))`:
+- `read_adjacency_inputs(store, *, link_weight, exclude_operational)` does every read of the
+  store and returns one object: the `mentions` fragment's values, the typed rows as arrays, the
+  operational ids, the linkage ids it resolved (or their absence), and the parameters. It is
+  where [[#r2]]'s failures raise.
+- `assemble_adjacency(inputs)` touches no store. It is a pure function of that object.
+- `build_adjacency` is their composition and nothing else.
+This is the build's own structure, used in this release: the targeted cases of [[#ac-1]] that
+no ingest produces are driven through `assemble_adjacency` directly. It is also the seam 30.4
+needs: its service reads the inputs at every publish and assembles only when they differ, and
+it must read exactly what the build reads. {#r1-two-steps}
 
 ### R2: a failed read raises {#r2}
 
@@ -163,10 +185,16 @@ line would reach nobody on the path that matters. 30.4 adds the daemon path to t
 
 ## Acceptance criteria {#acceptance}
 
-Each is RED at the base sha unless marked. The fixture is
-[[task-30.1-adjacency-mapping-adapter#fixture]].
+Each AC says what it is at the base sha: **RED** (the test fails there, and the red run is
+recorded), **characterization** (green there by construction, and proven able to fail by the
+mutations named in [[#mutations]]), or **gate** (a check on the final tree). The fixture is
+[[task-30.1-adjacency-mapping-adapter#fixture]]. {#acceptance-labels}
 
-- **AC-1: the edge set equals the oracle's.** On the fixture store and on the targeted stores
+- **AC-1 (characterization, with one RED leg): the edge set equals the oracle's.** The oracle
+  is the base body, so at the base the equality holds; mutations 1-11 are what prove the test
+  can fail. The RED leg: the value `build_adjacency` returns is a `CSRAdjacency` (a dict at the
+  base), and `assemble_adjacency(read_adjacency_inputs(store))` equals it (neither function
+  exists at the base). On the fixture store and on the targeted stores
   below, for each of 3 mentions modes × `exclude_operational` true and false × `link_weight` 2.0
   and 1.0: the node sets are equal; the directed edge sets are equal; every weight is equal
   within 1e-12 relative. The number of weights that are not bit-equal is recorded (0 is
@@ -177,43 +205,50 @@ Each is RED at the base sha unless marked. The fixture is
   concept and as a doc; a typed row with one end in another partition; an empty store; a store
   with no `denotes` linkage type; a store with mentions only.
   Test: `test_vectorised_build_equals_oracle` in `tests/test_adjacency_build.py`. {#ac-1}
-- **AC-2: the order is canonical.** Node ids ascend; each row's neighbour ids strictly ascend;
+- **AC-2 (RED): the order is canonical.** Node ids ascend; each row's neighbour ids strictly ascend;
   two builds from two fresh `Store` opens give byte-equal arrays. Test:
   `test_build_order_is_canonical_and_repeatable`. {#ac-2}
-- **AC-3: rankings are identical.** For every seed set, with the hook's parameters:
+- **AC-3 (characterization): rankings are identical.** The golden is recorded with the oracle,
+  so the base passes; mutations 1-11 and 14 prove it can fail. For every seed set, with the hook's parameters:
   `rank_related_for_prompt` over the new CSR returns the ids of R0's golden in the same order,
   with scores within 1e-9 relative; the count of bit-equal results is recorded (the report had
   18 of 18). `enrich_concepts` returns the same ids with scores within 1e-9. `net_concepts`
   returns the same (id, support) pairs, and the same list on two fresh builds. Test:
   `test_rankings_identical_to_oracle`. {#ac-3}
-- **AC-4: the PageRank prior did not move.** `scripts/derive-digest.py check` exits 0, all four
+- **AC-4 (gate): the PageRank prior did not move.** `scripts/derive-digest.py check` exits 0, all four
   legs. A differing prior leg stops the task: it is a finding, and the golden is not
   re-recorded to pass. {#ac-4}
-- **AC-5: a failed read raises, and the hook says so.** With the typed-rows query made to fail
+- **AC-5 (RED): a failed read raises, and the hook says so.** With the typed-rows query made to fail
   (fault injected at the store's connection, classified in the mock registry):
   `build_adjacency` raises; `cached_adjacency` raises and a following call builds again;
   `scan_prompt(rank="ppr")` still returns its bundles, in salience order, with the line of
   [[#r5]] and `trace["rerank"]["ran"]` false. With no `denotes` type in the store nothing
   raises. Tests: `test_failed_read_raises`, `test_rerank_failure_is_named`. {#ac-5}
-- **AC-6: the callers read the cache; the pass does not.** With `build_adjacency` counted by a
+- **AC-6 (RED): the callers read the cache; the pass does not.** With `build_adjacency` counted by a
   wrapper: two `rank_related_for_prompt` calls on one store with no write between cost 1 build;
   the same for `rank_related`, `enrich_concepts` and `build_net`; after a link with no flush, a
   call builds again and does not store the result; after `flush_fragments()` one build serves
   the next two calls; `compute` and the `pagerank_compute` op build on every call. Test:
   `test_who_builds_and_who_reads_the_cache`. {#ac-6}
-- **AC-7: no test-only code in `src/`.** `CSRAdjacency` has no `from_dict`; nothing under
+- **AC-7 (RED): no test-only code in `src/`.** `CSRAdjacency` has no `from_dict`; nothing under
   `src/refmatrix` builds a dict-of-dicts adjacency (a census family on 29.3's kit, with a
   planted site that fails it). {#ac-7}
-- **AC-8: measured on a production-scale copy.** [[#r0]] item 3's script, re-run on the same
-  copy: nodes and directed edges equal the oracle's on that copy; the build's median is at most
-  half of the base's build-plus-`from_dict` median from the same session (the report: 0.32);
-  the peak is in a go row of [[#r0-memory-bands]]. Each number has its n, p90 and loads. {#ac-8}
-- **AC-9: the hook's own path.** `rmx scan-prompt` run through the CLI entry against a throwaway
-  store with a daemon stand-in publishing its snapshot, for the committed synthetic prompts
-  (`tests/fixtures/adjacency/prompts.txt`; written for the fixture corpus, not taken from any
-  log): the output is byte-equal to the base sha's for every prompt, and each invocation costs
-  exactly one build. Test: `test_scan_prompt_output_unchanged_one_build`. {#ac-9}
-- **AC-10: the suite.** Equal by E line to the base run, apart from tests re-pointed in the RED
+- **AC-8 (measurement): on a production-scale copy.** [[#r0]] item 3's script, re-run on the
+  same copy: nodes and directed edges equal the oracle's on that copy; the build's median is at
+  most half of the base's build-plus-`from_dict` median from the same session (the report:
+  0.32); E and P are recorded, and T, with K = 2, is placed in a row of [[#r0-memory-bands]]
+  (a row other than go does not stop release B, which holds no entry; it is 30.4's input). Each number has its n, p90 and loads. {#ac-8}
+- **AC-9 (characterization, with one RED leg): the hook's own path.** `rmx scan-prompt` run
+  through the CLI entry against a throwaway store with a daemon stand-in publishing its
+  snapshot, for the committed synthetic prompts (`tests/fixtures/adjacency/prompts.txt`;
+  written for the fixture corpus, not taken from any log): the output is byte-equal to the base
+  sha's for every prompt, and each invocation costs exactly one build (both true at the base
+  for the default `--rank ppr`; mutations 1-11 change the output). Two RED legs: the
+  `query.log` row of each invocation carries `rerank` with `ran: true` ([[#r5]]), where the
+  base row has no such object; and with `--rank net`, on a prompt whose net comes back empty so
+  that `_net_rerank` falls back to `_ppr_rerank`, the invocation costs one build, where the
+  base costs two (mutation 14 makes it two again). Test: `test_scan_prompt_output_unchanged_one_build`. {#ac-9}
+- **AC-10 (gate): the suite.** Equal by E line to the base run, apart from tests re-pointed in the RED
   commit, which are listed. {#ac-10}
 
 ## Mutations that must fail {#mutations}
@@ -273,6 +308,7 @@ At `6676f39`. R0 re-runs it.
 | `cached_adjacency` | `context.py`'s degree walk; after this task the four of [[#r4]] | `tests/test_adjacency_cache.py` (11 sites) |
 | `CSRAdjacency.from_dict` (removed) | `pagerank.py::cached_adjacency` | `tests/test_adjacency_cache.py`, 30.1's tests |
 | `pagerank.pagerank` | `pagerank.py::compute`, `daemon.py::_op_pagerank` | R0 lists |
+| `read_adjacency_inputs`, `assemble_adjacency` (new) | `pagerank.py::build_adjacency`; in release C, 30.4's service | `tests/test_adjacency_build.py` |
 | `pagerank.compute` | none found in `src/`; R0 confirms | `tests/test_v2_features.py`, R0 lists |
 | `scan._ppr_rerank`, `_enrich_rerank`, `_net_rerank` (gain the reason list) | `scan.py::scan_prompt`; `_net_rerank` calls `_ppr_rerank` twice | `tests/test_scan_prompt_dedup.py` (5 sites); `eval/spike_hypertree/m4_render_tokens.py` (1) |
 | `scan_prompt` (`trace["rerank"]`, the warning line) | `cli/session_cmds.py::scan_prompt_cmd`; R0 lists the eval callers | R0 lists |
@@ -346,3 +382,12 @@ At `6676f39`. R0 re-runs it.
 - **The surfacing of a failed rerank lands here, not in 30.4,** because release B ships without
   30.4 and is the release in which a failed read starts to raise.
 {#decisions-list}
+
+## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+| Finding ([[bsd-plan30-spec-r1]]) | Answered in |
+|---|---|
+| M1: AC-1, AC-3, AC-4, AC-9 and AC-10 were called RED and are green at the base by construction | [[#acceptance-labels]]: every AC is labelled. AC-1 and AC-9 are characterization with RED legs (the return type and the two-step equality; the `rerank` object in the row and the single build under `--rank net`); AC-3 is characterization; AC-4 and AC-10 are gates |
+| S2 (30.4), the part that lands here: the memory band priced one build | [[#r0-memory-bands]]: the band is on T = K × E + P, live keys times entry bytes plus one build's peak; AC-8 records E, P and T |
+| S2 (30.4), the part that lands here: rebuild only what changed | [[#r1-two-steps]]: the build is a read step and a pure assemble step, so 30.4 can compare inputs with the build's own read |
+{#rev-note-2-table}

@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-30-materialisation
   created: 2026-11-14
-  updated: 2026-11-14
+  updated: 2026-11-15
 ---
 
 # Task 30.5: `load_bitmap` reads the row, statelessly {#root}
@@ -20,6 +20,7 @@ metadata:
 > Runs beside 30.0, before or after the adjacency tasks. Ships alone, as release A. It edits no
 > derive-pass file.
 > User gates: none.
+> Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]).
 
 rel: part-of -> [[plan-30-materialisation]]
 rel: implements -> [[plan-30-materialisation#t5]]
@@ -130,7 +131,16 @@ The numbers go into the summary and into the deferral registry row of
 
 ## Acceptance criteria {#acceptance}
 
-- **AC-1: every row is identical, including a row just written.** On the fixture store
+Each AC says what it is at the base sha: **RED** (the test fails there, and the red run is
+recorded), **characterization** (green there, and proven able to fail by the mutations named
+in [[#mutations]]), **gate**, or **measurement**. This is a performance fix to a method whose
+results are already right, so the RED is in what the call does (AC-2, AC-3), not in what it
+returns. {#acceptance-labels}
+
+- **AC-1 (characterization, all four bullets): every row is identical, including a row just
+  written.** The base method is correct and reads the live fragment, so each bullet passes at
+  the base. Mutations 1-4 fail the boundary bullets; mutations 7 and 8, the two stateful
+  variants, fail read-your-writes. On the fixture store
   ([[task-30.1-adjacency-mapping-adapter#fixture]]):
   - for every (linkage, concept) row of every fragment, enumerated by a full decode,
     `load_bitmap` equals the decode's row and equals the oracle's result;
@@ -142,28 +152,27 @@ The numbers go into the summary and into the deferral registry row of
     the result equals a fresh full decode of the live fragment;
   - a row holding entity id 0, with the next concept's row also holding entity id 0, returns
     exactly its own.
-  Recorded as rows equal of rows compared. The first two bullets are characterization (green at
-  the base). Test: `tests/test_load_bitmap_row_read.py::test_rows_identical`. {#ac-1}
-- **AC-2: no mask is built.** With the module's `BitMap64` name bound to a counting wrapper, a
+  Recorded as rows equal of rows compared. Test: `tests/test_load_bitmap_row_read.py::test_rows_identical`. {#ac-1}
+- **AC-2 (RED): no mask is built.** With the module's `BitMap64` name bound to a counting wrapper, a
   `load_bitmap` call constructs 0 `BitMap64` objects. RED at the base: 1 per call. Test:
   `test_no_bitmap64_is_constructed_per_call`. {#ac-2}
-- **AC-3: no `len()` of a fragment on a per-call path.** R0 item 4's family passes with exactly
+- **AC-3 (RED): no `len()` of a fragment on a per-call path.** R0 item 4's family passes with exactly
   the cold sites allow-listed, each with its reason; a planted `len(frag)` in a copy of
   `load_bitmap` fails it by name. RED at the base: five calls in four per-call functions. {#ac-3}
-- **AC-4: `link_many`'s count is unchanged.** For a batch of all-new ids, all-existing ids, a
+- **AC-4 (characterization): `link_many`'s count is unchanged.** For a batch of all-new ids, all-existing ids, a
   mix, a batch with a repeated id, and an empty batch, the return value and the store's state
-  equal the base's. (Characterization.) Test: `test_link_many_counts`. {#ac-4}
-- **AC-5: callers' results are identical.** On the fixture, equal to the base sha's output:
+  equal the base's. Mutation 9 fails it. Test: `test_link_many_counts`. {#ac-4}
+- **AC-5 (characterization): callers' results are identical.** On the fixture, equal to the base sha's output:
   `neighbors` at depth 1 and 2 for seeds of in-degree 1, about 10, about 100 and the largest;
   `topn`; `co_occurrence`; PQL row terms; the context bundle for 10 anchors, byte-equal;
   `match_concepts` for 30.2's synthetic prompts. Recorded as cases equal of cases run.
-  (Characterization.) Test: `test_callers_unchanged`. {#ac-5}
-- **AC-6: measured at production scale, twice.** R0 item 2's script after the change, two runs
+  Mutations 1-4 fail it. Test: `test_callers_unchanged`. {#ac-5}
+- **AC-6 (measurement): at production scale, twice.** R0 item 2's script after the change, two runs
   minutes apart with loads printed: rows identical N of N; the `mentions` row's median at most
   one twentieth of the base's median from the same session (the plan's probe: one two-hundredth);
   the 20 × 34 mix likewise. {#ac-6}
-- **AC-7: the closing measurement is recorded** ([[#r5]]), and the deferral row carries it. {#ac-7}
-- **AC-8: nothing derived moved.** `scripts/derive-digest.py check` exits 0. The suite is equal
+- **AC-7 (measurement): the closing measurement is recorded** ([[#r5]]), and the deferral row carries it. {#ac-7}
+- **AC-8 (gate): nothing derived moved.** `scripts/derive-digest.py check` exits 0. The suite is equal
   by E line to the base run. No file named in `_DERIVE_PASS_MODULES` is edited. {#ac-8}
 
 ## Mutations that must fail {#mutations}
@@ -278,3 +287,10 @@ note says so ([[task-29.5-split-giant-modules#r5]]). No store event. {#release-b
   Leaving them would leave the same trap for the next reader of `load_bitmap`'s history.
 - **No caller is edited.** The method keeps its contract.
 {#decisions-list}
+
+## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+| Finding ([[bsd-plan30-spec-r1]]) | Answered in |
+|---|---|
+| M1: AC-1's read-your-writes and entity-0 bullets pass at the base and were not marked | [[#acceptance-labels]]: every AC is labelled. All of AC-1 is characterization, with the mutations that fail each bullet named; the RED is AC-2 and AC-3 |
+{#rev-note-2-table}

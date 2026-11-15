@@ -237,3 +237,10 @@ the code the daemon can write the file too; 30.0's R0 records which processes do
   announced step, with a count, not something a read path does on the side.
 - **Three outcomes are specified so that none is improvised.** Two will be struck.
 {#decisions-list}
+
+## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+ch-bsd r1 ([[bsd-plan30-spec-r1]]) raised no finding on this spec. Unchanged in round 2, apart
+from what follows from 30.0's M3: under a drop verdict the written-tier assertion of 30.0's
+probes ([[task-30.0-disk-tier-probe#r1-no-swallow]]) is removed with the tier, in the RED
+commit, and the invariant assertion stays. {#rev-note-2-body}

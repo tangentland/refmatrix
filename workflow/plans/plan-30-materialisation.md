@@ -7,14 +7,16 @@ metadata:
   node_type: plan
   status: drafting
   created: 2026-11-14
-  updated: 2026-11-14
+  updated: 2026-11-15
 ---
 
 # Plan 30: adjacency and bitmap materialisation {#root}
 
-**Date:** 2026-11-14. **Status:** drafting: the plan and six task specs under
-`workflow/plans/plan-30-materialisation-tasks/`, written by ch-architect on Fable 5.2 for a ch-bsd
-spec review. Nothing here is approved.
+**Date:** 2026-11-14, revised 2026-11-15. **Status:** drafting: the plan and six task specs under
+`workflow/plans/plan-30-materialisation-tasks/`, written by ch-architect on Fable 5.2. ch-bsd's
+spec review r1 was DIRTY (0 BULLSHIT, 3 SKETCHY, 5 MEH; [[bsd-plan30-spec-r1]]); ruling L116
+folded all eight, and [[#rev-note-2]] says where. A confirm-lite r2 is pending. Nothing here is
+approved.
 **Origin:** the user asked for "a plan for materialization changes" from the measurement report
 [[perf-bitmap-materialisation-2026-11-14]], then "add the adjacency change too" (bug-243).
 **Sequencing:** after plan-29. Plan-29 splits `cli.py` and `store.py` and adds the census kit, the
@@ -25,6 +27,7 @@ rel: implements -> [[tdd-governance]]
 rel: depends-on -> [[plan-29-code-quality]]
 rel: depends-on -> [[bug_registry#registry]]
 rel: derives-from -> [[perf-bitmap-materialisation-2026-11-14#recommendation]]
+rel: related-to -> [[bsd-plan30-spec-r1]]
 rel: catalogs -> [[task-30.0-disk-tier-probe]]
 rel: catalogs -> [[task-30.1-adjacency-mapping-adapter]]
 rel: catalogs -> [[task-30.2-vectorised-adjacency-build]]
@@ -142,9 +145,10 @@ step. Spec: [[task-30.3-disk-tier-fate]]. {#t3-summary}
 
 ### 30.4 The daemon keeps the adjacency; the hook asks for the ranking {#t4}
 
-A service in the daemon rebuilds the CSR off the store lock after each snapshot publish and
-keeps it in memory. A read op, `ppr_rank`, runs the same `rank_related_for_prompt` over it and
-returns the ranking. `scan-prompt` asks the daemon first and falls back to its own in-process
+A service in the daemon keeps the CSR in memory. After each snapshot publish it reads the
+build's inputs from the published snapshot, off the store lock, and rebuilds a key only when
+that key's inputs changed. A read op, `ppr_rank`, runs the same `rank_related_for_prompt` over
+it and returns the ranking. `scan-prompt` asks the daemon first and falls back to its own in-process
 build, and every fallback is counted and named. No new file is written. Fixes bug-243.
 Spec: [[task-30.4-daemon-adjacency-ppr-op]]. {#t4-summary}
 
@@ -214,7 +218,10 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
 **For the user.** Each has a recommendation; none is taken. {#decisions-user}
 
 1. **plan-30 D1: may the daemon answer `ppr_rank` from a graph that is one or more publishes
-   behind?** A rebuild takes about 0.5 s after each write batch.
+   behind?** A rebuild takes about 0.5 s after a write batch that changed the key's inputs.
+   The question is about a service that is late. A service or a publish that has FAILED is not
+   "behind": past the same bound it is `build-failed` and is said in the hook's output, under
+   every option ([[task-30.4-daemon-adjacency-ppr-op#r4]]).
    - (a) **Recommended:** yes, bounded. The op waits up to 0.25 s for a build in flight; then it
      serves the newest finished graph if it was superseded at most 10 s ago, and the reply says
      how far behind it is; past that it answers `unavailable` and the hook builds in-process.
@@ -246,7 +253,8 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
    prompt path again; the bounds that keep it from repeating bug-115 and bug-116 are ACs.
 6. **plan-30 D6:** the graph version is the daemon's snapshot publish sequence; the service
    rebuilds from the published snapshot, never from the writer
-   ([[task-30.4-daemon-adjacency-ppr-op#decisions]]).
+   ([[task-30.4-daemon-adjacency-ppr-op#decisions]]). A test holds a write unpublished and
+   shows it is not in the served graph ([[task-30.4-daemon-adjacency-ppr-op#ac-17]]).
 7. **plan-30 D7:** `load_bitmap` uses the stateless iterator, not a decoded array per linkage
    ([[task-30.5-load-bitmap-row-read#decisions]]).
 8. **plan-30 D8:** `build_adjacency` returns the CSR; the dict builder lives on only as a test
@@ -258,6 +266,14 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
     ([[task-30.2-vectorised-adjacency-build#decisions]]).
 11. **plan-30 D11:** the disk tier's fate follows 30.0's bands with no further question, except
     D3's deletion ([[task-30.0-disk-tier-probe#bands]]).
+12. **plan-30 D12 (round 2):** a key is rebuilt only when its own inputs changed, decided by
+    reading those inputs from the snapshot with the build's own read step, not by per-partition
+    marks set on the write path ([[task-30.4-daemon-adjacency-ppr-op#r3-why-not-marks]]). Ruling
+    L116 named per-partition versions; this keeps the purpose and changes the mechanism, for
+    two reasons read from the code. It is the lead's to overrule.
+13. **plan-30 D13 (round 2):** only the hook's op creates demand for a key, and at most 2 keys
+    are live. A `context` degree walk reads a live key and never creates one
+    ([[task-30.4-daemon-adjacency-ppr-op#r7]]).
 {#decisions-spec-list}
 
 ## Risks {#risks}
@@ -267,8 +283,10 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
 | The new build differs from the old in an edge or a weight | 30.2: edge-set equality against the oracle in all three mentions modes; the derive digest's prior leg |
 | A ranking changes | 30.1 and 30.2: identical ids and order on committed seed sets; 30.4: the daemon path and the in-process path give equal output on one snapshot |
 | The hook waits on a busy daemon (bug-115, bug-116, bug-182) | 30.4: the op takes no store lock, carries a deadline, is dialled once with a 0.5 s budget; the worst case is bounded and measured under load |
-| A rebuild in the daemon starves pings or grows the process past the jetsam line | 30.2 measures the build's peak memory against stated bands; 30.4 counts pings answered during rebuilds |
-| A stale graph is served | 30.0 measures the disk tier; 30.4's graph is versioned by publish sequence and the reply states it |
+| A rebuild in the daemon starves pings or grows the process past the jetsam line | 30.2's band is on live keys × entry bytes plus one build's peak; 30.4 caps live keys at 2, reads the daemon's resident memory against the band, and counts pings answered during rebuilds |
+| Every publish rebuilds every key | 30.4 prices the service per key per publish, and assembles only when the key's inputs changed |
+| A failed or foreign publish leaves the service silently behind | 30.4: the sequence's second counter moves in a `finally`; a failed publish and a snapshot the daemon did not write are `build-failed`, recorded and said |
+| A stale graph is served | 30.0 measures the disk tier, and each probe first proves the tier was written; 30.4's graph is versioned by publish sequence, the reply states it, and a test shows an unpublished write is not served |
 | A fallback hides a failure | 30.4: every fallback is counted and named in the query row and in daemon status; a rerank that did not run puts a line in the hook's output |
 | `pagerank.py` is edited in two releases | [[#releases]]: 30.4's AC forbids it |
 {#risks-table}
@@ -290,9 +308,39 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
 
 - The op's latency through the socket and the cli pool under load. The 8.4 ms figure is an
   in-process prototype. 30.4's R0 measures it and has bands.
-- The vectorised build's peak memory. The report did not measure it. 30.2's R0 does, with bands
-  that decide whether 30.4 may build inside the daemon process.
+- The vectorised build's peak memory and an entry's size. The report did not measure the
+  first. 30.2's R0 measures both, with bands on their sum that decide whether 30.4 may build
+  inside the daemon process.
+- What the input check costs beside a full build. 30.4's R0 measures it, with a band that
+  turns the check off if it is over a quarter of the build.
 - Why the live store's `adjacency.cache.json` was last written on 2026-11-13 16:35 with a key
   that predates the shape element, while `facts.log` grew by 149 MB. Observed on 2026-11-14;
   the cause is not established. 30.0's R0 reads it.
 {#open-list}
+
+## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+All eight findings of [[bsd-plan30-spec-r1]] are folded. Each touched spec has its own table.
+
+| Finding | Task | Answered in |
+|---|---|---|
+| S1: "never the writer" untested | 30.4 | [[task-30.4-daemon-adjacency-ppr-op#ac-17]]: a write held unpublished is not in the entry; a census of writer access with an empty allow list; mutation 1 re-aimed. The op's own reads take `writer="never"` |
+| S2: one key priced, every key rebuilt | 30.4, 30.2 | the replay and the band are per key per publish ([[task-30.4-daemon-adjacency-ppr-op#r0]]); a key is assembled only when its inputs changed ([[task-30.4-daemon-adjacency-ppr-op#r3-inputs]], [[task-30.4-daemon-adjacency-ppr-op#ac-18]]); live keys capped at 2, and a degree walk creates no demand; 30.2's band prices the steady state ([[task-30.2-vectorised-adjacency-build#r0-memory-bands]]) |
+| S3: a publish failing after `begin` | 30.4 | `end` in a `finally`, at most 3 opens, a failed publish is `build-failed` and said ([[task-30.4-daemon-adjacency-ppr-op#r2]], [[task-30.4-daemon-adjacency-ppr-op#ac-20]]) |
+| M1: RED labels on tests green at the base | 30.2, 30.5, 30.4 | every AC in the three specs is labelled RED, characterization, gate or measurement; 30.2 AC-1 and AC-9 gain RED legs; 30.4 AC-12 is a gate with a planted failing input |
+| M2: two reasons unclassified | 30.4 | [[task-30.4-daemon-adjacency-ppr-op#r6-table]]: `names-unavailable` and `partition-unknown` are said, each with its reason; the test fails on a reason with no row |
+| M3: a probe could pass on a tier that never wrote | 30.0 | each probe asserts the tier was written; a failed write is `not-run` and counts in K ([[task-30.0-disk-tier-probe#r1-no-swallow]]) |
+| M4: bug-243's status against 29.1's grammar | registry | the cell reads `scheduled → task-30.4-daemon-adjacency-ppr-op (P30); …`. The lead amends 29.1's track rule to `P<n>` at the plan-30 merge |
+| M5: a snapshot writer outside the daemon | 30.4 | a census of every writer of the snapshot file, with 29.3's slice d as a checked precondition for the one outside the daemon; a foreign snapshot is detected at run time ([[task-30.4-daemon-adjacency-ppr-op#r8]], [[task-30.4-daemon-adjacency-ppr-op#ac-21]]) |
+{#rev-note-2-table}
+
+**One departure from the ruling's wording** (plan-30 D12). L116 asks that only keys whose
+partition was written be rebuilt, by per-partition versions. The specs do rebuild only those
+keys, and decide it by reading each key's inputs from the published snapshot. A version bumped
+by the write path would be wrong in two ways the base code shows: the request for a snapshot is
+made after the store lock is released, so a publish can carry a write before its mark arrives;
+and a partition's graph is written under other partitions' bindings too.
+{#rev-note-2-departure}
+
+**plan-30 D1, D2 and D3** are unchanged in substance. D1's text now says that a failed service
+or publish is never answered as "behind". {#rev-note-2-decisions}

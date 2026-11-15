@@ -244,3 +244,10 @@ arrays the CSR already holds. {#invalidation-body}
 - **The overlay is a class in `ppr.py`, not in the pass file.** The prompt terms are PPR's, and
   an edit to them should not make every store's `pagerank` pass read behind.
 {#decisions-list}
+
+## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+ch-bsd r1 ([[bsd-plan30-spec-r1]]) raised no finding on this spec. Unchanged in round 2. Its ACs
+were already labelled: AC-5's existing tests and AC-6 are characterization, AC-7 is a gate, the
+rest are RED at the base (the `adj` parameter and the mapping methods do not exist there).
+{#rev-note-2-body}

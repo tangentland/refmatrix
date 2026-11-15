@@ -8,7 +8,7 @@ metadata:
   status: pending
   plan: plan-30-materialisation
   created: 2026-11-14
-  updated: 2026-11-14
+  updated: 2026-11-15
 ---
 
 # Task 30.0: probe the adjacency disk tier {#root}
@@ -20,6 +20,7 @@ metadata:
 > Runs first, beside 30.5. Tests and one measurement script only: **no file under `src/`
 > changes.** Its output is a verdict that [[task-30.3-disk-tier-fate]] applies.
 > User gates: none here. plan-30 D3 (deleting the files) is asked at 30.3.
+> Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]).
 
 rel: part-of -> [[plan-30-materialisation]]
 rel: implements -> [[plan-30-materialisation#t0]]
@@ -128,7 +129,12 @@ D11). A probe that could not be run counts as a stale path, not as a clean one. 
 
 1. builds a throwaway store under a short temp root through the production ingest path, with
    logging on, two partitions where the operation needs them;
-2. calls `cached_adjacency` in a first `Store` (a build and a write of the tier);
+2. calls `cached_adjacency` in a first `Store` (a build and a write of the tier), **and then
+   asserts that the tier was written**: both files exist, the sidecar's key is the key that
+   store would look up (partition, parameters, mode, shape, and the log's size at that moment),
+   and both files' modification times are not older than the probe's start. The tier's write
+   sits in `except Exception: pass`, so a write that failed looks, from the result alone, like
+   a tier that was "served fresh". A probe whose first store did not write is `not-run`;
 3. runs the operation;
 4. opens a **second** `Store` (the stand-in for a fresh process), calls `cached_adjacency`, and
    compares its edge set with `build_adjacency` on that same second store;
@@ -137,6 +143,12 @@ D11). A probe that could not be run counts as a stale path, not as a clean one. 
 
 The assertion is the invariant, not the mechanism: **what a fresh process is served equals a
 fresh build.** It holds for any fate of the tier, so the tests survive 30.3. {#r1-invariant}
+
+**The probe swallows nothing.** No step of a probe is wrapped in a handler that passes. A step
+that raises, a tier that was not written (step 2), and a second store that was not served from
+disk when the key was unchanged are each recorded as `not-run` with the reason, and `not-run`
+counts in K ([[#bands-rule]]). The written-tier assertion is step 2's own; under a drop verdict
+30.3 removes it with the tier, and the invariant stays. {#r1-no-swallow}
 
 | # | Operation | Entry point |
 |---|---|---|
@@ -195,8 +207,11 @@ probes are its RED. The plan's D11 row gets the verdict and the date. {#r4-body}
   the exclusions. Proven by `test_writer_census_matches_probe_table`: it runs the family and
   fails on a site with neither; the family's synthetic module (a planted `entity_links` writer
   in a temp copy of a module) fails it by name. {#ac-1}
-- **AC-2: every probe ran and recorded.** 22 rows or more, none skipped. A probe that errors
-  before its comparison is reported as `not-run` and counted in K. Proven by the test file's own
+- **AC-2: every probe ran and recorded.** 22 rows or more, none skipped. Each row records that
+  its first store wrote the tier (the key, and the two modification times). A probe that errors
+  before its comparison, or whose first store did not write the tier, is reported as `not-run`
+  with the reason and counted in K. A test makes the tier's write fail for one probe (the store
+  root made read-only after the build) and asserts that probe is `not-run`, not clean. Proven by the test file's own
   result table, written to `workflow/review-output/task-30.0/probe-table.json`. {#ac-2}
 - **AC-3: the probes that find a stale path are RED at the base sha**, and the red run is
   recorded (`workflow/review-output/task-30.0/red.log`) with the E line of each. A probe that is
@@ -217,7 +232,8 @@ probes are its RED. The plan's D11 row gets the verdict and the date. {#r4-body}
   written against the invariant; the ones that fail are the RED for 30.3, whatever 30.3 does.
 - **Mutations.** There is no implementation to mutate. The planted case of [[#r3]] is the proof
   that the harness can fail; a second planted case removes one edge with the key held equal, so
-  that the comparison is shown to see a removal as well as an addition.
+  that the comparison is shown to see a removal as well as an addition; a third makes the
+  tier's write fail and must come out `not-run` (AC-2).
 - **Mocks.** None of the store. The planted cases patch `_adj_log_size`, a helper; this is
   classified in `workflow/test_mock_registry.md`.
 - **Outcome measures, not clocks.** K, S and the three recorded columns are counts and
@@ -259,3 +275,10 @@ probes are its RED. The plan's D11 row gets the verdict and the date. {#r4-body}
   would value the tier for a consumer that is leaving it.
 - **A probe that cannot run counts against the tier.**
 {#decisions-list}
+
+## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+| Finding ([[bsd-plan30-spec-r1]]) | Answered in |
+|---|---|
+| M3: a probe whose first store failed to write the tier would count as clean | [[#r1]] step 2 (each probe asserts the tier was written: files, key, modification times); [[#r1-no-swallow]] (no handler that passes; `not-run` counts in K); [[#ac-2]] (a planted failed write must come out `not-run`) |
+{#rev-note-2-table}
