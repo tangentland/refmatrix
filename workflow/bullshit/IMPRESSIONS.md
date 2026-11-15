@@ -70,6 +70,9 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-15 (T0 fresh r2, f6b32e2): A RED WHOSE FIXTURE NEEDS THE MODULE UNDER CONSTRUCTION FAILS ON THE IMPORT AT BASE. Its stated-reason RED has to be a named mutation after GREEN, or the node never fails for the reason it guards. {#imp-fixture-needs-the-module}
 - 2026-11-15 (T0 fresh r2): A CYCLE GUARD'S "FAILS, NOT HANGS" MUTATION IS ONLY AS SAFE AS THE BOUND BEHIND IT. Give the bound its own mutation. {#imp-bound-backs-the-cycle-mutation}
 - 2026-11-15 (T0 fresh r2): "N FILES NAME X" IS A GREP RESULT. Separate "names it" from "reaches it through an import" and from "sits in the same list for another reason" before counting. {#imp-count-the-grep-not-the-list}
+- 2026-11-15 (T0.1' r1, fff91a8): ALL 11 SPEC MUTATIONS KILLED, PLUS A GUARD+BOUND DOUBLE BREAK CAUGHT BY THE 30 S CHILD DEADLINE; convergence onto one resolver is real (the AC-1.7 static check alone kills M1.8). {#imp-t01-mutations-all-killed}
+- 2026-11-15 (T0.1' r1): A DEFENSIVE ENV SCRUB (GIT_DIR STRIP) SHIPPED WITH A STATED HOOK SCENARIO AND NO TEST: real behaviour, mutation-invisible. Ask for a pinning case whenever GREEN adds a guard beyond the spec. {#imp-unpinned-defensive-guard}
+- 2026-11-15 (T0.1' r1): RED-TIME `if <new file> exists` SCAFFOLDING OUTLIVES GREEN in fixture helpers; check RED's conditional copies at every GREEN review. {#imp-red-scaffold-outlives-green}
 
 ## Former anchors, restored {#former-anchors}
 

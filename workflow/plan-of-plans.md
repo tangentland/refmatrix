@@ -195,6 +195,7 @@ the row here ([[orchestration#pop-truth]]). A row that is resolved and applied i
 | L | date | source | ruling | applied to |
 |---|---|---|---|---|
 | L125 | 2026-11-15 | the user: "for p31, once bsd is happy they are approved" | plan-31's plan and task specs are **approved on ch-bsd MEH-only GO**, the MEHs folded before the merge; no separate user approval. Their `plan-31 D<n>` decisions are entered in [[#decisions]] first and take the architect's recommendation, **except** a decision that changes a store on disk (31.2's fate for the existing orphaned learned rows; any fleet re-derive or reingest 31.6 needs), which goes to the user ([[orchestration#release]] step 4) | plan-31 row; `plan-31-pre-mod-loose-ends.md` at merge |
+| L126 | 2026-11-15 | ch-bsd r1 of T0.1' (MEH-only 5, GO; [[bsd-t01-r1-fff91a8]]) | GO; mutations M1.1-M1.11 recorded by the reviewer. MEH-1: RED adds a chained-clone case run with `GIT_DIR`/`GIT_WORK_TREE` exported at an unrelated repo, plus M1.12 'drop the scrub' (must turn it red). MEH-2: the three gate-root helpers copy the resolver unconditionally, stale comment dropped. MEH-3: the mock-registry row states the current clone behaviour. MEH-4: the summary keeps `task-t0.1-skip-gate-memdir.md`; `#t0-1-files` is amended. MEH-5: anchored to stage 2, no fold now. The lead checks the fold (small MEHs, [[orchestration#task]] step 5); then merge `--no-ff` | T0.1' branch; `task-t0-suite-trust-sweep#t0-1-files` |
 {#rulings-table}
 
 ### Plan decisions {#decisions}
@@ -210,10 +211,15 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q32**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q37**. Open: Q32, Q33, Q34, Q35, Q36. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q32 | 2026-11-15 | plan-10's dedupe (10.5, 10.6, 10.4, 10.2) requires 25.1b merged; 25.1b is post-mod (contradiction in the freeze, freeze-triage-3) | (a) the four go post-mod with 25.1b; 10.3 and 31.5 stay pre-mod; (b) admit 25.1b; (c) re-spec plan-10 without 25.1b | open |
+| Q33 | 2026-11-15 | What triggers the plan-24 re-plan, now that plan-28 (the charter experiment D-Q5 waited on) is post-mod? Plan-24 is `drafting`, last bsd round DIRTY (2026-10-20), nine of ten specs stale | (a) the freeze's last step is a plan-24 freshness revision to approval, with 31.5, 21.5 phase M and 30.6 as its evidence; (b) run plan-28 before the mod | open |
+| Q34 | 2026-11-15 | 24.6 R4 calls `stm.tool_event_fields`, which is in 21.5's frozen build phase and not in `src/`: who builds it? | (a) the plan-24 revision moves the builder into 24.6; (b) un-freeze 21.5 R1 alone, pre-mod | open |
+| Q35 | 2026-11-15 | G22 (operational content out of the skew) and G30 (the `denotes` fold evaluation): the first triage's table kept them 'with step 10', its summary and the freeze line omit them | (a) admit both: G22 after plan-30 release C, G30 folded into 30.6; (b) both post-mod; (c) G30 only | open |
+| Q36 | 2026-11-15 | The rest of the un-triaged list (U3-U17 in freeze-triage-3): admit G32 and the cross-partition `rel:` probe (25.2, 21.5 phase M and 26.5 wait on them); post-mod 19.0 rest, 19.2, 19.5/19.6 frozen parts, 21.3, 21.5 phase B, 21.6, 21.7, plan-20, plan-7 W4-a rows, linked-readonly-store, `legs_ms`; bug-182, bug-224, bug-167/174 follow their post-mod hosts | (a) apply as proposed; (b) item by item | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
