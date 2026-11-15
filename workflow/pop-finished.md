@@ -47,3 +47,10 @@ rel: depends-on -> [[orchestration#pop-truth]]
 | Q35 | 2026-11-15 | G22 (operational content out of the skew) and G30 (the `denotes` fold evaluation): the first triage's table kept them 'with step 10', its summary and the freeze line omit them | (a) admit both: G22 after plan-30 release C, G30 folded into 30.6; (b) both post-mod; (c) G30 only | **(a)** (the user, 2026-11-15: "given what I just said q32-36 agree to your recommendations" (with L127)); applied by L128 |
 | Q36 | 2026-11-15 | The rest of the un-triaged list (U3-U17 in freeze-triage-3): admit G32 and the cross-partition `rel:` probe (25.2, 21.5 phase M and 26.5 wait on them); post-mod 19.0 rest, 19.2, 19.5/19.6 frozen parts, 21.3, 21.5 phase B, 21.6, 21.7, plan-20, plan-7 W4-a rows, linked-readonly-store, `legs_ms`; bug-182, bug-224, bug-167/174 follow their post-mod hosts | (a) apply as proposed; (b) item by item | **(a)** (the user, 2026-11-15: "given what I just said q32-36 agree to your recommendations" (with L127)); applied by L128 |
 {#q32-q36-table}
+
+### Question answered and applied (Q37) {#q37}
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q37 | 2026-11-15 | plan-31 D10: 31.4 reaches zero standing warnings by an opt-in `--strict` flag and one enum line (`session/recall-state`) in the upstream GMD linter (`~/claude_tools/gmd`, vendored here as a committed upstream blob), plus one line in your `~/.claude/MEMORY-RULES.md`. May the plan change the upstream linter and that file? | (a) yes, both; (b) linter only, MEMORY-RULES unchanged; (c) no: 31.4 keeps the change inside this repo's wrapper | **(a)** (the user, 2026-11-15: "q37-a yes"): plan-31 D10 decided |
+{#q37-table}

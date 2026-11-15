@@ -221,16 +221,15 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 | plan-31 D4 | plan-31 (31.5) | What to do about `ignored` | (rec) report only; handed to 10.6 and the mod design note | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
 | plan-31 D5 | plan-31 (31.5) | A kind whose band is ambiguous or under-sampled | (rec) `shrink` by default; S3 ablation only on the user's go | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
 | plan-31 D6 | plan-31 (31.5) | The capture after 31.5 | (rec) stays on, bounded; 21.5 phase M, plan-10 and 30.6 read it | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
-| plan-31 D10 | plan-31 (31.4) | Changing the upstream GMD linter (`~/claude_tools/gmd`: a `--strict` flag, the `session/recall-state` enum line) and one line in the user's global `~/.claude/MEMORY-RULES.md` | (rec) yes: `--strict` upstream, opt-in, passed only by `scripts/lint-gmd.sh` | **open: Q37** (outside this repo, and the user's own instructions file); spec anchors `task-31.4-retire-standing-warnings#r1`, `#r3`, `#ac-4`-`#ac-6` | — |
+| plan-31 D10 | plan-31 (31.4) | Changing the upstream GMD linter (`~/claude_tools/gmd`: a `--strict` flag, the `session/recall-state` enum line) and one line in the user's global `~/.claude/MEMORY-RULES.md` | (rec) yes: `--strict` upstream, opt-in, passed only by `scripts/lint-gmd.sh` | **decided by the user** (Q37 = a, 2026-11-15): `--strict` and the `session/recall-state` enum line upstream, plus one line in `~/.claude/MEMORY-RULES.md`; spec anchors `task-31.4-retire-standing-warnings#r1`, `#r3`, `#ac-4`-`#ac-6` | — |
 {#decisions-table}
 
 ### Questions to the user {#questions}
 
-Next id: **Q38**. Open: Q37. Each reply that asks anything ends with the ids still open.
+Next id: **Q38**. None open. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q37 | 2026-11-15 | plan-31 D10: 31.4 reaches zero standing warnings by an opt-in `--strict` flag and one enum line (`session/recall-state`) in the upstream GMD linter (`~/claude_tools/gmd`, vendored here as a committed upstream blob), plus one line in your `~/.claude/MEMORY-RULES.md`. May the plan change the upstream linter and that file? | (a) yes, both; (b) linter only, MEMORY-RULES unchanged; (c) no: 31.4 keeps the change inside this repo's wrapper | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
