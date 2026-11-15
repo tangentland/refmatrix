@@ -15,10 +15,11 @@ metadata:
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t3]]).
 > Status: Drafting. Written by ch-architect on Fable 5.2, 2026-11-15; ch-bsd spec review next.
-> Depends on: nothing in code. Its real-corpus criterion ([[#ac-7]]) depends on
-> `plan-31 D31`.
-> Runs before [[task-31.4-retire-standing-warnings]]: both edit `scripts/lint-gmd.sh` and the
-> same four test helpers ([[#census]]).
+> Depends on: nothing in code. Its real-corpus criterion ([[#ac-7]]) depends on the proposed
+> decision `plan-31 D7` ([[#decisions]]; entered in [[plan-of-plans#decisions]] by the lead
+> before it is amended here).
+> Runs before [[task-31.4-retire-standing-warnings]]: both edit `scripts/lint-gmd.sh` and rely
+> on the same gate-tree test helpers ([[#census]]).
 > Closes the guard half of bug-242 ([[bug_registry#registry]]; the repair landed in `e7f1c8e`).
 
 rel: part-of -> [[plan-31-pre-mod-loose-ends]]
@@ -59,7 +60,7 @@ ids were routine and never got one. They are in six folded ledgers:
 `impression_bsd_ledger_2026_10_06` (3, lines 53, 55, 56), `…_2026_10_07` (2, lines 73, 75),
 `…_2026_10_14` (3, lines 75-77), `…_2026_10_15_16` (2, lines 34, 35), `…_2026_11_09` (2, lines
 21, 22) and `…_2026_11_09b` (3, lines 21-23). The rule as the plan states it fails on all 15.
-What happens to them is `plan-31 D31`. {#baseline-15}
+What happens to them is `plan-31 D7`. {#baseline-15}
 
 Two more facts the rule has to respect:
 
@@ -67,8 +68,9 @@ Two more facts the rule has to respect:
   and `IMPRESSIONS.md` holds 42 (its former-anchors list). The plan's rule is about dated
   bullets; these are counted and printed, not checked. {#baseline-undated}
 - The ledgers live in the memory dir, outside the repository. `scripts/lint-gmd.sh` adds that
-  dir to its scope when it exists on the machine. Where it does not, only `IMPRESSIONS.md` is
-  checked, and the wrapper already says so on stderr. {#baseline-memdir}
+  dir to its scope when its resolver (`scripts/gmd_memdir.py`, T0.1') finds one. Where it finds
+  none, only `IMPRESSIONS.md` is checked, and the summary line shows one ledger doc.
+  {#baseline-memdir}
 
 ## Requirements {#requirements}
 
@@ -147,8 +149,8 @@ tmp tree; their text is synthetic.
   and `test_an_id_inside_a_code_span_is_not_the_anchor` (a bullet whose only `{#id}` is in
   backticks fails `ledger-no-anchor`). {#ac-4}
 - **AC-5 (RED): the real gate fails on it.** `test_the_lint_gate_fails_on_a_cut_bullet`: a tmp
-  tree holding copies of the gate's scripts and the linter (the layout
-  `tests/test_bug216_scope_parity.py` builds) plus one cut bullet. `bash scripts/lint-gmd.sh`
+  tree holding copies of the gate's scripts and the linter (built by `_gate_root` of
+  `tests/test_bug179_anchor_parity.py`) plus one cut bullet. `bash scripts/lint-gmd.sh`
   exits non-zero, prints the finding, and still prints the lint summary and the parity line.
   {#ac-5}
 - **AC-6 (RED): no input is not clean.** `test_no_ledger_doc_exits_2` and
@@ -158,9 +160,10 @@ tmp tree; their text is synthetic.
   ledger line reads 17 docs and 0 findings (the bullet count is whatever the ledgers then
   hold). `tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate`
   already runs the real wrapper against a copy of the memory dir, so it carries this
-  criterion. It is green only after `plan-31 D31` is applied. {#ac-7}
-- **AC-8 (characterization): the other gate fixtures still run.** The four tests that build a
-  gate tree ([[#census]]) copy the new script and stay green. Without the copy the wrapper
+  criterion. It is green only after `plan-31 D7` is applied. {#ac-7}
+- **AC-8 (characterization): the other gate fixtures still run.** The three helpers that build
+  a gate tree ([[#census]]) copy the new script, and the four test files that use them stay
+  green. Without the copy the wrapper
   exits 2 there, by design. {#ac-8}
 
 ## Mutations {#mutations}
@@ -182,15 +185,16 @@ tmp tree; their text is synthetic.
 
 | What | Callers at `f3a508f` | Effect |
 |---|---|---|
-| `scripts/lint-gmd.sh`, run on the real tree | `CLAUDE.md` `#before-commit`; [[orchestration#reports]] step 4; `tests/test_gmd_lint_requires_version.py` | gains a step; fails on the 15 until D31 |
-| `scripts/lint-gmd.sh`, copied into a fixture tree | `tests/test_bug179_anchor_parity.py`, `tests/test_bug216_rev4.py`, `tests/test_bug216_scope_parity.py`, `tests/test_bug230_repo_scope_gate.py` | each helper must also place `scripts/check-ledger-anchors.py`, or the wrapper exits 2. Found by `grep -n "lint-gmd.sh" tests/*.py` |
+| `scripts/lint-gmd.sh`, run on the real tree | `CLAUDE.md` `#before-commit`; [[orchestration#reports]] step 4; `tests/test_gmd_lint_requires_version.py` | gains a step; fails on the 15 until D7 |
+| `scripts/lint-gmd.sh`, copied into a fixture tree | three helpers: `_gate_root` in `tests/test_bug179_anchor_parity.py` (also imported by `tests/test_bug230_repo_scope_gate.py`), `_tree` in `tests/test_bug216_rev4.py`, `_root` in `tests/test_bug216_scope_parity.py` | each must also place `scripts/check-ledger-anchors.py`, or the wrapper exits 2. T0.1' did the same for `scripts/gmd_memdir.py` (ruling L126, MEH-2, in [[plan-of-plans#rulings]]). Found by `grep -n "lint-gmd.sh" tests/*.py`, re-checked at `c4b44d0` |
 | `tools/gmd/lint.py` | unchanged; `ID_RE` and `strip_inline_code` are imported, not edited | none; the vendored-blob test is unaffected |
 | the user-level memory hook (`lint-memory-gmd.sh`) | lints one memory file with the upstream linter | does **not** run this check ([[#risks]]) |
 {#census-table}
 
-This is the fifth place a test builds the gate's tree by hand. One shared helper is the
-converged shape ([[feedback_converge_repeated_shapes]]); it is suggested to 29.3, not required
-here. {#census-fifth}
+The new test does not build a fourth tree of its own: [[#ac-5]] uses `_gate_root`. Three
+hand-built gate trees that each had to learn about `gmd_memdir.py`, and now about this script,
+are one missing shared helper ([[feedback_converge_repeated_shapes]]); that is suggested to
+29.3, not required here. {#census-fifth}
 
 ## Files {#files}
 
@@ -199,9 +203,9 @@ here. {#census-fifth}
 | `scripts/check-ledger-anchors.py` | new: the checker ([[#r1]], [[#r3]]) |
 | `scripts/lint-gmd.sh` | a third step; the exit is the worst of three |
 | `tests/test_ledger_anchor_guard.py` | new |
-| the four gate-tree tests in [[#census-table]] | their helpers copy the new script |
+| the three gate-tree helpers in [[#census-table]] | copy the new script |
 | `workflow/ORCHESTRATION.md` | [[#r4]] |
-| six ledger memories, outside the repository | the lead's edit under `plan-31 D31`: 15 ids |
+| six ledger memories, outside the repository | the lead's edit under `plan-31 D7`: 15 ids |
 | `workflow/bug_registry.md` | bug-242's status, by the lead |
 | `workflow/implementation_summaries/task-31.3-ledger-anchor-guard.md` | new |
 {#files-table}
@@ -218,8 +222,8 @@ here. {#census-fifth}
    guards the anchor, not the prose. Out of scope.
 4. **Undated bullets** are not checked ([[#baseline-undated]]). A run bullet written without a
    date escapes; the count is printed so a jump is visible.
-5. **The gate turns red in every clone** between this task's merge and D31's edit. The two land
-   together: the lead applies D31 before the merge, and [[#ac-7]] is run on merged `master`.
+5. **The gate turns red in every clone** between this task's merge and D7's edit. The two land
+   together: the lead applies D7 before the merge, and [[#ac-7]] is run on merged `master`.
 {#risks-list}
 
 ## Out of scope {#out-of-scope}
@@ -230,20 +234,34 @@ here. {#census-fifth}
 - A shared gate-tree test helper.
 {#out-of-scope-list}
 
-## Decisions for the user {#decisions}
+## Proposed decisions {#decisions}
 
-- **plan-31 D31: the 15 whole bullets that never had an id** ([[#baseline-15]]).
-  - (a) The lead appends an id to each, in the six ledger memories, by the convention the
-    ledger's generated ids already follow (`imp-<date>-<run>-<first words>`, as in
-    `imp-2026-10-14-p19-21-r2-measure-the-window-before-y`), unique across the scanned set, and
-    bumps each file's `updated`. **Recommended:** 15 one-line additions make 15 lessons
-    addressable, and the rule then has no exception to carry. Existing ids are untouched, so
-    "folded verbatim, anchor ids unchanged" still holds.
+Each is **proposed**, not decided. The lead enters it in [[plan-of-plans#decisions]] under its id
+first; only a decision made there is amended into this spec (the user, 2026-11-15; ruling L125 in
+[[plan-of-plans#rulings]]). The recommended option is listed first, and each item names the
+anchors that depend on it. Until a decision is amended in, the text at those anchors is the
+recommended option written as a draft. {#decisions-proposed}
+
+- **plan-31 D7 (proposed, [[plan-of-plans#decisions]]): what happens to the 15 whole dated
+  bullets that never had an id** ([[#baseline-15]])?
+  - (a) **Recommended.** The lead appends an id to each, in the six ledger memories, by the
+    convention the ledger's generated ids already follow (`imp-<date>-<run>-<first words>`, as
+    in `imp-2026-10-14-p19-21-r2-measure-the-window-before-y`), unique across the scanned set,
+    and bumps each file's `updated`. 15 one-line additions make 15 lessons addressable, and the
+    rule carries no exception. Existing ids are untouched, so "folded verbatim, anchor ids
+    unchanged" still holds.
   - (b) An allow-list of the 15 in the checker. The rule ships with a standing exception, and
     the 15 stay unaddressable.
-  {#d31}
+  - Depends on it: [[#ac-7]], [[#risks]] item 5, the ledger row of [[#files-table]].
+  {#d7}
 
-## Decisions taken in this spec {#spec-decisions}
+D7 edits memory files, which reach the store through the bridge; it changes no catalog directly.
+{#decisions-l125}
+
+## Design choices in this draft {#spec-decisions}
+
+These are how the draft is built, open to ch-bsd's challenge. They are not `plan-31 D<n>`
+decisions and none is recorded as decided anywhere. {#spec-decisions-note}
 
 - **A wrapper step, not a linter rule** ([[#r2-why]]).
 - **Selection by frontmatter** ([[#r1-defs]]), with [[#r3]]'s exit 2 as the proof the selection

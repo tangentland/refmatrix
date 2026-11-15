@@ -15,8 +15,9 @@ metadata:
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t4]]).
 > Status: Drafting. Written by ch-architect on Fable 5.2, 2026-11-15; ch-bsd spec review next.
-> Depends on: `plan-31 D41`-`D43` ([[#decisions]]). D43 is consent to change the upstream GMD
-> linter, which this repository vendors.
+> Depends on: the proposed decisions `plan-31 D8`-`D10` ([[#decisions]]; entered in
+> [[plan-of-plans#decisions]] by the lead before any is amended here). D10 is consent to change
+> the upstream GMD linter, which this repository vendors.
 > Runs after [[task-31.3-ledger-anchor-guard]] (both edit `scripts/lint-gmd.sh`). Must not be
 > in flight together with 31.6 (`task-31.6`, another author's spec, not on this branch): both
 > change `tools/gmd/lint.py` and its upstream, and 31.6 decides how an ambiguous stem is
@@ -43,7 +44,8 @@ working through instances of a class nobody wants ([[plan-31-pre-mod-loose-ends#
 
 One run of `./scripts/lint-gmd.sh` in a clone, with the dev tree's memory dir in scope:
 `1155 files, 1152 GMD docs, 0 errors, 89 warnings [phase 2 cross-doc]`; parity clean.
-{#baseline-run}
+Re-run after merging `master` at `c4b44d0` (T0.1' changed the wrapper's memory-dir step):
+1176 files, the same 89 and the same split. {#baseline-run}
 
 | Class | Count | Files | Where | Example |
 |---|---|---|---|---|
@@ -88,7 +90,7 @@ added: nothing has to remember to promote it. {#r1-why}
 | Class | Disposition | Why it is worth failing | How its instances reach zero | Edits |
 |---|---|---|---|---|
 | `unknown-memory-type` | **fails the gate** | the type decides which recalls hide a memory (`exclude_mtype`, default `session/*`). A mistyped type changes what is recalled, silently | the enum is wrong, not the files: `session/recall-state` is the type `handoff.py` writes on every save-state. The upstream enum gains it ([[#r3]]) | 1 line upstream; 0 files |
-| `unknown-verb` | **fails the gate** | linkage types are an open set, so a mistyped verb (`depnds-on`) becomes its own linkage and the intended edge does not exist. A project's real custom verbs are declared in `.gmd/config.yml` `extra_verbs`, which the linter already honours | the 5 inverse edges, per `plan-31 D42` | 5 lines in 5 memory files; 1 forward edge added |
+| `unknown-verb` | **fails the gate** | linkage types are an open set, so a mistyped verb (`depnds-on`) becomes its own linkage and the intended edge does not exist. A project's real custom verbs are declared in `.gmd/config.yml` `extra_verbs`, which the linter already honours | the 5 inverse edges, per `plan-31 D9` | 5 lines in 5 memory files; 1 forward edge added |
 | `rel-target-shape` | **fails the gate** | a `rel:` line asserts an edge. One whose target is not a link lands nowhere: 28 authored edges are missing from the graph today | by bucket ([[#r4-rel]]) | 28 lines in 19 files |
 | `ambiguous-stem` | **fails the gate** | the linter binds a shared stem to whichever doc it read first, so the link's target is arbitrary | each link is rewritten to the full frontmatter id of the doc meant ([[#r4-stem]]) | 9 lines in 5 files |
 {#r2-table}
@@ -96,7 +98,7 @@ added: nothing has to remember to promote it. {#r1-why}
 **No class is retired.** Each one, read once, turned out to name a real defect in the graph or
 in the linter's own enum, and each reaches zero with a bounded edit: 42 lines in the
 repository and memory dir, plus one enum line. Retiring a class would mean removing its check
-upstream for every project. The table is the user's to change (`plan-31 D41`); a class the
+upstream for every project. The table is the user's to change (`plan-31 D8`); a class the
 user retires is removed upstream with its reason recorded there, and its instances are not
 touched. {#r2-none-retired}
 
@@ -104,7 +106,7 @@ touched. {#r2-none-retired}
 
 `KNOWN_MEMORY_TYPES` gains `session/recall-state`. The enum's comment says it mirrors
 `~/.claude/MEMORY-RULES.md`; that file's type list is the user's, and the lead proposes the
-matching line with D43. {#r3-body}
+matching line with D10. {#r3-body}
 
 ### R4: the procedure {#r4}
 
@@ -113,7 +115,7 @@ matching line with D43. {#r3-body}
 1. **Upstream first.** `--strict`, the enum line and their cases in the upstream gate test are
    committed in a clone of the GMD repository; the lead lands them. The vendored
    `tools/gmd/lint.py` is then replaced by that committed blob, never hand-edited.
-2. **Fix the instances** ([[#r4-rel]], [[#r4-stem]], D42).
+2. **Fix the instances** ([[#r4-rel]], [[#r4-stem]], D9).
 3. **Turn the flag on** in `scripts/lint-gmd.sh` last, in the commit that leaves the count at
    zero, so no intermediate commit has a red gate.
 {#r4-steps}
@@ -162,13 +164,14 @@ Tests are in `tests/test_gmd_zero_warnings.py` unless named.
 
 - **AC-1 (RED at base: 89 warnings): the real gate reports none.**
   `test_the_repo_gate_reports_zero_warnings` runs the real `scripts/lint-gmd.sh` the way
-  `tests/test_gmd_lint_requires_version.py` does (a decoy home holding a copy of this
-  checkout's memory dir) and asserts exit 0 and a summary line of `0 errors, 0 warnings`. In a
-  checkout with no memory dir the same test runs on the 37 in the repository. {#ac-1}
+  `tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate`
+  does (a decoy home holding a copy of the memory dir the gate's resolver finds) and asserts
+  exit 0 and a summary line of `0 errors, 0 warnings`. Where the resolver finds no memory dir
+  the same test runs on the 37 in the repository. {#ac-1}
 - **AC-2 (RED at base: exit 0): each class fails the real gate.**
   `test_each_warning_class_fails_the_gate[<class>]`, parametrised over the four: a tmp gate
-  tree (the layout `tests/test_bug216_scope_parity.py` builds) holding one doc with one
-  instance of the class. `bash scripts/lint-gmd.sh` exits non-zero and prints that class's id.
+  tree (built by `_gate_root` of `tests/test_bug179_anchor_parity.py`) holding one doc with
+  one instance of the class. `bash scripts/lint-gmd.sh` exits non-zero and prints that class's id.
   {#ac-2}
 - **AC-3 (RED): no class without a must-fail case.**
   `test_every_warn_class_has_a_must_fail_fixture` reads out of `tools/gmd/lint.py` every rule
@@ -207,7 +210,7 @@ Tests are in `tests/test_gmd_zero_warnings.py` unless named.
 
 | What | Callers at `f3a508f` | Effect |
 |---|---|---|
-| `tools/gmd/lint.py` through `scripts/lint-gmd.sh` | `CLAUDE.md` `#before-commit`, [[orchestration#reports]], `tests/test_gmd_lint_requires_version.py`, and the four tests that copy the wrapper into a fixture tree (`test_bug179_anchor_parity`, `test_bug216_rev4`, `test_bug216_scope_parity`, `test_bug230_repo_scope_gate`) | strict. A fixture tree that holds a warning today would start failing: step 0 runs those four files against the new wrapper and lists any that do |
+| `tools/gmd/lint.py` through `scripts/lint-gmd.sh` | `CLAUDE.md` `#before-commit`, [[orchestration#reports]], `tests/test_gmd_lint_requires_version.py`, `tests/test_lint_gmd_memdir_fallback.py`, and the tests that copy the wrapper into a fixture tree through three helpers (`test_bug179_anchor_parity`, `test_bug216_rev4`, `test_bug216_scope_parity`; `test_bug230_repo_scope_gate` reuses the first) | strict. A fixture tree that holds a warning today would start failing: step 0 runs those files against the new wrapper and lists any that do |
 | `tools/gmd/lint.py` called directly by tests | `tests/test_gmd_lint_requires_version.py` and the bug-179 tests | unchanged: no `--strict` |
 | the upstream copy, `~/claude_tools/gmd/lint.py` | the user-level memory hook (one file, counts `error:` lines); `tools/gmd/lint-memory.sh`; the `gmd-curator` agent template; other projects | unchanged without the flag. The enum line removes a warning for every project whose save-states rmx writes |
 | `src/refmatrix/` | comments only (`ingest_gmd.py`, `cli.py`); nothing runs the linter | none |
@@ -217,13 +220,13 @@ Tests are in `tests/test_gmd_zero_warnings.py` unless named.
 
 | File | Change |
 |---|---|
-| upstream GMD repository: `lint.py`, its gate test | `--strict`; `session/recall-state`. Landed by the lead under D43 |
+| upstream GMD repository: `lint.py`, its gate test | `--strict`; `session/recall-state`. Landed by the lead under D10 |
 | `tools/gmd/lint.py` | re-vendored from the committed upstream blob |
 | `scripts/lint-gmd.sh` | passes `--strict` |
 | `tests/test_gmd_zero_warnings.py` | new |
 | 19 files (18 `workflow/bullshit/` reports, `docs/gmd-migration-guide.md`) | 28 `rel:` lines ([[#r4-rel]]) |
 | `docs/INDEX.md`, `docs/adr-format.md`, `docs/agent-doc-primer.md`, `docs/architecture/ARCHITECTURE_INDEX.md`, `docs/architecture/README.md` | 9 links ([[#r4-stem]]) |
-| 5 memory files, and 1 more for the missing forward edge, outside the repository | the lead's edit under D42 |
+| 5 memory files, and 1 more for the missing forward edge, outside the repository | the lead's edit under D9 |
 | `CLAUDE.md`, `workflow/ORCHESTRATION.md`, `.gmd/config.yml` | [[#r5]] |
 | `workflow/implementation_summaries/task-31.4-retire-standing-warnings.md` | new |
 {#files-table}
@@ -261,30 +264,49 @@ plan; the implementer makes exactly those and quotes the diff in the summary.
 - Rewriting any review report beyond its `rel:` lines.
 {#out-of-scope-list}
 
-## Decisions for the user {#decisions}
+## Proposed decisions {#decisions}
 
-- **plan-31 D41: the disposition table** ([[#r2-table]]): all four classes fail the gate; none
-  is retired. **Recommended as written.** The user may retire any class; that class is then
-  removed from the linter upstream, with the reason, and its instances are left alone.
-  {#d41}
-- **plan-31 D42: the inverse verbs** `amended-by` and `superseded-by` (5 lines on older
-  memories, pointing at the memory that replaced them).
-  - (a) Drop them. Four already have the forward edge (`amends` / `supersedes`) on the newer
-    memory; the fifth (`project_daemon_ingest_hard_death_open`) gets its forward edge added
-    there first. **Recommended:** one fact, one edge, in the direction MEMORY-RULES names.
+Each is **proposed**, not decided. The lead enters it in [[plan-of-plans#decisions]] under its id
+first; only a decision made there is amended into this spec (the user, 2026-11-15; ruling L125 in
+[[plan-of-plans#rulings]]). The recommended option is listed first, and each item names the
+anchors that depend on it. Until a decision is amended in, the text at those anchors is the
+recommended option written as a draft. {#decisions-proposed}
+
+- **plan-31 D8 (proposed, [[plan-of-plans#decisions]]): which warning classes fail the gate,
+  and which are retired?**
+  - (a) **Recommended.** [[#r2-table]] as written: all four fail the gate, none is retired.
+  - (b) The user retires one or more classes. A retired class is removed from the linter
+    upstream, with its reason recorded there, and its instances are left alone.
+  - Depends on it: [[#r2]], [[#r4]] (which instances are fixed), [[#ac-2]], [[#ac-8]].
+  {#d8}
+- **plan-31 D9 (proposed, [[plan-of-plans#decisions]]): what happens to the inverse verbs**
+  `amended-by` and `superseded-by` (5 lines on older memories, pointing at the memory that
+  replaced them)?
+  - (a) **Recommended.** Drop them. Four already have the forward edge (`amends` /
+    `supersedes`) on the newer memory; the fifth (`project_daemon_ingest_hard_death_open`) gets
+    its forward edge added there first. One fact, one edge, in the direction MEMORY-RULES names.
   - (b) Admit both verbs to the vocabulary (`extra_verbs` here, or upstream). The graph then
     holds the same fact under two linkage types.
-  {#d42}
-- **plan-31 D43: changing the upstream linter.** The flag and the enum line land in the GMD
-  repository (public; the user pushes), and one line in `~/.claude/MEMORY-RULES.md` names the
-  save-state type.
-  - (a) As specified. **Recommended.**
+  - Depends on it: the `unknown-verb` row of [[#r2-table]], the memory row of [[#files-table]].
+  {#d9}
+- **plan-31 D10 (proposed, [[plan-of-plans#decisions]]): may the upstream GMD linter be
+  changed?** The flag and the enum line land in the GMD repository (public; the user pushes),
+  and one line in `~/.claude/MEMORY-RULES.md` names the save-state type.
+  - (a) **Recommended.** As specified.
   - (b) No upstream change: the wrapper counts warning lines itself. That cannot clear the 47
     save-state warnings without filtering the linter's output, which is a gate editing its own
     findings.
-  {#d43}
+  - Depends on it: [[#r1]], [[#r3]], step 1 of [[#r4-steps]], [[#ac-4]], [[#ac-5]], [[#ac-6]].
+  {#d10}
 
-## Decisions taken in this spec {#spec-decisions}
+None of the three changes a catalog on disk. D9 edits memory files, which reach the store through
+the bridge; D10 changes a second, public repository and a user-level file, which is the user's
+consent to give whatever ruling L125 says about recommendations. {#decisions-l125}
+
+## Design choices in this draft {#spec-decisions}
+
+These are how the draft is built, open to ch-bsd's challenge. They are not `plan-31 D<n>`
+decisions and none is recorded as decided anywhere. {#spec-decisions-note}
 
 - **One flag at the gate, not per-class severities** ([[#r1-why]]).
 - **The flag is turned on last** ([[#r4-steps]]).

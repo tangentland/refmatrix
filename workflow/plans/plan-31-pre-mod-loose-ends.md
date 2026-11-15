@@ -61,7 +61,7 @@ truncated-bullet fixture. About an hour. {#t3-body}
 **Spec:** [[task-31.3-ledger-anchor-guard]] (drafting, 2026-11-15). It is a third step in
 `scripts/lint-gmd.sh`, not a rule in the vendored linter. The census found 15 whole dated
 bullets in six folded ledgers that never had an id, so the rule is red on the real corpus until
-`plan-31 D31` is applied. {#t3-spec}
+the proposed `plan-31 D7` ([[plan-of-plans#decisions]]) is decided and applied. {#t3-spec}
 
 ### 31.4 Retire the warnings nobody acts on {#t4}
 
@@ -74,7 +74,8 @@ that is retired. {#t4-body}
 classes: `unknown-memory-type` 47, `rel-target-shape` 28, `ambiguous-stem` 9, `unknown-verb` 5;
 52 of them sit in the memory dir. The spec's table fails the gate on all four through one
 opt-in linter flag and retires none; the linter is vendored from the upstream GMD repository,
-so that flag needs `plan-31 D43`. {#t4-spec}
+so that flag needs the proposed `plan-31 D10`; D8 and D9 are proposed there too
+([[plan-of-plans#decisions]]). {#t4-spec}
 
 ### 31.5 Scan-prompt injection: measure each block's use, then cut and tighten (Q27 = b) {#t5}
 
@@ -138,7 +139,8 @@ above are corrected there from a sizing of the transcripts: the "59% of bytes, 1
 figure is one probe payload of 2026-10-01, not the corpus (about 11% of scan bytes); and a
 fourth class, `followed`, is added beside `ignored` / `avoidable` / `uncovered`, so that a
 fetch of a path the injection delivered is credited to the injection instead of counted
-against the agent. User decisions `plan-31 D51`-`D56`. {#t5-spec}
+against the agent. It proposes `plan-31 D1`-`D6`; none is decided until the lead has entered it
+in [[plan-of-plans#decisions]]. {#t5-spec}
 
 ### 31.6 Lint and ingest resolve a wikilink target the same way (bug-251, Q30 = a) {#t6}
 
@@ -162,8 +164,8 @@ target doc the lint accepts. {#t6-body}
 
 **Amended 2026-11-15 by the 31.3 / 31.4 / 31.5 specs** (0.83.1 above reads 0.84.0, L119):
 
-- **31.3 → 31.4**, in that order: both edit `scripts/lint-gmd.sh` and the same four gate-tree
-  test helpers. 31.3 merges together with the lead's `plan-31 D31` edit, or the gate is red on
+- **31.3 → 31.4**, in that order: both edit `scripts/lint-gmd.sh` and rely on the same three
+  gate-tree test helpers. 31.3 merges together with the edit the proposed `plan-31 D7` calls for, or the gate is red on
   15 findings.
 - **31.4 and 31.6 are never in flight together:** both change `tools/gmd/lint.py`, which is
   vendored from the upstream GMD repository, and 31.6 decides how an ambiguous stem is refused

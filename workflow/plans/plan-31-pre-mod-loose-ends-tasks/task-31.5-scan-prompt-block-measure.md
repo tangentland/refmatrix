@@ -13,8 +13,8 @@ metadata:
 
 # Task 31.5: the per-prompt injection, measured per block {#root}
 
-> Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t5]]; Q27 = b in
-> [[open-questions]]).
+> Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t5]]; Q27 = b, now in
+> [[pop-finished]]).
 > Status: Drafting. Written by ch-architect on Fable 5.2, 2026-11-15; ch-bsd spec review next
 > ([[orchestration#planning]]).
 > Depends on: 0.84.0 deployed (the block order, the 9,500 B command budget, the grounded-topic
@@ -25,9 +25,11 @@ metadata:
 > ablation, conditional ([[#s3]]).
 > Two releases: **release A** carries S0 and one composite fix ([[#r2-0]]); **release B**
 > carries S2. The measurement window runs between them.
-> Runs ahead of plan-10's dedup (T3 in [[plan-of-plans#freeze]]). Feeds 21.5 phase M and
-> plan-30's 30.6 ([[#handoff]]).
-> User decisions: `plan-31 D51`-`D56` ([[#decisions]]). None is taken here.
+> Runs ahead of plan-10's dedup (T3 in [[plan-of-plans#freeze]]). Whether that dedup stays
+> pre-mod is open (Q32 in [[plan-of-plans#questions]]); nothing here depends on the answer.
+> Feeds 21.5 phase M and plan-30's 30.6 ([[#handoff]]).
+> Proposed decisions: `plan-31 D1`-`D6` ([[#decisions]]). None is decided here; each is
+> entered in [[plan-of-plans#decisions]] by the lead before it is amended into this spec.
 > Sibling specs on another branch (31.1, 31.2, 31.6) are written as code, not links.
 
 rel: part-of -> [[plan-31-pre-mod-loose-ends]]
@@ -257,7 +259,7 @@ state of the same class as `query.log`, never repository content ([[#r0-4]]). {#
   then the oldest day files while the total exceeds the bound. It never removes the current
   day's file. Each removal is recorded on the call's `query.log` row (`capture_pruned`).
 - **Off switch:** `REFMATRIX_NO_TELEMETRY`, the switch every other telemetry writer obeys.
-  Whether the capture is on by default in every store is `plan-31 D51`.
+  Whether the capture is on by default in every store is `plan-31 D1`.
 - **Why per-day files and not rename rotation:** two hook commands run in parallel on every
   prompt. Appending to a day file needs no rename, so two writers cannot rotate over each
   other.
@@ -431,7 +433,7 @@ draw, seed `3150`, with the sampling fraction printed):
 
 `ignored` is reported per session as a finding count, with its sub-cases. Its remedy is
 presentation or the agent's instructions, never retrieval; what this task does with it under
-the freeze is `plan-31 D54`. {#r0b-4-remedy}
+the freeze is `plan-31 D4`. {#r0b-4-remedy}
 
 ### R0b.5: labels {#r0b-5}
 
@@ -497,7 +499,7 @@ It closes regardless at **800** prompts. A kind still under 80 then is `insuffic
 minimums come from [[#sized-week]] and from the bands: with 80 prompts and no use, the Wilson
 95% upper bound is 4.6%, the first size at which "under 5%" can be read at all. Capture
 coverage must be at least 95% of hook calls in the window, and the join rate at least 95%, or
-the window does not count ([[#r0-6]]). These numbers are `plan-31 D52`. {#r1-0-body}
+the window does not count ([[#r0-6]]). These numbers are `plan-31 D2`. {#r1-0-body}
 
 ### R1.1: what is measured per block kind {#r1-1}
 
@@ -540,7 +542,7 @@ read from the interval, not the point estimate.
 | `symbol_named` | never removed: the author named it. Each bundle becomes one pointer line (`name → path:line`) | `--per-concept-tokens` 600 → 300 for tier 1 | item kinds with no labelled use in the window stop being rendered |
 | `content` | the generated hook passes `--no-content` | `--content-tokens` 600 → 300 | as above |
 | `symbol_other` | the generated hook passes a new `--max-other-concepts 0` | `--max-other-concepts 2` | as above |
-| `composite` | the generated hook passes `--no-composite`; the focus graph, `rmx focus` and the MCP composite verb are unchanged (`plan-31 D53`: the user confirms with the number) | `--composite-k 1`, and no external `{ltm}` bridges | kept |
+| `composite` | the generated hook passes `--no-composite`; the focus graph, `rmx focus` and the MCP composite verb are unchanged (`plan-31 D3`: the user confirms with the number) | `--composite-k 1`, and no external `{ltm}` bridges | kept |
 | `recall` | **no cut in this task**: its use is the kind the tool legs cannot see ([[#limits-cannot]] item 4). The floor is the shrink | `--k` 12 → 6 on the per-prompt hook | kept |
 {#actions-table}
 
@@ -593,7 +595,7 @@ user would keep, not one about to change. {#r2-0-body}
 Release B implements the action of [[#actions-table]] for each kind whose band is `cut`,
 `cut-was-the-cap` or `shrink`, and nothing for `keep` beyond the tightening named there. Every
 knob reaches the hook through the generator (`hooks.py`); nothing is hand-edited. A kind that
-is `insufficient` or still `ambiguous` is handled per `plan-31 D55`. {#r2-1-body}
+is `insufficient` or still `ambiguous` is handled per `plan-31 D5`. {#r2-1-body}
 
 ### R2.2: what stays out of S2 {#r2-2}
 
@@ -631,7 +633,7 @@ run after this task. Presentation changes beyond block order are post-mod
 ## S3: ablation, only for an ambiguous band {#s3}
 
 Runs only for a kind still `ambiguous` at 800 prompts, and only on the user's go
-(`plan-31 D55`). Fixed now, so the protocol cannot be fitted to the result:
+(`plan-31 D5`). Fixed now, so the protocol cannot be fitted to the result:
 
 - **Design:** paired. 30 prompts drawn (seed `3153`) from the window's prompts on which the
   kind was delivered; each replayed twice in a fresh agent session on a clone at that prompt's
@@ -731,7 +733,7 @@ the full suite on merged `master` ([[orchestration#release]]). {#files-release}
 4. **A number changes under review.** ch-bsd re-runs the scorer before any band is read
    ([[#ac-1-4]]); the pair list is frozen by hash.
 5. **Fleet stores that track `.refmatrix/` files** (cliquet, atldb, prep_prolific; bug-214)
-   would show the capture directory as untracked files. It is never added by rmx, and D51's
+   would show the capture directory as untracked files. It is never added by rmx, and D1's
    option (b) keeps it out of them altogether.
 6. **Large appends from two parallel hook processes.** One `write()` per record on an
    `O_APPEND` descriptor, as the event log does, but records are up to 30 kB. A torn line is
@@ -776,51 +778,77 @@ Reported to the lead for the registry; no id is allocated here.
 - bug-182's latency, beyond not making it worse than [[#r0-5-bands]] allows.
 {#out-of-scope-list}
 
-## Decisions for the user {#decisions}
+## Proposed decisions {#decisions}
 
-Each carries the architect's recommendation. None is taken. They go to the user after the spec
-review is clean ([[orchestration#planning]] step 6). The numbers are task-scoped (`D5n` for
-31.5) so they cannot collide with the other plan-31 specs.
+Each is **proposed**, not decided. The lead enters it in [[plan-of-plans#decisions]] under its id
+first; only a decision made there is amended into this spec (the user, 2026-11-15; ruling L125 in
+[[plan-of-plans#rulings]]). The recommended option is listed first, and each item names the
+anchors that depend on it. Until a decision is amended in, the text at those anchors is the
+recommended option written as a draft. {#decisions-proposed}
 
-- **plan-31 D51: where the capture is on.** It ships in a release that every fleet store runs.
-  - (a) On by default in every store, local to each store's `.refmatrix/`, bounded at 64 MiB
-    and 42 days. **Recommended:** it costs nothing to configure, "normal use" accrues
-    everywhere, and cliquedb can be read if it reaches 100 prompts.
+- **plan-31 D1 (proposed, [[plan-of-plans#decisions]]): in which stores is the capture on?** It
+  ships in a release that every fleet store runs.
+  - (a) **Recommended.** On by default in every store, local to each store's `.refmatrix/`,
+    bounded at 64 MiB and 42 days. Nothing to configure, "normal use" accrues everywhere, and
+    cliquedb can be read if it reaches 100 prompts.
   - (b) On only in stores that carry a marker file; the lead creates it for refmatrix and
     cliquedb. Keeps payload text out of the three fleet repos that track `.refmatrix/` files.
   - (c) Off by default; on per store by request.
-  {#d51}
-- **plan-31 D52: how "about a week" is counted** ([[#r1-0]]): at least 400 prompts in at least
-  6 sessions of 20 or more, at least 80 prompts per block kind, closing at 800 regardless.
-  **Recommended as written.** A smaller window (200 prompts) reads no band under 5%; a calendar
-  week reads whatever the week happened to hold. {#d52}
-- **plan-31 D53: the band actions, confirmed before the numbers** ([[#actions-table]]), and in
-  particular the composite's `cut`: the generated hook stops passing the composite, while the
-  focus graph and `rmx focus` stay. **Recommended:** confirm the table now; the composite's cut
-  is put to the user again with the number in hand before release B, since the user asked to
-  "consider taking action" on it, not for a rule. {#d53}
-- **plan-31 D54: what is done about `ignored` under the freeze.**
-  - (a) Report it per session, hand it to plan-10's 10.6 and to the mod's design note; change
-    nothing here. **Recommended:** its remedies are presentation and instructions, which the
-    freeze sends post-mod except where plan-10 already owns them.
+  - Depends on it: [[#r0-4]] (the off switch and default), [[#risks]] item 5.
+  {#d1}
+- **plan-31 D2 (proposed, [[plan-of-plans#decisions]]): how is "about a week of normal use"
+  counted?**
+  - (a) **Recommended.** At least 400 hook-fired prompts in at least 6 sessions of 20 or more,
+    at least 80 prompts per block kind, closing at 800 regardless.
+  - (b) A smaller window (200 prompts, 4 sessions). It reads no band under 5%: with 40 prompts
+    of a kind and no use, the upper bound is 8.8%.
+  - (c) A calendar week, whatever it holds.
+  - Depends on it: [[#r1-0]], [[#ac-1-0]], the `insufficient` and `ambiguous` rows of
+    [[#r1-2-table]].
+  {#d2}
+- **plan-31 D3 (proposed, [[plan-of-plans#decisions]]): is the band action table confirmed
+  before the numbers, and what is the composite's `cut`?**
+  - (a) **Recommended.** Confirm [[#actions-table]] now. The composite's `cut` (the generated
+    hook stops passing the composite; the focus graph and `rmx focus` stay) is put to the user
+    again with the number in hand before release B: the user asked to "consider taking
+    action" on it, and [[orchestration#planning]] step 6 re-asks a decision once its number
+    exists.
+  - (b) Confirm the table now, the composite's cut included, with no second ask.
+  - (c) No table in advance; the user reads the numbers and decides each kind.
+  - Depends on it: [[#actions]], [[#r2-1]], [[#ac-2-1]].
+  {#d3}
+- **plan-31 D4 (proposed, [[plan-of-plans#decisions]]): what is done about `ignored` under the
+  freeze?**
+  - (a) **Recommended.** Report it per session, hand it to plan-10's 10.6 and to the mod's
+    design note, change nothing here. Its remedies are presentation and instructions, which
+    the freeze sends post-mod except where plan-10 already owns them.
   - (b) Also add one instruction line to the generated primer when the `unread` share is over
     a threshold named with the number.
-  {#d54}
-- **plan-31 D55: an ambiguous or insufficient kind.**
-  - (a) `insufficient`: unchanged. `ambiguous` at 800 prompts: `shrink`, and S3 runs only on
-    the user's go. **Recommended:** S3 spends days of agent replays, and `shrink` is
-    reversible.
+  - Depends on it: [[#r0b-4-remedy]], [[#handoff]].
+  {#d4}
+- **plan-31 D5 (proposed, [[plan-of-plans#decisions]]): what happens to a kind that is
+  `ambiguous` or `insufficient` when the window closes?**
+  - (a) **Recommended.** `insufficient`: unchanged. `ambiguous` at 800 prompts: `shrink`; S3
+    runs only on the user's go. S3 spends days of agent replays, and `shrink` is reversible.
   - (b) S3 runs automatically for every ambiguous kind.
-  {#d55}
-- **plan-31 D56: the capture after this task closes.**
-  - (a) It stays on, bounded as in [[#r0-4]]. **Recommended:** 21.5 phase M, plan-10's
+  - Depends on it: [[#r2-1]], [[#s3]], [[#ac-3-1]].
+  {#d5}
+- **plan-31 D6 (proposed, [[plan-of-plans#decisions]]): does the capture stay on after this
+  task closes?**
+  - (a) **Recommended.** It stays on, bounded as in [[#r0-4]]. 21.5 phase M, plan-10's
     re-measure and 30.6 all read it, and the mod replaces the hook surface it sits on.
   - (b) Off by default from release B.
-  {#d56}
+  - Depends on it: [[#r0-4]], [[#handoff]].
+  {#d6}
 
-## Decisions taken in this spec {#spec-decisions}
+None of the six changes a catalog on disk. D1 decides whether a new log directory appears under
+each store's `.refmatrix/`; whether that falls under ruling L125's store-on-disk exception is
+the lead's call. {#decisions-l125}
 
-Architecture choices, not user decisions; ch-bsd may challenge any.
+## Design choices in this draft {#spec-decisions}
+
+These are how the draft is built, open to ch-bsd's challenge. They are not `plan-31 D<n>`
+decisions and none is recorded as decided anywhere. {#spec-decisions-note}
 
 - **A separate capture file, joined by `query_id`,** not new fields on the recall-event schema.
   The event schema is per item and is read by 19.2's fold and 21.5; the capture is per call,
