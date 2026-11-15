@@ -1,9 +1,8 @@
-pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t08/src/refmatrix as checked-hash (bug-037)
 ..............................FF.F                                       [100%]
 =================================== FAILURES ===================================
 _______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
 
-R = PosixPath('/private/tmp/rmx-xy8b0o17/r/31/.refmatrix')
+R = PosixPath('/private/tmp/rmx-qknt2v5m/r/31/.refmatrix')
 
     def test_ac6_frozen_fixture_prints_the_exact_counts(R):
         """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
@@ -66,7 +65,7 @@ E       assert []
 tests/test_task21_1_agent_usage_report.py:392: AssertionError
 ________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
 
-R = PosixPath('/private/tmp/rmx-xy8b0o17/r/32/.refmatrix')
+R = PosixPath('/private/tmp/rmx-qknt2v5m/r/32/.refmatrix')
 
     def test_ac6_cli_log_recalls_are_split_per_channel(R):
         """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
@@ -121,19 +120,23 @@ E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_
 E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
 E         
 E       assert []
-E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x10910b060>('prompt_recall', 5)
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x10599f740>('prompt_recall', 5)
 
 tests/test_task21_1_agent_usage_report.py:434: AssertionError
 __________ test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once ___________
 
-R = PosixPath('/private/tmp/rmx-xy8b0o17/r/34/.refmatrix')
+R = PosixPath('/private/tmp/rmx-qknt2v5m/r/34/.refmatrix')
 
     def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
         """T0.8 R8.2 / AC-8.2 (RED at c4b44d0). Since 21.1 one `rmx memory recall` call writes
         BOTH a cli.log end row (`cli_entry`) and a `kind=recall` query.log row (`log_query` in
-        `cli.memory_recall`): same second, same cwd, the same invocation (`source` on the one,
-        `invocation` on the other) and the same flags. The query.log leg already counts the
-        second per channel (`memory_recall <channel>: n`, `outcomes:`), so R8.1's per-channel
+        `cli.memory_recall`): the same cwd (`Path.cwd()` on both), the same invocation (`source`
+        on the one, `invocation` on the other) and the same flags. The two rows share no call id,
+        and their `ts` can differ: `log_query` exits inside `main()` and `cli_entry` stamps the end
+        row afterwards, in its `finally`, so the end row can land one second later. One paired
+        call here does (query.log 10-05T10:01:00, cli.log end row :01). The query.log leg already
+        counts the
+        query.log rows per channel (`memory_recall <channel>: n`, `outcomes:`), so R8.1's per-channel
         cli.log leg counts only the calls query.log does not hold.
     
         The store mixes three kinds of call, each in the window:
@@ -149,9 +152,9 @@ R = PosixPath('/private/tmp/rmx-xy8b0o17/r/34/.refmatrix')
         the paired calls twice prints the cli.log leg as 5 / 3 / 3 / 4 (mutation M8.2); every one
         of those numbers is absent from the correct report for that channel. Each phase=start
         row is never counted (21.1 R7)."""
-        def pair(ts, argv, source):
+        def pair(ts, argv, source, end_ts=None):
             return [_cli_row(ts, argv, phase="start", source=source),
-                    {**_cli_row(ts, argv, source=source), "cwd": str(R.parent)}]
+                    {**_cli_row(end_ts or ts, argv, source=source), "cwd": str(R.parent)}]
         prompt = ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64, "--json"]
         start = ["memory", "recall", "--session-start", "--json"]
         pre = ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64]
@@ -169,7 +172,8 @@ R = PosixPath('/private/tmp/rmx-xy8b0o17/r/34/.refmatrix')
         # paired: the same call in both logs
         for i in range(2):
             ts = f"2026-10-05T10:0{i}:00"
-            cli += pair(ts, prompt, "hook")
+            # the second call's cli.log end row is stamped one second after its query.log row
+            cli += pair(ts, prompt, "hook", end_ts=None if i == 0 else f"2026-10-05T10:0{i}:01")
             q.append(_recall_qrow(R, ts, invocation="hook", stdin_json=True))
         ts = "2026-10-05T11:00:00"
         cli += pair(ts, start, "hook")
@@ -223,11 +227,11 @@ E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_
 E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
 E         
 E       assert []
-E        +  where [] = <function test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once.<locals>.chan at 0x109174300>('prompt_recall', 3)
+E        +  where [] = <function test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once.<locals>.chan at 0x10599dfe0>('prompt_recall', 3)
 
-tests/test_task21_1_agent_usage_report.py:579: AssertionError
+tests/test_task21_1_agent_usage_report.py:584: AssertionError
 =========================== short test summary info ============================
 FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
 FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
 FAILED tests/test_task21_1_agent_usage_report.py::test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once
-3 failed, 31 passed in 1.86s
+3 failed, 31 passed in 1.74s

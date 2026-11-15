@@ -510,9 +510,13 @@ def _recall_qrow(R: Path, ts: str, *, invocation: str, session_start=False, stdi
 def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
     """T0.8 R8.2 / AC-8.2 (RED at c4b44d0). Since 21.1 one `rmx memory recall` call writes
     BOTH a cli.log end row (`cli_entry`) and a `kind=recall` query.log row (`log_query` in
-    `cli.memory_recall`): same second, same cwd, the same invocation (`source` on the one,
-    `invocation` on the other) and the same flags. The query.log leg already counts the
-    second per channel (`memory_recall <channel>: n`, `outcomes:`), so R8.1's per-channel
+    `cli.memory_recall`): the same cwd (`Path.cwd()` on both), the same invocation (`source`
+    on the one, `invocation` on the other) and the same flags. The two rows share no call id,
+    and their `ts` can differ: `log_query` exits inside `main()` and `cli_entry` stamps the end
+    row afterwards, in its `finally`, so the end row can land one second later. One paired
+    call here does (query.log 10-05T10:01:00, cli.log end row :01). The query.log leg already
+    counts the
+    query.log rows per channel (`memory_recall <channel>: n`, `outcomes:`), so R8.1's per-channel
     cli.log leg counts only the calls query.log does not hold.
 
     The store mixes three kinds of call, each in the window:
@@ -528,9 +532,9 @@ def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
     the paired calls twice prints the cli.log leg as 5 / 3 / 3 / 4 (mutation M8.2); every one
     of those numbers is absent from the correct report for that channel. Each phase=start
     row is never counted (21.1 R7)."""
-    def pair(ts, argv, source):
+    def pair(ts, argv, source, end_ts=None):
         return [_cli_row(ts, argv, phase="start", source=source),
-                {**_cli_row(ts, argv, source=source), "cwd": str(R.parent)}]
+                {**_cli_row(end_ts or ts, argv, source=source), "cwd": str(R.parent)}]
     prompt = ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64, "--json"]
     start = ["memory", "recall", "--session-start", "--json"]
     pre = ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64]
@@ -548,7 +552,8 @@ def test_t0_8_a_call_in_cli_log_and_query_log_is_counted_once(R):
     # paired: the same call in both logs
     for i in range(2):
         ts = f"2026-10-05T10:0{i}:00"
-        cli += pair(ts, prompt, "hook")
+        # the second call's cli.log end row is stamped one second after its query.log row
+        cli += pair(ts, prompt, "hook", end_ts=None if i == 0 else f"2026-10-05T10:0{i}:01")
         q.append(_recall_qrow(R, ts, invocation="hook", stdin_json=True))
     ts = "2026-10-05T11:00:00"
     cli += pair(ts, start, "hook")
