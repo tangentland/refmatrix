@@ -5,7 +5,7 @@
 #
 #   scripts/lane-mini.sh <repo-dir> <ref> <log-name> <pytest args / test files...>
 #
-# Slots: rmxtest1..3 on the mini, standard users (no sudo), each with its own home, launchd
+# Slots: rmxtest1..2 on the mini (rmxtest3 is the canary, L172), standard users (no sudo), each with its own home, launchd
 # domain, clone (~/lane/refmatrix) and thin venv (~/.venv-lane over the shared pinned venv in
 # /Users/Shared/rmx-lane/venv). <ref> is pushed once (as the setup account rmxtest) to the shared
 # mirror /Users/Shared/rmx-lane/refmatrix.git as refs/lane/<log-name>; the first FREE slot (its
@@ -26,7 +26,7 @@ GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ForwardX11=no" \
 ARGS=$(printf '%q ' "$@")
 WAIT=${MINI_LANE_WAIT_S:-3600}; waited=0
 while :; do
-  for n in 1 2 3; do
+  for n in 1 2; do   # rmxtest3 is the latest-versions canary (L172), never a verify slot
     U=rmxtest$n
     "${SSH[@]}" "$U@mini" "bash -s" <<EOF 2>&1 | grep -v 'X11 forwarding\|cargo/env'
 set -u
@@ -56,6 +56,6 @@ EOF
       exit "$RC"
     fi
   done
-  [ "$waited" -ge "$WAIT" ] && { echo "mini-lane: all 3 slots busy for ${WAIT}s — DID NOT RUN" >&2; exit 4; }
+  [ "$waited" -ge "$WAIT" ] && { echo "mini-lane: both locked slots busy for ${WAIT}s — DID NOT RUN" >&2; exit 4; }
   sleep 15; waited=$((waited+15))
 done

@@ -96,10 +96,11 @@ rules keep it from growing back (L165-L168). Every agent that writes or reviews 
    `xfail(strict=True, reason="bug-NNN")`; nothing stays red across releases. Never `--ignore` or
    `-k` away a failing group. A known failure has a `workflow/bug_registry.md` row.
 9. **Running tests: in an isolated slot, on a committed sha.** A verify run goes through
-   `scripts/lane-mini.sh <repo> <ref> <log-name> <files…>` (the Mac mini, users `rmxtest1..3`) or
+   `scripts/lane-mini.sh <repo> <ref> <log-name> <files…>` (the Mac mini, users `rmxtest1..2`;
+   `rmxtest3` there is the latest-versions canary, L172) or
    `scripts/lane-local.sh …` (this machine, local users `rmxtest1..3`). Each slot is its own macOS
    user (own HOME, `~/.refmatrix`, launchd domain, TMPDIR; no write access to the live stores), takes
-   the first free of 3 slots, and copies the log to `workflow/review-output/<log-name>.log`. Prefer
+   the first free slot, and copies the log to `workflow/review-output/<log-name>.log`. Prefer
    the mini; it keeps load off this machine. The old single lane
    (`/usr/bin/lockf /private/tmp/claude-501/rmx-test-lane.lock`, output tee'd to a log) is only for
    tests that need the dev tree's live `.refmatrix/` and for the release gate's full suite. Daemon
