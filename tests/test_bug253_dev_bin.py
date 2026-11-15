@@ -298,6 +298,14 @@ _HARNESS_SRC = {
     # names devbin.py, loads nothing
     "names-only": ('DOC = "see tests/devbin.py"\n'
                    'RMX = "/usr/local/bin/rmx"\n'),
+    # the string IS exactly "devbin.py" and the harness loads ANOTHER file by path: "names
+    # devbin.py" and "calls spec_from_file_location" each hold, but not of the same call
+    "loads-another-file-names-devbin-exactly": (
+        'import importlib.util\nfrom pathlib import Path\n'
+        'LEGACY = "devbin.py"\n'
+        '_spec = importlib.util.spec_from_file_location(\n'
+        '    "other", Path(__file__).parent / "other.py")\n'
+        'RMX = Path("/usr/local/bin/rmx")\n'),
 }
 
 
@@ -307,8 +315,9 @@ _HARNESS_SRC = {
     ("own-lookup", True, False),
     ("loads-another-file", True, False),
     ("names-only", True, False),
+    ("loads-another-file-names-devbin-exactly", True, False),
 ], ids=["loads-devbin", "harness-not-imported", "own-lookup", "loads-another-file",
-        "names-only"])
+        "names-only", "loads-another-file-names-devbin-exactly"])
 def test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin(tmp_path, monkeypatch,
                                                                     harness, imports_it, ok):
     """green-t02's fold (6bf0082, ch-bsd T0.2 r1 MEH-3) lets a test file pass the census when
