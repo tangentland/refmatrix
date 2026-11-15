@@ -23,6 +23,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval" / "production"))
 
 import grep_learning_replay as glr  # noqa: E402
+# bug-253: the harness's `RMX` and child env are tests/devbin.py's (it loads that file by path);
+# this file's own lookup was its skip on the checkout venv, retired with the pin.
+from devbin import dev_rmx  # noqa: E402,F401
 
 
 @pytest.fixture
@@ -63,8 +66,6 @@ def test_repeated_only_keeps_the_patterns_that_can_ever_pay_off(tiny):
     assert glr.repeated_patterns(log) == ["target_symbol"]
 
 
-@pytest.mark.skipif(not (Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx").exists(),
-                    reason="needs the dev venv's rmx console script")
 def test_arm_a_learns_and_arm_b_learns_exactly_nothing(tiny):
     """The one assertion that protects every number the harness reports.
 

@@ -21,11 +21,12 @@ import pytest
 from refmatrix import daemon as dm
 from refmatrix import verbs
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 @pytest.fixture(scope="module")
 def live():
-    base = Path(tempfile.mkdtemp(prefix="rmxk-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxk-"))
     root = base / "proj" / ".refmatrix"
     root.parent.mkdir()
     s = Store(root)

@@ -42,8 +42,10 @@ from pathlib import Path
 
 import pytest
 
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
 REPO = Path(__file__).resolve().parents[1]
-RMX = REPO / ".venv-eval" / "bin" / "rmx"
+RMX = dev_rmx()
 LANDING = REPO / "scripts" / "check-rel-landing.py"
 
 OLD_RULES = ["CLAUDE.md", ".claude"]
@@ -84,8 +86,7 @@ PLAIN_ROWS = ["CLAUDE.md", ".claude/PROJECT_PROFILE.md"]
 
 def _env(root: Path) -> dict:
     # This checkout's code in every child (the dev rmx's site-packages point at the dev tree).
-    return {**os.environ, "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval",
-            "PYTHONPATH": str(REPO / "src")}
+    return {**dev_env(), "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval"}
 
 
 def _rmx(env: dict, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:

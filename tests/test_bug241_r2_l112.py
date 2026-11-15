@@ -42,8 +42,10 @@ from pathlib import Path
 
 import pytest
 
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
 REPO = Path(__file__).resolve().parents[1]
-RMX = REPO / ".venv-eval" / "bin" / "rmx"
+RMX = dev_rmx()
 
 N_MD = 25          # > 10: the GMD pass's own yield cadence, and > yield_every below
 YIELD_EVERY = 5
@@ -86,8 +88,7 @@ def _project(base: Path, cache: str, *, bad: bool = False, n_md: int = 3) -> Pat
 
 
 def _env(root: Path) -> dict:
-    return {**os.environ, "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval",
-            "PYTHONPATH": str(REPO / "src")}
+    return {**dev_env(), "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval"}
 
 
 def _rmx(env: dict, *args: str, timeout: int = 300, **kw) -> subprocess.CompletedProcess:

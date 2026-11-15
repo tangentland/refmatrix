@@ -19,6 +19,8 @@ from click.testing import CliRunner
 from refmatrix import cli as cli_mod
 from refmatrix.store import Store
 
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
 GREP = "/usr/bin/grep"
 
 
@@ -62,10 +64,9 @@ def test_dash_f_is_greps_pattern_file(proj, argv):
     assert res.exit_code == control.returncode
 
 
-RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+RMX = dev_rmx()
 
 
-@pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
 def test_the_documented_pipe_count_works_with_a_bare_flag(proj):
     """A REAL pipe (CliRunner's `input` is not one, so rmx's pipe probe would
     never see it). A LITERAL pattern: the old doc example's `^+` is a BRE
@@ -76,6 +77,6 @@ def test_the_documented_pipe_count_works_with_a_bare_flag(proj):
     r = subprocess.run([str(RMX), "grep", "-c", "added"], cwd=str(proj),
                        input="+ added\n- removed\n+ added again\n",
                        capture_output=True, text=True, timeout=120,
-                       env=dict(os.environ, RMX_GREP_NOTE="0"))
+                       env=dict(dev_env(), RMX_GREP_NOTE="0"))
 
     assert r.stdout.strip() == "2", (r.stdout, r.stderr)

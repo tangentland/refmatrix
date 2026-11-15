@@ -30,10 +30,11 @@ from refmatrix import launchctl
 from refmatrix.cli import main as cli_main
 from refmatrix.store import RepairAbort, Store
 from tests.test_plan2_remedy import _SilentDaemon
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 def _spawn():
-    base = Path(tempfile.mkdtemp(prefix="rmxp4-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxp4-"))
     root = base / "proj" / ".refmatrix"; root.parent.mkdir()
     Store(root).init()
     pid = dm.spawn_daemon_subprocess(root, watch_root=[])
@@ -285,7 +286,7 @@ def test_degraded_learn_arms_a_deferred_exit(tmp_path, monkeypatch):
 # ---- #m-11 boot repair on a spawned daemon ----------------------------------------------------
 
 def test_boot_repair_runs_on_a_spawned_daemon():
-    base = Path(tempfile.mkdtemp(prefix="rmxp4b-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxp4b-"))
     root = base / "proj" / ".refmatrix"; root.parent.mkdir()
     s = Store(root); s.init(); s.add_memory(name="m", content="b", mtype="project"); s.close()
     dm.repair_marker_path(root).write_text(json.dumps({"table": "entities", "op": "test", "at": 0}))

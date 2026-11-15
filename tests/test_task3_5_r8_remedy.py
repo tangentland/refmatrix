@@ -43,12 +43,13 @@ from refmatrix import hub as hub_mod
 from refmatrix.store import Store
 from tests.test_plan2_remedy import _PingOnlyDaemon
 from tests.test_plan3_remedy_r7 import up_without_replica  # noqa: F401 — fixture
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 BODY = "body of held_row"
 
 
 def _short_dir(prefix: str) -> Path:
-    return Path(tempfile.mkdtemp(prefix=prefix, dir="/tmp"))
+    return Path(rmx_sandbox.short_root(prefix))
 
 
 @pytest.fixture

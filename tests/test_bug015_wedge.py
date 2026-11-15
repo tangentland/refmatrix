@@ -31,10 +31,11 @@ from refmatrix.hooks import _claude_hook_block
 from refmatrix.store import Store
 from refmatrix.subproc import recv_frame, send_frame
 from tests.test_hooks_reproducible import _cmds
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 def test_sigusr1_dumps_every_thread_stack_to_the_daemon_stderr_log():
-    base = Path(tempfile.mkdtemp(prefix="rmxw-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxw-"))
     root = base / "proj" / ".refmatrix"; root.parent.mkdir()
     Store(root).init()
     pid = dm.spawn_daemon_subprocess(root, watch_root=[])

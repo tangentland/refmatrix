@@ -62,6 +62,7 @@ from tests.test_bug212_hooks_in_worktrees import (
     _entry, _git_says, _hooked, _hooks_ran, _quiet, _store_has_path, _store_paths_under,
     _write_shim,
 )
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 # =============================================================================================
@@ -100,7 +101,7 @@ def tracked_repo(request):
     `other.py`); the GENERATED hooks are installed; the recording shim is on PATH for hooked
     ops. No daemon: a test that wants one starts it. Short resolved `/tmp` root."""
     layout = request.param
-    base = Path(tempfile.mkdtemp(prefix="b212t-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212t-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -265,7 +266,7 @@ def test_a_repo_that_tracks_its_catalog_still_syncs_through_a_live_daemon(tracke
 def fresh_repo():
     """A git repo with NO commit yet, a real (ignored) store, the generated hooks and the
     shim."""
-    base = Path(tempfile.mkdtemp(prefix="b212f-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212f-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -309,7 +310,7 @@ def _vanished(argv: list[str], env: dict, stdin: "str | None" = None,
               timeout: int = 110) -> subprocess.CompletedProcess:
     """Run `argv` with its working directory already deleted: a shell `cd`s in, removes the
     dir, execs. The shape of a backgrounded hook outliving `git worktree remove`."""
-    base = Path(tempfile.mkdtemp(prefix="b212c-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212c-")).resolve()
     try:
         gone = base / "gone"
         gone.mkdir()
@@ -328,7 +329,7 @@ def _says_cwd_gone(line: str) -> bool:
 @pytest.fixture
 def named_store():
     """A throwaway store for `REFMATRIX_ROOT` -- the remedy the cwd error text recommends."""
-    base = Path(tempfile.mkdtemp(prefix="b212s-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212s-")).resolve()
     root = base / "st" / ".refmatrix"
     s = Store(root)
     s.init()
@@ -468,13 +469,13 @@ def test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd():
     `cwd_error` naming the directory. Mutation A (the row filed through `_root()`, whose cwd
     error the pre-existing `except Exception: pass` swallows) drops the row silently."""
     from refmatrix.telemetry import CLI_LOG_NAME
-    base = Path(tempfile.mkdtemp(prefix="b212m-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212m-")).resolve()
     try:
         home = base / "rmxhome"
         home.mkdir()
         env = {k: v for k, v in _base_env().items() if k != "REFMATRIX_NO_TELEMETRY"}
         env["RMX_HOME"] = str(home)
-        gone_parent = Path(tempfile.mkdtemp(prefix="b212g-", dir="/tmp")).resolve()
+        gone_parent = Path(rmx_sandbox.short_root("b212g-")).resolve()
         try:
             gone = gone_parent / "gone"
             gone.mkdir()
@@ -682,7 +683,7 @@ def test_post_commit_with_a_stale_socket_on_a_tracked_catalog_refuses_loudly(tra
 def test_an_in_process_sync_of_a_store_outside_any_git_repo_still_writes():
     """GUARD (passes at HEAD) against an over-broad a2 fix: a store that is not inside any git
     repository (`git ls-files` fails there) is not "tracked" -- the in-process sync indexes."""
-    base = Path(tempfile.mkdtemp(prefix="b212n-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212n-")).resolve()
     try:
         proj = base / "proj"
         root = proj / ".refmatrix"

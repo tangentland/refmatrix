@@ -24,11 +24,12 @@ from pathlib import Path
 
 import pytest
 
-RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
+RMX = dev_rmx()
 GREP = "/usr/bin/grep"
 
-pytestmark = pytest.mark.skipif(not RMX.exists() or not Path(GREP).exists(),
-                                reason="dev venv rmx or /usr/bin/grep missing")
+pytestmark = pytest.mark.skipif(not Path(GREP).exists(), reason="/usr/bin/grep missing")
 
 
 @pytest.fixture
@@ -46,7 +47,7 @@ def tree(tmp_path):
 
 
 def _run(argv: list, cwd: Path) -> "tuple[list, int]":
-    env = dict(os.environ, RMX_GREP_NOTE="0")
+    env = dict(dev_env(), RMX_GREP_NOTE="0")
     r = subprocess.run(argv, capture_output=True, text=True, cwd=str(cwd),
                        timeout=120, env=env)
     return [l for l in r.stdout.splitlines() if l.strip()], r.returncode
@@ -100,7 +101,7 @@ def test_two_spellings_keep_their_own_prefix_on_n(tree):
 # ---- a missing path is an ERROR, not "no matches" (ch-bsd r3 #m-4) --------
 
 def _run_err(argv: list, cwd: Path) -> "tuple[list, str, int]":
-    env = dict(os.environ, RMX_GREP_NOTE="0")
+    env = dict(dev_env(), RMX_GREP_NOTE="0")
     r = subprocess.run(argv, capture_output=True, text=True, cwd=str(cwd),
                        timeout=120, env=env)
     return [l for l in r.stdout.splitlines() if l.strip()], r.stderr, r.returncode

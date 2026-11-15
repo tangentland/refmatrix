@@ -18,6 +18,7 @@ from refmatrix import cli as cli_mod
 from refmatrix import daemon as dm
 from refmatrix import verbs
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 GMD = '---\ngmd: "0.1"\nid: {id}\ntitle: "{id}"\ntags: [project]\nmetadata:\n  type: feedback\n---\n# {id} {{#root}}\n\n{body}\n'
@@ -443,7 +444,7 @@ def test_ac2_doc_ingest_keeps_its_own_walk(capfd):
     store by any route, the re-included profile lands once as a doc, the bridge still lands
     memories under a `.claude` path — are pinned in tests/test_bug216_hidden_no_pollution.py."""
     from refmatrix.ingest_gmd import collect_gmd_files
-    base = Path(tempfile.mkdtemp(prefix="rmx261-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("rmx261-")).resolve()
     try:
         memdir = _ac2_memdir(base)
         dot = {memdir / ".organise-rollback-1" / "x.md", memdir / ".hidden" / "y.md"}

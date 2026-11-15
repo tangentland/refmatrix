@@ -20,15 +20,16 @@ from pathlib import Path
 
 import pytest
 
-RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
-pytestmark = pytest.mark.skipif(not RMX.exists(), reason="dev rmx not built")
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
+RMX = dev_rmx()
 
 
 @pytest.fixture
 def daemon_root():
     tmp = Path(tempfile.mkdtemp(prefix="/tmp/bd."))
     root = tmp / ".refmatrix"
-    env = {**os.environ, "REFMATRIX_ROOT": str(root),
+    env = {**dev_env(), "REFMATRIX_ROOT": str(root),
            "RMX_INVOCATION_SOURCE": "eval"}
     subprocess.run([str(RMX), "init", "--path", str(tmp), "--no-hooks",
                     "--no-agents", "--no-memory-hooks"],

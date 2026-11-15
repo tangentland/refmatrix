@@ -41,15 +41,24 @@ def installed_hooks_diff(project_root: Path, hooks_dir: Path) -> "tuple[bool, st
     (`RMX_SANDBOX_REAL_HOME`) and the user-global scripts read from `hooks_dir`. Reads only;
     `HOME` and `RMX_CLAUDE_HOOKS_DIR` are what they were when it returns.
 
-    bug-170: the body below is this test's comparison as it stood at c4b44d0, moved here
-    unchanged (the sandbox `HOME` stays; `RMX_CLAUDE_HOOKS_DIR` is undone, so the scripts are
-    read from the sandbox home). R2.1 replaces it."""
-    saved = os.environ.pop("RMX_CLAUDE_HOOKS_DIR", None)
+    bug-170 (T0.2 R2.1, 2026-11-15): this used to undo only `RMX_CLAUDE_HOOKS_DIR`, so the
+    render ran under the sandbox `HOME` and every `~`-relative path differed from hooks
+    installed under the real one. `hooks.check` takes no home (`hooks.py:737`; no `src/`
+    change, ruling L122), so the real home is restored for this ONE render, and
+    `RMX_CLAUDE_HOOKS_DIR` (which `search_hooks.hooks_dir()` reads) names the scripts compared.
+    Every later test runs sandboxed again."""
+    keys = ("HOME", "RMX_CLAUDE_HOOKS_DIR")
+    saved = {k: os.environ.get(k) for k in keys}
+    os.environ["HOME"] = os.environ["RMX_SANDBOX_REAL_HOME"]
+    os.environ["RMX_CLAUDE_HOOKS_DIR"] = str(hooks_dir)
     try:
         return hooks_mod.check(project_root)
     finally:
-        if saved is not None:
-            os.environ["RMX_CLAUDE_HOOKS_DIR"] = saved
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def _real_home() -> Path:

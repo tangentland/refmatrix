@@ -55,9 +55,66 @@ rmx_sandbox.redirect(_SANDBOX)
 # `launchctl.install` writes plists into that directory.
 from refmatrix import launchctl as _launchctl  # noqa: E402
 from refmatrix import cli as _cli  # noqa: E402
+from refmatrix import daemon as _dm  # noqa: E402
 
 rmx_sandbox.assert_under_sandbox(_SANDBOX, {"launchctl.LAUNCH_AGENTS_DIR":
                                             _launchctl.LAUNCH_AGENTS_DIR})
+
+
+# ---- task 29.4 R4 item 6: in-process daemons are spawns too ----------------------------------
+#
+# bug-229 (2026-11-14) is a daemon that outlived its test by 20 hours. A `Daemon` built and
+# served INSIDE the pytest process writes no ledger line (nothing is exec'd or forked), so the
+# instance itself is recorded: `Daemon.__init__` is wrapped to put each instance, weakly, in
+# `rmx_sandbox`'s registry with the test that built it, and changes nothing else. At session
+# finish an instance whose serve loop is still running is reported and fails the session --
+# never stopped through its `rmxd.pid`, which names THIS process (ruling L142: the reaper never
+# signals its own pid or an ancestor); see `_stop_in_process` for why it is not stopped here.
+_SERVE_CODE = _dm.Daemon.serve_forever.__code__
+
+
+def _track_daemon_instances() -> None:
+    import functools
+    init = _dm.Daemon.__init__
+    if getattr(init, "_rmx_tracked", False):          # the conftest executed a second time
+        return
+
+    @functools.wraps(init)
+    def __init__(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        rmx_sandbox.track_inprocess(self, getattr(self, "root", "?"))
+
+    __init__._rmx_tracked = True
+    _dm.Daemon.__init__ = __init__
+
+
+def _serve_thread(d) -> "int | None":
+    """The ident of the thread running `d.serve_forever()`, from the live frames: the serve loop
+    holds the bound socket, so a running frame IS "still serving" (#r4 item 6)."""
+    for tid, frame in sys._current_frames().items():
+        f = frame
+        while f is not None:
+            if f.f_code is _SERVE_CODE and f.f_locals.get("self") is d:
+                return tid
+            f = f.f_back
+    return None
+
+
+def _stop_in_process(d, emit) -> bool:
+    """NOT stopped in-session, and said so. Its own stop path cannot be used here:
+    `Daemon.serve_forever` ends every shutdown in `os._exit(0)` (daemon.py, the force-exit after
+    "daemon stopped"), so a stop through the registry (`OPS["stop"]`) ends THIS session with exit
+    0 before pytest prints its summary, losing the failure it exists to report (found
+    2026-11-15, T0.2 GREEN). A signal is ruled out too (ruling L142). The session fails, and the
+    daemon ends with the session's process. Open gap: task-29.4 #r4 item 6's "stopped"."""
+    emit("  NOT stopped in-session: serve_forever ends its shutdown in os._exit(0), which "
+         "would end this session with exit 0; it ends with this process (task-29.4 #r4 item 6, "
+         "open gap)")
+    return False
+
+
+_track_daemon_instances()
+rmx_sandbox.set_inprocess_ops(lambda d: _serve_thread(d) is not None, _stop_in_process)
 
 
 def _pyc_guard():
@@ -81,6 +138,40 @@ def pytest_sessionstart(session):
     `tools/pyc_guard.py`.
     """
     _pyc_guard().enforce(_REPO / "src" / "refmatrix")
+    if rmx_sandbox.claim_session(session.config):
+        _sweep_killed_runs(session.config)
+
+
+def _emitter(config):
+    """Reaper lines go to pytest's terminal (stdout, ahead of the final summary), each on a line
+    of its own (`write_line` ends a progress line first), else stderr."""
+    rep = config.pluginmanager.get_plugin("terminalreporter")
+    if rep is None:
+        return rmx_sandbox._stderr_emit
+    return rep.write_line
+
+
+_SWEPT: dict = {"n": None}
+
+
+def _sweep_killed_runs(config) -> None:
+    """task 29.4 R4 item 3 (bug-229): a run killed before teardown cannot reap, so the NEXT
+    session's start stops what its sandbox's ledger left alive (`ORPHAN from a killed run`),
+    removes its root, logs it to `workflow/review-output/leaked-processes.log`, and counts it in
+    the session header. It does not fail this session (plan-29 D13)."""
+    res = rmx_sandbox.sweep_killed_runs(_emitter(config))
+    _SWEPT["n"] = len(res["orphans"])
+    rmx_sandbox.leak_log(_REPO, [rec["line"] for rec in res["orphans"]]
+                         + [f"killed run's sandbox removed: {r}" for r in res["roots"]]
+                         + [f"killed run's sandbox KEPT (survivors): {r}" for r in res["kept"]])
+
+
+def pytest_report_header(config):
+    """task 29.4 R4 item 3: the count of orphans this session's start swept, in the header
+    (format fixed by the RED, ruling L142 (6))."""
+    if _SWEPT["n"] is None or rmx_sandbox._STATE["session"] is not config:
+        return None
+    return f"rmx sandbox: {_SWEPT['n']} orphan process(es) swept from killed runs"
 
 
 @pytest.fixture
@@ -237,9 +328,8 @@ def _fresh_pointer_dir():
 
 # R6 (ch-bsd r1 b2, 2026-10-15): every skip is NAMED here, or the session fails
 # (`rmx_sandbox.SkipGate`). The main-tree baseline run (pytest-baseline-23ad703.log) skips
-# none; the entries are CLONE-ONLY: a littlebig clone may have no dev `rmx` of its own (the
-# end-to-end tests below spawn `<checkout>/.venv-eval/bin/rmx`) and its committed
-# `.claude/settings.json` names the hooks of another checkout.
+# none; the one entry is CLONE-ONLY: a littlebig clone's committed `.claude/settings.json`
+# names the hooks of another checkout.
 #
 # bug-215 (T0.1' R1.1/R1.2, 2026-11-15): until then ONE test, `(_REPO / ".venv-eval").is_dir()`,
 # switched all 19 pins, and each pin's value was a description ("clone-only: the dev venv rmx …
@@ -252,45 +342,9 @@ def _fresh_pointer_dir():
 # `reason=` string verbatim, which `SkipGate` requires to be EQUAL to the skip's reason. A test
 # whose `reason=` text changes updates its pin here in the same commit.
 #
-# The 18 dev-venv pins are allowed only while `<checkout>/.venv-eval/bin/rmx` does not exist
-# (a symlinked venv that resolves outside the checkout satisfies this only if it lacks
-# `bin/rmx`). Stage 2 (T0.2, bug-253's helper) retires them and this condition with them.
-_BRIEF = "tests/test_brief_real_daemon.py::"
-_ARGV = "tests/test_grep_argv_order_e2e.py::"
-_COUNT = "tests/test_grep_count_rows_e2e.py::"
-_VENV_RMX_PINS = {
-    _BRIEF + "test_an_unknown_class_fails_loudly_through_the_daemon": "dev rmx not built",
-    _BRIEF + "test_brief_runs_end_to_end_through_a_real_daemon": "dev rmx not built",
-    _BRIEF + "test_saved_briefs_do_not_grow_the_corpus_on_rerun": "dev rmx not built",
-    _BRIEF + "test_the_gmd_flag_does_not_crash_through_a_real_daemon": "dev rmx not built",
-    _ARGV + "test_a_directory_walk_keeps_its_files_GROUPED": "dev venv rmx not built",
-    _ARGV + "test_a_named_file_still_wins_its_argv_slot_against_a_walk":
-        "dev venv rmx not built",
-    _ARGV + "test_named_paths_come_back_in_argument_order_not_fanout_order":
-        "dev venv rmx not built",
-    # Its condition is `not (RMX.exists() and HAS_RG)`: pinned only for the missing venv rmx. In
-    # a checkout WITH the venv rmx a missing `rg` skips it unpinned and fails the session.
-    _ARGV + "test_the_tool_itself_is_the_one_that_scrambles": "needs rmx + rg",
-    _COUNT + "test_a_directory_with_no_match_gets_a_zero_row_per_file":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_directory_with_some_matches_keeps_its_zero_rows":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_missing_file_beside_a_directory_is_not_a_bare_zero":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_missing_file_beside_a_match_still_exits_2":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_missing_file_exits_2_and_says_so": "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_two_spellings_keep_their_own_prefix_on_n":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_two_spellings_of_one_file_are_two_rows":
-        "dev venv rmx or /usr/bin/grep missing",
-    "tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor":
-        "dev venv rmx not built",
-    "tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing":
-        "needs the dev venv's rmx console script",
-    "tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag":
-        "dev venv rmx not built",
-}
+# bug-253 (T0.2 stage 2, 2026-11-15) retired the 18 dev-venv pins and their condition: the six
+# files that skipped on a missing `<checkout>/.venv-eval/bin/rmx` now resolve the dev `rmx` from
+# the interpreter running the suite (tests/devbin.py), so a checkout's venv decides no skip.
 # Allowed only when the installed hooks belong to another checkout, decided as
 # tests/test_repo_hooks_in_sync.py decides it (`_OWNER is not None and _OWNER != REPO`). Its
 # other skip, "not an rmx-hooks-managed checkout", is deliberately NOT pinned.
@@ -307,8 +361,6 @@ def allowed_skips(checkout: Path) -> dict:
 
     checkout = Path(checkout).resolve()      # the hooks test compares against a resolved REPO
     allowed: dict = {}
-    if not (checkout / ".venv-eval" / "bin" / "rmx").exists():
-        allowed.update(_VENV_RMX_PINS)
     owner = hooks_mod.installed_root(checkout)
     if owner is not None and owner != checkout:
         allowed.update(_FOREIGN_HOOKS_PINS)
@@ -325,6 +377,7 @@ def pytest_configure(config):
         "them; its in-process inner-session violations are expected. Nothing else is exempt.")
     if not config.pluginmanager.has_plugin("rmx_skip_gate"):
         config.pluginmanager.register(rmx_sandbox.SkipGate(ALLOWED_SKIPS), "rmx_skip_gate")
+    rmx_sandbox.claim_session(config)
 
 
 _TOUCHES_AT = pytest.StashKey[int]()
@@ -377,6 +430,16 @@ def pytest_runtest_makereport(item, call):
             why.append(f"SandboxViolation in a child process (it exited "
                        f"{rmx_sandbox.CHILD_EXIT}; its spawner did not fail the test): "
                        + "; ".join(kids[:5]))
+    if rep.when == "teardown":
+        # task 29.4 R4 item 7 (bug-229): a spawn registered through `register_spawn` is
+        # checked when the node owning its fixture has been torn down; one nobody stopped
+        # fails THIS test, by name, and is stopped here.
+        live_nodes = getattr(getattr(item.session, "_setupstate", None), "stack", {})
+        for e in rmx_sandbox.due_spawns(item.nodeid, live_nodes):
+            msg = rmx_sandbox.check_spawn(e, _emitter(item.config))
+            if msg:
+                why.append(msg)
+                rmx_sandbox.failure_record(item.nodeid, "teardown", msg)
     if why and not rep.failed:
         rep.outcome = "failed"
         rep.longrepr = "\n".join(why)
@@ -385,10 +448,18 @@ def pytest_runtest_makereport(item, call):
 def pytest_sessionfinish(session, exitstatus):
     """ANY violation still recorded fails the run (ch-bsd r1 s2): one outside any test
     (collection, a thread between tests), or one under a key no report hook popped (a
-    background thread in the window after a test's teardown report)."""
+    background thread in the window after a test's teardown report).
+
+    task 29.4 R4 (bug-229, 2026-11-14: a test daemon outlived its run by 20 hours): in the
+    outermost session only, every process the suite started that is still alive -- spawned
+    (the ledger) or served in-process (the `Daemon` registry) -- is printed, stopped, and fails
+    the session (`rmx_sandbox.reap_session`)."""
     stray = rmx_sandbox.drain_record()
     if stray:
         session.config.get_terminal_writer().line(
             "SandboxViolation outside any reported test: "
             + "; ".join(f"{k}: {', '.join(v)}" for k, v in sorted(stray.items())), red=True)
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    if rmx_sandbox._STATE["session"] is session.config:
+        if rmx_sandbox.reap_session(_REPO, _emitter(session.config)):
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED

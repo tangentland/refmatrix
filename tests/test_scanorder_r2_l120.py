@@ -53,8 +53,10 @@ from refmatrix.ingest_gmd import ingest_gmd_paths
 from refmatrix.scan import scan_prompt
 from refmatrix.store import Store
 
+from devbin import dev_bin, dev_env  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
 REPO = Path(__file__).resolve().parents[1]
-DEV_BIN = REPO / ".venv-eval" / "bin"
+DEV_BIN = dev_bin()
 
 LONG_WORDS = ["implementation", "architecture", "measurements", "relationships"]
 IDENTS = ["widget_registry", "scan-prompt", "KeyError", "bug-241", "src/pkg/widget.py"]
@@ -257,8 +259,8 @@ def test_m1_an_unchanged_composite_is_delivered_again_after_compaction(env):
     _ring(env["root"], GROUNDED)
     env["s"].close()
     env["s"] = None
-    run_env = {**os.environ, "REFMATRIX_ROOT": str(env["root"]),
-               "RMX_INVOCATION_SOURCE": "eval", "PYTHONPATH": str(REPO / "src"),
+    run_env = {**dev_env(), "REFMATRIX_ROOT": str(env["root"]),
+               "RMX_INVOCATION_SOURCE": "eval",
                # The session the envelope names; a live hook resolves it from its pid pointer.
                "RMX_SESSION": "sess",
                "PATH": f"{DEV_BIN}:{os.environ.get('PATH', '')}"}

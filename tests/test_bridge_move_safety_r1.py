@@ -46,6 +46,7 @@ from tests.test_bridge_move_safety import (  # noqa: F401 -- fixtures are used b
     X_MD, _anchor_paths, _bridge, _invoke, _mem, _memdir, _move, _set_source_path, _term,
     _with_store, inproc, snapshot_env,
 )
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 ANCHORS = {"x#root", "x#one", "x#two"}
 
@@ -75,7 +76,7 @@ def _pin_child_pythonpath(monkeypatch) -> None:
 # ---- a git project with its memdir under `.claude/`, store under a short resolved root ------
 
 def _git_project(spawn: bool):
-    base = Path(tempfile.mkdtemp(prefix="r1-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("r1-")).resolve()
     proj = base / "proj"
     root = proj / ".refmatrix"
     proj.mkdir()

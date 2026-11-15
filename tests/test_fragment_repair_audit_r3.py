@@ -19,6 +19,7 @@ from pyroaring import BitMap64
 from refmatrix import daemon as dm
 from refmatrix.daemon import _FairLock
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 @pytest.fixture
@@ -144,7 +145,7 @@ def test_p3_home_binding_rebind_happens_under_the_writer_lock(s):
 # ---- P5: daemon-up path end to end (spawned subprocess on a short tmp root, isolated HOME) ---
 @pytest.fixture
 def live(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="r3b-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("r3b-"))
     home = base / "h"; home.mkdir()
     for k, v in {"HOME": str(home), "RMX_HOME": str(home / ".refmatrix"),
                  "RMX_SHARED_MODELS": "0", "RMX_MODEL_SOCK": str(base / "m.sock")}.items():

@@ -1,6 +1,6 @@
 """Shared fixtures for the task 3.7 RED tests (the verb-it backlog, batch A).
 
-Not a test module. Everything here builds REAL state — a short `/tmp` store
+Not a test module. Everything here builds REAL state — a short store
 root (macOS `sun_path` is ~104 bytes, so daemon sockets need it), a real
 `Store`, a real read snapshot written the way the daemon writes it — except
 `FakeDaemon`, the canned-RPC daemon the project's mock registry classifies as
@@ -11,17 +11,21 @@ socket fixtures `_SilentDaemon` / `_PingOnlyDaemon` (tests/test_plan2_remedy.py)
 from __future__ import annotations
 
 import shutil
-import tempfile
 from pathlib import Path
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py
 from refmatrix import daemon as dm
 from refmatrix import discovery
 from refmatrix.store import Store
 
 
 def short_root(prefix: str = "r37-") -> "tuple[Path, Path]":
-    """(base, root): `root` = `<base>/proj/.refmatrix`, so the store name is `proj`."""
-    base = Path(tempfile.mkdtemp(prefix=prefix, dir="/tmp"))
+    """(base, root): `root` = `<base>/proj/.refmatrix`, so the store name is `proj`.
+
+    `base` is under the sandbox root (task-29.4 #r5, bug-229, 2026-11-15): test_task3_7_curator
+    spawns a real daemon on a root made here, and a root under `/tmp` outlived its run with its
+    daemon in bug-229. Still short: `<sandbox>/t/r37-XXXXXXXX/proj/.refmatrix/rmxd.sock`."""
+    base = Path(rmx_sandbox.short_root(prefix))
     root = base / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     return base, root

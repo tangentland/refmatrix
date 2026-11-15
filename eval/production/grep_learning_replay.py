@@ -59,11 +59,31 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+
+def _devbin():
+    """`tests/devbin.py`, loaded by path: the ONE definition of "the dev rmx" (bug-253,
+    ruling L142 (1), 2026-11-15). This harness named `<checkout>/.venv-eval/bin/rmx` itself,
+    which a littlebig clone does not have (it runs the dev tree's interpreter with
+    `PYTHONPATH=<clone>/src`), so the replay test could only skip there."""
+    import importlib.util
+    path = REPO / "tests" / "devbin.py"
+    spec = importlib.util.spec_from_file_location("rmx_devbin", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load the dev-rmx helper {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_DEVBIN = _devbin()
+
 # `rmx` from the DEV venv, deliberately: this harness verifies dev code, and it
 # only ever touches throwaway stores under a short mkdtemp root. Never the
 # live store — a dev-venv rmx against it trips the hub version handshake and
-# restarts the fleet (CLAUDE.md#development-commands).
-RMX = REPO / ".venv-eval" / "bin" / "rmx"
+# restarts the fleet (CLAUDE.md#development-commands). The dev venv is the one
+# whose interpreter runs this harness, and its children import THIS checkout's
+# `src` first (`dev_env`).
+RMX = _DEVBIN.dev_rmx()
 
 # How often the queue is drained during a replay. The real daemon drains on a
 # 30 s tick; draining every N patterns reproduces "the teach lands some time
@@ -95,7 +115,7 @@ def read_patterns(log: Path, limit: int = 0) -> list[str]:
 
 
 def _env(arm_root: Path, hooks: Path, learn: bool) -> dict:
-    e = dict(os.environ)
+    e = _DEVBIN.dev_env(os.environ)
     e["REFMATRIX_ROOT"] = str(arm_root / ".refmatrix")
     # `rmx init` writes the user-global hooks dir unless redirected, and
     # bug-008's guard refuses that from a dev tree. Redirect it per run so the
@@ -420,6 +440,9 @@ def main() -> None:
                          "than once in the log")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+    if not os.access(RMX, os.X_OK):
+        raise SystemExit(f"no dev rmx at {RMX} (beside {sys.executable}); run this harness "
+                         f"with the dev venv's interpreter (bug-253)")
 
     if args.repeated_only:
         patterns = repeated_patterns(Path(args.query_log))

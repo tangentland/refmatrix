@@ -23,6 +23,7 @@ from refmatrix import daemon as dm
 from refmatrix import discovery
 from refmatrix import verbs
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 # ---- fixtures ---------------------------------------------------------------
@@ -61,7 +62,7 @@ def live():
 def home(monkeypatch):
     """A tmp RMX_HOME: hub socket, bus.db and registry all land here, so no
     test can touch the real ~/.refmatrix."""
-    d = Path(tempfile.mkdtemp(prefix="rmxh-", dir="/tmp"))
+    d = Path(rmx_sandbox.short_root("rmxh-"))
     monkeypatch.setenv("RMX_HOME", str(d))
     yield d
     # A test that reached the global store spawned a `-p global` daemon

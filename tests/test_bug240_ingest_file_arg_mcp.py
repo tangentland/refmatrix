@@ -34,8 +34,10 @@ from pathlib import Path
 
 import pytest
 
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
 REPO = Path(__file__).resolve().parents[1]
-RMX = REPO / ".venv-eval" / "bin" / "rmx"
+RMX = dev_rmx()
 NAMED = "rmx sync -f"
 
 FILES = {"CLAUDE.md": ('---\ngmd: "0.1"\nid: claude\ntitle: "rules"\ntags: [t]\n---\n\n'
@@ -45,8 +47,7 @@ FILES = {"CLAUDE.md": ('---\ngmd: "0.1"\nid: claude\ntitle: "rules"\ntags: [t]\n
 
 
 def _env(root: Path) -> dict:
-    return {**os.environ, "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval",
-            "PYTHONPATH": str(REPO / "src")}
+    return {**dev_env(), "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval"}
 
 
 def _rmx(env: dict, *args: str, timeout: int = 300, **kw) -> subprocess.CompletedProcess:

@@ -36,7 +36,9 @@ import pytest
 
 from refmatrix.store import Store, verify_evidence_rows
 
-RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
+RMX = dev_rmx()
 
 
 @pytest.fixture
@@ -145,7 +147,6 @@ def test_a_single_word_pattern_gets_no_variants(store, tmp_path):
 
 # ---- the SAFETY property, end to end -------------------------------------
 
-@pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
 def test_a_fully_filtered_answer_falls_through_to_the_floor(tmp_path):
     """The property that makes this a filter and not a truncation.
 
@@ -167,7 +168,7 @@ def test_a_fully_filtered_answer_falls_through_to_the_floor(tmp_path):
 
     r = subprocess.run([str(RMX), "grep", "-n", "error"],
                        cwd=str(tmp_path), capture_output=True, text=True,
-                       timeout=120)
+                       timeout=120, env=dev_env())
     body = [l for l in r.stdout.splitlines()
             if l.strip() and not l.startswith("#")]
 

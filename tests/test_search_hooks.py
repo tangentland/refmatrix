@@ -67,14 +67,21 @@ def test_user_scope_prints_snippet_only(env_hooks, tmp_path):
 
 
 def _rewrite(env_hooks, cmd: str) -> str:
-    """Run the RENDERED rewriter on a command; '' = no rewrite."""
+    """Run the RENDERED rewriter on a command; '' = no rewrite.
+
+    bug-168 (T0.2 R2.2, ruling L142 (5), 2026-11-15): the rewriter stands down when learning is
+    off, and decides that from `RMX_LEARN`, else a `.refmatrix/learn.off` in any ancestor of the
+    cwd, else `~/.refmatrix/learn.off` -- files outside this test's tmp root (the user's has
+    existed since 2026-10-15, so in the main tree every rewrite came back ''). `RMX_LEARN=on`
+    wins over both markers, so the result depends on the rewriting alone. The stand-down itself
+    is tested by `test_bug168_the_rewriter_stands_down_under_a_planted_learn_off`."""
     script = env_hooks / sh.REWRITER_NAME
     if not script.exists():
         sh.install_search_hooks(env_hooks.parent, scope="user",
                                 apply=True, force=False)
     payload = json.dumps({"tool_input": {"command": cmd}})
     r = subprocess.run([sys.executable, str(script)], input=payload,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=dict(os.environ, RMX_LEARN="on"))
     return r.stdout
 
 

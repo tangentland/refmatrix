@@ -45,7 +45,9 @@ from pathlib import Path
 
 import pytest
 
-RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
+RMX = dev_rmx()
 HAS_RG = shutil.which("rg") is not None
 N_FILES = 6
 N_LINES = 400
@@ -79,11 +81,10 @@ def _first_appearance(stdout: str) -> list:
 
 def _run(argv: list, cwd: Path) -> "tuple[str, str, int]":
     r = subprocess.run(argv, capture_output=True, text=True, cwd=str(cwd),
-                       timeout=120)
+                       timeout=120, env=dev_env())
     return r.stdout, r.stderr, r.returncode
 
 
-@pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
 def test_named_paths_come_back_in_argument_order_not_fanout_order(many_files):
     """THE gate. Measured by deleting `order_triples_by_argv` from the render:
     the unfixed build fails this 10/10 and the fixed build passes 5/5 at six
@@ -114,7 +115,7 @@ def test_the_control_is_real_grep_and_it_holds_argument_order(many_files):
     assert _first_appearance(out) == argv_names
 
 
-@pytest.mark.skipif(not (RMX.exists() and HAS_RG), reason="needs rmx + rg")
+@pytest.mark.skipif(not HAS_RG, reason="needs rg")
 def test_the_tool_itself_is_the_one_that_scrambles(many_files):
     """Attribution, not just symptom: rg's own output is NOT argv order at this
     size, which is why the renderer has to impose it. If this ever starts
@@ -171,7 +172,6 @@ def _groups_are_contiguous(stdout: str) -> bool:
     return runs == len(seen)
 
 
-@pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
 def test_a_directory_walk_keeps_its_files_GROUPED(many_files):
     """ch-bsd r2 #b-1 — the regression my own argv sort introduced, and the
     assertion both of my earlier walk tests were too weak to catch.
@@ -201,7 +201,6 @@ def test_a_directory_walk_keeps_its_files_GROUPED(many_files):
         f"{[Path(l.split(':', 1)[0]).name for l in out.splitlines()][:12]}")
 
 
-@pytest.mark.skipif(not RMX.exists(), reason="dev venv rmx not built")
 def test_a_named_file_still_wins_its_argv_slot_against_a_walk(many_files):
     """Argument order ACROSS arguments, the tool's order WITHIN one. A stable
     rank-only sort has to give both."""
