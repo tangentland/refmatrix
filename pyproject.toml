@@ -14,11 +14,14 @@ dependencies = [
     "pyroaring>=1.0",
     "click>=8.1",
     "rich>=13.7",
-    "duckdb>=1.5.3",
+    # Storage-format libraries are capped below their next major (Q47 = d, 2026-11-15): a major
+    # can change or refuse the on-disk catalog, so it is a planned, tested upgrade, never a stray
+    # resolve. Everything else keeps a floor only; requirements.lock records what production runs.
+    "duckdb>=1.5.3,<2",
     "pyarrow>=14.0",
     # Embeddings + ANN: the daemon always embeds on sync, so these are
     # core, not optional.
-    "pylance>=0.20",
+    "pylance>=6,<7",
     "sentence-transformers>=3.0",
     "numpy>=1.26",
     # File watcher: the daemon watches by default (--no-watch opts out).
