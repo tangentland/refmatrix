@@ -179,6 +179,17 @@ drafting → approved → in-progress → completed
 Set the stage by editing `metadata.status` in the plan's frontmatter **and** the Status column
 above. Files stay put; links never rot.
 
+## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
+
+The user, 2026-11-15: "the source of truth must be the POP" and "archive any other doc that acts
+as an alternate source of truth". In flight: the POP rewrite (corrected `#plans` rows; one
+`#queue` to mod start), compiled by arch-triage from the agreed decisions. When it lands, in the
+same commit: `plan-review-2026-10-07`, `plan-review-2026-10-14`, [[plan-review-2026-11-13]], the
+three `plan-review-fable-2026-11-14-*` reviews, both freeze triages, triage-3 and
+`workflow-practice-review-2026-11-15` move to `workflow/archive/` with an ARCHIVED banner and
+`status: archived` (ids unchanged, so links hold); `handoff.md`'s queue becomes a pointer to
+`#queue`. Rulings from L125 go to [[rulings]]. {#pending-bookkeeping-body}
+
 ## Notes {#notes}
 
 - A plan is **approved** only when every task in it has a written spec under

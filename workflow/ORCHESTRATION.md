@@ -18,7 +18,7 @@ user: Q23-Q26 = a; [[workflow-practice-review-2026-11-15]]). CLAUDE.md
 rel: derives-from -> [[workflow-practice-review-2026-11-15]]
 rel: amends -> [[tdd-governance]]
 rel: amends -> [[PLANNING_WORKFLOW]]
-rel: depends-on -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[rulings#lead]]
 rel: depends-on -> [[open-questions]]
 
 ## 1. Roles {#roles}
@@ -72,7 +72,7 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 2. **Spec review r1.** ch-bsd, full depth, in its own clone; the report is written in that clone
    or returned as text.
 3. **Ruling.** The lead persists the report ([[#reports]]) and writes `L<n>` in
-   [[plan-review-2026-11-13#lead]]: each finding folded, deferred (with an owner) or overruled,
+   [[rulings#lead]] (L125 on; L1-L124 in [[plan-review-2026-11-13#lead]]): each finding folded, deferred (with an owner) or overruled,
    with the reason.
 4. **Revision** by the same author on Fable, with a fold table per spec.
 5. **Confirm-lite r2..rN** until MEH-only GO; the MEHs fold before the merge.
