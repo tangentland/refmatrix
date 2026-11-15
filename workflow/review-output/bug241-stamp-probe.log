@@ -1,0 +1,6 @@
+rc 0
+   » 0/5 clear stamps (--force)
+     proj: 0 mtime stamps + 0 GMD content hashes cleared
+     ✓ 0/5 clear stamps (--force)
+     derive coverage[proj]: skipped this run: embed
+derive_stamps: ['gmd', 'ingest', 'pagerank', 'semantic']

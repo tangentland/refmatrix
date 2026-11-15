@@ -1,0 +1,24 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/070141d0-80c6-4c13-95a2-56f192e2a1de/scratchpad/mut240/refmatrix/src/refmatrix as checked-hash (bug-037)
+..F.                                                                     [100%]
+=================================== FAILURES ===================================
+______ test_m2_a_failed_gmd_pass_is_reported_at_the_top_of_the_job_record ______
+
+base = PosixPath('/private/tmp/b241r2.jo03abk7')
+
+    def test_m2_a_failed_gmd_pass_is_reported_at_the_top_of_the_job_record(base):
+        job = _run_job(base, bad=True)
+        reports = _top_level_reports(job)
+>       assert "gmd" in json.dumps(reports, default=str).lower(), (
+            f"the agent route reports a failed GMD pass only inside `result`: status="
+            f"{job.get('status')!r}, top-level reports={reports}, result={job.get('result')}")
+E       AssertionError: the agent route reports a failed GMD pass only inside `result`: status='done', top-level reports={}, result={'entities': 5, 'path': '/private/tmp/b241r2.jo03abk7/proj', 'gmd_pass_failed': 4, 'gmd_pass_error': "TypeError: cannot use 'list' as a dict key (unhashable type: 'list')"}
+E       assert 'gmd' in '{}'
+E        +  where '{}' = <built-in method lower of str object at 0x1062d3570>()
+E        +    where <built-in method lower of str object at 0x1062d3570> = '{}'.lower
+E        +      where '{}' = <function dumps at 0x104cca560>({}, default=str)
+E        +        where <function dumps at 0x104cca560> = json.dumps
+
+tests/test_bug241_r3_l114.py:111: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug241_r3_l114.py::test_m2_a_failed_gmd_pass_is_reported_at_the_top_of_the_job_record
+1 failed, 3 passed in 13.31s

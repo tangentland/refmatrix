@@ -1,0 +1,3 @@
+tldr=none: n=4 calls=[('ingest_gmd_paths', ['CLAUDE.md', 'PROJECT_PROFILE.md', 'cite.md'], 3), ('_ingest_tree', None, 4)] markdown_record=['.claude/PROJECT_PROFILE.md', 'CLAUDE.md', 'docs/cite.md'] doc claude row=True plain CLAUDE.md row=True
+tldr=metadata: n=1 calls=[('_ingest_tldr_metadata', None, 1)] markdown_record=['.claude/PROJECT_PROFILE.md', 'CLAUDE.md', 'docs/cite.md'] doc claude row=False plain CLAUDE.md row=True
+tldr=call_graph: n=3 calls=[('_ingest_tldr', None, 3)] markdown_record=['.claude/PROJECT_PROFILE.md', 'CLAUDE.md', 'docs/cite.md'] doc claude row=False plain CLAUDE.md row=True

@@ -1596,8 +1596,17 @@ def ingest(root: Path, *, path: str | None = None,
     # semantic default True matches the CLI: a semantic-less ingest is the
     # 0.48.0 termless-corpus failure ("main path must exercise core
     # mechanisms").
+    target = path or str(Path(root).parent)
+    # bug-240: a file is refused BEFORE `_call` dials the daemon -- with the daemon down the
+    # agent must hear "use rmx sync -f", not "not running" (which it would answer by starting
+    # a daemon and retrying the same wrong call). A caller mistake, so VerbArgsError (isError).
+    from refmatrix.ingest import IngestFileTargetError, refuse_file_target
+    try:
+        refuse_file_target(target)
+    except IngestFileTargetError as e:
+        raise VerbArgsError(str(e)) from e
     return _call(root, "ingest_path_start", {
-        "path": path or str(Path(root).parent), "source": source,
+        "path": target, "source": source,
         "semantic": semantic, "partition": part,
     }, timeout=30.0)
 

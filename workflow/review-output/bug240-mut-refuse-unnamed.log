@@ -1,0 +1,319 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b240/c2/src/refmatrix as checked-hash (bug-037)
+FFFFFF..FFFFFFFF..                                                       [100%]
+=================================== FAILURES ===================================
+_ test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-CLAUDE.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.dfaomzde/proj'), 'root': PosixPath('/private/tmp/b240.dfaomzde/proj/.refmatrix'), 'up': True}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.dfaomzde/proj'), 'root': PosixPath('/private/tmp/b240.dfaomzde/proj/.refmatrix'), 'up': True}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...e=1, stdout='', stderr='Error: rmx ingest takes a directory, not a file (/private/tmp/b240.dfaomzde/proj/CLAUDE.md)\n')
+target = PosixPath('/private/tmp/b240.dfaomzde/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                                   f"output:\n{out}")
+        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>       assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E       AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.dfaomzde/proj/CLAUDE.md)'
+E       assert 'rmx sync -f' in 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.dfaomzde/proj/CLAUDE.md)'
+
+tests/test_bug240_ingest_file_arg.py:119: AssertionError
+_ test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-docs/notes.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.0lq_45lc/proj'), 'root': PosixPath('/private/tmp/b240.0lq_45lc/proj/.refmatrix'), 'up': True}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.0lq_45lc/proj'), 'root': PosixPath('/private/tmp/b240.0lq_45lc/proj/.refmatrix'), 'up': True}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e... stdout='', stderr='Error: rmx ingest takes a directory, not a file (/private/tmp/b240.0lq_45lc/proj/docs/notes.md)\n')
+target = PosixPath('/private/tmp/b240.0lq_45lc/proj/docs/notes.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                                   f"output:\n{out}")
+        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>       assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E       AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.0lq_45lc/proj/docs/notes.md)'
+E       assert 'rmx sync -f' in 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.0lq_45lc/proj/docs/notes.md)'
+
+tests/test_bug240_ingest_file_arg.py:119: AssertionError
+_ test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-CLAUDE.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.ogwec18b/proj'), 'root': PosixPath('/private/tmp/b240.ogwec18b/proj/.refmatrix'), 'up': False}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.ogwec18b/proj'), 'root': PosixPath('/private/tmp/b240.ogwec18b/proj/.refmatrix'), 'up': False}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...e=1, stdout='', stderr='Error: rmx ingest takes a directory, not a file (/private/tmp/b240.ogwec18b/proj/CLAUDE.md)\n')
+target = PosixPath('/private/tmp/b240.ogwec18b/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                                   f"output:\n{out}")
+        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>       assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E       AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.ogwec18b/proj/CLAUDE.md)'
+E       assert 'rmx sync -f' in 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.ogwec18b/proj/CLAUDE.md)'
+
+tests/test_bug240_ingest_file_arg.py:119: AssertionError
+_ test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-docs/notes.md] _
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.rea0ttn8/proj'), 'root': PosixPath('/private/tmp/b240.rea0ttn8/proj/.refmatrix'), 'up': False}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync(proj, rel):
+        target = proj["proj"] / rel
+>       _verdict(proj, _rmx(proj["env"], "ingest", str(target)), target)
+
+tests/test_bug240_ingest_file_arg.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.rea0ttn8/proj'), 'root': PosixPath('/private/tmp/b240.rea0ttn8/proj/.refmatrix'), 'up': False}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e... stdout='', stderr='Error: rmx ingest takes a directory, not a file (/private/tmp/b240.rea0ttn8/proj/docs/notes.md)\n')
+target = PosixPath('/private/tmp/b240.rea0ttn8/proj/docs/notes.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                                   f"output:\n{out}")
+        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>       assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E       AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.rea0ttn8/proj/docs/notes.md)'
+E       assert 'rmx sync -f' in 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.rea0ttn8/proj/docs/notes.md)'
+
+tests/test_bug240_ingest_file_arg.py:119: AssertionError
+____ test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[daemon] _____
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.450_ey30/proj'), 'root': PosixPath('/private/tmp/b240.450_ey30/proj/.refmatrix'), 'up': True}
+
+    def test_ingest_of_a_file_by_relative_path_is_refused_naming_sync(proj):
+        """The live form: `rmx ingest CLAUDE.md` from the project root."""
+        target = proj["proj"] / "CLAUDE.md"
+>       _verdict(proj, _rmx(proj["env"], "ingest", "CLAUDE.md", cwd=proj["proj"]), target)
+
+tests/test_bug240_ingest_file_arg.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ixPath('/private/tmp/b240.450_ey30/proj'), 'root': PosixPath('/private/tmp/b240.450_ey30/proj/.refmatrix'), 'up': True}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...e=1, stdout='', stderr='Error: rmx ingest takes a directory, not a file (/private/tmp/b240.450_ey30/proj/CLAUDE.md)\n')
+target = PosixPath('/private/tmp/b240.450_ey30/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                                   f"output:\n{out}")
+        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>       assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E       AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.450_ey30/proj/CLAUDE.md)'
+E       assert 'rmx sync -f' in 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.450_ey30/proj/CLAUDE.md)'
+
+tests/test_bug240_ingest_file_arg.py:119: AssertionError
+__ test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[in_process] ___
+
+proj = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.tevmn8pg/proj'), 'root': PosixPath('/private/tmp/b240.tevmn8pg/proj/.refmatrix'), 'up': False}
+
+    def test_ingest_of_a_file_by_relative_path_is_refused_naming_sync(proj):
+        """The live form: `rmx ingest CLAUDE.md` from the project root."""
+        target = proj["proj"] / "CLAUDE.md"
+>       _verdict(proj, _rmx(proj["env"], "ingest", "CLAUDE.md", cwd=proj["proj"]), target)
+
+tests/test_bug240_ingest_file_arg.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...xPath('/private/tmp/b240.tevmn8pg/proj'), 'root': PosixPath('/private/tmp/b240.tevmn8pg/proj/.refmatrix'), 'up': False}
+r = CompletedProcess(args=['/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660e...e=1, stdout='', stderr='Error: rmx ingest takes a directory, not a file (/private/tmp/b240.tevmn8pg/proj/CLAUDE.md)\n')
+target = PosixPath('/private/tmp/b240.tevmn8pg/proj/CLAUDE.md')
+
+    def _verdict(c, r: subprocess.CompletedProcess, target: Path) -> None:
+        out = r.stdout + r.stderr
+        assert r.returncode != 0, (f"`rmx ingest {target.name}` exited 0 (a file must be refused); "
+                                   f"output:\n{out}")
+        errs = [ln for ln in out.splitlines() if ln.startswith("Error:")]
+        assert len(errs) == 1, f"a refusal prints exactly one Error: line; got {errs}\n{out}"
+>       assert "rmx sync -f" in errs[0], f"the refusal must name `rmx sync -f`: {errs[0]!r}"
+E       AssertionError: the refusal must name `rmx sync -f`: 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.tevmn8pg/proj/CLAUDE.md)'
+E       assert 'rmx sync -f' in 'Error: rmx ingest takes a directory, not a file (/private/tmp/b240.tevmn8pg/proj/CLAUDE.md)'
+
+tests/test_bug240_ingest_file_arg.py:119: AssertionError
+______ test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-CLAUDE.md] _______
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...Path('/private/tmp/b240m.ld_conx5/proj'), 'root': PosixPath('/private/tmp/b240m.ld_conx5/proj/.refmatrix'), 'up': True}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_the_mcp_tool_refuses_a_file_naming_sync(store, rel):
+        res = _mcp(store, "rmx_ingest", {"path": str(store["proj"] / rel)})
+        assert res.get("isError") is True, (
+            f"rmx_ingest(path=<file>) answered success: {_text(res)}")
+>       assert NAMED in _text(res), f"the refusal must name `{NAMED}`: {_text(res)}"
+E       AssertionError: the refusal must name `rmx sync -f`: {"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.ld_conx5/proj/CLAUDE.md)"}
+E       assert 'rmx sync -f' in '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.ld_conx5/proj/CLAUDE.md)"}'
+E        +  where '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.ld_conx5/proj/CLAUDE.md)"}' = _text({'content': [{'text': '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.ld_conx5/proj/CLAUDE.md)"}', 'type': 'text'}], 'isError': True})
+
+tests/test_bug240_ingest_file_arg_mcp.py:133: AssertionError
+____ test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-docs/notes.md] _____
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...Path('/private/tmp/b240m.1w02zl7h/proj'), 'root': PosixPath('/private/tmp/b240m.1w02zl7h/proj/.refmatrix'), 'up': True}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_the_mcp_tool_refuses_a_file_naming_sync(store, rel):
+        res = _mcp(store, "rmx_ingest", {"path": str(store["proj"] / rel)})
+        assert res.get("isError") is True, (
+            f"rmx_ingest(path=<file>) answered success: {_text(res)}")
+>       assert NAMED in _text(res), f"the refusal must name `{NAMED}`: {_text(res)}"
+E       AssertionError: the refusal must name `rmx sync -f`: {"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.1w02zl7h/proj/docs/notes.md)"}
+E       assert 'rmx sync -f' in '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.1w02zl7h/proj/docs/notes.md)"}'
+E        +  where '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.1w02zl7h/proj/docs/notes.md)"}' = _text({'content': [{'text': '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.1w02zl7h/proj/docs/notes.md)"}', 'type': 'text'}], 'isError': True})
+
+tests/test_bug240_ingest_file_arg_mcp.py:133: AssertionError
+_____ test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md] ______
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ath('/private/tmp/b240m.nlrn2h__/proj'), 'root': PosixPath('/private/tmp/b240m.nlrn2h__/proj/.refmatrix'), 'up': False}
+rel = 'CLAUDE.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_the_mcp_tool_refuses_a_file_naming_sync(store, rel):
+        res = _mcp(store, "rmx_ingest", {"path": str(store["proj"] / rel)})
+        assert res.get("isError") is True, (
+            f"rmx_ingest(path=<file>) answered success: {_text(res)}")
+>       assert NAMED in _text(res), f"the refusal must name `{NAMED}`: {_text(res)}"
+E       AssertionError: the refusal must name `rmx sync -f`: {"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.nlrn2h__/proj/CLAUDE.md)"}
+E       assert 'rmx sync -f' in '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.nlrn2h__/proj/CLAUDE.md)"}'
+E        +  where '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.nlrn2h__/proj/CLAUDE.md)"}' = _text({'content': [{'text': '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.nlrn2h__/proj/CLAUDE.md)"}', 'type': 'text'}], 'isError': True})
+
+tests/test_bug240_ingest_file_arg_mcp.py:133: AssertionError
+___ test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md] ____
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ath('/private/tmp/b240m.zedo81f8/proj'), 'root': PosixPath('/private/tmp/b240m.zedo81f8/proj/.refmatrix'), 'up': False}
+rel = 'docs/notes.md'
+
+    @pytest.mark.parametrize("rel", ["CLAUDE.md", "docs/notes.md"])
+    def test_the_mcp_tool_refuses_a_file_naming_sync(store, rel):
+        res = _mcp(store, "rmx_ingest", {"path": str(store["proj"] / rel)})
+        assert res.get("isError") is True, (
+            f"rmx_ingest(path=<file>) answered success: {_text(res)}")
+>       assert NAMED in _text(res), f"the refusal must name `{NAMED}`: {_text(res)}"
+E       AssertionError: the refusal must name `rmx sync -f`: {"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.zedo81f8/proj/docs/notes.md)"}
+E       assert 'rmx sync -f' in '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.zedo81f8/proj/docs/notes.md)"}'
+E        +  where '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.zedo81f8/proj/docs/notes.md)"}' = _text({'content': [{'text': '{"error": "rmx ingest takes a directory, not a file (/private/tmp/b240m.zedo81f8/proj/docs/notes.md)"}', 'type': 'text'}], 'isError': True})
+
+tests/test_bug240_ingest_file_arg_mcp.py:133: AssertionError
+_____________ test_the_verb_refuses_a_file_naming_sync[daemon_up] ______________
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...Path('/private/tmp/b240m.l85kqdwf/proj'), 'root': PosixPath('/private/tmp/b240m.l85kqdwf/proj/.refmatrix'), 'up': True}
+
+    def test_the_verb_refuses_a_file_naming_sync(store):
+        from refmatrix.verbs import VERBS, VerbError
+        with pytest.raises(VerbError) as ei:
+            out = VERBS["rmx_ingest"].run(store["root"], {"path": str(store["proj"] / "CLAUDE.md")})
+            raise AssertionError(f"verb rmx_ingest(path=<file>) returned {out}")
+>       assert NAMED in str(ei.value), f"the VerbError must name `{NAMED}`: {ei.value}"
+E       AssertionError: the VerbError must name `rmx sync -f`: rmx ingest takes a directory, not a file (/private/tmp/b240m.l85kqdwf/proj/CLAUDE.md)
+E       assert 'rmx sync -f' in 'rmx ingest takes a directory, not a file (/private/tmp/b240m.l85kqdwf/proj/CLAUDE.md)'
+E        +  where 'rmx ingest takes a directory, not a file (/private/tmp/b240m.l85kqdwf/proj/CLAUDE.md)' = str(VerbError('rmx ingest takes a directory, not a file (/private/tmp/b240m.l85kqdwf/proj/CLAUDE.md)'))
+E        +    where VerbError('rmx ingest takes a directory, not a file (/private/tmp/b240m.l85kqdwf/proj/CLAUDE.md)') = <ExceptionInfo VerbError('rmx ingest takes a directory, not a file (/private/tmp/b240m.l85kqdwf/proj/CLAUDE.md)') tblen=3>.value
+
+tests/test_bug240_ingest_file_arg_mcp.py:141: AssertionError
+____________ test_the_verb_refuses_a_file_naming_sync[daemon_down] _____________
+
+store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...ath('/private/tmp/b240m.uhupls86/proj'), 'root': PosixPath('/private/tmp/b240m.uhupls86/proj/.refmatrix'), 'up': False}
+
+    def test_the_verb_refuses_a_file_naming_sync(store):
+        from refmatrix.verbs import VERBS, VerbError
+        with pytest.raises(VerbError) as ei:
+            out = VERBS["rmx_ingest"].run(store["root"], {"path": str(store["proj"] / "CLAUDE.md")})
+            raise AssertionError(f"verb rmx_ingest(path=<file>) returned {out}")
+>       assert NAMED in str(ei.value), f"the VerbError must name `{NAMED}`: {ei.value}"
+E       AssertionError: the VerbError must name `rmx sync -f`: rmx ingest takes a directory, not a file (/private/tmp/b240m.uhupls86/proj/CLAUDE.md)
+E       assert 'rmx sync -f' in 'rmx ingest takes a directory, not a file (/private/tmp/b240m.uhupls86/proj/CLAUDE.md)'
+E        +  where 'rmx ingest takes a directory, not a file (/private/tmp/b240m.uhupls86/proj/CLAUDE.md)' = str(VerbError('rmx ingest takes a directory, not a file (/private/tmp/b240m.uhupls86/proj/CLAUDE.md)'))
+E        +    where VerbError('rmx ingest takes a directory, not a file (/private/tmp/b240m.uhupls86/proj/CLAUDE.md)') = <ExceptionInfo VerbError('rmx ingest takes a directory, not a file (/private/tmp/b240m.uhupls86/proj/CLAUDE.md)') tblen=3>.value
+
+tests/test_bug240_ingest_file_arg_mcp.py:141: AssertionError
+__________ test_the_daemon_op_refuses_a_file_naming_sync[ingest_path] __________
+
+up_store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...Path('/private/tmp/b240m.6ql2agxl/proj'), 'root': PosixPath('/private/tmp/b240m.6ql2agxl/proj/.refmatrix'), 'up': True}
+op = 'ingest_path'
+
+    @pytest.mark.parametrize("op", ["ingest_path", "ingest_path_start"])
+    def test_the_daemon_op_refuses_a_file_naming_sync(up_store, op):
+        from refmatrix import daemon as daemon_mod
+        r = daemon_mod.call(up_store["root"], op, {"path": str(up_store["proj"] / "CLAUDE.md")},
+                            timeout=60, retries=0)
+        assert r.get("ok") is False, f"op {op}(path=<file>) answered ok: {r}"
+>       assert NAMED in str(r.get("error")), f"op {op} refusal must name `{NAMED}`: {r}"
+E       AssertionError: op ingest_path refusal must name `rmx sync -f`: {'ok': False, 'error': 'rmx ingest takes a directory, not a file (/private/tmp/b240m.6ql2agxl/proj/CLAUDE.md)'}
+E       assert 'rmx sync -f' in 'rmx ingest takes a directory, not a file (/private/tmp/b240m.6ql2agxl/proj/CLAUDE.md)'
+E        +  where 'rmx ingest takes a directory, not a file (/private/tmp/b240m.6ql2agxl/proj/CLAUDE.md)' = str('rmx ingest takes a directory, not a file (/private/tmp/b240m.6ql2agxl/proj/CLAUDE.md)')
+E        +    where 'rmx ingest takes a directory, not a file (/private/tmp/b240m.6ql2agxl/proj/CLAUDE.md)' = <built-in method get of dict object at 0x11596e080>('error')
+E        +      where <built-in method get of dict object at 0x11596e080> = {'error': 'rmx ingest takes a directory, not a file (/private/tmp/b240m.6ql2agxl/proj/CLAUDE.md)', 'ok': False}.get
+
+tests/test_bug240_ingest_file_arg_mcp.py:150: AssertionError
+_______ test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start] _______
+
+up_store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...Path('/private/tmp/b240m.afv3zbq5/proj'), 'root': PosixPath('/private/tmp/b240m.afv3zbq5/proj/.refmatrix'), 'up': True}
+op = 'ingest_path_start'
+
+    @pytest.mark.parametrize("op", ["ingest_path", "ingest_path_start"])
+    def test_the_daemon_op_refuses_a_file_naming_sync(up_store, op):
+        from refmatrix import daemon as daemon_mod
+        r = daemon_mod.call(up_store["root"], op, {"path": str(up_store["proj"] / "CLAUDE.md")},
+                            timeout=60, retries=0)
+        assert r.get("ok") is False, f"op {op}(path=<file>) answered ok: {r}"
+>       assert NAMED in str(r.get("error")), f"op {op} refusal must name `{NAMED}`: {r}"
+E       AssertionError: op ingest_path_start refusal must name `rmx sync -f`: {'ok': False, 'error': 'rmx ingest takes a directory, not a file (/private/tmp/b240m.afv3zbq5/proj/CLAUDE.md)'}
+E       assert 'rmx sync -f' in 'rmx ingest takes a directory, not a file (/private/tmp/b240m.afv3zbq5/proj/CLAUDE.md)'
+E        +  where 'rmx ingest takes a directory, not a file (/private/tmp/b240m.afv3zbq5/proj/CLAUDE.md)' = str('rmx ingest takes a directory, not a file (/private/tmp/b240m.afv3zbq5/proj/CLAUDE.md)')
+E        +    where 'rmx ingest takes a directory, not a file (/private/tmp/b240m.afv3zbq5/proj/CLAUDE.md)' = <built-in method get of dict object at 0x111b98a80>('error')
+E        +      where <built-in method get of dict object at 0x111b98a80> = {'error': 'rmx ingest takes a directory, not a file (/private/tmp/b240m.afv3zbq5/proj/CLAUDE.md)', 'ok': False}.get
+
+tests/test_bug240_ingest_file_arg_mcp.py:150: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[daemon]
+FAILED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[in_process]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_up]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_down]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path]
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start]
+14 failed, 4 passed in 68.49s (0:01:08)

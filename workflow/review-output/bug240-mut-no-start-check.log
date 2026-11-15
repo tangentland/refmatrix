@@ -1,0 +1,23 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b240/c2/src/refmatrix as checked-hash (bug-037)
+...............F..                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start] _______
+
+up_store = {'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_...Path('/private/tmp/b240m.q0a3r5gj/proj'), 'root': PosixPath('/private/tmp/b240m.q0a3r5gj/proj/.refmatrix'), 'up': True}
+op = 'ingest_path_start'
+
+    @pytest.mark.parametrize("op", ["ingest_path", "ingest_path_start"])
+    def test_the_daemon_op_refuses_a_file_naming_sync(up_store, op):
+        from refmatrix import daemon as daemon_mod
+        r = daemon_mod.call(up_store["root"], op, {"path": str(up_store["proj"] / "CLAUDE.md")},
+                            timeout=60, retries=0)
+>       assert r.get("ok") is False, f"op {op}(path=<file>) answered ok: {r}"
+E       AssertionError: op ingest_path_start(path=<file>) answered ok: {'ok': True, 'result': {'job_id': '8b540911b445', 'status': 'running', 'path': '/private/tmp/b240m.q0a3r5gj/proj/CLAUDE.md'}}
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x169b98480>('ok')
+E        +    where <built-in method get of dict object at 0x169b98480> = {'ok': True, 'result': {'job_id': '8b540911b445', 'path': '/private/tmp/b240m.q0a3r5gj/proj/CLAUDE.md', 'status': 'running'}}.get
+
+tests/test_bug240_ingest_file_arg_mcp.py:149: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start]
+1 failed, 17 passed in 67.81s (0:01:07)

@@ -1,0 +1,38 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug241/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 22%]
+........................................................................ [ 29%]
+........................................................................ [ 37%]
+........................................................................ [ 44%]
+........................................................................ [ 52%]
+........................................................................ [ 59%]
+........................................................................ [ 67%]
+.......................................................s................ [ 74%]
+........................................................................ [ 81%]
+.....................F.................................................. [ 89%]
+........................................................................ [ 96%]
+..............................                                           [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+_______________ test_daemon_writer_ingest_uses_the_verb_payload ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1066b2900>
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1703/test_daemon_writer_ingest_uses0')
+
+    def test_daemon_writer_ingest_uses_the_verb_payload(monkeypatch, tmp_path):
+        seen = []
+        monkeypatch.setattr(cli_mod._DaemonWriter, "_call",
+                            lambda self, op, args, **kw: seen.append((op, args)) or {"entities": 3})
+        w = cli_mod._DaemonWriter.__new__(cli_mod._DaemonWriter)
+        w._root = tmp_path
+>       assert w.ingest_path(tmp_path, source="auto", semantic=True) == 3
+E       AssertionError: assert {'entities': 3} == 3
+E        +  where {'entities': 3} = ingest_path(PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1703/test_daemon_writer_ingest_uses0'), source='auto', semantic=True)
+E        +    where ingest_path = <refmatrix.cli._DaemonWriter object at 0x1330f8980>.ingest_path
+
+tests/test_verb_parity.py:537: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_verb_parity.py::test_daemon_writer_ingest_uses_the_verb_payload
+1 failed, 964 passed, 1 skipped in 779.37s (0:12:59)

@@ -301,6 +301,7 @@ class _DaemonWriter:
         self._root = root
         self._partition = partition
         self._reader: Store | None = None
+        self.last_ingest_result: dict = {}
 
     # -- routing core --------------------------------------------------------
     def _call(self, op: str, args: dict, timeout: float = 60.0):
@@ -440,13 +441,18 @@ class _DaemonWriter:
     def rebuild_index_from_log(self):
         return self._call("rebuild_index", {}, timeout=600.0).get("result", {})
 
-    def ingest_path(self, path, source="auto", semantic=False):
+    def ingest_path(self, path, source="auto", semantic=False) -> int:
         """Whole-path ingest as ONE op (not per-entity), so a big ingest is
-        a single RPC, not thousands."""
+        a single RPC, not thousands. Returns the entity count, the same shape
+        as `ingest.ingest_path`; the op's whole result -- with the GMD pass's
+        failure count `gmd_pass_failed` (ch-bsd r1 #s2) -- is kept on
+        `self.last_ingest_result` for `_ingest` to read."""
         from refmatrix.verbs import payload_ingest
-        return self._call("ingest_path",
-                          payload_ingest(str(path), source=source, semantic=semantic),
-                          timeout=24 * 3600.0).get("entities", 0)
+        res = self._call("ingest_path",
+                         payload_ingest(str(path), source=source, semantic=semantic),
+                         timeout=24 * 3600.0)
+        self.last_ingest_result = res
+        return res.get("entities", 0)
 
 
 
@@ -585,14 +591,32 @@ def _ingest(writer: "Store | _DaemonWriter", path, *,
     When `writer` is a `_DaemonWriter` the entire ingest runs as ONE daemon
     op (never per-entity RPC); otherwise it runs in-process against the
     direct Store. Returns the entity count. Lets `ingest` / `tldr-warm` /
-    `graphify-warm` share one call shape regardless of daemon state."""
+    `graphify-warm` share one call shape regardless of daemon state.
+
+    A failed markdown GMD pass is an ERROR here, on both routes (ch-bsd r1 #s2,
+    ruling L112, 2026-11-14): the pass registers the files as plain docs and
+    the rest of the ingest lands, but the user asked for a GMD parse and did
+    not get one. Its stderr line reaches only `daemon.stderr.log` on the daemon
+    route, so the count rides back (`gmd_pass_failed`) and becomes one `Error:`
+    line and exit 1 -- the `_say_vector_delete_failures` rule, made fatal."""
     if isinstance(writer, _DaemonWriter):
         # Blocking RPC — stream the daemon's per-pass progress so the user sees
         # movement instead of a frozen prompt for minutes.
         with _stream_ingest_progress(writer._root):
-            return writer.ingest_path(path, source=source, semantic=semantic)
-    from refmatrix.ingest import ingest_path as _ip
-    return _ip(writer, Path(path), source=source, semantic=semantic)
+            n = writer.ingest_path(path, source=source, semantic=semantic)
+        res = writer.last_ingest_result
+    else:
+        from refmatrix.ingest import ingest_path as _ip
+        failed0 = getattr(writer, "gmd_pass_failures", 0)
+        n = _ip(writer, Path(path), source=source, semantic=semantic)
+        failed = getattr(writer, "gmd_pass_failures", 0) - failed0
+        res = {"entities": n, "gmd_pass_failed": failed,
+               "gmd_pass_error": getattr(writer, "gmd_pass_last_error", None)}
+    from refmatrix.ingest import gmd_pass_failure_message
+    why = gmd_pass_failure_message(res, path)
+    if why:
+        raise click.ClickException(why)
+    return n
 
 
 def _replica_reader_path() -> Path:
@@ -8378,12 +8402,23 @@ def import_(path, merge):
                    "additively if graphify-out/graph.json exists). metadata "
                    "reads llm-tldr's per-unit semantic dump for the richest "
                    "graph; tldr falls back to call_graph.json; graphify forces "
-                   "the knowledge-graph JSON to be the only ingest.")
+                   "the knowledge-graph JSON to be the only CODE source. --source "
+                   "picks where code structure comes from; markdown always goes "
+                   "to the GMD pass, whatever the source.")
 @click.option("--semantic/--no-semantic", default=True, show_default=True,
               help="Extract Python imports + docstring keywords. ON by default: without it code entities carry NO searchable terms, and measured across the live fleet 44-83% of code entities had none because no daemon ran with the old opt-in flag. The 0.7.5 bulk-gate made it cheap -- measured warm no-op delta 0.0-0.6s, single-file watcher sync +0.8s.")
 def ingest(path, source, semantic):
     """Ingest a directory. Prefers .tldr/cache/semantic/metadata.json when present."""
     resolved = Path(path).resolve()
+    # A file is refused BEFORE `_store(write=True)` (bug-240; ch-bsd r1 #m1, ruling L112): with
+    # the daemon busy, `_store` would answer "busy -- writes go through the daemon" first, and
+    # with it absent it would open the catalog read-write only to refuse. Same helper the verb
+    # and the daemon ops call -- one check, not a copy.
+    from refmatrix.ingest import IngestFileTargetError, refuse_file_target
+    try:
+        refuse_file_target(resolved)
+    except IngestFileTargetError as e:
+        raise click.ClickException(str(e)) from e
     # Uniform write path: routes the whole ingest through the daemon (single
     # op) when one owns the store, else runs in-process. Single-owner lock.
     n = _ingest(_store(write=True), resolved, source=source, semantic=semantic)

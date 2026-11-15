@@ -1,0 +1,95 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/070141d0-80c6-4c13-95a2-56f192e2a1de/scratchpad/mut240/refmatrix/src/refmatrix as checked-hash (bug-037)
+FF.......                                                                [100%]
+=================================== FAILURES ===================================
+_ test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[metadata-code+docs: markdown/gmd] _
+
+base = PosixPath('/private/tmp/b241r2.lk9b7_yn'), cache = 'metadata'
+phase = 'code+docs: markdown/gmd'
+
+    @pytest.mark.parametrize("cache,phase", [
+        ("metadata", "code+docs: markdown/gmd"),     # `_ingest_path_inner` -> the GMD pass
+        ("call_graph", "code+docs: markdown/gmd"),
+        ("none", "code+docs: tldr/tree"),            # `_ingest_tree` -> the GMD pass
+    ])
+    def test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass(base, cache, phase):
+        from refmatrix.ingest import ingest_path
+        from refmatrix.store import Store
+        proj = _project(base, cache, n_md=N_MD)
+        root = proj / ".refmatrix"
+        root.mkdir()
+        current = {"phase": None}
+        yields: dict = {}
+    
+        def _progress(name: str, done: int = 0, total: int = 0) -> None:
+            current["phase"] = name
+    
+        def _yield() -> None:
+            yields[current["phase"]] = yields.get(current["phase"], 0) + 1
+    
+        s = Store(root)
+        try:
+            with s.with_partition("proj"):
+                ingest_path(s, proj, yield_lock=_yield, yield_every=YIELD_EVERY,
+                            progress_cb=_progress)
+                gmd_docs = sum(1 for i in range(N_MD) if s.get_entity("doc", f"d{i:02d}"))
+        finally:
+            s.close()
+        assert gmd_docs == N_MD, f"the GMD pass ingested {gmd_docs}/{N_MD} docs (fixture broken)"
+        # >= 2, not > 0: one yield after the whole pass would still hold the lock throughout.
+>       assert yields.get(phase, 0) >= 2, (
+            f"no yield during the markdown GMD pass ({N_MD} docs, yield_every={YIELD_EVERY}, "
+            f"cache={cache}): the store lock is held for the whole pass; yields by phase: {yields}")
+E       AssertionError: no yield during the markdown GMD pass (25 docs, yield_every=5, cache=metadata): the store lock is held for the whole pass; yields by phase: {'code+docs: tldr/tree': 1}
+E       assert 0 >= 2
+E        +  where 0 = <built-in method get of dict object at 0x115f492c0>('code+docs: markdown/gmd', 0)
+E        +    where <built-in method get of dict object at 0x115f492c0> = {'code+docs: tldr/tree': 1}.get
+
+tests/test_bug241_r2_l112.py:157: AssertionError
+_ test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[call_graph-code+docs: markdown/gmd] _
+
+base = PosixPath('/private/tmp/b241r2.5gnmzun2'), cache = 'call_graph'
+phase = 'code+docs: markdown/gmd'
+
+    @pytest.mark.parametrize("cache,phase", [
+        ("metadata", "code+docs: markdown/gmd"),     # `_ingest_path_inner` -> the GMD pass
+        ("call_graph", "code+docs: markdown/gmd"),
+        ("none", "code+docs: tldr/tree"),            # `_ingest_tree` -> the GMD pass
+    ])
+    def test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass(base, cache, phase):
+        from refmatrix.ingest import ingest_path
+        from refmatrix.store import Store
+        proj = _project(base, cache, n_md=N_MD)
+        root = proj / ".refmatrix"
+        root.mkdir()
+        current = {"phase": None}
+        yields: dict = {}
+    
+        def _progress(name: str, done: int = 0, total: int = 0) -> None:
+            current["phase"] = name
+    
+        def _yield() -> None:
+            yields[current["phase"]] = yields.get(current["phase"], 0) + 1
+    
+        s = Store(root)
+        try:
+            with s.with_partition("proj"):
+                ingest_path(s, proj, yield_lock=_yield, yield_every=YIELD_EVERY,
+                            progress_cb=_progress)
+                gmd_docs = sum(1 for i in range(N_MD) if s.get_entity("doc", f"d{i:02d}"))
+        finally:
+            s.close()
+        assert gmd_docs == N_MD, f"the GMD pass ingested {gmd_docs}/{N_MD} docs (fixture broken)"
+        # >= 2, not > 0: one yield after the whole pass would still hold the lock throughout.
+>       assert yields.get(phase, 0) >= 2, (
+            f"no yield during the markdown GMD pass ({N_MD} docs, yield_every={YIELD_EVERY}, "
+            f"cache={cache}): the store lock is held for the whole pass; yields by phase: {yields}")
+E       AssertionError: no yield during the markdown GMD pass (25 docs, yield_every=5, cache=call_graph): the store lock is held for the whole pass; yields by phase: {'code+docs: tldr/tree': 1}
+E       assert 0 >= 2
+E        +  where 0 = <built-in method get of dict object at 0x12283c100>('code+docs: markdown/gmd', 0)
+E        +    where <built-in method get of dict object at 0x12283c100> = {'code+docs: tldr/tree': 1}.get
+
+tests/test_bug241_r2_l112.py:157: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[metadata-code+docs: markdown/gmd]
+FAILED tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[call_graph-code+docs: markdown/gmd]
+2 failed, 7 passed in 33.37s

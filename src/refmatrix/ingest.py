@@ -357,6 +357,31 @@ def should_ignore(p: Path, root: Path | None = None, *,
     return ignore_reason(p, root, base=base) is not None
 
 
+class IngestFileTargetError(ValueError):
+    """`ingest` was handed a file. A caller mistake, not a runtime condition (bug-240)."""
+
+
+def refuse_file_target(path: "Path | str") -> None:
+    """Refuse a file as the target of a whole-tree ingest, naming the single-file path.
+
+    WHY (bug-240, 2026-11-14): at the 0.83.0 deploy `rmx ingest CLAUDE.md` exited 0 with
+    `ingested 0 entities` and wrote nothing -- `ingest` walks a DIRECTORY, a file walks no
+    tree, and a write the user asked for became a quiet success. The MCP tool did the same by
+    another road (`{job_id, status: running}`, the job ending `done` with 0). Lead ruling:
+    REFUSE, one message on every route. `rmx sync -f` is the single-file path.
+
+    THE one check. Its call sites are the entry points a file can arrive through, each of
+    which must answer before it does anything else: the `rmx_ingest` verb (before
+    `require_daemon`, or a daemon-down agent hears "not running" and retries the same wrong
+    call), the daemon's `ingest_path_start` (before a job is registered), and `ingest_path`
+    itself (the blocking op and the CLI's in-process route). A path that does not exist is
+    left to the caller's own existence check (the CLI's `click.Path(exists=True)`)."""
+    p = Path(path)
+    if p.exists() and not p.is_dir():
+        raise IngestFileTargetError(
+            f"rmx ingest takes a directory; for one file use rmx sync -f {path}")
+
+
 def ingest_path(
     s: Store, path: Path, source: str = "auto", semantic: bool = False,
     *, yield_lock=None, yield_every: int = 200, progress_cb=None,
@@ -385,6 +410,7 @@ def ingest_path(
       single-commit batching for bounded lock-hold.
     """
     from refmatrix.store import is_memory_only_root
+    refuse_file_target(path)
     if is_memory_only_root(s.root):
         raise RuntimeError(
             f"ingest refused: {s.root} is the memory-only global store and "
@@ -487,12 +513,23 @@ def _ingest_path_inner(
     if n == 0 and source in ("auto", "tldr") and call_graph_path.exists():
         n = _ingest_tldr(s, path, yield_lock=yield_lock, yield_every=yield_every,
                          ignore_root=ign_root)
-    if source in ("auto", "tree") and n == 0:
-        n = _ingest_tree(s, path, ignore_root=ign_root)
+    tree_ran = source in ("auto", "tree") and n == 0
+    if tree_ran:
+        n = _ingest_tree(s, path, ignore_root=ign_root,   # routes markdown itself
+                         yield_lock=yield_lock)
+    else:
+        # A tldr cache answered (or `--source metadata|tldr|graphify` was
+        # explicit): markdown still goes to the GMD pass (bug-241). `source`
+        # chooses where CODE structure comes from; none of those sources
+        # covers markdown, and every markdown pass below already runs whatever
+        # `source` is, so the GMD routing does too -- skipping it under an
+        # explicit source would be this bug again.
+        _phase("code+docs: markdown/gmd")
+        n += _ingest_markdown_gmd(s, path, ignore_root=ign_root, yield_lock=yield_lock)
     # Graphify is additive — when source=auto and the cache is present, layer
     # its cross-modal edges (rationale_for, semantically_similar_to, etc.) on
     # top of whatever the primary source produced. source=graphify forces it
-    # to be the only ingest.
+    # to be the only CODE source (markdown already went to the GMD pass above).
     if source == "graphify":
         _phase("code+docs: graphify")
         n = _ingest_graphify(s, path, pre_tracked=_pre_tracked)
@@ -1332,8 +1369,13 @@ def _ingest_graphify(s: Store, project: Path, *, pre_tracked=None) -> int:
 # --- tree -------------------------------------------------------------------
 
 
-def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> int:
+def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None,
+                 yield_lock=None) -> int:
     """Walk the tree, batching entity upserts.
+
+    `yield_lock` is the cooperative ingest's hook, passed on to the markdown GMD pass at the
+    end (ch-bsd r1 #s1, ruling L112): the walk itself is batched and short, the GMD pass is
+    not. The GMD pass picks its own per-doc cadence (`gmd_doc_yield_every`, ruling L114).
 
     Per-row upsert_entity was O(N) cursor + (pre-transaction-wrap) commit
     calls. Batching via bulk_upsert_entity reduces it to a handful of
@@ -1354,7 +1396,6 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
         track_payload.clear()
 
     n = 0
-    gmd_paths: list[Path] = []
     for p in root.rglob("*"):
         if not p.is_file():
             continue
@@ -1362,27 +1403,9 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
             continue
         rel = p.relative_to(root).as_posix()
         ext = p.suffix.lower()
-        # Markdown goes to the GMD pass, ALWAYS -- not just when it carries
-        # `gmd:` frontmatter. Registering it here as a plain `doc` gives it an
-        # entity with NO body terms, so it is unretrievable by its own content
-        # at any k, AND stamps `mark_tracked(mtime)` below, which makes the
-        # sync mtime gate skip it forever afterwards. That pairing is what
-        # stranded 43-72% of the doc/memory entities in every store measured.
-        # The parser handles plain markdown fine (`lenient=True`); the only
-        # thing frontmatter adds that matters is the explicit id, and
-        # `_lenient_doc_id` derives a collision-free one from the path.
+        # Markdown is routed to the GMD pass by `_ingest_markdown_gmd` below,
+        # never registered here as a plain `doc` (see its docstring).
         if ext in GMD_EXTS:
-            # Purge a LEGACY plain-doc row for this path first. The GMD pass
-            # names entities by doc-id (`charter`), the old tree pass named
-            # them by relpath (`CHARTER.md`), so without this the two coexist
-            # and the stale one keeps its zero body terms -- manufacturing the
-            # very stranding this change exists to remove. Guarded on the
-            # relpath row actually existing, so a re-ingest of an
-            # already-correct store does not churn the graph. Mirrors the
-            # same guard in `sync._sync_paths`.
-            if s.get_entity("doc", rel) is not None:
-                s.purge_path(str(p))
-            gmd_paths.append(p)
             continue
         if ext in DOC_EXTS:
             kind = "doc"
@@ -1400,26 +1423,120 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
         if len(batch) >= BATCH:
             _flush()
     _flush()
-    if gmd_paths:
-        # Batched so cross-doc `[[doc-id#anchor]]` refs resolve within the run.
-        from refmatrix.ingest_gmd import ingest_gmd_paths
-        try:
-            st = ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root)
-            n += st.docs
-        except Exception:
-            # Never let a bad markdown file abort the whole tree pass; the
-            # plain registration above is gone for these, so a failure here
-            # costs their body terms, not the ingest.
-            for gp in gmd_paths:
-                try:
-                    s.upsert_entity(kind="doc",
-                                    name=gp.relative_to(root).as_posix(),
-                                    path=str(gp))
-                    s.mark_tracked(str(gp), gp.stat().st_mtime)
-                    n += 1
-                except Exception:
-                    pass
-    return n
+    return n + _ingest_markdown_gmd(s, root, ignore_root=ignore_root, yield_lock=yield_lock)
+
+
+def gmd_doc_yield_every() -> int:
+    """THE GMD pass's lock-yield cadence, in DOCS: `RMX_INGEST_YIELD_EVERY`, default 1.
+
+    One knob for both GMD routes (ch-bsd r2 #m1, ruling L114, 2026-11-14): the daemon's
+    `ingest_gmd` job and the markdown pass inside a code+docs `ingest_path`. A GMD doc costs
+    ~0.5 s; the code passes' `yield_every` (200, `RMX_INGEST_YIELD_EVERY_UNITS`) counts cheap
+    per-file units, and inherited by the GMD pass it held the store lock up to 15.0 s (p95
+    9.9 s) on 211 docs, against 5.4 s (p95 1.3 s) per doc, same total time (bsd probe)."""
+    return max(1, int(os.environ.get("RMX_INGEST_YIELD_EVERY", "1") or "1"))
+
+
+def gmd_pass_failure_message(result: dict, path) -> "str | None":
+    """The one sentence for a failed markdown GMD pass, or None when it did not fail.
+
+    `result` carries `entities`, `gmd_pass_failed` and `gmd_pass_error` (the daemon's
+    `ingest_path` op result). The CLI renders it as its `Error:` line (exit 1) and the daemon's
+    `ingest_path_start` job as its `error` (ch-bsd r2 #m2, ruling L114): one condition, one
+    verdict and one wording on both routes."""
+    failed = int(result.get("gmd_pass_failed") or 0)
+    if not failed:
+        return None
+    err = result.get("gmd_pass_error")
+    why = " ".join(str(err).split()) if err else "cause in daemon.stderr.log"
+    return (f"GMD pass failed ({why}): {failed} markdown file(s) under {path} were "
+            f"registered as plain docs, not GMD-parsed; {result.get('entities', 0)} entities "
+            f"ingested otherwise. Fix the file(s) and re-run.")
+
+
+def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = None,
+                         yield_lock=None) -> int:
+    """THE code+docs routing of markdown to the GMD pass; returns the docs it
+    ingested. Every markdown file under `root` that `should_ignore` keeps
+    (judged against `ignore_root`, the project root) goes to ONE batched
+    `ingest_gmd_paths` call, so cross-doc `[[doc-id#anchor]]` refs resolve
+    within the run.
+
+    WHY one routing (bug-241, 2026-11-14): it lived inside `_ingest_tree`, and
+    `_ingest_path_inner` runs the tree pass only when no tldr cache answered.
+    On a tree with `.tldr/cache/semantic/metadata.json` or `call_graph.json` --
+    the live refmatrix tree -- no markdown was ever GMD-parsed by `rmx ingest`
+    or `rmx reingest --force`: the rule docs stayed plain relpath rows with no
+    anchors, and bug-216's repair-by-reingest was a no-op. `_ingest_tree` and
+    `_ingest_path_inner` (when the tree pass did not run) both call this.
+
+    Markdown goes to the GMD pass ALWAYS -- not just when it carries `gmd:`
+    frontmatter. Registered as a plain `doc` it has NO body terms, so it is
+    unretrievable by its own content at any k, and its `mark_tracked(mtime)`
+    makes the sync mtime gate skip it forever afterwards; that pairing
+    stranded 43-72% of the doc/memory entities in every store measured. The
+    parser handles plain markdown (`lenient=True`); `_lenient_doc_id` derives a
+    collision-free id from the path when there is no frontmatter.
+
+    A LEGACY plain-doc row for a path (named by relpath, as the old tree pass
+    named it) is purged first, guarded on the row existing so a re-ingest of
+    an already-correct store does not churn the graph; mirrors the same guard
+    in `sync._sync_one`. A GMD pass that raises does not abort the ingest: its
+    files are registered as plain docs, and the failure is printed and counted
+    -- it is a memory path (CLAUDE.md #no-silent-failures).
+
+    Cooperative (ch-bsd r1 #s1, ruling L112, 2026-11-14): `yield_lock` goes to
+    `ingest_gmd_paths`, which yields every `gmd_doc_yield_every()` docs (per doc by default,
+    ruling L114 -- never the caller's code-unit cadence) and every N node-ops inside a doc.
+    On the daemon route the hook is `_CommitWindow.boundary`; without it the pass ran in ONE
+    commit window holding the store lock throughout (733 docs in 1027.7 s measured on a
+    repo-sized tree), the lock-holding wedge class of bug-085.
+
+    Counted on the store (ch-bsd r1 #s2, ruling L112): a failed pass adds the files it covered
+    to `s.gmd_pass_failures` and keeps its error in `s.gmd_pass_last_error`. The daemon's
+    `ingest_path` op returns the delta (`gmd_pass_failed`), and the CLI turns it into an
+    `Error:` line and a non-zero exit -- a stderr print alone reaches only `daemon.stderr.log`.
+    """
+    import sys as _sys
+    judge = ignore_root or root
+    gmd_paths: list[Path] = []
+    for ext in sorted(GMD_EXTS):
+        for p in sorted(root.rglob(f"*{ext}")):
+            if not p.is_file() or should_ignore(p, judge):
+                continue
+            rel = p.relative_to(root).as_posix()
+            if s.get_entity("doc", rel) is not None:
+                s.purge_path(str(p))
+            gmd_paths.append(p)
+    if not gmd_paths:
+        return 0
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+    try:
+        return ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root,
+                                yield_lock=yield_lock,
+                                yield_every=gmd_doc_yield_every()).docs
+    except Exception as exc:  # noqa: BLE001 — printed, counted, and the files kept
+        print(f"rmx ingest: GMD pass failed ({type(exc).__name__}: {exc}); "
+              f"registering {len(gmd_paths)} markdown file(s) as plain docs",
+              file=_sys.stderr)
+        s.gmd_pass_failures = getattr(s, "gmd_pass_failures", 0) + len(gmd_paths)
+        s.gmd_pass_last_error = f"{type(exc).__name__}: {exc}"
+        n = 0
+        failed = 0
+        for gp in gmd_paths:
+            try:
+                s.upsert_entity(kind="doc", name=gp.relative_to(root).as_posix(),
+                                path=str(gp))
+                s.mark_tracked(str(gp), gp.stat().st_mtime)
+                n += 1
+            except Exception as e2:  # noqa: BLE001 — counted and printed below
+                failed += 1
+                print(f"rmx ingest: could not register {gp}: {type(e2).__name__}: {e2}",
+                      file=_sys.stderr)
+        if failed:
+            print(f"rmx ingest: {failed} markdown file(s) not registered at all",
+                  file=_sys.stderr)
+        return n
 
 
 # --- Python semantic enrichment --------------------------------------------

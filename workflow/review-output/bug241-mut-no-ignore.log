@@ -1,0 +1,162 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut241/refmatrix/src/refmatrix as checked-hash (bug-037)
+......F.......F.......F.......F.......F.......F.......F.......F.......F. [ 75%]
+......F.......F.......F.                                                 [100%]
+=================================== FAILURES ===================================
+_______ test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-fresh] ________
+
+case = {'base': PosixPath('/private/tmp/b241.xxb46o1y'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.xxb46o1y/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.xxb46o1y/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.xxb46o1y/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.xxb46o1y/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.xxb46o1y/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+_____ test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-plain_row] ______
+
+case = {'base': PosixPath('/private/tmp/b241.qamxtbou'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.qamxtbou/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.qamxtbou/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.qamxtbou/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.qamxtbou/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.qamxtbou/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+_____ test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-fresh] ______
+
+case = {'base': PosixPath('/private/tmp/b241.2gfjpu_o'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.2gfjpu_o/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.2gfjpu_o/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.2gfjpu_o/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.2gfjpu_o/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.2gfjpu_o/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+___ test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-plain_row] ____
+
+case = {'base': PosixPath('/private/tmp/b241.ax10vkai'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ax10vkai/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ax10vkai/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.ax10vkai/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.ax10vkai/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.ax10vkai/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+____ test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-fresh] _____
+
+case = {'base': PosixPath('/private/tmp/b241.oc3n9pfa'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.oc3n9pfa/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.oc3n9pfa/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.oc3n9pfa/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.oc3n9pfa/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.oc3n9pfa/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+__ test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-plain_row] ___
+
+case = {'base': PosixPath('/private/tmp/b241.ip3rt4db'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ip3rt4db/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ip3rt4db/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.ip3rt4db/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.ip3rt4db/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.ip3rt4db/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+_________ test_the_rest_of_dot_claude_stays_out[sync-tldr_none-fresh] __________
+
+case = {'base': PosixPath('/private/tmp/b241.sofgwlwg'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.sofgwlwg/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.sofgwlwg/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.sofgwlwg/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.sofgwlwg/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.sofgwlwg/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+_______ test_the_rest_of_dot_claude_stays_out[sync-tldr_none-plain_row] ________
+
+case = {'base': PosixPath('/private/tmp/b241.oop91osf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.oop91osf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.oop91osf/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.oop91osf/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.oop91osf/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.oop91osf/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+_______ test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-fresh] ________
+
+case = {'base': PosixPath('/private/tmp/b241.mc56ornj'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.mc56ornj/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.mc56ornj/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.mc56ornj/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.mc56ornj/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.mc56ornj/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+_____ test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-plain_row] ______
+
+case = {'base': PosixPath('/private/tmp/b241.hbpzseq1'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.hbpzseq1/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.hbpzseq1/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.hbpzseq1/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.hbpzseq1/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.hbpzseq1/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+______ test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-fresh] _______
+
+case = {'base': PosixPath('/private/tmp/b241.e1inbmd1'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.e1inbmd1/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.e1inbmd1/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.e1inbmd1/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.e1inbmd1/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.e1inbmd1/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+____ test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-plain_row] _____
+
+case = {'base': PosixPath('/private/tmp/b241.lfjjmycb'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.lfjjmycb/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.lfjjmycb/proj'), ...}
+
+    def test_the_rest_of_dot_claude_stays_out(case):
+        """Guard: the re-include is the profile only."""
+>       assert not _rows(case["root"], "other-agent"), "an ignored .claude doc was ingested"
+E       AssertionError: an ignored .claude doc was ingested
+E       assert not [('doc', 'other-agent', '/private/tmp/b241.lfjjmycb/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')]
+E        +  where [('doc', 'other-agent', '/private/tmp/b241.lfjjmycb/proj/.claude/agents/other.md', '{"gmd_version": "0.1", "tags": ["t...c1b2bef8b", "gmd_pass2_done": true}'), ('concept', 'other-agent', None, '{"description": "alias of \'other_agent\'"}')] = _rows(PosixPath('/private/tmp/b241.lfjjmycb/proj/.refmatrix'), 'other-agent')
+
+tests/test_bug241_rule_docs_reingest.py:224: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_none-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_metadata-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[reingest-tldr_call_graph-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_none-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_none-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_metadata-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rest_of_dot_claude_stays_out[sync-tldr_call_graph-plain_row]
+12 failed, 84 passed in 80.03s (0:01:20)

@@ -63,6 +63,13 @@ filesystem      → fallback (tree walk, file-level only)
 
 Force a specific source: `rmx ingest . --source metadata|tldr|tree`.
 
+`--source` picks where CODE structure comes from. Markdown is not a code source: every
+markdown file the ignore rules keep goes to the GMD pass (`ingest.py:_ingest_markdown_gmd`,
+anchors and `rel:` edges) on every `rmx ingest` / `rmx reingest`, whatever the source and
+whether or not a tldr cache answered (bug-241). A failed GMD pass is an `Error:` and a non-zero
+exit, not a log line. `rmx ingest` takes a directory; a single file is refused with a pointer to
+`rmx sync -f <file>` (bug-240).
+
 ### Subprocess invocation {#subprocess-invocation}
 
 | Command          | Invokes                                                |
