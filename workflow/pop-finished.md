@@ -288,3 +288,7 @@ Applied: `.claude/PROJECT_PROFILE.md` `#corpus` now states the read-only MCP too
 |---|---|---|---|---|
 | Q39 | 2026-11-15 | bug-203 (`rmx sync -i` reaches the read replica when a daemon is up) is not on the freeze line; 31.2 rewrites what `sync -i` does, and arch-31b wrote the routing fix in (AC-14). Admit it into 31.2? | (a) admit it into 31.2 (recommended: the same lines are rewritten anyway; leaving it means re-opening them after the mod); (b) cut it from 31.2, bug-203 stays post-mod | **withdrawn** by the lead (L136): bug-203 is already pre-mod via T4 (queue step 13); which step routes `sync -i` is sequencing, ruled: 31.2 |
 {#q39-table}
+
+### Withdrawn queue note (R1.1 contingency, L140) {#r1-1-withdrawn}
+
+**Contingent:** if 31.5's live cost check (AC-0.17) fails after R1, the cheaper capture path ships as **R1.1**, a major (it changes a hook's output), before R2 opens. {#r1-1-withdrawn-body}
