@@ -69,7 +69,9 @@ has run on master since T0.8 merged. {#failures-body}
 
 ## Open {#open}
 
-- **Not pushed:** dev master is ~690 commits ahead of `origin/main` (the user pushes).
+- **Pushed** 2026-11-15 11:1x: `origin/main` = `0085b07` (691 commits, fast-forward; pre-push
+  scan: no secrets, store files or raw prompts). Local-only branches fetched from removed clones
+  were not pushed.
 - **bug-261 remainder (user's repos):** commit atlftpd's ignore line on its default branch; merge
   the ignore branches in cliquet, atldb, prep_prolific.
 - daemon stderr carries a `SyntaxWarning: "\|" is an invalid escape sequence` at startup
