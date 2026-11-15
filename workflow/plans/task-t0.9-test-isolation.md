@@ -210,6 +210,9 @@ is a registry row and a `MACOS_FILES` entry, never a patch to get green.
 
 ## Open decisions {#decisions}
 
+**Decided 2026-11-15:** D1 yes and D5 as written (lead, L171); D2, D3, D4 as recommended (the user: "d2-4 agree").
+
+
 - **D1 (lead, order):** (b) starts 29.4's runner before stage 4. Recommended: yes. A container
   cannot reach a live store, so the live-touch gate ([[task-29.4-suite-health#ac-12]]) binds
   host sharding only.
