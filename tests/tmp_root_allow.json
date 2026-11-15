@@ -6,10 +6,6 @@
    "reason": "the sandbox root itself (task 23.0 AC-5): every other test root moves UNDER it, so it is the one root that must be a short /tmp mkdtemp; permanent"
   },
   {
-   "key": "tests/test_brief_real_daemon.py::daemon_root::tempfile.mkdtemp(prefix='/tmp/bd.')",
-   "reason": "left at task-29.4 #r5 (bug-229): this file starts real daemons through the dev rmx CLI (not spawn_daemon_subprocess), so #r5's move did not name it; the spawn ledger reaps its daemons wherever the root is -- move it to rmx_sandbox.short_root(prefix) next"
-  },
-  {
    "key": "tests/test_bug112_duckdb_reopen.py::test_serve_forever_attaches_the_backend_log_and_detaches_it_on_shutdown::tempfile.mkdtemp(prefix='rmx', dir='/tmp')",
    "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
   },
@@ -51,10 +47,6 @@
   },
   {
    "key": "tests/test_bug178_r2.py::_store::tempfile.mkdtemp(prefix='b178r2', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
-  },
-  {
-   "key": "tests/test_bug179_anchor_parity.py::_gate_root::tempfile.mkdtemp(prefix='b179', dir='/tmp')",
    "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
   },
   {
@@ -202,22 +194,6 @@
    "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
   },
   {
-   "key": "tests/test_bug240_ingest_file_arg.py::proj::tempfile.mkdtemp(prefix='b240.', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): this file starts real daemons through the dev rmx CLI (not spawn_daemon_subprocess), so #r5's move did not name it; the spawn ledger reaps its daemons wherever the root is -- move it to rmx_sandbox.short_root(prefix) next"
-  },
-  {
-   "key": "tests/test_bug240_ingest_file_arg_mcp.py::_make_store::tempfile.mkdtemp(prefix='b240m.', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): this file starts real daemons through the dev rmx CLI (not spawn_daemon_subprocess), so #r5's move did not name it; the spawn ledger reaps its daemons wherever the root is -- move it to rmx_sandbox.short_root(prefix) next"
-  },
-  {
-   "key": "tests/test_bug241_r2_l112.py::base::tempfile.mkdtemp(prefix='b241r2.', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): this file starts real daemons through the dev rmx CLI (not spawn_daemon_subprocess), so #r5's move did not name it; the spawn ledger reaps its daemons wherever the root is -- move it to rmx_sandbox.short_root(prefix) next"
-  },
-  {
-   "key": "tests/test_bug241_rule_docs_reingest.py::case::tempfile.mkdtemp(prefix='b241.', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): this file starts real daemons through the dev rmx CLI (not spawn_daemon_subprocess), so #r5's move did not name it; the spawn ledger reaps its daemons wherever the root is -- move it to rmx_sandbox.short_root(prefix) next"
-  },
-  {
    "key": "tests/test_bus.py::home::tempfile.mkdtemp(prefix='rh', dir='/tmp')",
    "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
   },
@@ -260,10 +236,6 @@
   {
    "key": "tests/test_rerank_budget_real_clients.py::stub::tempfile.mkdtemp(prefix='rmxb', dir='/tmp')",
    "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
-  },
-  {
-   "key": "tests/test_scanorder_r2_l120.py::env::tempfile.mkdtemp(prefix='sco.', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): this file starts real daemons through the dev rmx CLI (not spawn_daemon_subprocess), so #r5's move did not name it; the spawn ledger reaps its daemons wherever the root is -- move it to rmx_sandbox.short_root(prefix) next"
   },
   {
    "key": "tests/test_task3_7_remedy_r2.py::rig::tempfile.mkdtemp(prefix='r37r2-', dir='/tmp')",

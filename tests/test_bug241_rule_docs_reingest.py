@@ -11,7 +11,7 @@ meta) and no `<id>#<anchor>` nodes. Every bug-216 test drove `ingest_path` on a 
 Each case builds a throwaway project shaped like this repo -- root `CLAUDE.md` and
 `.claude/PROJECT_PROFILE.md` as GMD files with anchors, `.claude/agents/other.md` (must stay
 out), `docs/cite.md` citing `[[claude#x]]` and `[[project-profile#y]]`, one Python file -- under
-a SHORT `/tmp` mkdtemp root (macOS `sun_path`). The store first holds the OLD config
+a SHORT `short_root()` root (macOS `sun_path`). The store first holds the OLD config
 (`CLAUDE.md` + `.claude` ignored) and, for `prior=plain_row`, the plain relpath rows an older
 store holds for both rule docs (mtime stamped, meta NULL). The ignore file then switches to
 R4's (`.claude` + `!.claude/PROJECT_PROFILE.md`) and a REAL daemon (spawned by the dev `rmx`,
@@ -36,12 +36,12 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
 
 REPO = Path(__file__).resolve().parents[1]
@@ -131,7 +131,7 @@ CASES = [(tldr, prior, route)
 def case(request):
     tldr, prior, route = request.param
     assert RMX.exists(), f"dev rmx missing at {RMX}"
-    base = Path(tempfile.mkdtemp(prefix="b241.", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b241.")).resolve()
     proj = base / "proj"
     proj.mkdir()
     for rel, text in FILES.items():

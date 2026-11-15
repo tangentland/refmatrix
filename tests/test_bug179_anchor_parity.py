@@ -36,11 +36,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from refmatrix.ingest_gmd import parse_gmd
 
 REPO = Path(__file__).resolve().parents[1]
@@ -543,7 +543,7 @@ def _mini(name: str) -> str:
 
 def _gate_root(*, lint_src: str | None, doc: str, venv: bool = True) -> Path:
     """A throwaway ROOT under a SHORT mkdtemp holding the real gate scripts."""
-    root = Path(tempfile.mkdtemp(prefix="b179", dir="/tmp"))
+    root = Path(rmx_sandbox.short_root("b179"))
     (root / "scripts").mkdir()
     shutil.copy2(LINT_GMD_SH, root / "scripts" / "lint-gmd.sh")
     if PARITY.is_file():

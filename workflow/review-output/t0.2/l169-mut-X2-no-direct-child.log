@@ -1,0 +1,80 @@
+# sha eb9ae87 + MUTATION l169-mut-X2-no-direct-child in tests/sandbox_site/rmx_sandbox.py
+# diff --git a/tests/sandbox_site/rmx_sandbox.py b/tests/sandbox_site/rmx_sandbox.py
+# index d468455..bf38cab 100644
+# --- a/tests/sandbox_site/rmx_sandbox.py
+# +++ b/tests/sandbox_site/rmx_sandbox.py
+# @@ -1409,2 +1409 @@ def _is_resource_tracker(rec: dict, info: dict) -> bool:
+# -    if info.get("ppid") != os.getpid():
+# -        return False
+# +    pass  # MUTATION X2: no direct-child condition
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_daemon_reaper.py::test_l154_a_grandchild_with_the_trackers_argv_is_not_exempt -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 1 item
+
+tests/test_daemon_reaper.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_________ test_l154_a_grandchild_with_the_trackers_argv_is_not_exempt __________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2441/test_l154_a_grandchild_with_th0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2441/test_l154_a_grandchild_with_th0/case-info.json')
+
+    def test_l154_a_grandchild_with_the_trackers_argv_is_not_exempt(tmp_path, case_info):
+        """ch-bsd T0.2 r1 S2 (L169): the exemption is for a DIRECT child of the session with the
+        tracker's exact argv. A grandchild carrying that argv (here, under a plain child that is
+        left running) is a leak like any other: `LEAKED PROCESS pid=<grandchild>`, stopped, and the
+        session fails. Mutation X2 (drop the direct-child condition) survived r1; this node kills
+        it."""
+        tree = _inner_tree(tmp_path, "case_tracker_argv_grandchild")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        gc, mid = d["pid"], d["mid"]
+        try:
+            assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+>           assert _line_with(out, f"pid={gc} exempt") is None, (
+                f"the grandchild {gc} (its parent is {mid}, not the session) was exempted as the "
+                f"resource tracker:\n{out[-3000:]}")
+E               AssertionError: the grandchild 93312 (its parent is 93311, not the session) was exempted as the resource tracker:
+E                 pyc-guard: recompiled 3 timestamp pyc(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2441/test_l154_a_grandchild_with_th0/inner/src/refmatrix as checked-hash (bug-037)
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rmx sandbox: 0 orphan process(es) swept from killed runs
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2441/test_l154_a_grandchild_with_th0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 1 item
+E                 
+E                 tests/test_case.py .                                                     [100%]
+E                 rmx sandbox: pid=93312 exempt, not reaped: the stdlib multiprocessing resource tracker, a direct child of this session (spawned in tests/test_case.py::test_a_grandchild_carries_the_trackers_argv); it ends with its parent by construction (ruling L154)
+E                 LEAKED PROCESS pid=93311 age=3s spawned in tests/test_case.py::test_a_grandchild_carries_the_trackers_argv argv=/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -c '
+E                 import os, subprocess, sys
+E                 r, w = int(sys.argv[1]), int(sys.argv[2])
+E                 gc = subprocess.Popen([sys.executable, "-c",
+E                                        "from multiprocessing.resource_tracker import main;... root=/private/tmp/rmx-dgmvj18o/r/1/.refmatrix
+E                   /private/tmp/rmx-dgmvj18o/r/1/.refmatrix's rmxd.pid names None, not pid=93311: not its daemon; signalled
+E                   SIGTERM sent to pid=93311
+E                 rmx sandbox: 1 leak(s) outlived their tests; the session FAILS (bug-229; task-29.4 #r4); 1 exempt (stdlib resource tracker, L154). Logged in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2441/test_l154_a_grandchild_with_th0/inner/workflow/review-output/leaked-processes.log
+E                 
+E                 ==================================== PASSES ====================================
+E                 =========================== short test summary info ============================
+E                 PASSED tests/test_case.py::test_a_grandchild_carries_the_trackers_argv
+E                 ============================== 1 passed in 3.27s ===============================
+E                 
+E               assert 'rmx sandbox: pid=93312 exempt, not reaped: the stdlib multiprocessing resource tracker, a direct child of this sessio...ests/test_case.py::test_a_grandchild_carries_the_trackers_argv); it ends with its parent by construction (ruling L154)' is None
+E                +  where 'rmx sandbox: pid=93312 exempt, not reaped: the stdlib multiprocessing resource tracker, a direct child of this sessio...ests/test_case.py::test_a_grandchild_carries_the_trackers_argv); it ends with its parent by construction (ruling L154)' = _line_with('pyc-guard: recompiled 3 timestamp pyc(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tho...andchild_carries_the_trackers_argv\n============================== 1 passed in 3.27s ===============================\n', 'pid=93312 exempt')
+
+tests/test_daemon_reaper.py:496: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_daemon_reaper.py::test_l154_a_grandchild_with_the_trackers_argv_is_not_exempt
+============================== 1 failed in 3.76s ===============================
+# exit 1

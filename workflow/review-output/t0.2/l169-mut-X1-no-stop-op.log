@@ -1,0 +1,112 @@
+# sha eb9ae87 + MUTATION l169-mut-X1-no-stop-op in tests/conftest.py
+# diff --git a/tests/conftest.py b/tests/conftest.py
+# index f771131..2a1aa06 100644
+# --- a/tests/conftest.py
+# +++ b/tests/conftest.py
+# @@ -112 +112 @@ def _stop_in_process(d, emit) -> bool:
+# -    _dm.OPS["stop"](d, {})
+# +    pass  # MUTATION X1: no stop op
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_daemon_reaper.py::test_ac5_an_in_process_daemon_left_serving_fails_the_session -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 7 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 1 item
+
+tests/test_daemon_reaper.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_________ test_ac5_an_in_process_daemon_left_serving_fails_the_session _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2439/test_ac5_an_in_process_daemon_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2439/test_ac5_an_in_process_daemon_0/case-info.json')
+
+    def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_info):
+        """AC-5 fixture 5: a `Daemon` built and served INSIDE the pytest process is not in the
+        spawn ledger. conftest's weak registry of `Daemon` instances finds it still serving; it is
+        printed `LEAKED IN-PROCESS DAEMON root=<…> built in <test id>`, stopped, and the session
+        fails. Kills mutation 16 (the `Daemon.__init__` wrapper records nothing)."""
+        tree = _inner_tree(tmp_path, "case_inprocess_daemon")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        root = d["root"]
+        assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+        assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"an in-process daemon on {root} was left serving and the session exited "
+            f"{r.returncode}:\n{out[-3000:]}")
+        line = _line_with(out, "LEAKED IN-PROCESS DAEMON")
+        assert line is not None, f"no `LEAKED IN-PROCESS DAEMON` line:\n{out[-3000:]}"
+        assert any(f"root={form}" in line for form in _root_forms(root)), (
+            f"the line does not name the daemon's root {root}: {line!r}")
+        assert f"{_NODE}test_leaves_an_in_process_daemon_serving" in line, (
+            f"the line does not name the test that built it: {line!r}")
+>       _assert_stopped_after_the_leak_line(out)
+
+tests/test_daemon_reaper.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+out = '============================= test session starts ==============================\nplatform darwin -- Python 3.14.5, p...eaves_an_in_process_daemon_serving\n========================= 1 passed in 78.44s (0:01:18) =========================\n'
+
+    def _assert_stopped_after_the_leak_line(out: str) -> None:
+        """ch-bsd T0.2 r1 S1 (ruling L169): a reported in-process daemon is also STOPPED. The
+        reaper's stop step prints `serve loop ended` once the serve thread has run its shutdown,
+        and `serve loop STILL RUNNING …` when it has not; X1 (no stop op sent) survived every node
+        that only read the LEAKED line."""
+        leak = out.find("LEAKED IN-PROCESS DAEMON")
+        assert leak >= 0, f"no `LEAKED IN-PROCESS DAEMON` line:\n{out[-3000:]}"
+>       assert "STILL RUNNING" not in out, (
+            f"the reaper reported the in-process daemon but its serve loop is STILL RUNNING:\n"
+            + out[-3000:])
+E       AssertionError: the reaper reported the in-process daemon but its serve loop is STILL RUNNING:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rmx sandbox: 0 orphan process(es) swept from killed runs
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2439/test_ac5_an_in_process_daemon_0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E         LEAKED IN-PROCESS DAEMON root=/private/tmp/shi-heisalgq/proj/.refmatrix built in tests/test_case.py::test_leaves_an_in_process_daemon_serving
+E           stop op sent through the Daemon registry (no signal)
+E           serve loop STILL RUNNING after its stop grace
+E           the in-process daemon on /private/tmp/shi-heisalgq/proj/.refmatrix did NOT stop
+E         LEAKED PROCESS pid=92624 age=78s spawned in tests/test_case.py::test_leaves_an_in_process_daemon_serving argv=/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m refmatrix.embed_worker --role embed root=/private/tmp/rmx-lnci_zcb/r/1/.refmatrix
+E           /private/tmp/rmx-lnci_zcb/r/1/.refmatrix's rmxd.pid names None, not pid=92624: not its daemon; signalled
+E           SIGTERM sent to pid=92624
+E         LEAKED PROCESS pid=92632 age=76s spawned in <no-test> argv=/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m refmatrix.embed_worker --role rerank root=/private/tmp/rmx-lnci_zcb/r/session/.refmatrix
+E           /private/tmp/rmx-lnci_zcb/r/session/.refmatrix's rmxd.pid names None, not pid=92632: not its daemon; signalled
+E           SIGTERM sent to pid=92632
+E         rmx sandbox: 3 leak(s) outlived their tests; the session FAILS (bug-229; task-29.4 #r4); 0 exempt (stdlib resource tracker, L154). Logged in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2439/test_ac5_an_in_process_daemon_0/inner/workflow/review-output/leaked-processes.log
+E         
+E         ==================================== PASSES ====================================
+E         ___________________ test_leaves_an_in_process_daemon_serving ___________________
+E         ----------------------------- Captured stderr call -----------------------------
+E         === 2026-11-15T12:19:47 daemon starting pid=92622 ===
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaves_an_in_process_daemon_serving
+E         ========================= 1 passed in 78.44s (0:01:18) =========================
+E         
+E       assert 'STILL RUNNING' not in '===========...==========\n'
+E         
+E         'STILL RUNNING' is contained here:
+E           erve loop STILL RUNNING after its stop grace
+E         ?           +++++++++++++
+E             the in-process daemon on /private/tmp/shi-heisalgq/proj/.refmatrix did NOT stop
+E           LEAKED PROCESS pid=92624 age=78s spawned in tests/test_case.py::test_leaves_an_in_process_daemon_serving argv=/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m refmatrix.embed_worker --role embed root=/private/tmp/rmx-lnci_zcb/r/1/.refmatrix
+E             /private/tmp/rmx-lnci_zcb/r/1/.refmatrix's rmxd.pid names None, not pid=92624: not its daemon; signalled...
+E         
+E         ...Full output truncated (13 lines hidden), use '-vv' to show
+
+tests/test_daemon_reaper.py:369: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_daemon_reaper.py::test_ac5_an_in_process_daemon_left_serving_fails_the_session
+========================= 1 failed in 78.87s (0:01:18) =========================
+# exit 1

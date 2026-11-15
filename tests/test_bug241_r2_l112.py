@@ -26,7 +26,7 @@ daemon", not the `rmx sync -f` refusal. Pinned with a real busy daemon: the spaw
 SIGSTOPped, so it is alive and does not answer ping -- the state `require_daemon` classifies as
 busy -- and resumed before teardown.
 
-Every store is a throwaway under a SHORT `/tmp` mkdtemp root (macOS `sun_path`); the daemons are
+Every store is a throwaway under a SHORT `short_root()` root (macOS `sun_path`); the daemons are
 spawned by the dev `rmx` with this checkout's code (PYTHONPATH). No mocks.
 """
 from __future__ import annotations
@@ -36,12 +36,12 @@ import os
 import shutil
 import signal
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
 
 REPO = Path(__file__).resolve().parents[1]
@@ -117,7 +117,7 @@ def _start(root: Path, env: dict) -> None:
 @pytest.fixture
 def base():
     assert RMX.exists(), f"dev rmx missing at {RMX}"
-    b = Path(tempfile.mkdtemp(prefix="b241r2.", dir="/tmp")).resolve()
+    b = Path(rmx_sandbox.short_root("b241r2.")).resolve()
     yield b
     shutil.rmtree(b, ignore_errors=True)
 

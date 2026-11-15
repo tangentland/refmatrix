@@ -7,8 +7,12 @@ with exit 0 before its summary: green-t02's registry reaper measured exactly tha
 Three tests, in order: a stop through the `stop` op, a stop through the `_stop` flag, and a
 DELIBERATE failure, so the session's own status (1) is distinguishable from `os._exit(0)`.
 
-Nothing is replaced: since bug-267's fix (L169) `serve_forever` off the main thread installs no
-signal handlers (the host owns its signals), so the real daemon serves on a plain thread."""
+ch-bsd T0.2 r1 B1 (ruling L169): NO `signal.signal` double. The serve thread runs the REAL
+`serve_forever`, so what production does off the main thread is what is tested. At 1121b4e
+`serve_forever` installed its SIGTERM/SIGINT handlers unconditionally, which Python refuses off
+the main thread (`ValueError: signal only works in main thread of the main interpreter`): the
+in-host return path ran only because these cases swapped `signal.signal`. The serve thread's own
+exception is captured and asserted first, so that is the E line, not a ping timeout."""
 import json
 import os
 import shutil
@@ -32,14 +36,27 @@ def _note_base(base: Path) -> None:
 
 
 def _serve(prefix: str):
+    """A REAL `Daemon` served by its REAL `serve_forever` on a non-main thread, no double; the
+    serve thread's exception (if any) is kept and asserted before the ping."""
     base, root = store_root(prefix)
     _note_base(base)
     d = dm.Daemon(root)
-    t = threading.Thread(target=d.serve_forever, name=f"case-{prefix}serve", daemon=True)
+    errors: list = []
+
+    def _run():
+        try:
+            d.serve_forever()
+        except BaseException as exc:    # the thread's own failure is the finding, not a hang
+            errors.append(exc)
+            raise
+
+    t = threading.Thread(target=_run, name=f"case-{prefix}serve", daemon=True)
     t.start()
     deadline = time.monotonic() + _PING_WAIT_S
     while not dm.ping(root, retries=0) and time.monotonic() < deadline and t.is_alive():
         time.sleep(0.2)
+    assert not errors, (f"serve_forever off the main thread raised "
+                        f"{type(errors[0]).__name__}: {errors[0]}")
     assert dm.ping(root, retries=0), "the in-process daemon never answered ping"
     return base, root, d, t
 

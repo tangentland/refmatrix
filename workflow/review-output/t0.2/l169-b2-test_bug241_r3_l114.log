@@ -1,0 +1,23 @@
+# sha eb9ae87 (RED fold on GREEN 1121b4e), clone /Volumes/littlebig/refmatrix-t02-red2 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug241_r3_l114.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 4 items
+
+tests/test_bug241_r3_l114.py ....                                        [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug241_r3_l114.py::test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence[metadata-code+docs: markdown/gmd]
+PASSED tests/test_bug241_r3_l114.py::test_m1_the_gmd_pass_yields_per_doc_under_the_daemons_code_cadence[none-code+docs: tldr/tree]
+PASSED tests/test_bug241_r3_l114.py::test_m2_a_failed_gmd_pass_is_reported_at_the_top_of_the_job_record
+PASSED tests/test_bug241_r3_l114.py::test_m2_guard_a_clean_trees_job_ends_done_with_no_report
+============================== 4 passed in 12.32s ==============================
+# exit 0

@@ -10,16 +10,18 @@ died with exit 0 before printing its summary -- a failing session reported as pa
 
 What is pinned here:
 - (1) In a CHILD pytest session (`tests/fixtures/suite_health/case_inprocess_stop.py`, run in a
-  throwaway checkout with this checkout's conftest), an in-process daemon serving on a
-  non-main thread is stopped through the `stop` op, and another through the `_stop` flag. The
+  throwaway checkout with this checkout's conftest), a REAL in-process daemon serving on a
+  non-main thread with no `signal.signal` double (ch-bsd T0.2 r1 B1, ruling L169) answers a
+  ping and is stopped through the `stop` op, and another through the `_stop` flag. The
   session survives both, runs its third, deliberately failing test, prints its summary line,
   and exits with ITS OWN status (1). It finishes within the hang guard: no hang at interpreter
   shutdown from leaked pool workers.
 - (2) Guards: a real daemon PROCESS still exits when stopped through the `stop` op, with no
   signal sent -- the detached one (`spawn_daemon_subprocess`, `rmx daemon start`) and the
   foreground one launchd runs (`rmx daemon start --no-detach`, `serve_foreground`). Its pid is
-  gone within the deadline. These pass at base; they fail if the force exit is removed from
-  the process paths and a leaked worker pins the process.
+  gone within the deadline. They check only that the stop op alone ends a daemon process; no
+  guard plants a leaked pool worker, so they do not show that the force exit is what ends it
+  (ch-bsd T0.2 r1 MEH-2: mutation X4, `in_host` forced True, survives them).
 """
 from __future__ import annotations
 
@@ -73,6 +75,14 @@ def test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status(
                         "after its in-process daemons were stopped (a hang at interpreter "
                         "shutdown: leaked pool workers joined by atexit?)\n" + out[-3000:])
         out = (r.stdout or "") + (r.stderr or "")
+        # ch-bsd T0.2 r1 B1 (L169): the child serves REAL daemons with no `signal.signal`
+        # double; a serve thread that fails is named by its own E line, first.
+        failed = [ln.strip() for ln in out.splitlines()
+                  if ln.startswith("E ") and "deliberate" not in ln
+                  and ("Error" in ln or "assert" in ln.lower())]
+        assert not failed, (
+            f"the child's in-process daemon tests failed (exit {r.returncode}): {failed[0]}\n"
+            + out[-3000:])
         summary = re.search(r"^=+ .*\b1 failed, 2 passed\b.* =+$", out, re.M)
         assert summary is not None, (
             f"the child session never printed its summary (exit {r.returncode}): stopping an "

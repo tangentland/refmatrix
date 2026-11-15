@@ -1,0 +1,43 @@
+# sha eb9ae87 (RED fold on GREEN 1121b4e), clone /Volumes/littlebig/refmatrix-t02-red2 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_daemon_reaper.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 6 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 18 items
+
+tests/test_daemon_reaper.py ..................                           [100%]
+
+==================================== PASSES ====================================
+__________ test_r4_sweep_orphans_stops_the_live_survivors_of_a_ledger __________
+----------------------------- Captured stderr call -----------------------------
+ORPHAN from a killed run: pid=90047 age=0s spawned in tests/test_daemon_reaper.py::test_r4_sweep_orphans_stops_the_live_survivors_of_a_ledger argv=/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -c 'import time; time.sleep(600)' root=/private/tmp/rmx-aaadr0mq/r/18/.refmatrix
+  /private/tmp/rmx-aaadr0mq/r/18/.refmatrix's rmxd.pid names None, not pid=90047: not its daemon; signalled
+  SIGTERM sent to pid=90047
+=========================== short test summary info ============================
+PASSED tests/test_daemon_reaper.py::test_ac5_a_leaked_out_of_sandbox_daemon_fails_the_session_by_name
+PASSED tests/test_daemon_reaper.py::test_ac5_a_daemon_stopped_by_its_test_is_no_leak
+PASSED tests/test_daemon_reaper.py::test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so
+PASSED tests/test_daemon_reaper.py::test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start
+PASSED tests/test_daemon_reaper.py::test_r4_3_the_session_header_counts_the_orphans_the_start_swept
+PASSED tests/test_daemon_reaper.py::test_ac5_an_in_process_daemon_left_serving_fails_the_session
+PASSED tests/test_daemon_reaper.py::test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session
+PASSED tests/test_daemon_reaper.py::test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file
+PASSED tests/test_daemon_reaper.py::test_l154_the_stdlib_resource_tracker_is_the_one_exempt_process
+PASSED tests/test_daemon_reaper.py::test_l154_a_grandchild_with_the_trackers_argv_is_not_exempt
+PASSED tests/test_daemon_reaper.py::test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session
+PASSED tests/test_daemon_reaper.py::test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root
+PASSED tests/test_daemon_reaper.py::test_ac5_a_registered_spawn_its_fixture_does_not_stop_fails_its_own_test
+PASSED tests/test_daemon_reaper.py::test_ac5_a_registered_spawn_its_fixture_stops_passes
+PASSED tests/test_daemon_reaper.py::test_r4_an_exec_child_and_its_forked_grandchild_each_write_one_ledger_line
+PASSED tests/test_daemon_reaper.py::test_r4_a_fork_of_the_pytest_process_writes_a_ledger_line
+PASSED tests/test_daemon_reaper.py::test_r4_enter_writes_owner_json_naming_this_process
+PASSED tests/test_daemon_reaper.py::test_r4_sweep_orphans_stops_the_live_survivors_of_a_ledger
+======================== 18 passed in 82.13s (0:01:22) =========================
+# exit 0
