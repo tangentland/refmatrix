@@ -67,6 +67,9 @@ Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids un
 - 2026-11-15 (T0 fresh r1, 5b04e2d): AN ORIGIN FALLBACK THAT FOLLOWS ONE HOP MISSES THE LAYOUT REVIEWERS ACTUALLY USE: CLONES OF CLONES. Count real origins before calling a residual "not live" (8 of 33 refmatrix clones point at another clone; every bsd review clone cut by the standard brief). {#imp-origin-chain-is-the-review-layout}
 - 2026-11-15 (T0 fresh r1): "ROUTED TO TASK X'S RELEASE" WITH NO AC IN X IS A DEFERRAL WEARING A SCHEDULE. Check that the receiving spec holds the AC, both for P1 into 29.2 and for row 7's flags into 29.4 R2. {#imp-routed-needs-receiver-ac}
 - 2026-11-15 (T0 fresh r1): A PROPOSAL'S COMMAND CAN CITE A FLAG THE RUNNER SPEC NEVER DEFINED (P5's `--files`). Diff each proposed invocation against the interface line. {#imp-proposal-flag-must-exist}
+- 2026-11-15 (T0 fresh r2, f6b32e2): A RED WHOSE FIXTURE NEEDS THE MODULE UNDER CONSTRUCTION FAILS ON THE IMPORT AT BASE. Its stated-reason RED has to be a named mutation after GREEN, or the node never fails for the reason it guards. {#imp-fixture-needs-the-module}
+- 2026-11-15 (T0 fresh r2): A CYCLE GUARD'S "FAILS, NOT HANGS" MUTATION IS ONLY AS SAFE AS THE BOUND BEHIND IT. Give the bound its own mutation. {#imp-bound-backs-the-cycle-mutation}
+- 2026-11-15 (T0 fresh r2): "N FILES NAME X" IS A GREP RESULT. Separate "names it" from "reaches it through an import" and from "sits in the same list for another reason" before counting. {#imp-count-the-grep-not-the-list}
 
 ## Former anchors, restored {#former-anchors}
 
