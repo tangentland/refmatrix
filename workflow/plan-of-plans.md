@@ -68,6 +68,8 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
    10.3; T4 bounded writes (bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5); T3 injection dedup (10.5 → 10.6
    → 10.4 → 10.2; 21.2 → 21.4), after 31.5; 21.5 phase M; 22.6 R4 folded into 31.2.
 
+**Specs on master (2026-11-15).** The approved frozen spec branches are merged as they stand (the user: "although they are stale, they should be actionable still"): `spec-wave-t2` (26.5-26.9, plan-27) `3be7676`, `spec-wave-t4` (bug-185, plan-17/18 records) `327703d`, `spec-wave-t3b` (plan-10 10.2-10.6) `e2010bd`, `spec-wave-t3c` (21.5, plan-28 record) `b1be2e4`, `spec-wave-t56` (bug-218, 22.6 with R4; plan-16 / rest of plan-22 as post-mod records) `0a40f4b`, `spec-wave-t3a` (plan-19, 25.1b record, 25.2/25.3 inputs) at this commit. Stale citations are reconciled by RED and GREEN at build time (TDD_GOVERNANCE: stale ground truth is reconciled before the test). Every freeze item except 30.6 and plan-31 now has an approved spec on master.
+
 **The rule.** Nothing else is admitted before the mod except a bug that breaks something live
 (a crash, data loss, a wrong answer on the production path, a wedge). Everything else — new ideas,
 the lead's included — goes to the post-mod list below, with one line saying why it waits. A bug

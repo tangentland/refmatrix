@@ -7,13 +7,17 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-11-13
+  updated: 2026-11-14
 ---
 
 # Task 19.6: phased context, topic cache and versioned injection {#root}
 
 > Plan: [plan-19-adaptive-memory-budget](../plan-19-adaptive-memory-budget.md)
-> Status: Pending (revision after the 2026-10-14 decision log)
+> Status: Pending (revision after the 2026-10-14 decision log). **2026-11-13: FROZEN** (phasing,
+> topic cache, Table C) until the handhold outcome experiment reports (the user's D-Q3). When it
+> thaws, **Table C counts only R12 explicit uses plus `cited_in_answer`** until 21.5's matcher is
+> revised (L18). R8a's writer is 10.3, and R5 for the composite is 10.6's if its R0 says GO
+> ([[plan-19-adaptive-memory-budget#rev-2026-11-13]]).
 > Wave: pulled from Wave 3 to directly after its own dependencies (d9bi, 2026-10-15; was Wave 3,
 > d5b). **Helix substrate (d9bi):** the helix plan (Wave 4 draft) builds on this task's frozen
 > snapshots (`<cid>`, label, first-collapse `turn`), its topic cache (one writer, one home) and
@@ -875,3 +879,11 @@ rel: related-to -> [[task-10.5-versioned-block-gate]]
 
 21.1's `block_id` stays as its emitters fill it; `rev` and `unchanged` stay null on the two
 per-prompt payloads; plan-10 adds the nullable event field `form` (`full` / `names`).
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]

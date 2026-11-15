@@ -7,14 +7,14 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-14
+  updated: 2026-11-14
 ---
 
 # Task 21.2: precise identifier answers {#root}
 
 > Plan: [plan-21-agent-context-usage](../plan-21-agent-context-usage.md)
 > Status: Pending (revision after the 2026-10-14 decision log)
-> Wave: 3
+> Wave: 3 (history; 2026-11-13: queue item 6, pull side, ahead of 21.4, [[#rev-2026-11-13]])
 > Depends on: 21.1 (the `internal` source and the rows that measure the change), 23.0 (sandbox)
 
 rel: part-of -> [[plan-21-agent-context-usage]]
@@ -98,6 +98,10 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
 3. **`--brief`** output is ≤ 200 tokens (the project's token counter) on all 9, and each contains
    the gold `path:line`.
 4. **No duplicates:** no entity appears twice in any group, across the 9.
+4b. **No duplicates through `denotes`** (lead, 2026-11-13, after bug-216 R9). A fixture: doc B
+    (GMD id `b-doc`), a path-less concept `b-doc` that `denotes` B, and an entity X linked from
+    BOTH B and the concept under the same linkage. `rmx context b-doc` (the doc anchor) lists X
+    exactly once in that group.
 5. **Labels and TESTED BY:** on a fixture tree with a known call graph (`a` calls `b`;
    `tests/test_b.py::test_b` calls `b`; `c` calls `a`), `rmx context b` lists `a` under CALLED BY
    only, `test_b` under TESTED BY only, and `rmx context a` lists `b` under CALLS and `c` under
@@ -109,7 +113,9 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
    and writes only `invocation=internal` rows to the copy.
 8. **Mutations that must FAIL a test** (pre-registered):
    - DEFINED BY without the line (AC-2, AC-5);
-   - dedupe disabled (AC-4);
+   - dedupe disabled (AC-4, AC-4b);
+   - dedupe keyed per source row instead of per entity, so the `denotes` hop's copy survives
+     (AC-4b);
    - CALLS / CALLED BY label swap (AC-5);
    - `is_test_entity` replaced by "every caller" (AC-5: `a` appears under TESTED BY);
    - helix on code anchors re-enabled (a renderer test on a code anchor);
@@ -144,3 +150,34 @@ frozen; the lines below are at HEAD `b1c4324`, for reference.
 | d4f (harnesses set `internal`) | R7; AC-7 |
 | #t4-fixes "frozen replay names", "tested by defined or dropped" | [[#frozen-set]]; R3 |
 | MEH m-1..m-7 | none touch 21.2 (m-1, m-2, m-4 → 21.1; m-3, m-5, m-6 → 21.3; m-7 → plan `#decisions`) |
+
+## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
+
+No requirement changes here; one AC is added (AC-4b, on the lead's ruling). This records the
+order, the end of plan-24's hold, and the re-read the plan review asked for (G28).
+{#rev-2026-11-13-lead}
+
+rel: implements -> [[plan-review-2026-11-13#d-q3]]
+rel: implements -> [[plan-review-2026-11-13#d-q5]]
+rel: related-to -> [[task-bug216-rule-docs-in-graph]]
+
+| item | record |
+|---|---|
+| D-Q5 | plan-24 D1 had listed 21.2-21.4 as hook-shaped work that "retargets to the mod … not built". D-Q5 supersedes D1: this task builds now on the CLI, MCP and daemon (`--brief`, MCP `brief`, `_op_context`), with no mod dependency |
+| D-Q3 | pull-side work proceeds; only 21.3 (the push nudge) is frozen. Queue item 6: 21.2 → 21.4 |
+| bug-216 R6 (bare doc ids bind the doc first) | touches GMD `rel:` / wikilink targets only. The frozen set is 9 code symbols, whose DEFINED BY rows come from `defines` edges, so the gold is unaffected |
+| bug-216 R9 (`denotes` is transparent) | read at its GREEN `37d99a0` (branch `task-bug216-rule-docs-in-graph`, unmerged): `build_context` chains the rows of the path-less concepts that denote a `doc` or `memory` anchor. Code anchors are not touched, so AC-2, AC-3 and AC-5 are unaffected |
+| `LINKAGE_LABELS` | bug-216 adds no entry (read at `37d99a0`; the transparent hop reads concept rows under their existing labels), so R3's per-label tests are unchanged |
+| R2 (one entity per group) on doc / memory anchors | after bug-216, an entity can be reached twice on a doc or memory anchor: once from the doc's rows and once from a denoting concept's rows. R2 as written dedupes it, but AC-4 runs over the 9 code names only. The lead ruled (2026-11-13) to add a fixture row: AC-4b, with a mutation in AC-8 |
+| baseline | AC-1's baseline runs on a catalog copy taken after bug-216 is live (queue item 1), so the record is post-bug-216 |
+
+**Q8 note:** holds under Q8 a, b and c. The frozen set and its gold live in `src/` and `tests/`,
+never in `workflow/`.
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t3ab r4 CLEAN (2026-11-13/14) | `workflow/bullshit/2026-11-14-0015-spec-t3ab-r4.md` (CLEAN, 0B/0S/0M, over `spec-wave-t3a` up to `97dc7fa`) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t3ab-r4-451112c-29ad4a5]]
