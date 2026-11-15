@@ -12,7 +12,7 @@ itself runs unchanged, so what is read is the message the test really prints.
 - bug-190 (R3.2's evidence, M3.4): the cold-worker skip path is made to spawn, through a function
   named `_t03_forced_spawn`. The failure must name the stack of every spawn, so the forcing
   frame appears in the output. RED at base: the message is `(wall, spawns)` only.
-- bug-091 (R3.3, M3.3, M3.4): the watcher is never started and the deadline is patched to 1.5 s
+- bug-091 (R3.3, M3.3, M3.4): the watcher is never started and the deadline is patched to 4.0 s
   through the module constant `WATCHER_DELIVERY_DEADLINE_S` (so the test must read it at call
   time, not bind it as a default). The failure must give the elapsed time (at least the
   deadline) and the watcher's state. RED at base: `watcher did not fire` / `wait(timeout=3.0)`.
@@ -37,7 +37,9 @@ BUG130 = "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the
 BUG190 = ("tests/test_rerank_budget_real_clients.py::"
           "test_a_cold_private_worker_is_skipped_without_spawning")
 BUG091 = "tests/test_watch.py::test_run_watcher_picks_up_new_file"
-FORCED_DEADLINE_S = 1.5
+# Above the old one 3 s wait, so a test that reads the constant but still gives up at 3 s
+# reports an elapsed time below the deadline and fails M3.3.
+FORCED_DEADLINE_S = 4.0
 
 _PLUGIN = r'''
 """t03_force: inject the fault a load flake shows (task T0.3 RED). Selected by T03_FORCE."""
@@ -160,8 +162,6 @@ def test_r3_3_bug091_the_delivery_deadline_is_a_named_constant_of_at_least_30s()
              and n.name == "test_run_watcher_picks_up_new_file"]
     names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
     assert "WATCHER_DELIVERY_DEADLINE_S" in names, "R3.3: the test does not read the constant"
-    src = ast.get_source_segment((REPO / "tests" / "test_watch.py").read_text(), fn)
-    assert "timeout=3.0" not in src, "R3.3: the one 3 s wait is still there"
 
 
 def test_r3_4_bug091_a_watcher_that_never_fires_reports_elapsed_and_state(tmp_path):
