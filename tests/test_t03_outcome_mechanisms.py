@@ -20,29 +20,43 @@ from tests import task21_1_support as h
 
 
 def test_bug231_graceful_stop_returns_when_the_pid_is_gone_not_at_the_deadline(
-        monkeypatch, tmp_path):
-    """No daemon. `is_alive` turns false on its k-th call; the polls are counted, and the call
-    returns True after exactly k of them under a grace it never comes near (HANG_GUARD_S). A
-    stop that waited out its grace would poll ~20 times a second until the deadline."""
+        tmp_path, monkeypatch):
+    """No daemon answers here. The pid file names a test-owned child (`sleep`), so the REAL
+    `ping` finds no socket and `graceful_stop` sends SIGTERM to that child; only `is_alive` is
+    replaced (29.4 #r3-bug231; ch-bsd t03 r1 M2: ping and call are not patched), by a counter
+    that turns false on its k-th call. The call must return True after exactly k polls under a
+    grace it never comes near (HANG_GUARD_S); a stop that waited out its grace would poll ~20
+    times a second until the deadline."""
+    import subprocess
+    import sys
+
     from tests.timing import HANG_GUARD_S
 
+    root = tmp_path / ".refmatrix"
+    root.mkdir()
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(300)"])
+    dm.pid_path(root).write_text(str(child.pid))
     k = 4
     polls = {"n": 0}
-    sent = []
+    real_is_alive = dm.is_alive
 
     def is_alive(pid):
-        assert pid == 4_000_001, pid
+        if pid != child.pid:
+            return real_is_alive(pid)
         polls["n"] += 1
         return polls["n"] < k
 
-    monkeypatch.setattr(dm, "read_pid", lambda root: 4_000_001)
-    monkeypatch.setattr(dm, "ping", lambda root, **kw: True)
-    monkeypatch.setattr(dm, "call", lambda root, op, args=None, **kw: sent.append(op) or {})
     monkeypatch.setattr(dm, "is_alive", is_alive)
     report: dict = {}
-    assert dm.graceful_stop(tmp_path / ".refmatrix", grace=HANG_GUARD_S, report=report) is True
-    assert sent == ["stop"] and report.get("stop_op") == "sent", (sent, report)
-    assert polls["n"] == k, polls
+    try:
+        ok = dm.graceful_stop(root, grace=HANG_GUARD_S, report=report)
+        assert ok is True, report
+        assert report.get("signal") == "SIGTERM" and report.get("pid") == child.pid, report
+        assert polls["n"] == k, polls
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait()
 
 
 @pytest.fixture

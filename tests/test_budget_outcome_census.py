@@ -29,6 +29,8 @@ import json
 import textwrap
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 TESTS = REPO / "tests"
 ALLOW = TESTS / "wallclock_allow.json"
@@ -211,6 +213,48 @@ def test_l159_must_fail_the_readiness_call_in_a_different_function():
 
 def test_l159_a_synthetic_test_warmed_before_its_hook_passes():
     assert _bc().violations(WARM_BEFORE_SYNTHETIC, "test_syn.py") == []
+
+
+# ---- ch-bsd t03 r1 S3 (ruling L177): the readiness form counts only a DIRECT call ------------
+#
+# Only a `wait_models_warm()` that certainly runs, in the test function itself, on the daemon the
+# hook runs under, before the hook, controls the budget. Each case below puts a
+# `wait_models_warm` call textually above the hook that does NOT do that, so a census that walks
+# every call under the function (`ast.walk`) is fooled.
+
+_WARM_HEAD = """\
+from tests import task21_1_support as h
+
+def test_fooled(root, other):
+    with h.SandboxDaemon(root) as d:
+"""
+_WARM_TAIL = """\
+    assert h.query_rows(root)[-1]["outcome"] == "ok"
+"""
+_HOOK = ('        r = h.run_hook("rmx memory recall --timeout 5", root=root, envelope={}, '
+         'timeout=60)\n')
+
+S3_FOOLS = {
+    "uncalled_lambda": "        warm = lambda: d.wait_models_warm()\n" + _HOOK,
+    "nested_def_called_after_the_hook": ("        def warm():\n"
+                                         "            d.wait_models_warm()\n"
+                                         + _HOOK + "        warm()\n"),
+    "try_except_pass": ("        try:\n"
+                        "            d.wait_models_warm(timeout=0.01)\n"
+                        "        except Exception:\n"
+                        "            pass\n" + _HOOK),
+    "a_different_receiver": "        other.wait_models_warm()\n" + _HOOK,
+    "if_false": ("        if False:\n"
+                 "            d.wait_models_warm()\n" + _HOOK),
+}
+
+
+@pytest.mark.parametrize("case", sorted(S3_FOOLS))
+def test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first(case):
+    src = _WARM_HEAD + S3_FOOLS[case] + _WARM_TAIL
+    compile(src, "test_syn.py", "exec")
+    assert _bc().violations(src, "test_syn.py") == ["test_syn.py::test_fooled"], (
+        f"S3: the census counted a readiness call that does not control the budget ({case})")
 
 
 def _tree(tmp_path: Path, files: dict, entries: list):
