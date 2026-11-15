@@ -4,6 +4,7 @@ id: plan-review-fable-2026-11-14-memory
 title: "Plan review (Fable), 2026-11-14: memory and context tracks T2/T3 against 0.83.0"
 tags: [plan-review, spec-review, plan-26, plan-27, plan-25, plan-10, plan-19, plan-21, plan-29, t2, t3]
 metadata:
+  status: archived
   node_type: review
   reviewer: ch-architect (fable-rev-memory)
   created: 2026-11-14
@@ -12,6 +13,12 @@ metadata:
 ---
 
 # Plan review (Fable), 2026-11-14: memory and context tracks {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 rel: derives-from -> [[plan-review-2026-11-13]]
 rel: depends-on -> [[plan-29-code-quality]]

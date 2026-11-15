@@ -4,11 +4,18 @@ id: plan-review-2026-10-14
 title: "Wave 0 spec-review decisions, 2026-10-14"
 tags: [plan-review, decisions, wave-0, spec-review]
 metadata:
+  status: archived
   node_type: review
   created: 2026-10-14
 ---
 
 # Wave 0 spec-review decisions, 2026-10-14 {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 The user, 2026-10-14: "lets review each bsd report and its questions. if it makes sense to cluster
 by topic, feel free." The six ch-bsd spec reviews of Wave 0 (plans 16 r5, 17, 19, 21, 22, 23) are

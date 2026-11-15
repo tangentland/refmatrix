@@ -5,11 +5,17 @@ title: "Pre-mod freeze: triage of the L106 queue steps the freeze line did not n
 tags: [workflow, freeze, queue, triage, proposal]
 metadata:
   node_type: proposal
-  status: applied
+  status: archived
   created: 2026-11-15
 ---
 
 # Freeze triage: the L106 queue vs the freeze line {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 The freeze line ([[plan-of-plans#freeze]], 2026-11-15) admitted 0.83.1, plan-29, plan-30 (+30.6)
 and plan-31, and did not say what happens to steps 6-15 of the queue the user approved on

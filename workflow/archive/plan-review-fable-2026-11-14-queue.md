@@ -5,12 +5,18 @@ title: "Plan review (Fable), 2026-11-14: the whole post-0.83.0 queue — stalene
 tags: [plan-review, queue, plan-29, consolidation, architecture]
 metadata:
   node_type: review
-  status: drafting
+  status: archived
   created: 2026-11-14
   reviewer: ch-architect (Fable 5.2)
 ---
 
 # Plan review (Fable): the whole post-0.83.0 queue {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 Read-only review at dev master `f3709d2` (repo `/Users/tholley/claude_tools/refmatrix`), with the frozen T0 spec read from `/Volumes/littlebig/refmatrix-spec-t0` (`spec-wave-t0` @ `fa1227d`). Nothing was edited or committed, and no suite was run. Anchors that exist only on unmerged branches are written as code spans, not links.
 

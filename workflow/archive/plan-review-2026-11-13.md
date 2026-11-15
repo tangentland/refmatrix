@@ -5,12 +5,18 @@ title: "Plan-of-plans re-evaluation and consolidation, 2026-11-13 (rev 6, provis
 tags: [plan-review, decisions, consolidation, plan-of-plans, contradictions]
 metadata:
   node_type: review
-  status: drafting
+  status: archived
   created: 2026-11-13
   updated: 2026-11-13
 ---
 
 # Plan-of-plans re-evaluation and consolidation, 2026-11-13 {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 The user, 2026-11-13 (session 37b7498f), after merging dev master into the 25.1 branch and pushing:
 "given the number of detours, I think we should re-evaluate the POP and consolidate". Then: "there
@@ -20,16 +26,16 @@ have to be contradictions". **Rev 2** folds in the five-way contradiction sweep:
 this file comes back clean. User decisions are asked by id in [[open-questions]] (session 37b7498f).
 
 rel: amends -> [[plan-review-2026-10-14#t11-folded-waves]]
-rel: derives-from -> [[plan-of-plans#goal-2026-11-09]]
-rel: derives-from -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: derives-from -> [[pop-finished#goal-2026-11-09]]
+rel: derives-from -> [[pop-finished#goal-2026-11-09-scope]]
 rel: depends-on -> [[open-questions]]
 rel: related-to -> [[exploration-handhold-outcome-experiment]]
 
 ## What the 2026-11-09 goal said, and what happened {#goal-vs-actual}
 
-The goal [[plan-of-plans#goal-2026-11-09]] set one queue ahead of plan-24: 3.7 → bug-178 →
+The goal [[pop-finished#goal-2026-11-09]] set one queue ahead of plan-24: 3.7 → bug-178 →
 plan-26 → plan-27 → plan-25 → bug-177 (23.1, with bug-182) → bug-179. The same day it widened to
-take in 23.3, 23.5 and bug-185 ([[plan-of-plans#goal-2026-11-09-scope]]).
+take in 23.3, 23.5 and bug-185 ([[pop-finished#goal-2026-11-09-scope]]).
 
 **Landed (2026-11-09 to 11-13; every sha verified by contra-e):** 3.7 (`91ddbe0`, 0.81.0), bug-178
 (`76ec748`, 0.81.1), bug-179 (`aea4098`), 26.0 (`61b3bde`), 26.1 (`9b2c4ac`, then `25af9ca`),

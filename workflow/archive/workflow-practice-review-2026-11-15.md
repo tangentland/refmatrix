@@ -5,11 +5,17 @@ title: "The workflow the lead actually runs (sessions a9b75923, 070141d0) vs CLA
 tags: [workflow, governance, orchestration, proposal]
 metadata:
   node_type: proposal
-  status: applied
+  status: archived
   created: 2026-11-15
 ---
 
 # The workflow in practice, and what to amend {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 The user, 2026-11-15: "summarize the workflow steps you've been using. They seem to be working
 well, but they diverge from what is specified in CLAUDE.md. Let's review them and amend the

@@ -5,11 +5,17 @@ title: "Pre-mod freeze, second triage: plans 2-15 and 21-25 the freeze line did 
 tags: [workflow, freeze, triage, proposal, plan-24]
 metadata:
   node_type: proposal
-  status: withdrawn
+  status: archived
   created: 2026-11-15
 ---
 
 # Freeze triage 2: plans 2-15 and 21-25 {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 **WITHDRAWN (lead, 2026-11-15).** Built from file statuses instead of the consolidation ([[plan-review-2026-11-13]], the 2026-11-14 queue review). Wrong on two rows: 3.7 is merged (`91ddbe0`, 0.81.0), so plan-24's dependency is met; 25.4/25.5 are superseded by 16.5 (L42). Being rewritten over plans 2-31 (the user: "include 2-31 then").
 
