@@ -1,0 +1,2 @@
+{"node": "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row", "kind": "bug228.sandbox_daemon_boot", "seconds": 0.4143313749227673, "root": "/private/tmp/rmx-mtr4vy3n/r/1/.refmatrix", "t": 1794770055.14537}
+{"node": "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row", "kind": "bug228.run_hook", "seconds": 0.7373151669744402, "t": 1794770060.9661891}
