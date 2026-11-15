@@ -1,0 +1,531 @@
+FFFFFFFFFFF                                                              [100%]
+=================================== FAILURES ===================================
+_____________ test_a_scan_call_writes_one_record_with_every_block ______________
+
+store = {'base': PosixPath('/private/tmp/cap.nwnlsz8i'), 'proj': PosixPath('/private/tmp/cap.nwnlsz8i/proj'), 'root': PosixPath('/private/tmp/cap.nwnlsz8i/proj/.refmatrix')}
+
+    def test_a_scan_call_writes_one_record_with_every_block(store):
+        """AC-0.1 (RED at base): one record per call; every block labelled with its kind and state,
+        in render order (tier 1, content, tier 3, composite), `capture_ms` and `capture_built`
+        set; the record joins `query.log` by `query_id`."""
+        from refmatrix import __version__, hook_budget
+        r = _scan(store, "--max-tokens", "100000")
+        assert COMP_MARK in r.stdout and "omitted by --max-bytes" not in r.stdout, (
+            f"fixture: the call must deliver every section and the composite:\n{r.stdout[-600:]}")
+        qid = _last_qid(store["root"])
+        recs = _records(store["root"])
+>       assert len(recs) == 1, (f"R0.2: one capture record per call, found {len(recs)}; "
+                                f"{_listing(store['root'])}")
+E       AssertionError: R0.2: one capture record per call, found 0; /private/tmp/cap.nwnlsz8i/proj/.refmatrix/injection-capture does not exist
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_injection_capture.py:428: AssertionError
+_______________ test_prompt_text_appears_only_inside_block_text ________________
+
+store = {'base': PosixPath('/private/tmp/cap.bjq_js0r'), 'proj': PosixPath('/private/tmp/cap.bjq_js0r/proj'), 'root': PosixPath('/private/tmp/cap.bjq_js0r/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_prompt_text_appears_only_inside_block_text(store, calib):
+        """AC-0.8 (RED): the record's keys are exactly the schema's; `prompt_sha256` is the
+        prompt's hash; a canary prompt term appears in no field but `blocks[*].text`, there only
+        where the printed payload carried it (a delivered block) or in a dropped block's header;
+        a prompt that produces nothing writes a record with no blocks and no canary.
+    
+        The canary is a prompt term the store does not hold, so the only place a render carries it
+        is the content block's header (its first eight terms). Call 1 delivers that block; call 2
+        (the same prompt, tier 1 tripping the token stop) drops it, so the canary is only in the
+        uncapped render of a dropped block; call 3 is the canary alone, which produces nothing."""
+        p_a = f"{CANARY} {PROMPT}"
+        p_b = CANARY
+        a = _scan(store, "--no-composite", "--max-tokens", "100000", prompt=p_a)
+        assert CANARY in a.stdout, f"fixture: the payload does not carry the canary:\n{a.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:761: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.bjq_js0r/proj/.refmatrix')
+qid = '17ada976c5f84a879f2df4f21dfd60c0'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 17ada976c5f84a879f2df4f21dfd60c0 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.bjq_js0r/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_____ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node] ______
+
+store = {'base': PosixPath('/private/tmp/cap.19piao3l'), 'proj': PosixPath('/private/tmp/cap.19piao3l/proj'), 'root': PosixPath('/private/tmp/cap.19piao3l/proj/.refmatrix')}
+shape = 'int-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: /refmatrix-315/src/refmatrix/stm.py", line 1849, in phase_fields
+E             return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+E                                                                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_______ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list] ________
+
+store = {'base': PosixPath('/private/tmp/cap.ljzj7skb'), 'proj': PosixPath('/private/tmp/cap.ljzj7skb/proj'), 'root': PosixPath('/private/tmp/cap.ljzj7skb/proj/.refmatrix')}
+shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph:         ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                        prompt_time=True))
+E                                        ^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1848, in phase_fields
+E             pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1803, in pre_prompt_state
+E             live_graph = s._load_graph()
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node] ___
+
+store = {'base': PosixPath('/private/tmp/cap._fepu3c3'), 'proj': PosixPath('/private/tmp/cap._fepu3c3/proj'), 'root': PosixPath('/private/tmp/cap._fepu3c3/proj/.refmatrix')}
+shape = 'nameless-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: ites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-prompt_recall] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.xwxnmvs5'), 'proj': PosixPath('/private/tmp/cap.xwxnmvs5/proj'), 'root': PosixPath('/private/tmp/cap.xwxnmvs5/proj/.refmatrix')}
+shape = 'int-node', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: /refmatrix-315/src/refmatrix/stm.py", line 1849, in phase_fields
+E             return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+E                                                                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-session_start] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.aqqiwtk5'), 'proj': PosixPath('/private/tmp/cap.aqqiwtk5/proj'), 'root': PosixPath('/private/tmp/cap.aqqiwtk5/proj/.refmatrix')}
+shape = 'int-node', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: lf.session, None, t0=_PROC_WALL_T0,
+E                                          prompt_time=False)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1855, in phase_fields
+E             **phase_inputs(live, None)}
+E               ~~~~~~~~~~~~^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_recall[list-prompt_recall] ___
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.1hlzivu6'), 'proj': PosixPath('/private/tmp/cap.1hlzivu6/proj'), 'root': PosixPath('/private/tmp/cap.1hlzivu6/proj/.refmatrix')}
+shape = 'list', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: atrix/cli.py", line 13344, in emit
+E             phase = stm_mod.phase_fields(root, self.session, self.query, t0=_PROC_WALL_T0,
+E                                          prompt_time=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1848, in phase_fields
+E             pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1803, in pre_prompt_state
+E             live_graph = s._load_graph()
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_recall[list-session_start] ___
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.fzuqh1fk'), 'proj': PosixPath('/private/tmp/cap.fzuqh1fk/proj'), 'root': PosixPath('/private/tmp/cap.fzuqh1fk/proj/.refmatrix')}
+shape = 'list', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph:   File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 12746, in memory_recall
+E             rec.emit()
+E             ~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 13347, in emit
+E             phase = stm_mod.phase_fields(root, self.session, None, t0=_PROC_WALL_T0,
+E                                          prompt_time=False)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1851, in phase_fields
+E             g = s._load_graph()
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-prompt_recall] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.7c8k4__a'), 'proj': PosixPath('/private/tmp/cap.7c8k4__a/proj'), 'root': PosixPath('/private/tmp/cap.7c8k4__a/proj/.refmatrix')}
+shape = 'nameless-node', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: ites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-session_start] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.7fprkzog'), 'proj': PosixPath('/private/tmp/cap.7fprkzog/proj'), 'root': PosixPath('/private/tmp/cap.7fprkzog/proj/.refmatrix')}
+shape = 'nameless-node', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: ites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_scan_call_writes_one_record_with_every_block
+FAILED tests/test_injection_capture.py::test_prompt_text_appears_only_inside_block_text
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-session_start]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[list-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[list-session_start]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-session_start]
+11 failed, 30 deselected in 23.33s

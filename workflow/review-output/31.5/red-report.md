@@ -1,8 +1,8 @@
 ---
 gmd: "0.1"
 id: red-report-31.5-s0-capture
-title: "RED report: task 31.5 S0, the injection capture (release A), bug-256 and the R2.0 member filter"
-tags: [report, red, plan-31, task-31.5, scan-prompt, injection-capture, bug-256]
+title: "RED report: task 31.5 S0, the injection capture (release A), bug-256, bug-268 and the R2.0 member filter"
+tags: [report, red, plan-31, task-31.5, scan-prompt, injection-capture, bug-256, bug-268]
 metadata:
   node_type: report
   created: 2026-11-15
@@ -10,7 +10,7 @@ metadata:
   base: 606c0c8
 ---
 
-# RED report: task 31.5 S0, the injection capture (release A), bug-256 and the R2.0 member filter {#root}
+# RED report: task 31.5 S0, the injection capture (release A), bug-256, bug-268 and the R2.0 member filter {#root}
 
 The RED tests for 31.5 step 0 are in `tests/test_injection_capture.py`, and those for R2.0
 (AC-2.0, release A, added on the lead's instruction) in `tests/test_stm_composite_members.py`, on branch
@@ -27,7 +27,9 @@ rel: related-to -> [[bug_registry#registry]]
 
 | Log | Command | Exit | Collected | Result |
 |---|---|---|---|---|
-| `red-base.log` | `pytest tests/test_injection_capture.py -q -rA` | 1 | 32 | 27 failed, 5 passed |
+| `red-base-r2.log` | `pytest tests/test_injection_capture.py -q -rA`, with the bug-268 nodes (L152) | 1 | 41 | 36 failed, 5 passed |
+| `red-base-bug268.log` | the same, `-k 'wrong_shaped or writes_one_record_with_every or prompt_text_appears'` | 1 | 41 (30 deselected) | 11 failed |
+| `red-base.log` | `pytest tests/test_injection_capture.py -q -rA`, before bug-268 | 1 | 32 | 27 failed, 5 passed |
 | `red-base-ac08.log` | the same, `-k prompt_text_appears` (after the AC-0.8 fixture fix) | 1 | 32 (31 deselected) | 1 failed |
 | `red-base-r1.log` | the first full run, before the AC-0.8 fixture fix | 1 | 32 | 27 failed, 5 passed (AC-0.8 failed on its own fixture check) |
 | `red-base-ac20.log` | `pytest tests/test_stm_composite_members.py -q -rA` | 1 | 4 | 3 failed, 1 passed |
@@ -82,6 +84,15 @@ The query ids and tmp paths are shortened below. {#nodes-lead}
 | 2.0 | `test_stopwords_and_unknown_plain_words_are_not_printed_as_members[not-held]` | RED | ``store holds `question`: False; printed members ['scan-prompt', 'store.py', 'the', 'buigger', 'question'], expected ['scan-prompt', 'store.py'] …`` |
 | 2.0 | `test_a_topic_with_no_printable_member_is_not_emitted` | RED | `a topic with no printable member was emitted: … ## Topic 1: the … Members: the, buigger, and, zorbleplain` |
 | 2.0 | `test_the_focus_graph_is_unchanged_by_the_filter` | green (characterization) | — |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node]` | RED | `bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:9872` → `stm.phase_fields`, `AttributeError: 'int' object has no attribute 'get'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-prompt_recall]` | RED | `bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:13344` `emit`, `AttributeError: 'int' object has no attribute 'get'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-session_start]` | RED | `bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:13347` `emit`, `AttributeError: 'int' object has no attribute 'get'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list]` | RED | `bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:9872` → `stm.phase_fields`, `AttributeError: 'list' object has no attribute 'setdefault'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_recall[list-prompt_recall]` | RED | `bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:13344` `emit`, `AttributeError: 'list' object has no attribute 'setdefault'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_recall[list-session_start]` | RED | `bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:13347` `emit`, `AttributeError: 'list' object has no attribute 'setdefault'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node]` | RED | `bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:9872` → `stm.phase_fields`, `KeyError: 'name'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-prompt_recall]` | RED | `bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:13344` `emit`, `KeyError: 'name'`) |
+| bug-268 | `test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-session_start]` | RED | `bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: …` (traceback through `cli.py:13347` `emit`, `KeyError: 'name'`) |
 | R0.5 step 3 | `test_the_cost_prompt_set_is_forty_synthetic_prompts` | RED | `…/tests/fixtures/injection_capture/prompts.txt does not exist (spec #files: new in release A)` |
 {#nodes-table}
 
@@ -113,6 +124,7 @@ now satisfied at base, and the node fails on the missing record. {#nodes-fixture
 | M0-13 the verb's pack branch writes a record | `test_a_verb_recall_with_pack_writes_no_capture_record` |
 | M0-14 step 1: `names` builds the skipped bundles | `test_names_mode_records_later_bundles_as_not_built` (`capture_built == 0`; `not_built` present) |
 | M2-1 step 1: keep stoplist words; step 2: keep unknown plain words | both `test_stopwords_and_unknown_plain_words_are_not_printed_as_members` params (`the`; `buigger`, and `question` when not held) and `test_a_topic_with_no_printable_member_is_not_emitted` |
+| (no spec id; proposed M-268) a wrong-shaped graph reaches `phase_fields` again, or its failure is not counted | all nine `test_a_wrong_shaped_focus_graph_never_crashes_*` nodes (exit 0 and no traceback; then `stm_error` on the record; then the `capture:` line count) |
 | M0-14 step 2: the mode file ignored | `test_the_mode_file_selects_the_path`. Both words are written to the file, so neither release default can hide an ignored file |
 {#mutations-table}
 
@@ -214,14 +226,23 @@ around it.
   the defect below. The test runs with no session, so only the composite reads the ring.
 {#not-followable-list}
 
-## Defect found (for the lead to log) {#defect}
+## bug-268 (ruling L152) {#defect}
 
-`stm.phase_fields` crashes `rmx scan-prompt` on a corrupt focus graph, after the payload is
-printed. `Stm._load_graph` catches only `JSONDecodeError` and `OSError`. Some focus-graph
-files are valid JSON with the wrong shape: `[]`, `{"nodes": {"x": 1}}`, or a node without
-`name`. With one of those, `phase_fields` → `pre_prompt_state` / `phase_inputs` →
-`focus_view` raises `AttributeError` or `KeyError` at `cli.py:9872`. The command exits 1 with
-a traceback and emits no recall events. The hook's `2>/dev/null || true` hides it. The same
-call is made at `cli.py:13344` and `cli.py:13347` (prompt recall, session start, precompact).
-Reproduced in `probe.log`. This is a silent failure on a memory path of the same class as
-bug-256, and it is outside 31.5 S0's scope. {#defect-body}
+The defect found while writing AC-0.16 is bug-268: `stm.phase_fields` crashes `rmx scan-prompt`
+and `rmx memory recall` when a focus graph is valid JSON of the wrong shape. L152 folds it into
+release A beside bug-256. Its nine nodes are in `tests/test_injection_capture.py`: three
+shapes (`[]`, `{"nodes": {"x": 1}}`, a node with no `name`), each on `scan-prompt` (the hook's
+`--stdin-json` envelope, `cli.py:9872`) and on both recall routes. The per-prompt route
+(`cli.py:13344`) runs `--stdin-json --recent --pack`, the recent leg, which needs no embedder.
+The session-start route (`cli.py:13347`) runs `--session-start --pack`. Each node asserts exit 0
+with no traceback, the payload (for `scan-prompt`, byte-identical to the call with the
+composite absent; for recall, the pack), the call's recall events, `stm_error` on the capture
+record, and one `stm_error` on the `capture:` line. All nine are RED at base with exit 1 and
+the tracebacks tabulated in [[#nodes]]. The repro is in `probe.log`. {#defect-body}
+
+**A reading the lead should confirm:** L152 says the corruption is "counted on the capture
+record" but names no field, and R0.2's list has none for it. These tests add `stm_error` to
+the record schema: the class and message, else null. AC-0.8's exact key set includes it, and
+AC-0.1 asserts it is null on a healthy call. On the `capture:` line it is read like
+`composite_error`. When the composite's own build also fails on the same file (the `[]`
+shape), `composite_error` is set as well. The tests do not forbid that. {#defect-reading}

@@ -66,6 +66,9 @@ SCHEMA_KEYS = {
     "prompt_sha256", "prompt_chars",
     "budget_bytes", "max_tokens", "payload_sha256", "payload_bytes",
     "capture_mode", "capture_ms", "capture_built", "pruned", "composite_error",
+    # bug-268 (L152): the STM focus graph read raised or was wrong-shaped (class and
+    # message), else null. Not in R0.2's list; named by this RED, see the report.
+    "stm_error",
     "blocks",
 }
 BLOCK_KEYS = {"i", "kind", "state", "bytes", "sha256", "names", "dedup_rows"}
@@ -436,7 +439,7 @@ def test_a_scan_call_writes_one_record_with_every_block(store):
     assert rec["capture_mode"] in ("full", "names"), rec["capture_mode"]
     assert isinstance(rec["capture_ms"], (int, float)) and rec["capture_ms"] >= 0
     assert isinstance(rec["capture_built"], int) and rec["capture_built"] >= 0
-    assert rec["pruned"] == [] and rec["composite_error"] is None
+    assert rec["pruned"] == [] and rec["composite_error"] is None and rec["stm_error"] is None
     blocks = rec["blocks"]
     assert [b["i"] for b in blocks] == sorted(b["i"] for b in blocks) and \
         len({b["i"] for b in blocks}) == len(blocks), [b.get("i") for b in blocks]
@@ -995,7 +998,7 @@ def test_a_raising_composite_build_is_recorded_and_counted(store):
     """AC-0.16 (RED; bug-256, M0-11): the composite build raises through a real input, a
     corrupt focus-graph file of the newest ring (`[]`: valid JSON, not a graph). No session is
     passed, so only the composite reads that ring (`stm.phase_fields` reads the envelope's
-    session, and with a session it raises on the same file: reported to the lead separately).
+    session, and with a session it raised on the same file: bug-268, tested below).
     stdout is byte-identical to the same call with the composite absent; stderr carries one
     line naming the exception; the record's `composite_error` names it; `rmx telemetry
     --context` counts one."""
@@ -1099,3 +1102,94 @@ def test_the_cost_prompt_set_is_forty_synthetic_prompts():
     assert len(hub) >= 10, f"{len(hub)} prompts carry a hub word as a plain word"
     assert not [ln for ln in lines if "/Users/" in ln or "session_id" in ln], (
         "a prompt line looks copied from a transcript")
+
+
+# ---- bug-268 (L152): a wrong-shaped focus graph never crashes a hook ---------------------------
+
+# Valid JSON, wrong shape: `Stm._load_graph` catches only JSONDecodeError / OSError, so each one
+# reached `stm.phase_fields` and raised AttributeError / KeyError after the payload was printed.
+WRONG_SHAPES = {
+    "list": "[]",
+    "int-node": '{"turn": 2, "nodes": {"x": 1}, "edges": {}}',
+    "nameless-node": '{"turn": 2, "nodes": {"a": {"freq": 1}}, "edges": {}}',
+}
+
+
+def _corrupt(c: dict, shape: str) -> None:
+    g = c["root"] / "stm" / f"{SESSION}.focus.json"
+    assert g.exists(), f"fixture: no focus graph at {g}"
+    g.write_text(WRONG_SHAPES[shape], encoding="utf-8")
+
+
+def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+    err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+    assert r.returncode == 0 and "Traceback" not in err, (
+        f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+
+
+def _assert_counted(c: dict, kind: str, what: str) -> None:
+    qid = _last_qid(c["root"], kind=kind)
+    assert _events(c["root"], qid), f"bug-268: {what} wrote no recall events"
+    rec = _record_for(c["root"], qid)
+    assert rec.get("stm_error"), (
+        f"bug-268: the capture record does not count the corrupt focus graph: "
+        f"stm_error={rec.get('stm_error')!r}")
+    line = _capture_line(c)
+    assert _count(line, "stm_errors?") == 1, f"the capture: line: {line!r}"
+
+
+@pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+    """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+    the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+    its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+    is counted on the capture record (`stm_error`) and the `capture:` line."""
+    control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                          RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+    _corrupt(store, shape)
+    env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+           "cwd": str(store["proj"]), "transcript_path": ""}
+    e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+    r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                        "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                       cwd=str(store["proj"]), capture_output=True, timeout=300)
+    _assert_survived(r, "scan-prompt")
+    assert r.stdout == control.stdout, "a wrong-shaped focus graph changed the payload"
+    _assert_counted(store, "scan", "scan-prompt")
+
+
+@pytest.fixture
+def recall_ring_store():
+    c = _build(ring=True, docs=False, memories=12)
+    try:
+        yield c
+    finally:
+        _teardown(c)
+
+
+@pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+@pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+    """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+    `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+    embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+    recall events, and counts the corruption."""
+    c = recall_ring_store
+    _corrupt(c, shape)
+    args = ["memory", "recall", "--pack", "--k", "12"]
+    if route == "prompt_recall":
+        args += ["--stdin-json", "--recent"]
+        stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                            "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                            "transcript_path": ""})
+    else:
+        args += ["--session-start"]
+        stdin = ""
+    r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+    _assert_survived(r, f"memory recall ({route})")
+    assert r.stdout.startswith(f"# rmx recall · {route} ·") and "capmem_" in r.stdout, (
+        f"no pack printed:\n{r.stdout[:600]}")
+    rows = [q for q in _query_rows(c["root"]) if q.get("kind") == "recall"]
+    assert rows and rows[-1].get("session") == SESSION, (
+        f"fixture: the call did not resolve the corrupt ring's session: {rows[-1:]}")
+    _assert_counted(c, "recall", f"memory recall ({route})")
