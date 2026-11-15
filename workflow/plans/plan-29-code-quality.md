@@ -150,7 +150,9 @@ file citations from then on (plan-29 D26). Spec: [[task-29.6-citation-and-pin-re
 
 ## Order {#order}
 
-29.1 (docs only, informs the rest) → 29.4 (suite health, so every later run is faster) → 29.5
+**29.4's runner first** (the user, 2026-11-15, Q29 = a: its stages 0-5 — R0, T0.1', the
+reaper and sandbox roots, the flaky fixes, tiers and the sharded runner — move ahead of 29.1;
+29.4f / R6 still waits for 29.5) → 29.1 (docs only, informs the rest) → 29.5
 (the split, alone, while nothing else is in flight) → 29.2 ∥ 29.3 (types and helpers land in the
 final modules) → 29.6 (citations and pins). 29.2 R7's release is one announced window: deploy A
 (R7 + R8, then `rmx derive rehash --apply`), deploy B (every real pass-file edit, then a forced

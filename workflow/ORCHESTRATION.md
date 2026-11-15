@@ -92,8 +92,12 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 3. **Mutations** — commit the fix first; one mutation at a time, restored in its own command;
    clear `__pycache__` after the batch; confirm the fix is present after the restore. Each
    mutation must make a test FAIL, not hang. The table goes in the summary.
-4. **Verify** — the task's files + the family, then **one full suite on the branch**; failures
-   compared **by E line** with the last release's full-suite log, never by test name.
+4. **Verify** — the task's files + the family + every test that imports a changed module
+   (until 29.4 R6 derives families, list them by grep and say how). **No branch full suite**:
+   exactly one full suite per release, on merged `master` ([[#release]]); failures compared **by
+   E line** with the last release's full-suite log, never by test name. (The user, 2026-11-15:
+   "it's taken most of the day to get one patch release out" — 0.83.1 ran four full suites;
+   Q29 = a.)
 5. **Review** — ch-bsd over the commit range, in its own clone. The lead persists the report and
    rules (`L<n>`). Findings fold as a new RED → GREEN round, then a confirm-lite until MEH-only
    GO. For small MEH folds the lead may check the RED → GREEN pair and the mutation table itself
@@ -130,6 +134,9 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
 - **Reports** ([[#reports]]): the lead persists every review. {#reports-rule}
 - **Watch long runs.** After an agent's long run should have ended, tail its log and check the
   process; never assume the agent noticed. {#watch}
+- **One suite at a time on this machine.** Never start a test run while a full suite runs; a
+  concurrent family run slowed the 0.83.1 gate to 17% in 35 minutes. Batch fixes waiting on a
+  gate into one release and one gate. {#one-suite}
 - **Commits.** Own paths by pathspec; merge messages through a file (`git merge -F <file>`;
   `-F -` fails); never commit to `release`; the user pushes. {#commits}
 
