@@ -212,14 +212,46 @@ def _imports_module(src: str, module: str) -> bool:
     return False
 
 
+def _ends_in_devbin(node, assigns: dict, depth: int = 0) -> bool:
+    """`node` is a path expression whose last component is "devbin.py": a string ending in it,
+    an `a / … / "devbin.py"` chain, or a name assigned one of those in the same scope."""
+    if depth > 3:
+        return False
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value == "devbin.py" or node.value.endswith("/devbin.py")
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        return _ends_in_devbin(node.right, assigns, depth + 1)
+    if isinstance(node, ast.Name) and node.id in assigns:
+        return all(_ends_in_devbin(v, assigns, depth + 1) for v in assigns[node.id])
+    return False
+
+
 def _loads_devbin_by_path(src: str) -> bool:
-    """The source loads tests/devbin.py by path: it names `"devbin.py"` in its code and calls
-    `importlib.util.spec_from_file_location`."""
+    """The source loads tests/devbin.py by path: a `spec_from_file_location(name, path)` call
+    whose OWN path argument ends in "devbin.py" (a literal, a `/` chain, or a name assigned one
+    in the same scope). Naming devbin.py elsewhere while loading another file is not enough
+    (red-t02's loads-another-file case, ruling L169 MEH-3)."""
     tree = ast.parse(src)
-    names = any(isinstance(n, ast.Constant) and n.value == "devbin.py" for n in ast.walk(tree))
-    loads = any(isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", ""))
-                == "spec_from_file_location" for n in ast.walk(tree))
-    return names and loads
+    scopes = [tree] + [n for n in ast.walk(tree)
+                       if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    for scope in scopes:
+        assigns: dict = {}
+        body = list(ast.walk(scope)) if scope is not tree else list(tree.body)
+        for n in body:
+            if isinstance(n, ast.Assign):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        assigns.setdefault(t.id, []).append(n.value)
+        for n in ast.walk(scope):
+            if not isinstance(n, ast.Call):
+                continue
+            if getattr(n.func, "attr", getattr(n.func, "id", "")) != "spec_from_file_location":
+                continue
+            arg = n.args[1] if len(n.args) > 1 else next(
+                (k.value for k in n.keywords if k.arg == "location"), None)
+            if arg is not None and _ends_in_devbin(arg, assigns):
+                return True
+    return False
 
 
 def _uses_devbin(name: str, src: str) -> bool:
