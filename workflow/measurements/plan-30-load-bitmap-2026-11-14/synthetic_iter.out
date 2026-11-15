@@ -1,0 +1,12 @@
+emax=130000 cmax=115000 bits=888124 containers=127885
+   pos=   2372 |row|= 377 iter     28.5 us ok=True; seek+first only      0.4 us; next_set_bit   0.37 us
+   pos= 441240 |row|= 373 iter     28.2 us ok=True; seek+first only      0.4 us; next_set_bit   0.37 us
+   pos= 887689 |row|= 262 iter     19.9 us ok=True; seek+first only      0.4 us; next_set_bit   0.38 us
+emax=3000000 cmax=3000000 bits=888124 containers=297486
+   pos=   2372 |row|= 377 iter     34.4 us ok=True; seek+first only      0.4 us; next_set_bit   0.37 us
+   pos= 441240 |row|= 373 iter     33.5 us ok=True; seek+first only      0.4 us; next_set_bit   0.33 us
+   pos= 887689 |row|= 262 iter     24.4 us ok=True; seek+first only      0.4 us; next_set_bit   0.40 us
+emax=30000000 cmax=30000000 bits=888124 containers=642133
+   pos=   2372 |row|= 377 iter     44.6 us ok=True; seek+first only      0.4 us; next_set_bit   0.37 us
+   pos= 441240 |row|= 373 iter     41.8 us ok=True; seek+first only      0.4 us; next_set_bit   0.37 us
+   pos= 887689 |row|= 262 iter     31.0 us ok=True; seek+first only      0.5 us; next_set_bit   0.50 us
