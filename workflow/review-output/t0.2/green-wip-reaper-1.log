@@ -1,0 +1,36 @@
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-green/src/refmatrix as checked-hash (bug-037)
+.....F
+=================================== FAILURES ===================================
+_________ test_ac5_an_in_process_daemon_left_serving_fails_the_session _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2037/test_ac5_an_in_process_daemon_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2037/test_ac5_an_in_process_daemon_0/case-info.json')
+
+    def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_info):
+        """AC-5 fixture 5: a `Daemon` built and served INSIDE the pytest process is not in the
+        spawn ledger. conftest's weak registry of `Daemon` instances finds it still serving; it is
+        printed `LEAKED IN-PROCESS DAEMON root=<…> built in <test id>`, stopped, and the session
+        fails. Kills mutation 16 (the `Daemon.__init__` wrapper records nothing)."""
+        tree = _inner_tree(tmp_path, "case_inprocess_daemon")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        root = d["root"]
+>       assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+E       AssertionError: the fixture test itself must pass:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rmx sandbox: 0 orphan process(es) swept from killed runs
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2037/test_ac5_an_in_process_daemon_0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E       assert '1 passed' in '============================= test session starts ==============================\nplatform darwin -- Python 3.14.5, p...4.0, anyio-4.13.0\ncollected 1 item\n\ntests/test_case.py .                                                     [100%]'
+
+tests/test_daemon_reaper.py:372: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_daemon_reaper.py::test_ac5_an_in_process_daemon_left_serving_fails_the_session
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 5 passed in 48.82s

@@ -1,0 +1,106 @@
+.......F.F......F...............                                         [100%]
+=================================== FAILURES ===================================
+____ test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file ____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_4_teardown_counts_the_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_4_teardown_counts_the_0/case-info.json')
+
+    def test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file(tmp_path,
+                                                                               case_info):
+        """`#r4` item 4: the session-finish hook prints the count of sandbox store roots that
+        still hold a live `rmxd.pid` before removal. Format defined by this RED (ruling L142 (6)):
+        `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish`,
+        counted when the finish hook starts, before anything is stopped or removed. A daemon left
+        on a root under the inner sandbox makes n >= 1."""
+        tree = _inner_tree(tmp_path, "case_leak_daemon_under_sandbox")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        m = re.search(r"^rmx sandbox: (\d+) store root\(s\) under the sandbox hold a live "
+                      r"rmxd\.pid at session finish$", out, re.M)
+>       assert m is not None, (
+            "no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session "
+            f"finish` line, with a daemon left on {_info(case_info).get('root')}:\n{out[-3000:]}")
+E       AssertionError: no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish` line, with a daemon left on /private/tmp/rmx-94o0b7vc/s44-qcn1ho4x/proj/.refmatrix:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rmx sandbox: 0 orphan process(es) swept from killed runs
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_4_teardown_counts_the_0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]rmx sandbox: 1 store root(s) under the sandbox hold a live rmxd.pid at session finish
+E           /private/tmp/rmx-94o0b7vc/s44-qcn1ho4x/proj/.refmatrix (pid 46434)
+E         LEAKED PROCESS pid=46434 age=4s spawned in tests/test_case.py::test_leaks_a_daemon_under_the_sandbox argv=/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python /Volumes/littlebig/refmatrix-t02-green/src/refmatrix/cli.py daemon start --no-watch root=/private/tmp/rmx-94o0b7vc/s44-qcn1ho4x/proj/.refmatrix
+E           stop_daemon(/private/tmp/rmx-94o0b7vc/s44-qcn1ho4x/proj/.refmatrix) -> stopped {'stop_op': 'sent', 'pid': 46434}
+E         rmx sandbox: 1 leak(s) outlived their tests; the session FAILS (bug-229; task-29.4 #r4). Logged in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_4_teardown_counts_the_0/inner/workflow/review-output/leaked-processes.log
+E         
+E         
+E         ==================================== PASSES ====================================
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaks_a_daemon_under_the_sandbox
+E         ============================== 1 passed in 12.94s ==============================
+E         
+E       assert None is not None
+
+tests/test_daemon_reaper.py:429: AssertionError
+_ test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root __
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_a_leaked_plain_child_i0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_a_leaked_plain_child_i0/case-info.json')
+
+    def test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root(tmp_path,
+                                                                                    case_info):
+        """`#r4`'s first sentence: EVERY process the suite starts is known. A plain Python child
+        (not a daemon) left running: its ledger line carries the per-test `REFMATRIX_ROOT` the
+        sandbox gives every child, and no daemon serves that root, so `stop_daemon(root)` alone
+        stops nothing. The pid must still be stopped, reported, and fail the session."""
+        tree = _inner_tree(tmp_path, "case_leak_plain_child")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        pid = _info(case_info)["pid"]
+        try:
+>           assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+                f"an abandoned child (pid {pid}) outlived its test and the session exited "
+                f"{r.returncode}:\n{out[-3000:]}")
+E               AssertionError: an abandoned child (pid 46694) outlived its test and the session exited 0:
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rmx sandbox: 0 orphan process(es) swept from killed runs
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2055/test_r4_a_leaked_plain_child_i0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 1 item
+E                 
+E                 tests/test_case.py .                                                     [100%]
+E                 
+E                 ==================================== PASSES ====================================
+E                 =========================== short test summary info ============================
+E                 PASSED tests/test_case.py::test_abandons_a_child
+E                 ============================== 1 passed in 0.09s ===============================
+E                 
+E               assert 0 == <ExitCode.TESTS_FAILED: 1>
+E                +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'pytest', '-p', 'no:cachep...:test_abandons_a_child\n============================== 1 passed in 0.09s ===============================\n', stderr='').returncode
+E                +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E                +    where <enum 'ExitCode'> = pytest.ExitCode
+
+tests/test_daemon_reaper.py:465: AssertionError
+____________ test_the_tree_holds_no_tmp_root_outside_the_allow_list ____________
+
+    def test_the_tree_holds_no_tmp_root_outside_the_allow_list():
+        """`#r5`: a `mkdtemp(` whose root is `/tmp` or `/private/tmp` outside the allow list fails,
+        and so does an entry whose site no longer exists."""
+>       assert ALLOW.is_file(), (
+            f"no {ALLOW.relative_to(_REPO)}: the tmp-root census has no list (task-29.4 #r5); "
+            f"{sum(census_sites(_REPO).values())} /tmp roots under tests/ are unlisted")
+E       AssertionError: no tests/tmp_root_allow.json: the tmp-root census has no list (task-29.4 #r5); 74 /tmp roots under tests/ are unlisted
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Volumes/littlebig/refmatrix-t02-green/tests/tmp_root_allow.json').is_file
+
+tests/test_tmp_root_census.py:144: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_daemon_reaper.py::test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file
+FAILED tests/test_daemon_reaper.py::test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root
+FAILED tests/test_tmp_root_census.py::test_the_tree_holds_no_tmp_root_outside_the_allow_list
+3 failed, 29 passed in 120.70s (0:02:00)
