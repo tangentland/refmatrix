@@ -72,3 +72,21 @@ three entry points.
 | `test_bug212_r4_red` git-timeout knob (and rename) | ~84 s |
 
 Estimate: ~54 → ~40 min serial (release ~60 → ~45 min), before 29.4's sharded runner.
+
+## Against the new test rules (L166, L167) {#vs-new-rules}
+
+Lead's AST scan over 4,098 test functions (`scratchpad/betray.py`, `entry.py`), same day.
+
+| rule | tests that break it | files | how counted |
+|---|---|---|---|
+| never fake daemon state by patching `ping` / `daemon.call` / `daemon_status` … | **208** | 66 | `monkeypatch.setattr` / `patch` targets (incl. fixtures the test takes) |
+| … of those, tests ABOUT busy / down / timeout / held states (where L167 requires a real test daemon) | **49** | ~30 | same, name says busy, held, down, absent, timeout, budget, slow … |
+| no per-round test files | 111 files (1,439 tests) | 111 | file names |
+| test behaviour, not source text (detail pins) | 8 | 7 | the audit above |
+| goes through a user entry point | 2,400 reach none | 297 | no CLI / verb / MCP / daemon op / hook call seen in the test or its fixtures |
+
+The 2,400 overstates the breach: most are unit tests of pure functions (grep flag parsing, kwic,
+STM), which the rule allows. L167 asks for at least one entry-point test per large change, and
+the static scan cannot map tests to features. The 49 are the real breach: tests that claim to
+prove busy/down behaviour against a patched value. The other 159 patch daemon calls as a process
+boundary in tests about something else, which is allowed. {#vs-new-rules-reading}

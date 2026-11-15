@@ -1,4 +1,4 @@
-"""rmx grep stdin + dialect regressions (bus report 85e22d5d06dd, orderly).
+r"""rmx grep stdin + dialect regressions (bus report 85e22d5d06dd, orderly).
 
 BUG A: `rg A file | rg -v B` — both stages python-backed wrappers — raced
 `_is_stdin_piped`'s zero-timeout peek: the downstream stage checked before the
