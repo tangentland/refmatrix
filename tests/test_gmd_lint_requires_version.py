@@ -192,7 +192,9 @@ def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
     if chosen is not None:
         chosen = Path(chosen)
         shutil.copytree(chosen, home / ".claude" / "projects" / chosen.parent.name / "memory")
-    env = dict(os.environ, HOME=str(home))
+    # bug-253: the gate's dev interpreter is the one running this suite (a littlebig clone has
+    # no `.venv-eval` of its own), named the way tests/devbin.py names the dev `rmx`.
+    env = dict(os.environ, HOME=str(home), RMX_DEV_PYTHON=sys.executable)
     assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
                        capture_output=True, text=True, env=env)

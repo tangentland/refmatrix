@@ -1,0 +1,28 @@
+# sha eb9ae87 (RED fold on GREEN 1121b4e), clone /Volumes/littlebig/refmatrix-t02-red2 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug240_ingest_file_arg.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 8 items
+
+tests/test_bug240_ingest_file_arg.py ........                            [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-CLAUDE.md]
+PASSED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-docs/notes.md]
+PASSED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-CLAUDE.md]
+PASSED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-docs/notes.md]
+PASSED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[daemon]
+PASSED tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[in_process]
+PASSED tests/test_bug240_ingest_file_arg.py::test_guard_ingest_of_a_directory_still_ingests_it[daemon]
+PASSED tests/test_bug240_ingest_file_arg.py::test_guard_ingest_of_a_directory_still_ingests_it[in_process]
+============================== 8 passed in 27.24s ==============================
+# exit 0

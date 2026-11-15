@@ -1,0 +1,28 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_gmd_lint_requires_version.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 7 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 9 items
+
+tests/test_gmd_lint_requires_version.py .........                        [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_gmd_lint_requires_version.py::test_a_gmd_doc_passes
+PASSED tests/test_gmd_lint_requires_version.py::test_no_frontmatter_at_all_is_an_error
+PASSED tests/test_gmd_lint_requires_version.py::test_frontmatter_without_the_gmd_key_is_an_error
+PASSED tests/test_gmd_lint_requires_version.py::test_the_error_says_what_is_lost_and_how_to_opt_out
+PASSED tests/test_gmd_lint_requires_version.py::test_a_reasoned_opt_out_passes
+PASSED tests/test_gmd_lint_requires_version.py::test_an_opt_out_with_no_reason_is_an_error
+PASSED tests/test_gmd_lint_requires_version.py::test_the_opt_out_must_be_on_line_one
+PASSED tests/test_gmd_lint_requires_version.py::test_memory_index_keeps_its_by_name_exemption
+PASSED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+============================== 9 passed in 2.69s ===============================
+# exit 0

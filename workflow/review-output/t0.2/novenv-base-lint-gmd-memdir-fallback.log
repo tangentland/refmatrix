@@ -1,0 +1,102 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_lint_gmd_memdir_fallback.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 19 items
+
+tests/test_lint_gmd_memdir_fallback.py ...............F...               [100%]
+
+=================================== FAILURES ===================================
+_____ test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script _____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1929/test_an_empty_own_slug_memory_0')
+
+    def test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script(tmp_path):
+        """The decoy home gets an EMPTY `memory/` under this checkout's own slug, plus a copy of the
+        populated dir the resolver names for this checkout (read through `RMX_SANDBOX_REAL_HOME`, as
+        the repo-scope test reads it) under that checkout's slug. Then the real
+        `./scripts/lint-gmd.sh` runs with that HOME.
+    
+        - In a clone (the resolver's dir for it is an origin's): the script must print ONE memory-dir
+          line saying `empty`, and its errors and exit must equal the main tree's at this sha, which
+          is a clean gate (exit 0) when the main tree's gate is green.
+        - In a checkout with no usable origin (the main tree: origin is not a local path): the line
+          says `empty`, the walk stops on the non-local origin with the "no memory dir" line, and the
+          gate exits 1 on `dangling-doc`. It does not skip (R0.5).
+    
+        At T0.1's base the shipped script's `-d` test took the empty dir, printed no line, and exited
+        1 on 1,235 memory-id `dangling-doc` errors (base-ac1.5-case2-shipped-script-empty-own-dir.log).
+        Mutation M1.6 (any existing own dir counts) must reproduce exactly that here."""
+        root = REPO
+        gm = load_gmd_memdir()
+        real_home = Path(os.environ["RMX_SANDBOX_REAL_HOME"])
+        own = gm.slug(root)
+        chosen, _note = gm.resolve_memdir(root, real_home)
+        chosen = Path(chosen) if chosen is not None else None
+        home = tmp_path / "home"
+        projects = home / ".claude" / "projects"
+        (projects / own / "memory").mkdir(parents=True)          # exists, holds nothing
+        main_tree_layout = chosen is not None and chosen.parent.name == own
+        if chosen is not None and not main_tree_layout:
+            shutil.copytree(chosen, projects / chosen.parent.name / "memory")
+        # bug-253 (stage 2): the gate's dev interpreter is the one running this suite, so a
+        # no-venv clone reaches the resolver line instead of exit 2 at the `DEVPY` check.
+        env = dict(os.environ, HOME=str(home), RMX_DEV_PYTHON=sys.executable)
+        assert Path(env["HOME"]).resolve() != real_home.resolve()
+        r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root), capture_output=True,
+                           text=True, env=env)
+>       assert_gate_ran(r)
+
+tests/test_lint_gmd_memdir_fallback.py:395: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['./scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='dev interpreter not found at /Volume... the .venv-eval dev venv (it imports refmatrix); create\n.venv-eval/ — this gate does not skip the step without it.\n')
+
+    def assert_gate_ran(r: "subprocess.CompletedProcess") -> None:
+        """First clause of `assert_gate_ran_clean`, on its own: the gate RAN (it did not stop on a
+        missing precondition with exit 2). T0.1' AC-1.5 (ch-bsd r1 M1): every test that runs the
+        script asserts this BEFORE anything else, so a no-venv clone fails on this message (bug-253's
+        E line) and never on a later, unlisted one."""
+        out = r.stdout + r.stderr
+        missing = [l for l in out.splitlines() if "not found at" in l]
+>       assert r.returncode != 2 and not missing, (
+            f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+            "precondition is a failure, not a clean tree:\n" + out[-2000:])
+E       AssertionError: scripts/lint-gmd.sh did not run its checks (exit 2); a missing precondition is a failure, not a clean tree:
+E         dev interpreter not found at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/python
+E         The anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create
+E         .venv-eval/ — this gate does not skip the step without it.
+E         
+E       assert (2 != 2)
+E        +  where 2 = CompletedProcess(args=['./scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='dev interpreter not found at /Volume... the .venv-eval dev venv (it imports refmatrix); create\n.venv-eval/ — this gate does not skip the step without it.\n').returncode
+
+tests/test_gmd_lint_requires_version.py:238: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_populated_own_dir_is_chosen_with_no_fallback_line
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_dir_falls_back_to_the_origin_and_says_empty
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_absent_own_dir_falls_back_to_the_origin_and_says_absent
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_origin_spellings_canonicalise_to_one_origin_and_slug
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[scp]
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[https]
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_non_local_origin_stops_the_walk_with_no_dir[file]
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_of_clones_is_walked_to_the_first_populated_dir
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_names_an_empty_intermediate_dir_as_empty
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_chain_resolves_under_an_exported_git_dir_of_an_unrelated_repo
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_cycle_of_origins_returns_no_dir_and_says_cycle
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_walk_stops_at_the_bound_of_five_origins
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_fifth_origin_is_inside_the_bound
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_a_checkout_with_no_origin_stops_with_no_dir
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_an_origin_that_is_not_a_checkout_stops_with_no_dir
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_script_calls_the_resolver_under_python3
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_script_holds_no_slug_derivation
+PASSED tests/test_lint_gmd_memdir_fallback.py::test_the_script_reads_no_origin
+FAILED tests/test_lint_gmd_memdir_fallback.py::test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script
+========================= 1 failed, 18 passed in 3.10s =========================
+# exit 1

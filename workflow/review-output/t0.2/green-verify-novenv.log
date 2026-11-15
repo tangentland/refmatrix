@@ -1,0 +1,34 @@
+# sha 78489af; NO-VENV clone /Volumes/littlebig/refmatrix-t02-novenv (no .venv-eval: ls: .venv-eval: No such file or directory); interpreter /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python; files: tests/test_bug240_ingest_file_arg.py tests/test_bug240_ingest_file_arg_mcp.py tests/test_bug241_r2_l112.py tests/test_bug241_rule_docs_reingest.py tests/test_scanorder_r2_l120.py tests/test_brief_real_daemon.py tests/test_grep_argv_order_e2e.py tests/test_grep_count_rows_e2e.py tests/test_grep_evidence_verified.py tests/test_grep_learning_replay.py tests/test_grep_no_flag_bundle.py tests/test_bug241_r3_l114.py tests/test_repo_hooks_in_sync.py tests/test_bug253_dev_bin.py tests/test_t0_skip_gate.py tests/test_gmd_lint_requires_version.py tests/test_lint_gmd_memdir_fallback.py tests/test_bug179_anchor_parity.py
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 312 items
+
+tests/test_bug240_ingest_file_arg.py ........                            [  2%]
+tests/test_bug240_ingest_file_arg_mcp.py ..........                      [  5%]
+tests/test_bug241_r2_l112.py .........                                   [  8%]
+tests/test_bug241_rule_docs_reingest.py ................................ [ 18%]
+................................................................         [ 39%]
+tests/test_scanorder_r2_l120.py ..............                           [ 43%]
+tests/test_brief_real_daemon.py .....                                    [ 45%]
+tests/test_grep_argv_order_e2e.py .....                                  [ 47%]
+tests/test_grep_count_rows_e2e.py .......                                [ 49%]
+tests/test_grep_evidence_verified.py .....................               [ 56%]
+tests/test_grep_learning_replay.py .....                                 [ 57%]
+tests/test_grep_no_flag_bundle.py ....                                   [ 58%]
+tests/test_bug241_r3_l114.py ....                                        [ 60%]
+tests/test_repo_hooks_in_sync.py s...                                    [ 61%]
+tests/test_bug253_dev_bin.py .............................               [ 70%]
+tests/test_t0_skip_gate.py ................                              [ 75%]
+tests/test_gmd_lint_requires_version.py .........                        [ 78%]
+tests/test_lint_gmd_memdir_fallback.py ...................               [ 84%]
+tests/test_bug179_anchor_parity.py ..................................... [ 96%]
+..........                                                               [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:68: hooks belong to another checkout of this commit
+================== 311 passed, 1 skipped in 391.71s (0:06:31) ==================
+exit 0

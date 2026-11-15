@@ -1,0 +1,289 @@
+# sha 1121b4e; symlinked clone /Volumes/littlebig/refmatrix-t02-green; tier (b) at stage 0's rule (126 files, green-verify-tierb-files.txt)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 2294 items
+
+tests/test_agent_env.py ..........                                       [  0%]
+tests/test_bridge_move_safety.py .........................               [  1%]
+tests/test_bridge_move_safety_ac4c.py .....                              [  1%]
+tests/test_bridge_move_safety_r1.py ..............                       [  2%]
+tests/test_brief_gmd.py ...........                                      [  2%]
+tests/test_brief_surfaces.py ...........                                 [  3%]
+tests/test_bug015_wedge.py ........                                      [  3%]
+tests/test_bug110_snapshot_keeps_lock.py .....                           [  3%]
+tests/test_bug113_replica_merge_recovery.py ............................ [  5%]
+...                                                                      [  5%]
+tests/test_bug118_optional_hook_exit.py ..............                   [  5%]
+tests/test_bug162_163_worker_qos_hook_path.py ...                        [  5%]
+tests/test_bug178_bulk_write.py ...............................          [  7%]
+tests/test_bug178_r2.py ..................................               [  8%]
+tests/test_bug179_anchor_parity.py ..................................... [ 10%]
+..........                                                               [ 10%]
+tests/test_bug197_unknown_compile_scope.py ..........                    [ 11%]
+tests/test_bug199_r2_remedy.py ...........                               [ 11%]
+tests/test_bug199_repair_rewrites_index.py ..............                [ 12%]
+tests/test_bug200_brief_compile_real_daemon.py ..                        [ 12%]
+tests/test_bug212_hooks_in_worktrees.py ...................              [ 13%]
+tests/test_bug212_r1_remedy.py ......................................... [ 15%]
+.                                                                        [ 15%]
+tests/test_bug212_r2_red.py ...............................              [ 16%]
+tests/test_bug212_r4_red.py ............................................ [ 18%]
+...                                                                      [ 18%]
+tests/test_bug212_r5_red.py .................                            [ 19%]
+tests/test_bug212_r6_red.py ........                                     [ 19%]
+tests/test_bug212_r7_red.py ...                                          [ 19%]
+tests/test_bug216_rel_landing.py .......                                 [ 20%]
+tests/test_bug216_remedy_l86.py ..                                       [ 20%]
+tests/test_bug216_remedy_r1.py ...................                       [ 20%]
+tests/test_bug216_remedy_r2.py ...........                               [ 21%]
+tests/test_bug216_remedy_r3.py ...                                       [ 21%]
+tests/test_bug216_remedy_r4.py .......                                   [ 21%]
+tests/test_bug216_remedy_r5.py ...                                       [ 22%]
+tests/test_bug216_remedy_r6.py ..                                        [ 22%]
+tests/test_bug216_rev4.py ........................                       [ 23%]
+tests/test_bug216_scope_parity.py ........                               [ 23%]
+tests/test_bug225_handoff_trunk.py ..................................... [ 25%]
+.                                                                        [ 25%]
+tests/test_bug240_ingest_file_arg.py ........                            [ 25%]
+tests/test_bug240_ingest_file_arg_mcp.py ..........                      [ 25%]
+tests/test_bug241_r2_l112.py .........                                   [ 26%]
+tests/test_bug241_rule_docs_reingest.py ................................ [ 27%]
+................................................................         [ 30%]
+tests/test_catalog_measure.py ..............................             [ 31%]
+tests/test_cli_time_phases.py .......                                    [ 32%]
+tests/test_context_rerank_warning.py ...                                 [ 32%]
+tests/test_daemon_adopt.py ..                                            [ 32%]
+tests/test_daemon_reap.py .....                                          [ 32%]
+tests/test_declared_python_floor.py .                                    [ 32%]
+tests/test_fork_safety_reexec.py ....                                    [ 32%]
+tests/test_fragment_repair_audit_r3.py .....                             [ 32%]
+tests/test_fragment_repair_audit_r4.py ....................              [ 33%]
+tests/test_grep_answered_by.py .............                             [ 34%]
+tests/test_grep_delegate.py .....                                        [ 34%]
+tests/test_grep_empty_pipe.py .........                                  [ 35%]
+tests/test_grep_fixed_and_file_lists.py .....................            [ 35%]
+tests/test_grep_output_shape.py ...........                              [ 36%]
+tests/test_grep_stdin_dialect.py ...........                             [ 36%]
+tests/test_hub.py ............                                           [ 37%]
+tests/test_hub_watchdog.py ....                                          [ 37%]
+tests/test_lance_drop_failures_loud.py ................                  [ 38%]
+tests/test_learn_toggle_hook.py ...............                          [ 38%]
+tests/test_longmemeval_ingest.py .........                               [ 39%]
+tests/test_longmemeval_prepare.py .............                          [ 39%]
+tests/test_mcp_memory_recall_routing.py ........                         [ 40%]
+tests/test_mcp_session_pointer.py ...................................... [ 41%]
+........................                                                 [ 42%]
+tests/test_memory_bridge.py ......................                       [ 43%]
+tests/test_memory_compile_remedy_r1.py ...............                   [ 44%]
+tests/test_memory_compile_scope.py ...................                   [ 45%]
+tests/test_memory_hook_repair.py .......................                 [ 46%]
+tests/test_memory_index_layout.py ...................................... [ 48%]
+..........................................................               [ 50%]
+tests/test_memory_recall_widen.py ..                                     [ 50%]
+tests/test_models_offline.py ................                            [ 51%]
+tests/test_modelsrv.py .........................                         [ 52%]
+tests/test_onboard_huballd_curator.py .......                            [ 52%]
+tests/test_plan12_remedy.py .................                            [ 53%]
+tests/test_plan1_remedy.py .......................                       [ 54%]
+tests/test_plan3_remedy.py ............                                  [ 55%]
+tests/test_plan3_remedy_r2.py ........                                   [ 55%]
+tests/test_plan3_remedy_r3.py ..........                                 [ 55%]
+tests/test_plan5_remedy.py .............                                 [ 56%]
+tests/test_plan7_10_remedy_r4.py .............                           [ 56%]
+tests/test_pyc_invalidation.py ..........                                [ 57%]
+tests/test_rerank_cost_budget.py ......................                  [ 58%]
+tests/test_rerank_degrades_are_surfaced.py ..........                    [ 58%]
+tests/test_rerank_warning_routes.py ...........                          [ 59%]
+tests/test_rmxgrep.py ............                                       [ 59%]
+tests/test_sandbox_checkout_guard.py .                                   [ 59%]
+tests/test_sandbox_proof_script.py .....                                 [ 60%]
+tests/test_save_state_embeds_memories.py ..................              [ 60%]
+tests/test_savestate_mtype.py .......................                    [ 61%]
+tests/test_savestate_subfolder.py ...................................... [ 63%]
+.................                                                        [ 64%]
+tests/test_scanorder_r2_l120.py ..............                           [ 64%]
+tests/test_shared_worker_readoption.py ...........                       [ 65%]
+tests/test_stm_rationale_capture.py .....                                [ 65%]
+tests/test_subject.py .........                                          [ 65%]
+tests/test_sync_and_extras.py .........................                  [ 67%]
+tests/test_sync_fails_loudly_r1.py .........                             [ 67%]
+tests/test_sync_fails_loudly_r2.py ........                              [ 67%]
+tests/test_task21_1_agent_usage_report.py .............................. [ 69%]
+FF.                                                                      [ 69%]
+tests/test_task21_1_emitters.py ........................................ [ 70%]
+.........                                                                [ 71%]
+tests/test_task21_1_live_guard.py .........                              [ 71%]
+tests/test_task21_1_mcp_route.py .                                       [ 71%]
+tests/test_task21_1_pointer_lifecycle.py ...............                 [ 72%]
+tests/test_task21_1_pointer_surfacing.py ............................... [ 73%]
+..                                                                       [ 73%]
+tests/test_task21_1_query_rows.py .......................                [ 74%]
+tests/test_task21_1_recall_skip.py ........                              [ 75%]
+tests/test_task21_1_used_events.py .............                         [ 75%]
+tests/test_task3_7_canon.py ...........                                  [ 76%]
+tests/test_task3_7_curation.py .......................                   [ 77%]
+tests/test_task3_7_curator.py ..............................             [ 78%]
+tests/test_task3_7_graph.py ............................................ [ 80%]
+..                                                                       [ 80%]
+tests/test_task3_7_infra.py ....................                         [ 81%]
+tests/test_task3_7_live.py .....                                         [ 81%]
+tests/test_task3_7_remedy_r1.py ..........................               [ 82%]
+tests/test_task3_7_remedy_r2.py ..                                       [ 82%]
+tests/test_task3_7_remedy_r3.py .........                                [ 83%]
+tests/test_task3_7_remedy_r5.py ...............                          [ 83%]
+tests/test_task3_7_remedy_r6.py .........................                [ 85%]
+tests/test_task3_7_session.py ...............                            [ 85%]
+tests/test_task4_5_r4_remedy.py ...........................              [ 86%]
+tests/test_task4_6_r5_remedy.py ........................................ [ 88%]
+............                                                             [ 89%]
+tests/test_test_lanes.py ...                                             [ 89%]
+tests/test_upgrade.py ...........                                        [ 89%]
+tests/test_v2_features.py ............................................   [ 91%]
+tests/test_verb_parity.py .............................................. [ 93%]
+........................................................................ [ 96%]
+.................................................                        [ 98%]
+tests/test_verbs_memory_recall.py ......                                 [ 99%]
+tests/test_verbs_migrated.py .............                               [ 99%]
+tests/test_worker_budget_invariant.py .....                              [100%]
+rmx sandbox: pid=63448 exempt, not reaped: the stdlib multiprocessing resource tracker, a direct child of this session (spawned in tests/test_models_offline.py::test_the_embedder_loads_without_a_network_call); it ends with its parent by construction (ruling L154)
+rmx sandbox: 0 leaks; 1 exempt process(es) (the stdlib multiprocessing resource tracker, which ends with this session by construction; ruling L154)
+
+=================================== FAILURES ===================================
+_______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
+
+R = PosixPath('/private/tmp/rmx-jm_d675g/r/1586/.refmatrix')
+
+    def test_ac6_frozen_fixture_prints_the_exact_counts(R):
+        """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+        trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+        2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+        greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+        hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+        legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
+        fixes no per-route format): a line naming the surface and holding the number as a word.
+    
+        1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+        upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+        dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+        ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
+        manifest = FIXTURE / "manifest.json"
+        assert manifest.is_file(), (
+            "AC-6 BLOCKED: the redacted fixture is not committed; run "
+            "`python3 tools/cut_agent_usage_fixture.py` (reads this project's .refmatrix logs, "
+            "writes tests/fixtures/agent_usage/)")
+        L = json.loads(manifest.read_text())["L"]
+        for name in ("query.log", "cli.log"):
+            (R / name).write_bytes((FIXTURE / name).read_bytes())
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
+        assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
+        assert [ln for ln in _line_with(out, "grep-replica")
+                if re.search(r"\b1,?121\b", ln)], out
+        rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
+>       assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=4709
+E         query.log: counted=4709 unparseable=0 internal_excluded=0
+E         totals:
+E           context context-replica: 3
+E           grep grep-replica: 1121
+E           grep grep-stdin: 3330
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=unknown
+E             context context-replica: 3 p50=792ms p95=808ms
+E             grep grep-replica: 1121 p50=8ms p95=48ms
+E             grep grep-replica answered_by=dropin: 839 p50=9ms p95=26ms
+E             grep grep-replica answered_by=floor: 4 p50=64ms p95=71ms
+E             grep grep-replica answered_by=index: 21 p50=55ms p95=267ms
+E             grep grep-replica answered_by=none: 5 p50=16ms p95=105ms
+E             grep grep-replica answered_by=unknown: 252 p50=6ms p95=89ms
+E             grep grep-stdin: 3330 p50=0ms p95=0ms
+E             grep grep-stdin answered_by=stdin: 3330 p50=0ms p95=0ms
+E         outcomes:
+E           context: ok=3 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+
+tests/test_task21_1_agent_usage_report.py:392: AssertionError
+________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
+
+R = PosixPath('/private/tmp/rmx-jm_d675g/r/1587/.refmatrix')
+
+    def test_ac6_cli_log_recalls_are_split_per_channel(R):
+        """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+        channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+        `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+        into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+        (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+        AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+        survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+        invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+        (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+        `recall`, not `precompact`), each with its phase=start row (never counted)."""
+        def pair(ts, argv, source):
+            return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+        cli = []
+        for i in range(5):
+            cli += pair(f"2026-10-01T10:0{i}:00",
+                        ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                         "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-02T10:0{i}:00",
+                        ["memory", "recall", "--session-start", "--json"], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-03T10:0{i}:00",
+                        ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-04T10:0{i}:00",
+                        ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                        "unknown")
+        cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+        _write_jsonl(R / "query.log", [])
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+>       assert chan("prompt_recall", 5), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=0 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E         outcomes:
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=14 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x3b97b0720>('prompt_recall', 5)
+
+tests/test_task21_1_agent_usage_report.py:434: AssertionError
+=============================== warnings summary ===============================
+tests/test_task4_5_r4_remedy.py::test_every_stop_path_hands_the_daemon_the_one_stop_grace[8-hub-ui-stop]
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+============ 2 failed, 2292 passed, 1 warning in 2209.60s (0:36:49) ============
+exit 1

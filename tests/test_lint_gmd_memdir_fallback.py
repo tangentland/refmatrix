@@ -386,7 +386,9 @@ def test_an_empty_own_slug_memory_dir_falls_back_through_the_real_script(tmp_pat
     main_tree_layout = chosen is not None and chosen.parent.name == own
     if chosen is not None and not main_tree_layout:
         shutil.copytree(chosen, projects / chosen.parent.name / "memory")
-    env = dict(os.environ, HOME=str(home))
+    # bug-253 (stage 2): the gate's dev interpreter is the one running this suite, so a
+    # no-venv clone reaches the resolver line instead of exit 2 at the `DEVPY` check.
+    env = dict(os.environ, HOME=str(home), RMX_DEV_PYTHON=sys.executable)
     assert Path(env["HOME"]).resolve() != real_home.resolve()
     r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root), capture_output=True,
                        text=True, env=env)

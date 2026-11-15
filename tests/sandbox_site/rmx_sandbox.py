@@ -47,17 +47,23 @@ gets `sitecustomize` through PYTHONPATH too), so it uses no syntax newer than 3.
 from __future__ import annotations
 
 import atexit
+import glob
 import json
 import os
 import plistlib
+import re
 import pwd
 import runpy
 import shlex
 import shutil
+import signal
 import socket
+import struct
 import sys
 import tempfile
 import threading
+import time
+import weakref
 from pathlib import Path
 
 SITE_DIR = Path(__file__).resolve().parent
@@ -108,7 +114,7 @@ RECORD: dict = {}
 NO_TEST = "<no-test>"
 
 _STATE = {"deny": None, "mode": "raise", "installed": False, "outer": None, "sandbox": None,
-          "connect_log": None}
+          "connect_log": None, "ledger": None, "at_fork": False, "session": None}
 _local = threading.local()
 
 
@@ -368,6 +374,12 @@ def enter(repo: Path) -> dict:
     (root / DENY_FILE).write_text(json.dumps(deny, indent=1))
     Path(deny["touches"]).parent.mkdir(parents=True, exist_ok=True)
     install(deny, mode="raise")
+    # 29.4 R4 items 1 and 3: this process's forks write to THIS sandbox's ledger from now on
+    # (an inner pytest's sitecustomize pointed it at the parent's), and `owner.json` lets the
+    # next session tell a killed run's sandbox from a live one.
+    _STATE["ledger"] = str(root / LEDGER)
+    _register_at_fork()
+    write_owner(root)
     _STATE["sandbox"] = {"root": root, "real": real, "deny": deny}
     return _STATE["sandbox"]
 
@@ -938,6 +950,11 @@ def install_from_env() -> None:
         os._exit(CHILD_EXIT)
     _STATE["connect_log"] = log
     install(deny, mode="exit")
+    # 29.4 R4 item 1: every exec'd child under the sandbox writes its own ledger line, and
+    # registers the at-fork hook so a daemon's double fork (no exec) writes the final pid's.
+    _STATE["ledger"] = str(Path(root) / LEDGER)
+    ledger_write("exec")
+    _register_at_fork()
     _run_preload(os.environ.get("RMX_SANDBOX_PRELOAD"))
 
 
@@ -957,6 +974,797 @@ def _run_preload(path: "str | None") -> None:
         sys.stderr.write(f"SandboxPreloadError: {path}: {type(exc).__name__}: {exc}\n")
         sys.stderr.flush()
         os._exit(PRELOAD_EXIT)
+
+
+# ---- 29.4 R4 / R5: the spawn ledger, the reaper, test roots under the sandbox ------------
+#
+# bug-229 (found 2026-11-14): pid 89734, a `rmx daemon start --no-watch` from the bug-212 clone,
+# served `/private/tmp/r1-hcn81cf7/proj/.refmatrix` with its own model workers for 20 hours
+# while a full suite crawled at load 12-15. Its root was a `mkdtemp(dir="/tmp")` OUTSIDE the
+# sandbox, so a reaper keyed on "sockets under the sandbox" could not see it, and the run that
+# leaked it was most likely killed before teardown, so a teardown-only reaper could not either.
+# So the reaper is keyed on the SPAWN (task-29.4 #r4): every Python process that starts under
+# the sandbox writes one ledger line when it starts, the outermost session's finish stops and
+# reports every live survivor, and the NEXT session's start sweeps the sandboxes killed runs
+# left (`owner.json` tells a dead owner from a live one).
+#
+# A process is identified by (pid, start time), never by pid alone: a pid in a ledger may since
+# have been reused by an unrelated process, which is reported and never signalled (#r4 item 2).
+# The reaper never signals its own pid or an ancestor (ruling L142): an in-process `Daemon`'s
+# `rmxd.pid` names the pytest process itself, so it is found through the weak instance registry
+# (`track_inprocess`), never through its pid file.
+
+LEDGER = "children.jsonl"
+OWNER = "owner.json"
+LEAK_LOG_REL = Path("workflow") / "review-output" / "leaked-processes.log"
+# Only roots matching this are listed for the session-start sweep; nothing is searched (#r4 3).
+ROOT_GLOB = "/tmp/rmx-*"
+# A process its test stopped may still be exiting when the session finishes (a daemon's model
+# worker a few hundred ms behind its daemon). It gets this long to go on its own before it is
+# called a leak. Not a bound under test: it only delays a finish that HAS survivors.
+FINISH_GRACE_S = 3.0
+STOP_DAEMON_S = 20.0     # stop_daemon()'s grace for a leaked daemon (its drain, then SIGTERM)
+TERM_WAIT_S = 5.0        # after SIGTERM, before SIGKILL
+KILL_WAIT_S = 2.0        # after SIGKILL, before it is reported as surviving
+SPAWN_GRACE_S = 10.0     # register_spawn: how long a fixture's own stop may take to land
+_START_EPS = 1e-3        # start times are microseconds (darwin) or clock ticks (linux)
+
+# darwin `struct kinfo_proc` (sysctl CTL_KERN / KERN_PROC / KERN_PROC_PID): `p_starttime`
+# (a timeval) opens `kp_proc`, `p_stat` is the char at 36, `kp_eproc.e_ppid` the int at 560.
+# Probed on this host 2026-11-15 (a running, a SIGSTOPped and a zombie `/bin/sleep`: p_stat 2,
+# 4, 5; e_ppid equal to the parent's `os.getpid()`); the layout is the one psutil reads.
+_KINFO_SIZE = 648
+_KP_STAT, _KP_PPID = 36, 560
+_SSTOP, _SZOMB = 4, 5
+_LIBC: dict = {"h": None}
+
+
+def _kinfo(pid: int) -> "bytes | None":
+    import ctypes                       # lazily: ~7 ms, paid once per process
+    if _LIBC["h"] is None:
+        _LIBC["h"] = ctypes.CDLL(None, use_errno=True)
+    mib = (ctypes.c_int * 4)(1, 14, 1, int(pid))
+    buf = ctypes.create_string_buffer(1024)
+    size = ctypes.c_size_t(len(buf))
+    if _LIBC["h"].sysctl(mib, 4, buf, ctypes.byref(size), None, ctypes.c_size_t(0)) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, f"sysctl(KERN_PROC_PID, {pid}): {os.strerror(err)}")
+    if size.value == 0:
+        return None                     # no such process
+    if size.value < _KINFO_SIZE:
+        raise OSError(f"sysctl(KERN_PROC_PID, {pid}) returned {size.value} bytes, not "
+                      f"{_KINFO_SIZE}: an unknown kinfo_proc layout")
+    return buf.raw[:size.value]
+
+
+def proc_info(pid: int) -> "dict | None":
+    """`{"start", "ppid", "state"}` of a process, or None when no such process exists.
+
+    `start` is the process start time (darwin: epoch seconds to the microsecond; linux: clock
+    ticks since boot), the identity a ledger line carries with its pid. `state` is `run`,
+    `stopped` or `zombie`. Raises OSError when the platform call fails, and
+    NotImplementedError on a platform with neither (the reaper cannot tell a reused pid there,
+    so it must not guess)."""
+    if pid <= 0:
+        return None
+    if sys.platform == "darwin":
+        raw = _kinfo(pid)
+        if raw is None:
+            return None
+        sec, usec = struct.unpack_from("qi", raw, 0)
+        stat = raw[_KP_STAT]
+        state = "zombie" if stat == _SZOMB else "stopped" if stat == _SSTOP else "run"
+        return {"start": sec + usec / 1e6, "ppid": struct.unpack_from("i", raw, _KP_PPID)[0],
+                "state": state}
+    if os.path.isdir("/proc/self"):
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as fh:
+                data = fh.read().decode(errors="replace")
+        except FileNotFoundError:
+            return None
+        rest = data.rsplit(")", 1)[1].split()
+        state = {"Z": "zombie", "T": "stopped", "t": "stopped"}.get(rest[0], "run")
+        return {"start": float(rest[19]), "ppid": int(rest[1]), "state": state}
+    raise NotImplementedError(f"no process start time on {sys.platform}")
+
+
+_KP_PID = 40          # extern_proc.p_pid (probed with the offsets above)
+
+
+def process_table() -> dict:
+    """`pid -> {"start", "ppid", "state"}` for every process on the machine (darwin:
+    sysctl KERN_PROC_ALL, ~2 ms; linux: /proc). Used to find this session's live descendants,
+    which a ledger read can miss: a child Popen'd in a test's last line may not have run its
+    sitecustomize -- and written its line -- when the session finishes (found 2026-11-15, T0.2
+    GREEN: case_leak_plain_child's session finished in 0.09 s, before its child's line)."""
+    out: dict = {}
+    if sys.platform == "darwin":
+        import ctypes
+        if _LIBC["h"] is None:
+            _LIBC["h"] = ctypes.CDLL(None, use_errno=True)
+        mib = (ctypes.c_int * 4)(1, 14, 0, 0)
+        for _ in range(5):                  # the table can grow between the two calls
+            size = ctypes.c_size_t(0)
+            if _LIBC["h"].sysctl(mib, 4, None, ctypes.byref(size), None, ctypes.c_size_t(0)):
+                raise OSError(ctypes.get_errno(), "sysctl(KERN_PROC_ALL) size")
+            n = size.value + _KINFO_SIZE * 64
+            buf = ctypes.create_string_buffer(n)
+            size = ctypes.c_size_t(n)
+            if _LIBC["h"].sysctl(mib, 4, buf, ctypes.byref(size), None,
+                                 ctypes.c_size_t(0)) == 0:
+                break
+            if ctypes.get_errno() != 12:    # ENOMEM: it grew; ask again
+                raise OSError(ctypes.get_errno(), "sysctl(KERN_PROC_ALL)")
+        else:
+            raise OSError("sysctl(KERN_PROC_ALL): the process table kept growing")
+        raw = buf.raw[:size.value]
+        for off in range(0, len(raw) - _KINFO_SIZE + 1, _KINFO_SIZE):
+            sec, usec = struct.unpack_from("qi", raw, off)
+            stat = raw[off + _KP_STAT]
+            out[struct.unpack_from("i", raw, off + _KP_PID)[0]] = {
+                "start": sec + usec / 1e6,
+                "ppid": struct.unpack_from("i", raw, off + _KP_PPID)[0],
+                "state": "zombie" if stat == _SZOMB else "stopped" if stat == _SSTOP else "run"}
+        return out
+    if os.path.isdir("/proc/self"):
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                info = proc_info(int(d))
+                if info is not None:
+                    out[int(d)] = info
+        return out
+    raise NotImplementedError(f"no process table on {sys.platform}")
+
+
+def live_descendants() -> dict:
+    """`pid -> info` of every live (non-zombie) process descended from this one."""
+    table = process_table()
+    kids: dict = {}
+    for pid, info in table.items():
+        kids.setdefault(info["ppid"], []).append(pid)
+    me = os.getpid()
+    out: dict = {}
+    todo = [me]
+    while todo:
+        for c in kids.get(todo.pop(), []):
+            if c not in out and c != me:
+                out[c] = table[c]
+                todo.append(c)
+    return {p: i for p, i in out.items() if i["state"] != "zombie"}
+
+
+def _ps_command(pid: int) -> str:
+    import subprocess
+    try:
+        r = subprocess.run(["/bin/ps", "-o", "command=", "-p", str(pid)], capture_output=True,
+                           text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"<ps failed: {exc}>"
+    return r.stdout.strip() or "<exited>"
+
+
+def _same_process(pid: int, start) -> bool:
+    """`pid` is still the process a ledger line recorded: alive, not a zombie, same start."""
+    if start is None:
+        return False
+    info = proc_info(pid)
+    return (info is not None and info["state"] != "zombie"
+            and abs(info["start"] - float(start)) < _START_EPS)
+
+
+def _alive(pid: int) -> bool:
+    info = proc_info(pid)
+    return info is not None and info["state"] != "zombie"
+
+
+def _ledger_record(how: str) -> dict:
+    pid = os.getpid()
+    rec = {"pid": pid, "ppid": os.getppid(), "start": None, "how": how,
+           "argv": list(getattr(sys, "orig_argv", None) or sys.argv or []),
+           "cwd": None, "root": os.environ.get("REFMATRIX_ROOT"), "test": current_test(),
+           "t": time.time()}
+    try:
+        rec["cwd"] = os.getcwd()
+    except OSError as exc:              # a child started in a vanished cwd (bug-212's tests)
+        rec["cwd_error"] = repr(exc)
+    try:
+        info = proc_info(pid)
+        rec["start"] = info["start"] if info else None
+    except (OSError, NotImplementedError) as exc:
+        rec["start_error"] = repr(exc)
+    return rec
+
+
+def ledger_write(how: str) -> None:
+    """Append this process's ONE ledger line (#r4 item 1): one `write` of one line under
+    `O_APPEND`, so concurrent children never interleave. A child must not die of its own
+    bookkeeping, but a line it could not write is said on its stderr, never dropped."""
+    path = _STATE["ledger"]
+    if not path:
+        return
+    _local.busy = True
+    try:
+        line = (json.dumps(_ledger_record(how), default=str) + "\n").encode("utf-8")
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except Exception as exc:  # noqa: BLE001 -- reported below, never swallowed
+        sys.stderr.write(f"rmx sandbox: spawn ledger write to {path} failed ({exc!r}); pid "
+                         f"{os.getpid()} is NOT in the ledger and the reaper cannot see it\n")
+    finally:
+        _local.busy = False
+
+
+def _after_fork_child() -> None:
+    ledger_write("fork")
+
+
+def _register_at_fork() -> None:
+    """Once per process: a fork child (no exec) writes its own line. A daemon double-forks,
+    so its final pid exists only here (#r4 item 1)."""
+    if _STATE["at_fork"] or not hasattr(os, "register_at_fork"):
+        return
+    os.register_at_fork(after_in_child=_after_fork_child)
+    _STATE["at_fork"] = True
+
+
+def write_owner(root: Path) -> None:
+    """`<root>/owner.json`: the pid and start time of the process that owns this sandbox (#r4
+    item 3). Written atomically, so a session-start sweep never reads half of one."""
+    info = proc_info(os.getpid())
+    rec = {"pid": os.getpid(), "start": info["start"] if info else None,
+           "argv": list(getattr(sys, "orig_argv", None) or sys.argv or []),
+           "cwd": os.getcwd(), "created": time.time()}
+    tmp = Path(root) / (OWNER + ".tmp")
+    tmp.write_text(json.dumps(rec))
+    os.replace(tmp, Path(root) / OWNER)
+
+
+def sandbox_root() -> Path:
+    """This process's sandbox root: its own (`enter()`), else the inherited
+    `RMX_SANDBOX_ROOT`. No sandbox is an error, never a fallback to `/tmp`."""
+    sb = _STATE["sandbox"]
+    if sb is not None:
+        return Path(sb["root"])
+    env = os.environ.get("RMX_SANDBOX_ROOT")
+    if not env:
+        raise RuntimeError("rmx sandbox: no sandbox root (RMX_SANDBOX_ROOT is unset); "
+                           "short_root() makes test roots under it only")
+    return Path(env)
+
+
+def short_root(prefix: str) -> str:
+    """A fresh directory under `<sandbox root>/t/` (task-29.4 #r5): a leaked root goes with the
+    sandbox, a leaked daemon's pid file is under one directory, and two shards cannot collide
+    on a root. Short: `/private/tmp/rmx-XXXXXXXX/t/<prefix>XXXXXXXX/proj/.refmatrix/rmxd.sock`
+    is 62 bytes plus the prefix, far under macOS's 104-byte `sun_path`. Returns a str, like
+    the `tempfile.mkdtemp(prefix=…, dir="/tmp")` it replaces."""
+    t = sandbox_root() / "t"
+    t.mkdir(exist_ok=True)
+    return tempfile.mkdtemp(prefix=prefix, dir=str(t))
+
+
+def _ancestors() -> set:
+    """This process and every ancestor up to launchd/init: the pids the reaper never signals
+    (ruling L142). A pid whose parent cannot be read ends the walk; 0 and 1 are always in."""
+    out = {0, 1}
+    pid = os.getpid()
+    while pid > 1 and pid not in out:
+        out.add(pid)
+        info = proc_info(pid)
+        if info is None:
+            break
+        pid = info["ppid"]
+    return out
+
+
+def read_ledger(path, emit) -> list:
+    """The ledger's records, ONE per pid (its latest line; a fork-then-exec child writes two
+    with the same start), in order of first appearance. A line that does not parse is printed
+    and counted, never skipped silently."""
+    try:
+        text = Path(path).read_text(errors="replace")
+    except FileNotFoundError:
+        return []
+    by_pid: dict = {}
+    bad = 0
+    for ln in text.splitlines():
+        if not ln.strip():
+            continue
+        try:
+            rec = json.loads(ln)
+            pid = int(rec["pid"])
+        except (ValueError, KeyError, TypeError):
+            bad += 1
+            emit(f"rmx sandbox: unreadable ledger line in {path}: {ln[:200]!r}")
+            continue
+        by_pid[pid] = rec
+    if bad:
+        emit(f"rmx sandbox: {bad} unreadable ledger line(s) in {path}; those processes are "
+             f"not known to the reaper")
+    return list(by_pid.values())
+
+
+def _argv_text(argv) -> str:
+    try:
+        s = shlex.join(str(a) for a in argv)
+    except TypeError:
+        s = repr(argv)
+    return s if len(s) <= 300 else s[:297] + "..."
+
+
+def _signal(pid: int, start, sig, protected: set, emit) -> bool:
+    """Send `sig` to the recorded process only: never a protected pid, never a pid whose
+    start time no longer matches (it exited and the pid was reused between two steps)."""
+    if pid in protected:
+        emit(f"  NOT signalling pid={pid}: this process or an ancestor (ruling L142)")
+        return False
+    if not _same_process(pid, start):
+        return False
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, SandboxViolation) as exc:
+        emit(f"  {signal.Signals(sig).name} to pid={pid} refused: {exc}")
+        return False
+    emit(f"  {signal.Signals(sig).name} sent to pid={pid}")
+    return True
+
+
+def _wait_gone(pid: int, start, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not _same_process(pid, start):
+            return True
+        time.sleep(0.05)
+    return not _same_process(pid, start)
+
+
+def stop_process(pid: int, start, root, emit, protected: "set | None" = None) -> bool:
+    """Stop one recorded process; every step is printed. True when it is gone.
+
+    1. A SIGSTOPped process is sent SIGCONT first (#r4 item 8: a stopped process is still a
+       leak, and it cannot drain or answer while stopped).
+    2. `daemon.stop_daemon(root)` when the ledger gives a root AND that root's `rmxd.pid` names
+       THIS pid: the pid is that root's daemon, and its own stop path drains it. A ledger root
+       alone does not make a pid a daemon -- the sandbox gives every child a per-test
+       `REFMATRIX_ROOT` -- and a pid file may name this very process (an in-process daemon),
+       so neither case reaches `stop_daemon` (ruling L142).
+    3. Still alive: SIGTERM, a bounded wait, then SIGKILL."""
+    protected = _ancestors() if protected is None else protected
+    if pid in protected:
+        emit(f"  NOT stopping pid={pid}: this process or an ancestor (ruling L142)")
+        return False
+    info = proc_info(pid)
+    if info is not None and info["state"] == "stopped":
+        emit(f"  pid={pid} is stopped (SIGSTOP)")
+        _signal(pid, start, signal.SIGCONT, protected, emit)
+    if root and _same_process(pid, start):
+        try:
+            from refmatrix import daemon as _dm
+        except ImportError as exc:
+            emit(f"  refmatrix is not importable here ({exc}); pid={pid} is signalled instead "
+                 f"of stop_daemon({root})")
+        else:
+            owner = _dm.read_pid(Path(root))
+            if owner == pid:
+                rep: dict = {}
+                ok = _dm.stop_daemon(Path(root), timeout=STOP_DAEMON_S, report=rep)
+                emit(f"  stop_daemon({root}) -> {'stopped' if ok else 'NOT stopped'} {rep}")
+            else:
+                emit(f"  {root}'s rmxd.pid names {owner}, not pid={pid}: not its daemon; "
+                     f"signalled")
+    if not _same_process(pid, start):
+        return True
+    if _signal(pid, start, signal.SIGTERM, protected, emit) and _wait_gone(pid, start,
+                                                                           TERM_WAIT_S):
+        return True
+    if not _same_process(pid, start):
+        return True
+    _signal(pid, start, signal.SIGKILL, protected, emit)
+    if _wait_gone(pid, start, KILL_WAIT_S):
+        return True
+    emit(f"  pid={pid} SURVIVED SIGKILL")
+    return False
+
+
+LATE_LINE_S = 2.0     # a live descendant with no ledger line yet: time for its sitecustomize
+
+
+def _with_descendants(ledger, recs: list, protected: set, emit) -> list:
+    """`recs` plus every live descendant of this process the ledger does not name. A Python
+    child gets `LATE_LINE_S` to write its line (re-read); one that still has none -- a non-Python
+    child, or one that never reached its sitecustomize -- is reported from the process table,
+    which IS the live process (no reuse question), with `test` unknown and never guessed."""
+    desc = {p: i for p, i in live_descendants().items() if p not in protected}
+    missing = set(desc) - {int(r["pid"]) for r in recs}
+    deadline = time.monotonic() + LATE_LINE_S
+    while missing and time.monotonic() < deadline:
+        time.sleep(0.1)
+        recs = read_ledger(ledger, emit)
+        missing = {p for p in missing if p not in {int(r["pid"]) for r in recs}}
+        missing = {p for p in missing if _same_process(p, desc[p]["start"])}
+    for p in sorted(missing):
+        if _same_process(p, desc[p]["start"]):
+            recs.append({"pid": p, "ppid": desc[p]["ppid"], "start": desc[p]["start"],
+                         "argv": [_ps_command(p)], "cwd": None, "root": None, "t": None,
+                         "test": "<no ledger line: a live descendant of this session>",
+                         "how": "descendant"})
+    return recs
+
+
+# Ruling L154 (2026-11-15): the ONE exempt process. Loading the embedder in-process (torch)
+# starts the stdlib's multiprocessing resource tracker as a child of the session; it ignores
+# SIGTERM and ends by itself when its parent closes the pipe at exit, so it ends with its parent
+# by construction. The tier-(b) verify run at 78489af reaped it (`green-verify-tierb.log`) and
+# multiprocessing relaunched it at exit. Exempt only as a DIRECT child of this process with
+# exactly this argv; printed and counted, never silent. No other helper is exempt.
+_RESOURCE_TRACKER = re.compile(r"from multiprocessing\.resource_tracker import main;main\(\d+\)")
+
+
+def _is_resource_tracker(rec: dict, info: dict) -> bool:
+    if info.get("ppid") != os.getpid():
+        return False
+    argv = rec.get("argv") or []
+    if len(argv) == 1:                      # a descendant read from `ps`: one command string
+        try:
+            argv = shlex.split(str(argv[0]))
+        except ValueError:
+            return False
+    return (len(argv) == 3 and argv[1] == "-c"
+            and _RESOURCE_TRACKER.fullmatch(str(argv[2])) is not None)
+
+
+def reap_ledger(ledger, label: str, emit, grace: float = 0.0,
+                descendants: bool = False) -> dict:
+    """Stop every live survivor of `ledger`, each printed `<label> pid=<n> age=<s> spawned in
+    <test> argv=<…> root=<…>` and stopped (`stop_process`). The ONE body behind the finish
+    reaper (`LEAKED PROCESS`) and `sweep_orphans` (`ORPHAN from a killed run:`).
+
+    `root=` is the ledger's `REFMATRIX_ROOT` for that pid, wherever it is (bug-229's root was
+    outside the sandbox); with none the line says `root=unknown (cwd=…)` and does not guess. A
+    live pid whose start time is not the ledger's is a reused pid: printed, never signalled. A
+    line with no start time cannot be told from one, so it is printed and counted as a finding,
+    never signalled. `grace`: how long survivors get to exit on their own first.
+    `descendants`: also every live descendant of THIS process (`_with_descendants`); the
+    finish reaper's own ledger only, never a dead owner's (its children are not ours)."""
+    recs = read_ledger(ledger, emit)
+    protected = _ancestors()
+    if descendants:
+        recs = _with_descendants(ledger, recs, protected, emit)
+    out: dict = {"leaked": [], "reused": [], "unverified": [], "survived": [], "exempt": []}
+    live = []
+    for rec in recs:
+        pid = int(rec["pid"])
+        if pid in protected:
+            continue        # this session or its parent chain, written by an outer sandbox
+        info = proc_info(pid)
+        if info is None or info["state"] == "zombie":
+            continue
+        start = rec.get("start")
+        if start is None:
+            emit(f"rmx sandbox: pid={pid} in {ledger} has no recorded start time "
+                 f"({rec.get('start_error', 'none recorded')}); it cannot be told from a reused "
+                 f"pid and is NOT signalled (spawned in {rec.get('test')})")
+            out["unverified"].append(rec)
+        elif abs(info["start"] - float(start)) >= _START_EPS:
+            emit(f"rmx sandbox: pid={pid} in {ledger} is a reused pid (ledger start {start}, "
+                 f"the live process started {info['start']}); not signalled")
+            out["reused"].append(rec)
+        elif _is_resource_tracker(rec, info):
+            emit(f"rmx sandbox: pid={pid} exempt, not reaped: the stdlib multiprocessing "
+                 f"resource tracker, a direct child of this session (spawned in "
+                 f"{rec.get('test')}); it ends with its parent by construction (ruling L154)")
+            out["exempt"].append(rec)
+        else:
+            live.append(rec)
+    if live and grace > 0:
+        _wait_all_gone(live, grace)
+    for rec in live:
+        pid, start, root = int(rec["pid"]), rec["start"], rec.get("root")
+        if not _same_process(pid, start):
+            continue                    # exited by itself (in the grace, or with its daemon)
+        where = f"root={root}" if root else f"root=unknown (cwd={rec.get('cwd')})"
+        born = rec.get("t") or (start if sys.platform == "darwin" else None) or time.time()
+        age = time.time() - float(born)
+        line = (f"{label} pid={pid} age={age:.0f}s spawned in {rec.get('test')} "
+                f"argv={_argv_text(rec.get('argv') or [])} {where}")
+        emit(line)
+        gone = stop_process(pid, start, root, emit, protected)
+        out["leaked"].append(dict(rec, line=line, stopped=gone))
+        if not gone:
+            out["survived"].append(rec)
+    return out
+
+
+def _wait_all_gone(recs: list, seconds: float) -> None:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not any(_same_process(int(r["pid"]), r["start"]) for r in recs):
+            return
+        time.sleep(0.1)
+
+
+def _stderr_emit(line: str) -> None:
+    sys.stderr.write(line + "\n")
+    sys.stderr.flush()
+
+
+def sweep_orphans(ledger_path, emit=None, label: str = "ORPHAN from a killed run:") -> dict:
+    """#r4 item 9: stop the live survivors of a dead owner's ledger -- item 3's logic as a
+    function (28.2's paired-run clone daemons sweep their own ledger with it before a run).
+    Returns `reap_ledger`'s result; every orphan is printed (stderr by default)."""
+    return reap_ledger(ledger_path, label, emit or _stderr_emit)
+
+
+def _owner_alive(root: Path, emit) -> "bool | None":
+    """True: the owner (pid AND start time) is running. False: dead, a killed run's sandbox.
+    None: no readable `owner.json` -- not attributable, so never swept (a sandbox mid-`enter()`
+    or one written before owner.json existed)."""
+    f = root / OWNER
+    try:
+        rec = json.loads(f.read_text())
+        pid, start = int(rec["pid"]), rec.get("start")
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        emit(f"rmx sandbox: {f} is unreadable ({exc!r}); that sandbox is not swept")
+        return None
+    if pid == os.getpid():
+        return True
+    if start is None:
+        return _alive(pid)
+    return _same_process(pid, start)
+
+
+def sweep_killed_runs(emit) -> dict:
+    """#r4 item 3, at session start: every `/tmp/rmx-*/owner.json` whose owner is no longer
+    running is a sandbox a killed run left. Its ledger's survivors are stopped (`sweep_orphans`),
+    each printed `ORPHAN from a killed run: …`, and its root is removed -- unless something
+    survived, which keeps the root and says so. It does not fail the new session (plan-29 D13).
+    Returns `{"orphans": [...], "roots": [...], "kept": [...]}`."""
+    try:
+        own = os.path.realpath(str(sandbox_root()))
+    except RuntimeError:
+        own = None
+    out: dict = {"orphans": [], "roots": [], "kept": []}
+    for owner in sorted(glob.glob(os.path.join(ROOT_GLOB, OWNER))):
+        root = Path(os.path.realpath(os.path.dirname(owner)))
+        if str(root) == own:
+            continue
+        if _owner_alive(root, emit) is not False:
+            continue
+        res = sweep_orphans(root / LEDGER, emit)
+        out["orphans"] += res["leaked"]
+        if res["survived"] or res["unverified"]:
+            emit(f"rmx sandbox: killed run's sandbox {root} KEPT: {len(res['survived'])} "
+                 f"orphan(s) survived, {len(res['unverified'])} unverifiable")
+            out["kept"].append(str(root))
+            continue
+        remove_tree(root)
+        out["roots"].append(str(root))
+    return out
+
+
+def live_store_roots(root: Path) -> list:
+    """#r4 item 4: the store roots under the sandbox whose `rmxd.pid` names a live process,
+    counted before anything is stopped or removed."""
+    found = []
+    for dirpath, _dirs, files in os.walk(str(root)):
+        if DAEMON_PID in files:
+            pid = read_pid(Path(dirpath) / DAEMON_PID)
+            if pid is not None and _alive(pid):
+                found.append((dirpath, pid))
+    return found
+
+
+# In-process daemons (#r4 item 6): conftest wraps `Daemon.__init__` to record each instance
+# here, weakly, with the test that built it. The serving check and the stop are conftest's
+# (they need `refmatrix.daemon`; this module imports under any Python 3 a child may run).
+_INPROC: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_INPROC_OPS: dict = {"serving": None, "stop": None}
+
+
+def track_inprocess(obj, root) -> None:
+    _INPROC[obj] = {"root": str(root), "test": current_test()}
+
+
+def set_inprocess_ops(serving, stop) -> None:
+    """conftest's `serving(obj) -> bool` and `stop(obj, emit) -> bool`."""
+    _INPROC_OPS["serving"], _INPROC_OPS["stop"] = serving, stop
+
+
+def inprocess_leaks(emit) -> list:
+    """Every tracked instance still serving: printed `LEAKED IN-PROCESS DAEMON root=<…> built
+    in <test>`, stopped through conftest's `stop` (the registry; never its pid file, which
+    names this process). Returns the printed lines with their tests."""
+    serving, stop = _INPROC_OPS["serving"], _INPROC_OPS["stop"]
+    if serving is None:
+        return []
+    out = []
+    for obj, meta in list(_INPROC.items()):
+        if not serving(obj):
+            continue
+        line = f"LEAKED IN-PROCESS DAEMON root={meta['root']} built in {meta['test']}"
+        emit(line)
+        if not stop(obj, emit):
+            emit(f"  the in-process daemon on {meta['root']} did NOT stop")
+        out.append((meta["test"], line))
+    return out
+
+
+# register_spawn (#r4 item 7): a fixture that owns a daemon registers it and grows no teardown
+# of its own; the entry is checked when the node that owns the fixture is torn down.
+_SPAWNS: list = []
+
+
+def _fixture_node():
+    """The node whose teardown finalizes the fixture calling `register_spawn`: the nearest
+    pytest `SubRequest` on the stack (a function-scoped fixture's is its test item, a module
+    fixture's its module). None outside a fixture: the entry belongs to the current test."""
+    f = sys._getframe(2)
+    while f is not None:
+        req = f.f_locals.get("request")
+        if type(req).__name__ == "SubRequest":
+            return getattr(req, "node", None)
+        f = f.f_back
+    return None
+
+
+def register_spawn(pid_or_daemon, root, why) -> None:
+    """Register a process (a pid) or an in-process `Daemon` that a fixture owns. When the
+    fixture's node is torn down, the entry's check asserts the stop answered (the root's
+    socket no longer answers) and the process exited (or the daemon stopped serving); if not,
+    THAT test fails by name, and the spawn is stopped (task-29.4 #r4 item 7, AC-5)."""
+    e = {"root": str(root) if root is not None else None, "why": str(why),
+         "test": current_test(), "node": _fixture_node(), "pid": None, "start": None,
+         "daemon": None}
+    if isinstance(pid_or_daemon, int) and not isinstance(pid_or_daemon, bool):
+        info = proc_info(pid_or_daemon)
+        if info is None or info["state"] == "zombie":
+            raise ValueError(f"register_spawn: pid {pid_or_daemon} is not running ({why})")
+        e["pid"], e["start"] = pid_or_daemon, info["start"]
+    else:
+        e["daemon"] = weakref.ref(pid_or_daemon)
+    _SPAWNS.append(e)
+
+
+def _root_answers(root) -> bool:
+    if not root:
+        return False
+    try:
+        from refmatrix import daemon as _dm
+    except ImportError:
+        return False
+    return bool(_dm.ping(Path(root), timeout=0.5, retries=0))
+
+
+def _spawn_running(e) -> bool:
+    if e["pid"] is not None and _same_process(e["pid"], e["start"]):
+        return True
+    obj = e["daemon"]() if e["daemon"] is not None else None
+    if obj is not None and _INPROC_OPS["serving"] is not None and _INPROC_OPS["serving"](obj):
+        return True
+    return _root_answers(e["root"])
+
+
+def check_spawn(e, emit) -> "str | None":
+    """None when the registered spawn stopped (given `SPAWN_GRACE_S` for a stop in flight);
+    else the failure, after stopping it."""
+    deadline = time.monotonic() + SPAWN_GRACE_S
+    while _spawn_running(e):
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
+    else:
+        return None
+    what = f"pid {e['pid']}" if e["pid"] is not None else "an in-process daemon"
+    msg = (f"register_spawn: {what} (root {e['root']}; {e['why']}) registered in {e['test']} "
+           f"was not stopped by its fixture's teardown (task-29.4 #r4 item 7)")
+    emit(msg)
+    if e["pid"] is not None:
+        stop_process(e["pid"], e["start"], e["root"], emit)
+    else:
+        obj = e["daemon"]()
+        if obj is not None and _INPROC_OPS["stop"] is not None:
+            _INPROC_OPS["stop"](obj, emit)
+    return msg
+
+
+def due_spawns(nodeid: str, live_nodes) -> list:
+    """Pop the entries whose owning node is no longer set up (`live_nodes`: pytest's setup
+    stack after this item's teardown), or that were registered by this test outside a
+    fixture."""
+    due = [e for e in _SPAWNS
+           if (e["node"] is None and e["test"] == nodeid)
+           or (e["node"] is not None and e["node"] not in live_nodes)]
+    for e in due:
+        _SPAWNS.remove(e)
+    return due
+
+
+def claim_session(config) -> bool:
+    """The reaper runs for the OUTERMOST session of a process only (#r4 item 2): the first
+    config to claim it. An in-process inner session that loads this conftest again does not."""
+    if _STATE["session"] is None:
+        _STATE["session"] = config
+    return _STATE["session"] is config
+
+
+def failure_record(nodeid: str, phase: str, e_line: str) -> None:
+    """One `failures.jsonl` record (#r2: written by conftest when `RMX_FAILURES_OUT` is set,
+    one line per failed or errored phase; reaper findings are records too)."""
+    out = os.environ.get("RMX_FAILURES_OUT")
+    if not out:
+        return
+    p = Path(out)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"nodeid": nodeid, "phase": phase, "e": e_line}) + "\n")
+
+
+def leak_log(repo: Path, lines: list) -> None:
+    """Append to `<repo>/workflow/review-output/leaked-processes.log` (#r4 item 3): one line
+    per orphan or leak, timestamped and naming the session that found it."""
+    if not lines:
+        return
+    p = Path(repo) / LEAK_LOG_REL
+    p.parent.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with open(p, "a", encoding="utf-8") as fh:
+        for ln in lines:
+            fh.write(f"{stamp}\tsession pid {os.getpid()}\t{ln}\n")
+
+
+def reap_session(repo: Path, emit) -> int:
+    """#r4 items 2, 4, 6 and 7 at the outermost session's finish. Returns the number of
+    findings that fail the session: leaked processes, leaked in-process daemons, registered
+    spawns nobody stopped, and ledger lines that cannot be verified."""
+    root = sandbox_root()
+    live = live_store_roots(root)
+    if live:
+        emit(f"rmx sandbox: {len(live)} store root(s) under the sandbox hold a live rmxd.pid "
+             f"at session finish")
+        for d, pid in live:
+            emit(f"  {d} (pid {pid})")
+    log: list = []
+    findings = 0
+    for test, line in inprocess_leaks(lambda ln: (emit(ln), log.append(ln))):
+        findings += 1
+        failure_record(test, "reaper", line)
+    for e in list(_SPAWNS):
+        _SPAWNS.remove(e)
+        msg = check_spawn(e, emit)
+        if msg:
+            findings += 1
+            log.append(msg)
+            failure_record(e["test"], "reaper", msg)
+    res = reap_ledger(root / LEDGER, "LEAKED PROCESS", emit, grace=FINISH_GRACE_S,
+                      descendants=True)
+    for rec in res["leaked"]:
+        findings += 1
+        log.append(rec["line"] + ("" if rec["stopped"] else "  (SURVIVED)"))
+        failure_record(str(rec.get("test")), "reaper", rec["line"])
+    for rec in res["unverified"]:
+        findings += 1
+        line = f"UNVERIFIED pid={rec['pid']} spawned in {rec.get('test')} (no start time)"
+        log.append(line)
+        failure_record(str(rec.get("test")), "reaper", line)
+    for rec in res["reused"]:
+        log.append(f"reused pid={rec['pid']} (ledger line from {rec.get('test')}); not signalled")
+    exempt = len(res["exempt"])
+    leak_log(repo, log)
+    if findings:
+        emit(f"rmx sandbox: {findings} leak(s) outlived their tests; the session FAILS "
+             f"(bug-229; task-29.4 #r4); {exempt} exempt (stdlib resource tracker, L154). "
+             f"Logged in {Path(repo) / LEAK_LOG_REL}")
+    elif exempt:
+        emit(f"rmx sandbox: 0 leaks; {exempt} exempt process(es) (the stdlib multiprocessing "
+             f"resource tracker, which ends with this session by construction; ruling L154)")
+    return findings
 
 
 # ---- AC-4: the content check over live logs ---------------------------------------------

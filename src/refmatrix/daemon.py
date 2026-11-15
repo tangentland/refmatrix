@@ -1765,6 +1765,14 @@ class Daemon:
 
     def serve_forever(self) -> int:
         sock_path = socket_path(self.root)
+        # bug-267 (rulings L151, L169, 2026-11-15): off the main thread this
+        # daemon is served INSIDE a host process. The host owns its signals
+        # (Python only lets the main thread install handlers, so trying raised
+        # ValueError before the serve loop's `try` and left the socket bound),
+        # and its stop must end the serve thread, not the host (no force-exit
+        # below). The daemon PROCESS -- `_run_detached`, `serve_foreground`,
+        # rmxd -- serves on its main thread and keeps both.
+        in_host = threading.current_thread() is not threading.main_thread()
         # Smart startup: reap any predecessor daemon for this root before we
         # bind. launchd serializes spawns of a job, so a fresh launch is the
         # legit owner — an older process still holding the pid file (a wedged
@@ -1976,8 +1984,9 @@ class Daemon:
         def _shutdown(*_):
             self._stop = True
             self._shutdown_event.set()
-        signal.signal(signal.SIGTERM, _shutdown)
-        signal.signal(signal.SIGINT, _shutdown)
+        if not in_host:
+            signal.signal(signal.SIGTERM, _shutdown)
+            signal.signal(signal.SIGINT, _shutdown)
 
         # Bounded thread pool for per-connection handlers so a long-running
         # op (e.g. a multi-minute ingest holding _store_lock) does not
@@ -2210,15 +2219,19 @@ class Daemon:
                     self.log_fh.close()
                 except Exception:
                     pass
-            # Belt-and-suspenders force-exit. _run_detached's finally already
-            # calls os._exit(0), but: (a) serve_forever may be called outside
-            # _run_detached (rmxd entrypoint, tests) and (b) atexit handlers
-            # registered by concurrent.futures.thread join all worker threads
-            # before interpreter shutdown -- including the workers we just
-            # leaked in _drain_pool. Skip atexit; the kernel reaps the
-            # threads and releases all DuckDB file locks immediately.
-            os._exit(0)
-        return 0  # unreachable; satisfies `-> int` signature
+            if not in_host:
+                # Belt-and-suspenders force-exit for the daemon PROCESS
+                # (the rmxd entrypoint, serve_foreground, and _run_detached,
+                # whose finally also calls os._exit(0)): atexit handlers
+                # registered by concurrent.futures.thread join all worker
+                # threads before interpreter shutdown -- including any we
+                # leaked in _drain_pool. Skip atexit; the kernel reaps the
+                # threads and releases all DuckDB file locks immediately.
+                # In a host (bug-267) the serve thread returns instead: the
+                # pools were shut down by `_drain_pool` within the stop
+                # deadline above (bug-051), and the host owns its exit.
+                os._exit(0)
+        return 0
 
     def _start_periodic_flush(self, interval_s: float | None = None) -> None:
         """Spawn a daemon thread that periodically calls

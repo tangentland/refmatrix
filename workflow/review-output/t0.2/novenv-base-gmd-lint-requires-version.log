@@ -1,0 +1,89 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_gmd_lint_requires_version.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 9 items
+
+tests/test_gmd_lint_requires_version.py ........F                        [100%]
+
+=================================== FAILURES ===================================
+_____________ test_the_repo_scope_is_clean_under_the_stricter_gate _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1926/test_the_repo_scope_is_clean_u0')
+
+    def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
+        """The gate is only worth having if the tree it guards passes it. Runs the
+        real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
+        root = Path(__file__).resolve().parents[1]
+        # 23.0 R6: the script adds a curated memory dir to its scope (the ledger cites memory ids).
+        # The child gets a DECOY home holding a COPY of exactly that one memory dir -- never the real
+        # `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home was a documented way out
+        # of the sandbox).
+        # T0.1' R1.4 (bug-155's residual): WHICH dir is decided by the one resolver the script also
+        # calls, read in-process against the real home (a read-only existence check). This test kept
+        # its own copy of the slug + one-hop origin logic, and so did the script; in a clone of a
+        # clone both stopped at the first origin and every memory id dangled (1,235 dangling-doc,
+        # workflow/review-output/t0.1/base-ac1.5-case1-script-clone-of-clone.log). The decoy gets the
+        # chosen dir under the slug of the checkout that owns it; the child walks the same origins,
+        # finds nothing at the slugs before it, and resolves the same content.
+        import shutil
+        gm = load_gmd_memdir()
+        real_home = Path(os.environ["RMX_SANDBOX_REAL_HOME"])
+        chosen, _note = gm.resolve_memdir(root, real_home)
+        own = gm.slug(root)
+        home = tmp_path / "home"
+        home.mkdir()
+        if chosen is not None:
+            chosen = Path(chosen)
+            shutil.copytree(chosen, home / ".claude" / "projects" / chosen.parent.name / "memory")
+        # bug-253: the gate's dev interpreter is the one running this suite (a littlebig clone has
+        # no `.venv-eval` of its own), named the way tests/devbin.py names the dev `rmx`.
+        env = dict(os.environ, HOME=str(home), RMX_DEV_PYTHON=sys.executable)
+        assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
+        r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
+                           capture_output=True, text=True, env=env)
+>       assert_gate_ran(r)
+
+tests/test_gmd_lint_requires_version.py:201: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['./scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='dev interpreter not found at /Volume... the .venv-eval dev venv (it imports refmatrix); create\n.venv-eval/ — this gate does not skip the step without it.\n')
+
+    def assert_gate_ran(r: "subprocess.CompletedProcess") -> None:
+        """First clause of `assert_gate_ran_clean`, on its own: the gate RAN (it did not stop on a
+        missing precondition with exit 2). T0.1' AC-1.5 (ch-bsd r1 M1): every test that runs the
+        script asserts this BEFORE anything else, so a no-venv clone fails on this message (bug-253's
+        E line) and never on a later, unlisted one."""
+        out = r.stdout + r.stderr
+        missing = [l for l in out.splitlines() if "not found at" in l]
+>       assert r.returncode != 2 and not missing, (
+            f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+            "precondition is a failure, not a clean tree:\n" + out[-2000:])
+E       AssertionError: scripts/lint-gmd.sh did not run its checks (exit 2); a missing precondition is a failure, not a clean tree:
+E         dev interpreter not found at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/python
+E         The anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create
+E         .venv-eval/ — this gate does not skip the step without it.
+E         
+E       assert (2 != 2)
+E        +  where 2 = CompletedProcess(args=['./scripts/lint-gmd.sh'], returncode=2, stdout='', stderr='dev interpreter not found at /Volume... the .venv-eval dev venv (it imports refmatrix); create\n.venv-eval/ — this gate does not skip the step without it.\n').returncode
+
+tests/test_gmd_lint_requires_version.py:238: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_gmd_lint_requires_version.py::test_a_gmd_doc_passes
+PASSED tests/test_gmd_lint_requires_version.py::test_no_frontmatter_at_all_is_an_error
+PASSED tests/test_gmd_lint_requires_version.py::test_frontmatter_without_the_gmd_key_is_an_error
+PASSED tests/test_gmd_lint_requires_version.py::test_the_error_says_what_is_lost_and_how_to_opt_out
+PASSED tests/test_gmd_lint_requires_version.py::test_a_reasoned_opt_out_passes
+PASSED tests/test_gmd_lint_requires_version.py::test_an_opt_out_with_no_reason_is_an_error
+PASSED tests/test_gmd_lint_requires_version.py::test_the_opt_out_must_be_on_line_one
+PASSED tests/test_gmd_lint_requires_version.py::test_memory_index_keeps_its_by_name_exemption
+FAILED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+========================= 1 failed, 8 passed in 0.96s ==========================
+# exit 1

@@ -12,7 +12,11 @@
 # the store ingester's node-id set for every GMD doc (bug-179, 2026-11-09). Lint passed 0 errors
 # on a ledger whose 188 packed ids the store never registered; lint alone cannot see a
 # disagreement with the ingester, so the gate that runs on a docs commit checks it directly. The
-# parity script imports refmatrix, so it runs under the dev interpreter `.venv-eval/bin/python`.
+# parity script imports refmatrix, so it runs under the dev interpreter: `$RMX_DEV_PYTHON` when
+# set, else `.venv-eval/bin/python`. A littlebig clone has no `.venv-eval` of its own and runs the
+# dev tree's interpreter (bug-253, T0.2 stage 2, 2026-11-15; ruling L142 (3)): its caller names
+# that interpreter, as tests/devbin.py names the dev `rmx` from `sys.executable`. Named or not, a
+# missing interpreter stops the gate with exit 2 and names the path (never a narrower gate).
 # Both steps always run (one failure never hides the other); exit is non-zero if either fails.
 # Exit non-zero on errors; warnings are informational.
 set -euo pipefail
@@ -20,7 +24,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LINTER="$ROOT/tools/gmd/lint.py"
 PARITY="$ROOT/scripts/check-gmd-parity.py"
-DEVPY="$ROOT/.venv-eval/bin/python"
+DEVPY="${RMX_DEV_PYTHON:-$ROOT/.venv-eval/bin/python}"
 RESOLVER="$ROOT/scripts/gmd_memdir.py"
 
 if [[ ! -f "$LINTER" ]]; then
@@ -36,10 +40,17 @@ if [[ ! -f "$RESOLVER" ]]; then
   echo "gmd memory-dir resolver not found at $RESOLVER" >&2
   exit 2
 fi
+if [[ -n "${RMX_DEV_PYTHON:-}" && ! -x "$DEVPY" ]]; then
+  echo "dev interpreter not found at RMX_DEV_PYTHON=$DEVPY" >&2
+  echo "The anchor-parity step imports refmatrix; name an existing dev interpreter (the dev" >&2
+  echo "tree's .venv-eval/bin/python) — this gate does not skip the step without it." >&2
+  exit 2
+fi
 if [[ ! -x "$DEVPY" ]]; then
   echo "dev interpreter not found at $DEVPY" >&2
   echo "The anchor-parity step needs the .venv-eval dev venv (it imports refmatrix); create" >&2
-  echo ".venv-eval/ — this gate does not skip the step without it." >&2
+  echo ".venv-eval/, or name the dev tree's interpreter in RMX_DEV_PYTHON (a clone, bug-253)" >&2
+  echo "— this gate does not skip the step without it." >&2
   exit 2
 fi
 
@@ -50,8 +61,9 @@ cd "$ROOT"
 # makes one for any session in the checkout) or a clone of a clone dangled every memory-id ref.
 # The resolver needs a populated dir (>= 1 *.md), walks local origins hop by hop (bound 5, cycle
 # guard), and prints one stderr line naming the chain whenever the own dir is not the one used.
-# It runs under python3, as the linter does, never under $DEVPY: a no-venv clone (bug-253) must
-# still get its memory dir. This script keeps no slug or origin logic of its own (AC-1.7).
+# It runs under python3, as the linter does, never under $DEVPY: the resolver needs no refmatrix,
+# and a no-venv clone (bug-253) that names its dev interpreter in RMX_DEV_PYTHON reaches this line
+# and gets its memory dir. This script keeps no slug or origin logic of its own (AC-1.7).
 # A resolver failure stops the gate with exit 2 (a missing precondition), never a narrower scope.
 resolver_status=0
 MEMDIR="$(python3 "$RESOLVER" "$ROOT" "$HOME")" || resolver_status=$?

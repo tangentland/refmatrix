@@ -1,0 +1,24 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_grep_count_rows_e2e.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 7 items
+
+tests/test_grep_count_rows_e2e.py sssssss                                [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:60: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:68: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:74: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:88: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:94: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:109: dev venv rmx or /usr/bin/grep missing
+SKIPPED [1] tests/test_grep_count_rows_e2e.py:122: dev venv rmx or /usr/bin/grep missing
+============================== 7 skipped in 0.03s ==============================
+# exit 0

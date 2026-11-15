@@ -9,7 +9,7 @@ WHY (bug-240, lead ruling 2026-11-14: REFUSE, in the SHARED ingest path so CLI a
 write that never happened. With the daemon down the verb answers "not running", which tells an
 agent to start a daemon and retry the same wrong call.
 
-Routes, each on a throwaway store under a SHORT `/tmp` mkdtemp root (macOS `sun_path`):
+Routes, each on a throwaway store under a SHORT `short_root()` root (macOS `sun_path`):
   mcp-stdio  a real `rmx mcp` server process (dev rmx, this checkout via PYTHONPATH), JSON-RPC
              `tools/call rmx_ingest {root, path}` -> the reply must be `isError` naming
              `rmx sync -f`; daemon up and daemon down
@@ -28,14 +28,16 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
 REPO = Path(__file__).resolve().parents[1]
-RMX = REPO / ".venv-eval" / "bin" / "rmx"
+RMX = dev_rmx()
 NAMED = "rmx sync -f"
 
 FILES = {"CLAUDE.md": ('---\ngmd: "0.1"\nid: claude\ntitle: "rules"\ntags: [t]\n---\n\n'
@@ -45,8 +47,7 @@ FILES = {"CLAUDE.md": ('---\ngmd: "0.1"\nid: claude\ntitle: "rules"\ntags: [t]\n
 
 
 def _env(root: Path) -> dict:
-    return {**os.environ, "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval",
-            "PYTHONPATH": str(REPO / "src")}
+    return {**dev_env(), "REFMATRIX_ROOT": str(root), "RMX_INVOCATION_SOURCE": "eval"}
 
 
 def _rmx(env: dict, *args: str, timeout: int = 300, **kw) -> subprocess.CompletedProcess:
@@ -65,7 +66,7 @@ def _wait_sock(root: Path) -> None:
 @contextlib.contextmanager
 def _make_store(up: bool):
     assert RMX.exists(), f"dev rmx missing at {RMX}"
-    base = Path(tempfile.mkdtemp(prefix="b240m.", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b240m.")).resolve()
     p = base / "proj"
     for rel, text in FILES.items():
         f = p / rel

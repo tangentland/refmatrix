@@ -50,6 +50,7 @@ from tests.test_bug212_r4_red import (  # noqa: F401 -- `ignored_store_repo` is 
     EMPTY_PARTITION, _PROMOTE_PROBE, _changed, _cli, _digests, _errors, ignored_store_repo,
 )
 from tests.test_plan2_remedy import rmx_lookalike_process
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 def _text(r: subprocess.CompletedProcess) -> str:
@@ -140,7 +141,7 @@ def sqlite_tracked_repo():
     """A repo whose store holds a SQLite `catalog.db` (the source `migrate-to-duckdb` reads)
     AND a DuckDB `catalog.duckdb` (the destination `--overwrite` replaces), both COMMITTED.
     No daemon. Short resolved `/tmp` root."""
-    base = Path(tempfile.mkdtemp(prefix="b212q-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212q-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -412,7 +413,7 @@ def test_a_deleted_tracked_catalog_is_refused_and_not_recreated(tracked_repo):
 def no_catalog_store():
     """A project dir `proj` with an EMPTY `.refmatrix/` (no catalog yet), in no git repository,
     no daemon -- the bootstrap state the `create=True` fallbacks exist for."""
-    base = Path(tempfile.mkdtemp(prefix="b212b-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212b-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()

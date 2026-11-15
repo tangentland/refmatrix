@@ -1,0 +1,126 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug241_r2_l112.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 9 items
+
+tests/test_bug241_r2_l112.py EEEEEEEEE                                   [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[metadata-code+docs: markdown/gmd] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[call_graph-code+docs: markdown/gmd] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[none-code+docs: tldr/tree] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_s2_the_ingest_op_result_counts_a_failed_gmd_pass[metadata] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_s2_the_ingest_op_result_counts_a_failed_gmd_pass[none] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_s2_rmx_ingest_fails_loudly_naming_the_gmd_pass[daemon] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_s2_rmx_ingest_fails_loudly_naming_the_gmd_pass[in_process] _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_________ ERROR at setup of test_s2_guard_a_clean_tree_ingests_quietly _________
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+_ ERROR at setup of test_m1_a_file_target_is_refused_naming_sync_while_the_daemon_is_busy _
+
+    @pytest.fixture
+    def base():
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug241_r2_l112.py:118: AssertionError
+=========================== short test summary info ============================
+ERROR tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[metadata-code+docs: markdown/gmd]
+ERROR tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[call_graph-code+docs: markdown/gmd]
+ERROR tests/test_bug241_r2_l112.py::test_s1_a_cooperative_ingest_yields_during_the_markdown_gmd_pass[none-code+docs: tldr/tree]
+ERROR tests/test_bug241_r2_l112.py::test_s2_the_ingest_op_result_counts_a_failed_gmd_pass[metadata]
+ERROR tests/test_bug241_r2_l112.py::test_s2_the_ingest_op_result_counts_a_failed_gmd_pass[none]
+ERROR tests/test_bug241_r2_l112.py::test_s2_rmx_ingest_fails_loudly_naming_the_gmd_pass[daemon]
+ERROR tests/test_bug241_r2_l112.py::test_s2_rmx_ingest_fails_loudly_naming_the_gmd_pass[in_process]
+ERROR tests/test_bug241_r2_l112.py::test_s2_guard_a_clean_tree_ingests_quietly
+ERROR tests/test_bug241_r2_l112.py::test_m1_a_file_target_is_refused_naming_sync_while_the_daemon_is_busy
+============================== 9 errors in 0.44s ===============================
+# exit 1

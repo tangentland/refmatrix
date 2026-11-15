@@ -1,0 +1,131 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug240_ingest_file_arg.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-novenv/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 8 items
+
+tests/test_bug240_ingest_file_arg.py EEEEEEEE                            [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-CLAUDE.md] _
+
+request = <SubRequest 'proj' for <Function test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-CLAUDE.md]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-docs/notes.md] _
+
+request = <SubRequest 'proj' for <Function test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-docs/notes.md]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-CLAUDE.md] _
+
+request = <SubRequest 'proj' for <Function test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-CLAUDE.md]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-docs/notes.md] _
+
+request = <SubRequest 'proj' for <Function test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-docs/notes.md]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[daemon] _
+
+request = <SubRequest 'proj' for <Function test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[daemon]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[in_process] _
+
+request = <SubRequest 'proj' for <Function test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[in_process]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_guard_ingest_of_a_directory_still_ingests_it[daemon] __
+
+request = <SubRequest 'proj' for <Function test_guard_ingest_of_a_directory_still_ingests_it[daemon]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+_ ERROR at setup of test_guard_ingest_of_a_directory_still_ingests_it[in_process] _
+
+request = <SubRequest 'proj' for <Function test_guard_ingest_of_a_directory_still_ingests_it[in_process]>>
+
+    @pytest.fixture(params=["daemon", "in_process"])
+    def proj(request):
+>       assert RMX.exists(), f"dev rmx missing at {RMX}"
+E       AssertionError: dev rmx missing at /Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx').exists
+
+tests/test_bug240_ingest_file_arg.py:64: AssertionError
+=========================== short test summary info ============================
+ERROR tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-CLAUDE.md]
+ERROR tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[daemon-docs/notes.md]
+ERROR tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-CLAUDE.md]
+ERROR tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_absolute_path_is_refused_naming_sync[in_process-docs/notes.md]
+ERROR tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[daemon]
+ERROR tests/test_bug240_ingest_file_arg.py::test_ingest_of_a_file_by_relative_path_is_refused_naming_sync[in_process]
+ERROR tests/test_bug240_ingest_file_arg.py::test_guard_ingest_of_a_directory_still_ingests_it[daemon]
+ERROR tests/test_bug240_ingest_file_arg.py::test_guard_ingest_of_a_directory_still_ingests_it[in_process]
+============================== 8 errors in 0.40s ===============================
+# exit 1

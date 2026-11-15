@@ -1,0 +1,34 @@
+# sha eb9ae87 (RED fold on GREEN 1121b4e), clone /Volumes/littlebig/refmatrix-t02-red2 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_scanorder_r2_l120.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 3 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 14 items
+
+tests/test_scanorder_r2_l120.py ..............                           [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_scanorder_r2_l120.py::test_s1_long_plain_words_are_not_placed_in_tier_1
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_real_identifiers_are_placed_in_tier_1
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+e.g]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+t.repla]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long-only]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[dotted-fragments]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[widget_registry]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[bug-241]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[KeyError]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[src/pkg/a.py]
+PASSED tests/test_scanorder_r2_l120.py::test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[scan-prompt]
+PASSED tests/test_scanorder_r2_l120.py::test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[widget_registry]
+PASSED tests/test_scanorder_r2_l120.py::test_s3_a_composite_the_cap_dropped_is_delivered_when_there_is_room
+PASSED tests/test_scanorder_r2_l120.py::test_m1_an_unchanged_composite_is_delivered_again_after_compaction
+============================= 14 passed in 10.16s ==============================
+# exit 0

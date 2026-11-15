@@ -1,0 +1,59 @@
+# sha 33ccdf4 (src/tests-infra c4b44d0 + RED tests; GREEN's WIP is uncommitted and not here), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug267_inprocess_stop.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 3 items
+
+tests/test_bug267_inprocess_stop.py F..                                  [100%]
+
+=================================== FAILURES ===================================
+_ test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status __
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2077/test_bug267_stopping_an_in_pro0')
+
+    def test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status(tmp_path):
+        tree = _inner_tree(tmp_path, "case_inprocess_stop")
+        info = tmp_path / "case-info.json"
+        try:
+            try:
+                r = subprocess.run(_inner_cmd(), cwd=str(tree), env=_inner_env(info),
+                                   capture_output=True, text=True, timeout=_CHILD_HANG_GUARD_S)
+            except subprocess.TimeoutExpired as e:
+                out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) \
+                    else (e.stdout or "")
+                pytest.fail(f"the child session did not finish within {_CHILD_HANG_GUARD_S} s "
+                            "after its in-process daemons were stopped (a hang at interpreter "
+                            "shutdown: leaked pool workers joined by atexit?)\n" + out[-3000:])
+            out = (r.stdout or "") + (r.stderr or "")
+            summary = re.search(r"^=+ .*\b1 failed, 2 passed\b.* =+$", out, re.M)
+>           assert summary is not None, (
+                f"the child session never printed its summary (exit {r.returncode}): stopping an "
+                "in-process daemon ended the HOST process (Daemon.serve_forever's os._exit, "
+                "bug-267)\n" + out[-3000:])
+E               AssertionError: the child session never printed its summary (exit 0): stopping an in-process daemon ended the HOST process (Daemon.serve_forever's os._exit, bug-267)
+E                 pyc-guard: recompiled 3 timestamp pyc(s) under /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2077/test_bug267_stopping_an_in_pro0/inner/src/refmatrix as checked-hash (bug-037)
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2077/test_bug267_stopping_an_in_pro0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 3 items
+E                 
+E                 tests/test_case.py 
+E               assert None is not None
+
+tests/test_bug267_inprocess_stop.py:77: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug267_inprocess_stop.py::test_bug267_guard_a_detached_daemon_process_exits_on_the_stop_op
+PASSED tests/test_bug267_inprocess_stop.py::test_bug267_guard_a_foreground_daemon_process_exits_on_the_stop_op
+FAILED tests/test_bug267_inprocess_stop.py::test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status
+========================= 1 failed, 2 passed in 29.69s =========================
+# exit 1

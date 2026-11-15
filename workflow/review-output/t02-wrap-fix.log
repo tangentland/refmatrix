@@ -1,0 +1,5 @@
+# mini-lane slot=rmxtest1 sha=ac2ca8a34ec79d452ed2e40e239a9d2aa200e746 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 13:37:02 load={ 3.17 4.19 5.83 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t02-wrap-fix.NKuG/src/refmatrix as checked-hash (bug-037)
+...................................                                      [100%]
+35 passed in 3.10s
+exit 0

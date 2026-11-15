@@ -42,6 +42,7 @@ from refmatrix import hub as hub_mod
 from refmatrix import launchctl
 from refmatrix.store import RepairAbort, Store
 from tests.test_plan2_remedy import _SilentDaemon
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 # ---- #b-1 supervised gate + plist drift ----------------------------------------
@@ -61,7 +62,7 @@ def test_supervised_gate_recognises_launchd_without_the_plist_variable(monkeypat
 def test_supervised_start_under_xpc_service_name_adopts_instead_of_exiting_1(monkeypatch):
     """The incident shape: an unsupervised daemon holds the root; launchd
     starts the supervised one with the OLD plist (no RMX_SUPERVISED)."""
-    base = Path(tempfile.mkdtemp(prefix="rmxx-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxx-"))
     root = base / "proj" / ".refmatrix"; root.parent.mkdir()
     Store(root).init()
     pid = dm.spawn_daemon_subprocess(root, watch_root=[])
@@ -278,7 +279,7 @@ def test_foreground_start_refuses_a_busy_daemon_without_reaping_it(monkeypatch):
 def test_unsupervised_gate_lets_an_absent_root_serve_and_refuses_a_live_one(tmp_path):
     root = tmp_path / ".refmatrix"; root.mkdir()
     dm.refuse_unsupervised_start(root)          # absent: no raise
-    base = Path(tempfile.mkdtemp(prefix="rmxg-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxg-"))
     live = base / "proj" / ".refmatrix"; live.parent.mkdir()
     Store(live).init()
     pid = dm.spawn_daemon_subprocess(live, watch_root=[])
@@ -342,7 +343,7 @@ def _dispatch(d, req: dict) -> dict:
 
 
 def test_repair_entities_abort_reaches_the_wire_and_the_daemon_keeps_serving(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="rmxd-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxd-"))
     root = base / ".refmatrix"
     s = Store(root); s.init(); s.close()
     d = dm.Daemon(root)

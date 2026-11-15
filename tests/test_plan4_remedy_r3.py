@@ -39,6 +39,7 @@ from refmatrix import daemon as dm
 from refmatrix import hub as hub_mod
 from refmatrix import launchctl as lc
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 def _draining_process(root: Path, *, exit_after_term_s: float, heartbeat: bool,
@@ -75,7 +76,7 @@ while time.monotonic() - t0 < 300:
 
 @pytest.fixture
 def root():
-    base = Path(tempfile.mkdtemp(prefix="rmxp4-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxp4-"))
     r = base / ".refmatrix"; r.mkdir()
     Store(r).init()
     try:

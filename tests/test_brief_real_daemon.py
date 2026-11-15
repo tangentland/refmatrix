@@ -14,21 +14,22 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-RMX = Path(__file__).resolve().parents[1] / ".venv-eval" / "bin" / "rmx"
-pytestmark = pytest.mark.skipif(not RMX.exists(), reason="dev rmx not built")
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
+from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+
+RMX = dev_rmx()
 
 
 @pytest.fixture
 def daemon_root():
-    tmp = Path(tempfile.mkdtemp(prefix="/tmp/bd."))
+    tmp = Path(rmx_sandbox.short_root("bd."))
     root = tmp / ".refmatrix"
-    env = {**os.environ, "REFMATRIX_ROOT": str(root),
+    env = {**dev_env(), "REFMATRIX_ROOT": str(root),
            "RMX_INVOCATION_SOURCE": "eval"}
     subprocess.run([str(RMX), "init", "--path", str(tmp), "--no-hooks",
                     "--no-agents", "--no-memory-hooks"],
@@ -136,16 +137,47 @@ def test_saved_briefs_do_not_grow_the_corpus_on_rerun(daemon_root):
 
 
 def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
-    """#m-17: the MCP schema has no enum, so this path is reachable."""
+    """#m-17: the MCP schema has no enum, so this path is reachable.
+
+    bug-127 (task-t0-suite-trust-sweep `#t0-2` R2.3, ruling L142): the library's raise is
+    reached THROUGH the daemon, the way MCP reaches it -- `verbs.memory(..., "brief",
+    classes=[…])` -> the daemon's `memory_brief` op -> `brief.compile_briefs`. The test used to
+    open `Store()` on the catalog its own daemon holds, and DuckDB refused it (`Conflicting
+    lock is held in … (PID <the test's daemon>)`). The asserted text is the library's own
+    message, so a library that stops raising (mutation M2.3) fails here, not just a missing
+    error."""
     root, env = daemon_root
     # click.Choice already rejects this, so exit!=0 proved nothing about the
     # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
-    from refmatrix import brief as brief_mod
-    from refmatrix.store import Store
-    s = Store(root)
-    with s.with_partition(root.parent.name):
-        with pytest.raises(ValueError) as e:
-            brief_mod.compile_briefs(s, classes=["bogus-class"])
-    s.close()
-    assert "bogus-class" in str(e.value)
+    from refmatrix import verbs
+    with pytest.raises(verbs.VerbError) as e:
+        verbs.memory(root, "brief", classes=["bogus-class"])
+    assert "unknown brief class(es): bogus-class" in str(e.value), str(e.value)
     assert _rmx(env, "memory", "brief", "--class", "bogus-class").returncode != 0
+
+
+def test_bug127_no_test_opens_the_catalog_its_daemon_holds():
+    """bug-127 (task-t0-suite-trust-sweep `#t0-2` R2.3, AC-2.3): a test that runs against
+    `daemon_root` reaches the store THROUGH the daemon, the way MCP does, and never opens
+    `Store()` on the catalog that daemon holds. At c4b44d0
+    `test_an_unknown_class_fails_loudly_through_the_daemon` did, and DuckDB refused it
+    (`Could not set lock … Conflicting lock is held in … (PID <the test's daemon>)`, 0.82.0
+    and 0.83.0 dev-tree suites; a symlinked clone 2/2). Seeding before the daemon starts
+    (`_seed`, called by the fixture) is not under the daemon and is not a hit. Mutation M2.4
+    (re-add the direct opener while the daemon runs) turns this red without needing the lock
+    to contend."""
+    import ast
+    tree = ast.parse(Path(__file__).read_text())
+    hits = []
+    for fn in tree.body:
+        if not isinstance(fn, ast.FunctionDef) or "daemon_root" not in \
+                [a.arg for a in fn.args.args]:
+            continue
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call):
+                f = node.func
+                name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+                if name == "Store":
+                    hits.append(f"{fn.name}:{node.lineno}")
+    assert not hits, ("tests open Store() on the catalog their own daemon holds (bug-127); "
+                      f"reach it through the daemon op instead: {hits}")

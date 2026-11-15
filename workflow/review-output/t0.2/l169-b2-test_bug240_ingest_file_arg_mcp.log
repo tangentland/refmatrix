@@ -1,0 +1,30 @@
+# sha eb9ae87 (RED fold on GREEN 1121b4e), clone /Volumes/littlebig/refmatrix-t02-red2 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02-red2/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_bug240_ingest_file_arg_mcp.py -p no:cacheprovider -rA --timeout 900
+pyc-guard: recompiled 1 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-red2/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-red2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 10 items
+
+tests/test_bug240_ingest_file_arg_mcp.py ..........                      [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-CLAUDE.md]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_up-docs/notes.md]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-CLAUDE.md]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_mcp_tool_refuses_a_file_naming_sync[daemon_down-docs/notes.md]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_up]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_verb_refuses_a_file_naming_sync[daemon_down]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_the_daemon_op_refuses_a_file_naming_sync[ingest_path_start]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_guard_the_mcp_tool_still_ingests_a_directory[daemon_up]
+PASSED tests/test_bug240_ingest_file_arg_mcp.py::test_guard_the_mcp_tool_still_ingests_a_directory[daemon_down]
+============================= 10 passed in 40.55s ==============================
+# exit 0

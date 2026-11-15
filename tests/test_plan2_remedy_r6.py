@@ -39,6 +39,7 @@ from refmatrix.store import Store
 from tests.test_hooks_reproducible import _cmds
 from tests.test_plan2_remedy import _PingOnlyDaemon
 from tests.test_plan3_remedy_r4 import _snapshot
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 @pytest.fixture
@@ -112,7 +113,7 @@ def test_global_leg_on_a_held_global_store_is_bounded_and_named(held, monkeypatc
     """Simulation (b) from the r6 report: a fast project daemon, the GLOBAL
     store answers ping and stalls. `--scope both --timeout 1` must return
     within the budget with the global rows omitted, said on stderr."""
-    base = Path(tempfile.mkdtemp(prefix="rmxg-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxg-"))
     root = base / "proj" / ".refmatrix"; root.parent.mkdir()
     Store(root).init()
     pid = dm.spawn_daemon_subprocess(root, watch_root=[])

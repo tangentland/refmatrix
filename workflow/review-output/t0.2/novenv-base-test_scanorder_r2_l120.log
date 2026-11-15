@@ -1,0 +1,239 @@
+# sha 63b97b0 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02-novenv (NO .venv-eval; origin /Volumes/littlebig/refmatrix-t02)
+# cmd: cd /Volumes/littlebig/refmatrix-t02-novenv && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-novenv/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_scanorder_r2_l120.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02-novenv
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 14 items
+
+tests/test_scanorder_r2_l120.py .............F                           [100%]
+
+=================================== FAILURES ===================================
+______ test_m1_an_unchanged_composite_is_delivered_again_after_compaction ______
+
+env = {'proj': PosixPath('/private/tmp/sco.2ql9_8qo/proj'), 'root': PosixPath('/private/tmp/sco.2ql9_8qo/proj/.refmatrix'), 's': None}
+
+    def test_m1_an_unchanged_composite_is_delivered_again_after_compaction(env):
+        home = Path(os.environ["HOME"])
+        for shadow in (home / "bin" / "rmx", home / ".local" / "bin" / "rmx"):
+            assert not shadow.exists(), f"{shadow} would shadow the dev rmx in the hook PATH"
+        _ring(env["root"], GROUNDED)
+        env["s"].close()
+        env["s"] = None
+        run_env = {**os.environ, "REFMATRIX_ROOT": str(env["root"]),
+                   "RMX_INVOCATION_SOURCE": "eval", "PYTHONPATH": str(REPO / "src"),
+                   # The session the envelope names; a live hook resolves it from its pid pointer.
+                   "RMX_SESSION": "sess",
+                   "PATH": f"{DEV_BIN}:{os.environ.get('PATH', '')}"}
+>       r = subprocess.run([str(DEV_BIN / "rmx"), "daemon", "start", "--no-watch"],
+                           capture_output=True, text=True, env=run_env, timeout=180)
+
+tests/test_scanorder_r2_l120.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:555: in run
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1039: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Popen: returncode: 255 args: ['/Volumes/littlebig/refmatrix-t02-novenv/.ven...>
+args = ['/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx', 'daemon', 'start', '--no-watch']
+executable = b'/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx'
+preexec_fn = None, close_fds = True, pass_fds = (), cwd = None
+env = {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...}
+startupinfo = None, creationflags = 0, shell = False, p2cread = -1
+p2cwrite = -1, c2pread = 11, c2pwrite = 12, errread = 13, errwrite = 14
+restore_signals = True, gid = None, gids = None, uid = None, umask = -1
+start_new_session = False, process_group = -1
+
+    def _execute_child(self, args, executable, preexec_fn, close_fds,
+                       pass_fds, cwd, env,
+                       startupinfo, creationflags, shell,
+                       p2cread, p2cwrite,
+                       c2pread, c2pwrite,
+                       errread, errwrite,
+                       restore_signals,
+                       gid, gids, uid, umask,
+                       start_new_session, process_group):
+        """Execute program (POSIX version)"""
+    
+        if isinstance(args, (str, bytes)):
+            args = [args]
+        elif isinstance(args, os.PathLike):
+            if shell:
+                raise TypeError('path-like args is not allowed when '
+                                'shell is true')
+            args = [args]
+        else:
+            args = list(args)
+    
+        if shell:
+            # On Android the default shell is at '/system/bin/sh'.
+            unix_shell = ('/system/bin/sh' if
+                      hasattr(sys, 'getandroidapilevel') else '/bin/sh')
+            args = [unix_shell, "-c"] + args
+            if executable:
+                args[0] = executable
+    
+        if executable is None:
+            executable = args[0]
+    
+        sys.audit("subprocess.Popen", executable, args, cwd, env)
+    
+        if (_USE_POSIX_SPAWN
+                and os.path.dirname(executable)
+                and preexec_fn is None
+                and (not close_fds or _HAVE_POSIX_SPAWN_CLOSEFROM)
+                and not pass_fds
+                and cwd is None
+                and (p2cread == -1 or p2cread > 2)
+                and (c2pwrite == -1 or c2pwrite > 2)
+                and (errwrite == -1 or errwrite > 2)
+                and not start_new_session
+                and process_group == -1
+                and gid is None
+                and gids is None
+                and uid is None
+                and umask < 0):
+            self._posix_spawn(args, executable, env, restore_signals, close_fds,
+                              p2cread, p2cwrite,
+                              c2pread, c2pwrite,
+                              errread, errwrite)
+            return
+    
+        orig_executable = executable
+    
+        # For transferring possible exec failure from child to parent.
+        # Data format: "exception name:hex errno:description"
+        # Pickle is not used; it is complex and involves memory allocation.
+        errpipe_read, errpipe_write = os.pipe()
+        # errpipe_write must not be in the standard io 0, 1, or 2 fd range.
+        low_fds_to_close = []
+        while errpipe_write < 3:
+            low_fds_to_close.append(errpipe_write)
+            errpipe_write = os.dup(errpipe_write)
+        for low_fd in low_fds_to_close:
+            os.close(low_fd)
+        try:
+            try:
+                # We must avoid complex work that could involve
+                # malloc or free in the child process to avoid
+                # potential deadlocks, thus we do all this here.
+                # and pass it to fork_exec()
+    
+                if env is not None:
+                    env_list = []
+                    for k, v in env.items():
+                        k = os.fsencode(k)
+                        if b'=' in k:
+                            raise ValueError("illegal environment variable name")
+                        env_list.append(k + b'=' + os.fsencode(v))
+                else:
+                    env_list = None  # Use execv instead of execve.
+                executable = os.fsencode(executable)
+                if os.path.dirname(executable):
+                    executable_list = (executable,)
+                else:
+                    # This matches the behavior of os._execvpe().
+                    executable_list = tuple(
+                        os.path.join(os.fsencode(dir), executable)
+                        for dir in os.get_exec_path(env))
+                fds_to_keep = set(pass_fds)
+                fds_to_keep.add(errpipe_write)
+                self.pid = _fork_exec(
+                        args, executable_list,
+                        close_fds, tuple(sorted(map(int, fds_to_keep))),
+                        cwd, env_list,
+                        p2cread, p2cwrite, c2pread, c2pwrite,
+                        errread, errwrite,
+                        errpipe_read, errpipe_write,
+                        restore_signals, start_new_session,
+                        process_group, gid, gids, uid, umask,
+                        preexec_fn)
+                self._child_created = True
+            finally:
+                # be sure the FD is closed no matter what
+                os.close(errpipe_write)
+    
+            self._close_pipe_fds(p2cread, p2cwrite,
+                                 c2pread, c2pwrite,
+                                 errread, errwrite)
+    
+            # Wait for exec to fail or succeed; possibly raising an
+            # exception (limited in size)
+            errpipe_data = bytearray()
+            while True:
+                part = os.read(errpipe_read, 50000)
+                errpipe_data += part
+                if not part or len(errpipe_data) > 50000:
+                    break
+        finally:
+            # be sure the FD is closed no matter what
+            os.close(errpipe_read)
+    
+        if errpipe_data:
+            try:
+                pid, sts = os.waitpid(self.pid, 0)
+                if pid == self.pid:
+                    self._handle_exitstatus(sts)
+                else:
+                    self.returncode = sys.maxsize
+            except ChildProcessError:
+                pass
+    
+            try:
+                exception_name, hex_errno, err_msg = (
+                        errpipe_data.split(b':', 2))
+                # The encoding here should match the encoding
+                # written in by the subprocess implementations
+                # like _posixsubprocess
+                err_msg = err_msg.decode()
+            except ValueError:
+                exception_name = b'SubprocessError'
+                hex_errno = b'0'
+                err_msg = 'Bad exception data from child: {!r}'.format(
+                              bytes(errpipe_data))
+            child_exception_type = getattr(
+                    builtins, exception_name.decode('ascii'),
+                    SubprocessError)
+            if issubclass(child_exception_type, OSError) and hex_errno:
+                errno_num = int(hex_errno, 16)
+                if err_msg == "noexec:chdir":
+                    err_msg = ""
+                    # The error must be from chdir(cwd).
+                    err_filename = cwd
+                elif err_msg == "noexec":
+                    err_msg = ""
+                    err_filename = None
+                else:
+                    err_filename = orig_executable
+                if errno_num != 0:
+                    err_msg = os.strerror(errno_num)
+                if err_filename is not None:
+>                   raise child_exception_type(errno_num, err_msg, err_filename)
+E                   FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/littlebig/refmatrix-t02-novenv/.venv-eval/bin/rmx'
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1990: FileNotFoundError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_scanorder_r2_l120.py::test_s1_long_plain_words_are_not_placed_in_tier_1
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_real_identifiers_are_placed_in_tier_1
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+e.g]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long+t.repla]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[long-only]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_a_topic_grounded_only_by_fragments_or_long_words_is_not_emitted[dotted-fragments]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[widget_registry]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[bug-241]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[KeyError]
+PASSED tests/test_scanorder_r2_l120.py::test_s1_guard_a_topic_with_a_real_identifier_is_emitted[src/pkg/a.py]
+PASSED tests/test_scanorder_r2_l120.py::test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[scan-prompt]
+PASSED tests/test_scanorder_r2_l120.py::test_s2_a_named_identifier_survives_the_ppr_cut_and_comes_first[widget_registry]
+PASSED tests/test_scanorder_r2_l120.py::test_s3_a_composite_the_cap_dropped_is_delivered_when_there_is_room
+FAILED tests/test_scanorder_r2_l120.py::test_m1_an_unchanged_composite_is_delivered_again_after_compaction
+========================= 1 failed, 13 passed in 4.67s =========================
+# exit 1

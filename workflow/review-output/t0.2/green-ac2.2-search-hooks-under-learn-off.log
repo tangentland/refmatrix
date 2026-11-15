@@ -1,0 +1,46 @@
+# sha 78489af; cwd /private/tmp/claude-501/t02g-learnoff.70681f/a/b (ancestor /private/tmp/claude-501/t02g-learnoff.70681f/.refmatrix/learn.off); clone /Volumes/littlebig/refmatrix-t02-green
+# cmd: cd /private/tmp/claude-501/t02g-learnoff.70681f/a/b && PYTHONPATH=/Volumes/littlebig/refmatrix-t02-green/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest /Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py -p no:cacheprovider -rA --rootdir /Volumes/littlebig/refmatrix-t02-green
+pyc-guard: recompiled 16 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-green/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 27 items
+
+../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py . [  3%]
+..........................                                               [100%]
+
+==================================== PASSES ====================================
+--------------------------- Captured stderr teardown ---------------------------
+rmx sandbox: 1 path(s) under /private/tmp/rmx-scw99sen/r/19 not removed; first: (PosixPath('/private/tmp/rmx-scw99sen/r/19'), OSError(66, 'Directory not empty'))
+=========================== short test summary info ============================
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_render_bakes_absolute_paths
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_install_writes_scripts_and_settings
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_reinstall_is_idempotent
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_user_scope_prints_snippet_only
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[grep -rn pat src/-rmxgrep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[/usr/bin/grep -n foo bar.py-rmxgrep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[lint | /opt/local/bin/rg -c error-rmxrg]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[command grep -c error f.txt-rmxgrep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[command -p grep foo-rmxgrep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[env HF_HUB_OFFLINE=1 grep -n pat f.py-rmxgrep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[env A=1 B=2 rg TODO-rmxrg]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_catches_dodges[command /usr/bin/grep -n foo-rmxgrep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[command -v grep]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[ugrep -n foo bar]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[/usr/local/bin/ugrep -n foo bar]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[echo "/usr/bin/grep in a string"]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_leaves_non_searches_alone[cat <<EOF\ngrep inside heredoc\nEOF]
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_env_assignments_survive_in_place
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_bug168_rewriting_does_not_depend_on_the_cwds_ancestry
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_bug168_rewriting_does_not_depend_on_the_homes_learn_switch
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_bug168_the_rewriter_stands_down_under_a_planted_learn_off
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_bakes_no_tree_path
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_renders_identically_from_any_tree
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_rewriter_resolves_its_wrappers_at_runtime
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_install_refuses_user_global_dir_from_a_foreign_tree
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_install_allows_the_owning_tree
+PASSED ../../../../../../Volumes/littlebig/refmatrix-t02-green/tests/test_search_hooks.py::test_install_allows_a_redirected_hooks_dir_from_any_tree
+============================== 27 passed in 2.73s ==============================

@@ -1,0 +1,15 @@
+# sha 087d942; red's nodes after a6f0e09/10d3309 + the census fix
+pyc-guard: recompiled 8 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t02-green/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 38 items
+
+tests/test_bug267_inprocess_stop.py ...                                  [  7%]
+tests/test_bug253_dev_bin.py ...................................         [100%]
+
+============================= 38 passed in 24.85s ==============================
+exit 0

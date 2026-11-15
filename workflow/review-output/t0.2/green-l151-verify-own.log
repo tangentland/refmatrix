@@ -1,0 +1,45 @@
+# sha 1121b4e; symlinked clone /Volumes/littlebig/refmatrix-t02-green; files: tests/test_bug267_inprocess_stop.py tests/test_daemon_reaper.py tests/test_tmp_root_census.py tests/test_bug253_dev_bin.py tests/test_sandbox_checkout_guard.py tests/test_sandbox_child_extensions.py tests/test_sandbox_children.py tests/test_sandbox_hardening.py tests/test_sandbox_proof_script.py tests/test_sandbox_redirect.py tests/test_sandbox_refusal.py tests/test_repo_hooks_in_sync.py tests/test_search_hooks.py tests/test_brief_real_daemon.py tests/test_bug179_anchor_parity.py tests/test_gmd_lint_requires_version.py tests/test_lint_gmd_memdir_fallback.py tests/test_t0_skip_gate.py tests/test_bug240_ingest_file_arg.py tests/test_bug240_ingest_file_arg_mcp.py tests/test_bug241_r2_l112.py tests/test_bug241_rule_docs_reingest.py tests/test_scanorder_r2_l120.py tests/test_grep_argv_order_e2e.py tests/test_grep_count_rows_e2e.py tests/test_grep_evidence_verified.py tests/test_grep_learning_replay.py tests/test_grep_no_flag_bundle.py tests/test_bug241_r3_l114.py
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rmx sandbox: 0 orphan process(es) swept from killed runs
+rootdir: /Volumes/littlebig/refmatrix-t02-green
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+collected 436 items
+
+tests/test_bug267_inprocess_stop.py ...                                  [  0%]
+tests/test_daemon_reaper.py ................                             [  4%]
+tests/test_tmp_root_census.py ................                           [  8%]
+tests/test_bug253_dev_bin.py .............................               [ 14%]
+tests/test_sandbox_checkout_guard.py .                                   [ 14%]
+tests/test_sandbox_child_extensions.py ..........                        [ 17%]
+tests/test_sandbox_children.py ...                                       [ 17%]
+tests/test_sandbox_hardening.py ..............................           [ 24%]
+tests/test_sandbox_proof_script.py .....                                 [ 25%]
+tests/test_sandbox_redirect.py ........                                  [ 27%]
+tests/test_sandbox_refusal.py .....                                      [ 28%]
+tests/test_repo_hooks_in_sync.py s...                                    [ 29%]
+tests/test_search_hooks.py ...........................                   [ 36%]
+tests/test_brief_real_daemon.py .....                                    [ 37%]
+tests/test_bug179_anchor_parity.py ..................................... [ 45%]
+..........                                                               [ 47%]
+tests/test_gmd_lint_requires_version.py .........                        [ 50%]
+tests/test_lint_gmd_memdir_fallback.py ...................               [ 54%]
+tests/test_t0_skip_gate.py ................                              [ 58%]
+tests/test_bug240_ingest_file_arg.py ........                            [ 59%]
+tests/test_bug240_ingest_file_arg_mcp.py ..........                      [ 62%]
+tests/test_bug241_r2_l112.py .........                                   [ 64%]
+tests/test_bug241_rule_docs_reingest.py ................................ [ 71%]
+................................................................         [ 86%]
+tests/test_scanorder_r2_l120.py ..............                           [ 89%]
+tests/test_grep_argv_order_e2e.py .....                                  [ 90%]
+tests/test_grep_count_rows_e2e.py .......                                [ 92%]
+tests/test_grep_evidence_verified.py .....................               [ 97%]
+tests/test_grep_learning_replay.py .....                                 [ 98%]
+tests/test_grep_no_flag_bundle.py ....                                   [ 99%]
+tests/test_bug241_r3_l114.py ....                                        [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_repo_hooks_in_sync.py:68: hooks belong to another checkout of this commit
+================== 435 passed, 1 skipped in 347.85s (0:05:47) ==================
+exit 0

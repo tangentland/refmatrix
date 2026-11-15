@@ -1,0 +1,13 @@
+# mini-lane slot=rmxtest1 sha=a6f0e09b04173149b13120db854a960f58b1fa56 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 13:27:55 load={ 4.22 10.12 8.42 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t02-l169-red-nodes-at-a6f0e09.ug1b/src/refmatrix as checked-hash (bug-037)
+......                                                                   [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug267_inprocess_stop.py::test_bug267_stopping_an_in_process_daemon_leaves_the_session_its_own_status
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[loads-devbin]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[harness-not-imported]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[own-lookup]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[loads-another-file]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[names-only]
+6 passed in 13.08s
+exit 0
