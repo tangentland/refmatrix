@@ -102,9 +102,10 @@ failing; never red; the lane). {#task-tests}
 - **Measure before deciding**, read-only, on a copy of `catalog.read.duckdb`. {#measure}
 - **Registry:** every defect found gets a `workflow/bug_registry.md` row. {#registry}
 - **Watch long runs:** tail an agent's log after its expected duration. {#watch}
-- **One test process at a time on this machine** (`lockf
-  /private/tmp/claude-501/rmx-test-lane.lock`); batch fixes waiting on a gate into one release.
-  {#one-suite}
+- **Test runs go to isolated slots** (CLAUDE.md `#test-discipline` rule 9): `scripts/lane-mini.sh`
+  (3 users on the Mac mini) or `scripts/lane-local.sh` (3 local users), on a committed sha. The
+  single `lockf /private/tmp/claude-501/rmx-test-lane.lock` lane is left for dev-tree-only tests and
+  the release gate's full suite. Batch fixes waiting on a gate into one release. {#one-suite}
 - **Commits:** own paths by pathspec; batch doc edits (each commit re-ingests the large GMD files
   and holds the store writer, bug-177); never commit to `release`. {#commits}
 
