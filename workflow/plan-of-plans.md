@@ -488,11 +488,12 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q51**. None open (Q50 answered, L179). Each reply that asks anything ends with the ids still open.
+Next id: **Q52**. Open: Q51. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
 | Q50 | 2026-11-15 | The user: "on the rmx bus issue can't we create a authenticated http endpoint for sending messages". The lead's reading: bug-275 is the receive side (the bus held the probe's messages; Claude Code 2.1.325 did not register the channel), so a send endpoint alone does not fix it; it does close a second gap, that `rmxtestN` cannot open the hub's `hub.sock` (0600) to subscribe or to post. Proposed shape: no TCP port (:7777 has unauthenticated process-spawning POSTs); HTTP over a unix socket like 24.3's `hub-http.sock`, group `rmxagents` 0660; a per-agent token minted by `agent-isolated.sh`, scoped to pub/sub on `agent:<label>` only | (rec) diagnose bug-275 first; build the agent→lead post (replaces polling `REPORT.md`) either way, the lead→agent subscribe only if the channel push revives; alt: build both now; alt: neither (tmux typing stays) | **answered** ("q50 agree" = the recommendation) → L179; moves to [[pop-finished]] when applied {#q50} |
+| Q51 | 2026-11-15 | The user, on the model workers after bsd-t03 B1 (bug-278): "do we have other options for the workers?" | (rec) (b) + keep L177's tests: (a) L177 as ruled, `retire(abandon_in_flight=)` on the shared client plus the bug-272 recheck; (b) the shared client connects per call (no persistent socket, no lock across a call), so stop has nothing to wait on and the timeout-leak and reconnect paths go; (c) daemons use the hub only, no private fallback (a daemon never owns a model process; hub down → BM25/grep floor until the re-probe finds it; private workers only for daemonless and `RMX_HUB_MODELS=0` runs, chosen at boot, never mixed); (d) models in their own launchd service apart from the hub, so a hub restart or deploy does not cold-start them | **open** {#q51} |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
