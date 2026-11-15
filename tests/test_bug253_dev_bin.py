@@ -275,3 +275,64 @@ def test_the_conftest_pins_no_venv_skip_and_tests_no_checkout_venv():
     body = src.split("def allowed_skips", 1)[-1].split("\nALLOWED_SKIPS", 1)[0]
     assert ".venv-eval" not in body, (
         "allowed_skips still tests the checkout's .venv-eval:\n" + body)
+
+
+# ---- the by-path branch must be able to fail (ch-bsd r1 MEH-3; lead, 2026-11-15) -------------
+
+_HARNESS_SRC = {
+    # loads tests/devbin.py by path: the one shape the branch accepts
+    "loads-devbin": ('import importlib.util\nfrom pathlib import Path\n'
+                     '_spec = importlib.util.spec_from_file_location(\n'
+                     '    "devbin", Path(__file__).parents[2] / "tests" / "devbin.py")\n'
+                     '_db = importlib.util.module_from_spec(_spec)\n'
+                     '_spec.loader.exec_module(_db)\nRMX = _db.dev_rmx()\n'),
+    # still builds the checkout venv path itself (the shape bug-253 removed)
+    "own-lookup": ('from pathlib import Path\n'
+                   'RMX = Path(__file__).parents[2] / ".venv-eval" / "bin" / "rmx"\n'),
+    # loads SOME file by path and names devbin.py only in a string: no load of devbin
+    "loads-another-file": ('import importlib.util\nfrom pathlib import Path\n'
+                           'NOTE = "the dev rmx used to come from devbin.py"\n'
+                           '_spec = importlib.util.spec_from_file_location(\n'
+                           '    "other", Path(__file__).parent / "other.py")\n'
+                           'RMX = Path("/usr/local/bin/rmx")\n'),
+    # names devbin.py, loads nothing
+    "names-only": ('DOC = "see tests/devbin.py"\n'
+                   'RMX = "/usr/local/bin/rmx"\n'),
+    # the string IS exactly "devbin.py" and the harness loads ANOTHER file by path: "names
+    # devbin.py" and "calls spec_from_file_location" each hold, but not of the same call
+    "loads-another-file-names-devbin-exactly": (
+        'import importlib.util\nfrom pathlib import Path\n'
+        'LEGACY = "devbin.py"\n'
+        '_spec = importlib.util.spec_from_file_location(\n'
+        '    "other", Path(__file__).parent / "other.py")\n'
+        'RMX = Path("/usr/local/bin/rmx")\n'),
+}
+
+
+@pytest.mark.parametrize("harness,imports_it,ok", [
+    ("loads-devbin", True, True),
+    ("loads-devbin", False, False),
+    ("own-lookup", True, False),
+    ("loads-another-file", True, False),
+    ("names-only", True, False),
+    ("loads-another-file-names-devbin-exactly", True, False),
+], ids=["loads-devbin", "harness-not-imported", "own-lookup", "loads-another-file",
+        "names-only", "loads-another-file-names-devbin-exactly"])
+def test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin(tmp_path, monkeypatch,
+                                                                    harness, imports_it, ok):
+    """green-t02's fold (6bf0082, ch-bsd T0.2 r1 MEH-3) lets a test file pass the census when
+    the harness it imports loads tests/devbin.py by path (`VIA_HARNESS`). A planted file whose
+    harness does NOT load devbin by path must still fail; only the loading harness, actually
+    imported, passes ([[feedback_clean_corpus_hides_a_dead_gate]]). The census's own data
+    (`VIA_HARNESS`) is pointed at the planted harness; the census logic is not replaced."""
+    mod = sys.modules[__name__]
+    harness_file = tmp_path / "planted_harness.py"
+    harness_file.write_text(_HARNESS_SRC[harness])
+    monkeypatch.setitem(mod.VIA_HARNESS, "test_planted.py", ("planted_harness", harness_file))
+    src = ("import planted_harness as h\n\n" if imports_it else "import os\n\n") + \
+        "def test_x():\n    assert h.RMX\n"
+    got = mod._uses_devbin("test_planted.py", src)
+    assert got is ok, (
+        f"harness {harness!r} (imported: {imports_it}) -> _uses_devbin {got}, expected {ok}: "
+        + ("the by-path branch accepted a harness that does not load tests/devbin.py"
+           if got else "the by-path branch refused a harness that loads tests/devbin.py"))

@@ -12,7 +12,9 @@ ch-bsd T0.2 r1 B1 (ruling L169): NO `signal.signal` double. The serve thread run
 `serve_forever` installed its SIGTERM/SIGINT handlers unconditionally, which Python refuses off
 the main thread (`ValueError: signal only works in main thread of the main interpreter`): the
 in-host return path ran only because these cases swapped `signal.signal`. The serve thread's own
-exception is captured and asserted first, so that is the E line, not a ping timeout."""
+exception is captured and asserted first, so that is the E line, not a ping timeout.
+Since the fix (L169) `serve_forever` off the main thread installs no signal handlers (the
+host owns its signals), so the real daemon serves on a plain thread."""
 import json
 import os
 import shutil
