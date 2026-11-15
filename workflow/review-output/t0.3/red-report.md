@@ -340,6 +340,19 @@ from lock to release (`wall_clock_s`). Queue waits are not held time.
   the load level. The data do not say what changed.
 {#base-sweep-notes}
 
+## L159: readiness before the hook, a third budget control form {#l159-readiness}
+
+`tests/test_budget_outcome_census.py` gains four nodes. Two pass cases: the frozen bug-228 copy
+with `d.wait_models_warm()` before `h.run_hook`, and a synthetic test with the same order. Two
+must-fail cases: the readiness call AFTER the hook, and the call made in a helper function
+(`_ready(d)`), not in the test function itself. `red-l159-readiness-form.log`: exit 1, 19
+collected, 15 deselected (`-k l159`), 4 failed, each E `ImportError: cannot import name
+'budget_outcome_census' from 'tests'`. At base the census module does not exist, so this is the
+only E line any of them can show. The cases that tell the forms apart are the two must-fails, and
+they bite once the census exists. They kill the mutation "count a `wait_models_warm` call
+anywhere in the function, or in any function the test calls".
+{#l159-readiness-body}
+
 ## Mock registry rows {#mock-rows}
 
 Added to `workflow/test_mock_registry.md#registry` (three rows): the `t03_force` fault

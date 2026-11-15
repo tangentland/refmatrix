@@ -153,6 +153,66 @@ def test_a_test_owned_peer_is_not_a_hit():
     assert _bc().violations(PEER_ONLY, "test_syn.py") == []
 
 
+# ---- ruling L159: readiness before the hook is a third control form ---------------------------
+#
+# `SandboxDaemon.wait_models_warm()` called in the SAME test function BEFORE the hook runs
+# controls which side of the 5 s budget the run falls on (the budget is then spent on the recall,
+# not on the models' cold load: T0.3 #base-sweep-bug228-legs). After the hook, or in another
+# function, it controls nothing the census can see.
+
+LIVE_WARM_BEFORE = ("with h.SandboxDaemon(root) as d:\n"
+                    "        d.wait_models_warm()\n"
+                    "        r = " + LIVE_CALL)
+LIVE_WARM_AFTER = ("with h.SandboxDaemon(root) as d:\n"
+                   "        r = " + LIVE_CALL + "\n"
+                   "        d.wait_models_warm()")
+LIVE_WITH = "with h.SandboxDaemon(root):\n        r = " + LIVE_CALL
+
+
+def test_l159_the_live_test_warmed_before_its_hook_passes():
+    src = _base()
+    assert src.count(LIVE_WITH) == 1, "the frozen copy no longer holds the live with-block"
+    assert LIVE not in _bc().violations(src.replace(LIVE_WITH, LIVE_WARM_BEFORE), REL)
+
+
+def test_l159_must_fail_the_readiness_call_after_the_hook():
+    src = _base().replace(LIVE_WITH, LIVE_WARM_AFTER)
+    assert LIVE in _bc().violations(src, REL)
+
+
+WARM_IN_ANOTHER_FUNCTION = """\
+from tests import task21_1_support as h
+
+def _ready(d):
+    d.wait_models_warm()
+
+def test_ok_warmed_by_a_helper(root):
+    with h.SandboxDaemon(root) as d:
+        _ready(d)
+        r = h.run_hook("rmx memory recall --timeout 5", root=root, envelope={}, timeout=60)
+    assert h.query_rows(root)[-1]["outcome"] == "ok"
+"""
+
+WARM_BEFORE_SYNTHETIC = """\
+from tests import task21_1_support as h
+
+def test_ok_warmed_first(root):
+    with h.SandboxDaemon(root) as d:
+        d.wait_models_warm()
+        r = h.run_hook("rmx memory recall --timeout 5", root=root, envelope={}, timeout=60)
+    assert h.query_rows(root)[-1]["outcome"] == "ok"
+"""
+
+
+def test_l159_must_fail_the_readiness_call_in_a_different_function():
+    assert _bc().violations(WARM_IN_ANOTHER_FUNCTION, "test_syn.py") == [
+        "test_syn.py::test_ok_warmed_by_a_helper"]
+
+
+def test_l159_a_synthetic_test_warmed_before_its_hook_passes():
+    assert _bc().violations(WARM_BEFORE_SYNTHETIC, "test_syn.py") == []
+
+
 def _tree(tmp_path: Path, files: dict, entries: list):
     root = tmp_path / "tests"
     root.mkdir(parents=True)
