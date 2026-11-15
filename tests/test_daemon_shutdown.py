@@ -363,14 +363,15 @@ def test_a_stop_during_warmup_abandons_the_held_load():
         assert text.count("worker[embed] spawned") == 1 and "not respawning" in text, (
             f"the abandoned embed client respawned, or its holder never saw it retired; "
             f"log:\n{text}")
-        assert "reranker warmup skipped: the daemon is stopping" in text, (
-            f"the reranker warm-up was not skipped once the stop began; log:\n{text}")
-        assert "worker[rerank] spawned" not in text, (
-            f"a reranker worker was spawned into the stopping daemon; log:\n{text}")
+        # The embed path first: the reranker step runs only after it (M6 before M5).
         assert "daemon stopping: no in-process embedder fallback" in text, (
             f"the in-process embedder fallback did not refuse once the stop began; log:\n{text}")
         assert "embedder loaded model=" not in text, (
             f"the embedder was loaded in-process in the stopping daemon; log:\n{text}")
+        assert "reranker warmup skipped: the daemon is stopping" in text, (
+            f"the reranker warm-up was not skipped once the stop began; log:\n{text}")
+        assert "worker[rerank] spawned" not in text, (
+            f"a reranker worker was spawned into the stopping daemon; log:\n{text}")
     finally:
         (hold / "release").write_text("1")
         d.stop()
