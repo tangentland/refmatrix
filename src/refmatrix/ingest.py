@@ -515,7 +515,8 @@ def _ingest_path_inner(
                          ignore_root=ign_root)
     tree_ran = source in ("auto", "tree") and n == 0
     if tree_ran:
-        n = _ingest_tree(s, path, ignore_root=ign_root)   # routes markdown itself
+        n = _ingest_tree(s, path, ignore_root=ign_root,   # routes markdown itself
+                         yield_lock=yield_lock, yield_every=yield_every)
     else:
         # A tldr cache answered (or `--source metadata|tldr|graphify` was
         # explicit): markdown still goes to the GMD pass (bug-241). `source`
@@ -524,11 +525,12 @@ def _ingest_path_inner(
         # `source` is, so the GMD routing does too -- skipping it under an
         # explicit source would be this bug again.
         _phase("code+docs: markdown/gmd")
-        n += _ingest_markdown_gmd(s, path, ignore_root=ign_root)
+        n += _ingest_markdown_gmd(s, path, ignore_root=ign_root,
+                                  yield_lock=yield_lock, yield_every=yield_every)
     # Graphify is additive — when source=auto and the cache is present, layer
     # its cross-modal edges (rationale_for, semantically_similar_to, etc.) on
     # top of whatever the primary source produced. source=graphify forces it
-    # to be the only ingest.
+    # to be the only CODE source (markdown already went to the GMD pass above).
     if source == "graphify":
         _phase("code+docs: graphify")
         n = _ingest_graphify(s, path, pre_tracked=_pre_tracked)
@@ -1368,8 +1370,13 @@ def _ingest_graphify(s: Store, project: Path, *, pre_tracked=None) -> int:
 # --- tree -------------------------------------------------------------------
 
 
-def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> int:
+def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None,
+                 yield_lock=None, yield_every: int = 200) -> int:
     """Walk the tree, batching entity upserts.
+
+    `yield_lock` / `yield_every` are the cooperative ingest's hook, passed on to the markdown
+    GMD pass at the end (ch-bsd r1 #s1, ruling L112): the walk itself is batched and short,
+    the GMD pass is not.
 
     Per-row upsert_entity was O(N) cursor + (pre-transaction-wrap) commit
     calls. Batching via bulk_upsert_entity reduces it to a handful of
@@ -1417,10 +1424,12 @@ def _ingest_tree(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> 
         if len(batch) >= BATCH:
             _flush()
     _flush()
-    return n + _ingest_markdown_gmd(s, root, ignore_root=ignore_root)
+    return n + _ingest_markdown_gmd(s, root, ignore_root=ignore_root,
+                                    yield_lock=yield_lock, yield_every=yield_every)
 
 
-def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = None) -> int:
+def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = None,
+                         yield_lock=None, yield_every: int = 10) -> int:
     """THE code+docs routing of markdown to the GMD pass; returns the docs it
     ingested. Every markdown file under `root` that `should_ignore` keeps
     (judged against `ignore_root`, the project root) goes to ONE batched
@@ -1448,7 +1457,19 @@ def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = N
     an already-correct store does not churn the graph; mirrors the same guard
     in `sync._sync_one`. A GMD pass that raises does not abort the ingest: its
     files are registered as plain docs, and the failure is printed and counted
-    -- it is a memory path (CLAUDE.md #no-silent-failures)."""
+    -- it is a memory path (CLAUDE.md #no-silent-failures).
+
+    Cooperative (ch-bsd r1 #s1, ruling L112, 2026-11-14): `yield_lock` / `yield_every` go to
+    `ingest_gmd_paths`, which yields every `yield_every` docs and every N node-ops inside a doc.
+    On the daemon route the hook is `_CommitWindow.boundary`; without it the pass ran in ONE
+    commit window holding the store lock throughout (733 docs in 1027.7 s measured on a
+    repo-sized tree), the lock-holding wedge class of bug-085.
+
+    Counted on the store (ch-bsd r1 #s2, ruling L112): a failed pass adds the files it covered
+    to `s.gmd_pass_failures` and keeps its error in `s.gmd_pass_last_error`. The daemon's
+    `ingest_path` op returns the delta (`gmd_pass_failed`), and the CLI turns it into an
+    `Error:` line and a non-zero exit -- a stderr print alone reaches only `daemon.stderr.log`.
+    """
     import sys as _sys
     judge = ignore_root or root
     gmd_paths: list[Path] = []
@@ -1464,11 +1485,14 @@ def _ingest_markdown_gmd(s: Store, root: Path, *, ignore_root: "Path | None" = N
         return 0
     from refmatrix.ingest_gmd import ingest_gmd_paths
     try:
-        return ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root).docs
+        return ingest_gmd_paths(s, gmd_paths, lenient=True, project_root=root,
+                                yield_lock=yield_lock, yield_every=yield_every).docs
     except Exception as exc:  # noqa: BLE001 — printed, counted, and the files kept
         print(f"rmx ingest: GMD pass failed ({type(exc).__name__}: {exc}); "
               f"registering {len(gmd_paths)} markdown file(s) as plain docs",
               file=_sys.stderr)
+        s.gmd_pass_failures = getattr(s, "gmd_pass_failures", 0) + len(gmd_paths)
+        s.gmd_pass_last_error = f"{type(exc).__name__}: {exc}"
         n = 0
         failed = 0
         for gp in gmd_paths:

@@ -3637,6 +3637,9 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
 
     part = args.get("partition")
     d._store_lock.acquire()
+    # The GMD pass's failure count rides back in the result (ch-bsd r1 #s2, ruling L112): its
+    # stderr line lands in daemon.stderr.log, which the caller never reads.
+    gmd_failed0 = getattr(d._st(), "gmd_pass_failures", 0)
     try:
         if part:
             with d._st().with_partition(part):
@@ -3654,7 +3657,11 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     finally:
         d._store_lock.release()
     d._request_snapshot()
-    return {"entities": n, "path": str(path)}
+    gmd_failed = getattr(d._st(), "gmd_pass_failures", 0) - gmd_failed0
+    out = {"entities": n, "path": str(path), "gmd_pass_failed": gmd_failed}
+    if gmd_failed:
+        out["gmd_pass_error"] = getattr(d._st(), "gmd_pass_last_error", None)
+    return out
 
 
 def _register_ingest_job(d: Daemon, *, files_total: int, args: dict) -> str:
