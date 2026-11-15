@@ -1,0 +1,12 @@
+l155-mut-a-prompt-in-field rc=1
+E           AssertionError: the canary is in a record field outside blocks
+E           assert 'zqxcanary315' not in '{"v": 1, "t...rror": null}'
+E             
+E             'zqxcanary315' is contained here:
+l155-mut-b-second-anchor rc=1
+E                   AssertionError: the canary outside a dropped block's header: ['=== context for `zqxcanary315 why does widget_registry call ledger_codec near the harbor lantern closet` ===']
+E                   assert not ['=== context for `zqxcanary315 why does widget_registry call ledger_codec near the harbor lantern closet` ===']
+1 failed in 10.55s
+restored clean
+l155-green-wip-after rc=0
+1 passed in 10.72s

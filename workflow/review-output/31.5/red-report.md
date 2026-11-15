@@ -183,10 +183,26 @@ around it.
    body_sha256`. For a bodied hit, `body_bytes` and `body_sha256` describe the memory's
    content, which is what the pack's spans count. `hook_bytes` is the hook line's bytes with
    its newline. `pruned` lists file names or paths, compared by basename.
-7. **AC-0.8's "uncapped render" case.** The canary is a prompt term the store does not hold,
-   so only the content header can carry it. Call 1 delivers that header. Call 2 is the same
-   prompt with tier 1 tripping the token stop, so the content block is `dropped_tokens` and
-   the canary sits only in its header. Call 3 is the canary alone and produces nothing.
+7. **AC-0.8's "uncapped render" case** (corrected by ruling L155). The canary is a prompt term
+   the store does not hold, so only the content block can carry it. It carries it in two
+   places: the `# refmatrix content matches for prompt:` header (the first eight terms), and
+   the bundle's first body line, its anchor `=== context for `<candidate bag>` ===`. The first
+   reading allowed only the `# refmatrix` line, and it failed on green-315's faithful render
+   (R0.1). In a block that is not delivered, a canary line is now allowed only if it is the
+   `# refmatrix` header, or the first `=== context for` line of a block of kind `content`.
+   The check that the canary is in no record field outside block text is unchanged. Call 1
+   delivers the content block. Call 2 is the same prompt with tier 1 tripping the token stop,
+   so the content block is `dropped_tokens` and the canary sits only in that block's header
+   and anchor. Call 3 is the canary alone and produces nothing. Proof of the widened node
+   (`l155-*.log`, each run under lockf). At base it is still RED, failing on the missing
+   record (`l155-red-base.log`, exit 1). On green-315's working tree it passes
+   (`l155-green-wip.log`, `l155-green-wip-after.log`, exit 0). This was a snapshot of its
+   uncommitted `src/` and prompts fixture, copied into `/Volumes/littlebig/refmatrix-315-verify`,
+   because its branch tip held no GREEN commit. Two mutations make it fail (exit 1), each
+   restored before the next run (`l155-mut.sh`). MA writes the prompt into the record's
+   `session` field: `the canary is in a record field outside blocks`. MB appends a second
+   candidate-bag anchor carrying the prompt to a stored content block: `the canary outside a
+   dropped block's header: ['=== context for `zqxcanary315 …` ===']`.
 8. **AC-0.7's budget.** The per-prompt pack carries no bodies (25.1 d3), so the test uses the
    SessionStart pack. A budget that names 8 hits and bodies 2 exists only when a body block is
    shorter than a hook line. The fixture memories therefore carry a long title and a short
@@ -225,6 +241,27 @@ around it.
 - **AC-0.16's input.** A corrupt focus graph works only when the call carries no session; see
   the defect below. The test runs with no session, so only the composite reads the ring.
 {#not-followable-list}
+
+## Deliberate test changes (ruling L156) {#l156}
+
+R2.0's member filter asks the store whether it holds each plain-word member. Three existing
+nodes in `tests/test_composite.py` called `composite._render_gmd` with a bare `object()` store
+and plain-word members. On green-315's tip they failed with `AttributeError: 'object' object
+has no attribute 'resolve_concept_ids'`, and that raise stays. The three nodes are
+`test_intra_cluster_emits_real_verb_not_cooccurs`, `test_intra_edges_zero_drops_grounded_block`
+and `test_ltm_expansion_ranks_sparse_first_and_dedups`. {#l156-why}
+
+Each now passes `_ConceptStore(<its members>)`, a store double that answers only
+`resolve_concept_ids`, returning an id for each word it holds. The members (parser / lexer /
+tokens, alpha / bravo) all print as before, and the tests keep their subject: intra-cluster
+verbs and LTM expansion. Their assertions are unchanged. The double is registered in
+[[test_mock_registry#registry]] as a double of a dependency (`internal-active`). It graduates
+together with these tests' `build_context` patch. The filter itself is tested on a real store in
+`tests/test_stm_composite_members.py`. The proof against green-315's committed tip `c3e04d3`
+is in the `l156-*.log` and `l155-c3e04d3-*.log` files (script `l155-156-proof.sh`, run under
+lockf). {#l156-what}
+
+rel: amends -> [[test_mock_registry#registry]]
 
 ## bug-268 (ruling L152) {#defect}
 

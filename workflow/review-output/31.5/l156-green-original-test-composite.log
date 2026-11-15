@@ -1,0 +1,178 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______________ test_intra_cluster_emits_real_verb_not_cooccurs ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105ac8050>
+
+    def test_intra_cluster_emits_real_verb_not_cooccurs(monkeypatch):
+        import types
+        import refmatrix.composite as C
+    
+        def groups_for(name):
+            if name == "parser":  # parser calls lexer (member) + mentions xtern (ext)
+                return {"calls": [types.SimpleNamespace(
+                            entity=types.SimpleNamespace(id=1, name="lexer"))],
+                        "mentions": [types.SimpleNamespace(
+                            entity=types.SimpleNamespace(id=9, name="xtern"))]}
+            return {}
+    
+        _patch_bc(monkeypatch, groups_for)
+>       out = C._render_gmd(
+            object(), [_intra_topic()], expand=True, per_node_entities=4,
+            expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+            intra_edges=3)
+
+tests/test_composite.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/composite.py:277: in _render_gmd
+    printed = _printable_members(s, members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <object object at 0x105504640>, members = ['parser', 'lexer', 'tokens']
+
+    def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+        """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+        printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+        classifier), or when it is a plain word outside the shared stoplist
+        (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+        holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+        then printed every member, so `Members:` lines carried the prompt's own `the` and
+        `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+        25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+        printed."""
+        from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+        out: "list[str]" = []
+        for m in members:
+            if is_identifier_shaped(m):
+                out.append(m)
+            elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+>                 and s.resolve_concept_ids(m)):
+                      ^^^^^^^^^^^^^^^^^^^^^
+E                 AttributeError: 'object' object has no attribute 'resolve_concept_ids'
+
+src/refmatrix/composite.py:229: AttributeError
+__________________ test_intra_edges_zero_drops_grounded_block __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x104811a70>
+
+    def test_intra_edges_zero_drops_grounded_block(monkeypatch):
+        import types
+        import refmatrix.composite as C
+    
+        def groups_for(name):
+            if name == "parser":
+                return {"calls": [types.SimpleNamespace(
+                    entity=types.SimpleNamespace(id=1, name="lexer"))]}
+            return {}
+    
+        _patch_bc(monkeypatch, groups_for)
+>       out = C._render_gmd(
+            object(), [_intra_topic()], expand=True, per_node_entities=4,
+            expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+            intra_edges=0)
+
+tests/test_composite.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/composite.py:277: in _render_gmd
+    printed = _printable_members(s, members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <object object at 0x102436240>, members = ['parser', 'lexer', 'tokens']
+
+    def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+        """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+        printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+        classifier), or when it is a plain word outside the shared stoplist
+        (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+        holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+        then printed every member, so `Members:` lines carried the prompt's own `the` and
+        `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+        25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+        printed."""
+        from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+        out: "list[str]" = []
+        for m in members:
+            if is_identifier_shaped(m):
+                out.append(m)
+            elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+>                 and s.resolve_concept_ids(m)):
+                      ^^^^^^^^^^^^^^^^^^^^^
+E                 AttributeError: 'object' object has no attribute 'resolve_concept_ids'
+
+src/refmatrix/composite.py:229: AttributeError
+_______________ test_ltm_expansion_ranks_sparse_first_and_dedups _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105d06d50>
+
+    def test_ltm_expansion_ranks_sparse_first_and_dedups(monkeypatch):
+        import types
+        import refmatrix.composite as C
+    
+        def _ent(eid, name):
+            return types.SimpleNamespace(id=eid, name=name)
+    
+        def _entry(eid, name):
+            return types.SimpleNamespace(entity=_ent(eid, name))
+    
+        # Every anchor resolves to the same neighborhood: a hub target (high PR) and
+        # a sparse target (low PR), plus one target shared across anchors.
+        def fake_build_context(s, name, **kw):
+            return types.SimpleNamespace(
+                anchor=_ent(999, name),
+                groups={"mentions": [
+                    _entry(1, "hub_memory"),      # high centrality → demote
+                    _entry(2, "sparse_bridge"),   # low centrality → aha, surface
+                    _entry(3, "shared_target"),   # appears for every anchor → dedup
+                ]})
+    
+        import refmatrix.pagerank as PR
+        monkeypatch.setattr(C, "build_context", fake_build_context)
+        monkeypatch.setattr(PR, "load_scores", lambda s: {1: 0.90, 2: 0.01, 3: 0.50})
+    
+        topic = {
+            "members": ["alpha", "bravo"],
+            "nodes": [{"name": "alpha", "freq": 1}, {"name": "bravo", "freq": 1}],
+            "edges": [],
+        }
+>       out = C._render_gmd(
+            object(), [topic], expand=True, per_node_entities=2,
+            expand_nodes_per_topic=2, max_expansions=6, max_tokens=5000, turn=1,
+            intra_edges=0)
+
+tests/test_composite.py:216: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/composite.py:277: in _render_gmd
+    printed = _printable_members(s, members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <object object at 0x105504ea0>, members = ['alpha', 'bravo']
+
+    def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+        """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+        printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+        classifier), or when it is a plain word outside the shared stoplist
+        (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+        holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+        then printed every member, so `Members:` lines carried the prompt's own `the` and
+        `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+        25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+        printed."""
+        from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+        out: "list[str]" = []
+        for m in members:
+            if is_identifier_shaped(m):
+                out.append(m)
+            elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+>                 and s.resolve_concept_ids(m)):
+                      ^^^^^^^^^^^^^^^^^^^^^
+E                 AttributeError: 'object' object has no attribute 'resolve_concept_ids'
+
+src/refmatrix/composite.py:229: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_composite.py::test_intra_cluster_emits_real_verb_not_cooccurs
+FAILED tests/test_composite.py::test_intra_edges_zero_drops_grounded_block - ...
+FAILED tests/test_composite.py::test_ltm_expansion_ranks_sparse_first_and_dedups
+3 failed in 0.25s

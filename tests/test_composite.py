@@ -124,6 +124,23 @@ def _intra_topic():
     }
 
 
+class _ConceptStore:
+    """A store double answering only `resolve_concept_ids`, for the plain words it holds.
+
+    Task 31.5 R2.0 (ruling L156, 2026-11-15): `_render_gmd` prints a plain-word member only
+    when the store holds that concept, so it asks the store. These tests are about intra-
+    cluster verbs and LTM expansion, not the member filter; their members (parser / lexer /
+    tokens, alpha / bravo) are plain words, so the double says the store holds each, and the
+    tests keep their subject. Registered in workflow/test_mock_registry.md."""
+
+    def __init__(self, held):
+        self.held = {w.lower(): i for i, w in enumerate(held, 1)}
+
+    def resolve_concept_ids(self, name, strict=False):
+        i = self.held.get(str(name).lower())
+        return [i] if i is not None else []
+
+
 def _patch_bc(monkeypatch, groups_for):
     import types
     import refmatrix.composite as C
@@ -154,7 +171,8 @@ def test_intra_cluster_emits_real_verb_not_cooccurs(monkeypatch):
 
     _patch_bc(monkeypatch, groups_for)
     out = C._render_gmd(
-        object(), [_intra_topic()], expand=True, per_node_entities=4,
+        _ConceptStore(_intra_topic()["members"]), [_intra_topic()], expand=True,
+        per_node_entities=4,
         expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
         intra_edges=3)
     assert "co-occurs" not in out                       # weak relation gone
@@ -174,7 +192,8 @@ def test_intra_edges_zero_drops_grounded_block(monkeypatch):
 
     _patch_bc(monkeypatch, groups_for)
     out = C._render_gmd(
-        object(), [_intra_topic()], expand=True, per_node_entities=4,
+        _ConceptStore(_intra_topic()["members"]), [_intra_topic()], expand=True,
+        per_node_entities=4,
         expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
         intra_edges=0)
     assert "graph: 1" not in out       # no grounded intra edges
@@ -214,7 +233,7 @@ def test_ltm_expansion_ranks_sparse_first_and_dedups(monkeypatch):
         "edges": [],
     }
     out = C._render_gmd(
-        object(), [topic], expand=True, per_node_entities=2,
+        _ConceptStore(topic["members"]), [topic], expand=True, per_node_entities=2,
         expand_nodes_per_topic=2, max_expansions=6, max_tokens=5000, turn=1,
         intra_edges=0)
     ltm = [ln for ln in out.splitlines() if "ltm: 1" in ln]
