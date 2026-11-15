@@ -242,6 +242,27 @@ around it.
   the defect below. The test runs with no session, so only the composite reads the ring.
 {#not-followable-list}
 
+## Deliberate test changes (ruling L156) {#l156}
+
+R2.0's member filter asks the store whether it holds each plain-word member. Three existing
+nodes in `tests/test_composite.py` called `composite._render_gmd` with a bare `object()` store
+and plain-word members. On green-315's tip they failed with `AttributeError: 'object' object
+has no attribute 'resolve_concept_ids'`, and that raise stays. The three nodes are
+`test_intra_cluster_emits_real_verb_not_cooccurs`, `test_intra_edges_zero_drops_grounded_block`
+and `test_ltm_expansion_ranks_sparse_first_and_dedups`. {#l156-why}
+
+Each now passes `_ConceptStore(<its members>)`, a store double that answers only
+`resolve_concept_ids`, returning an id for each word it holds. The members (parser / lexer /
+tokens, alpha / bravo) all print as before, and the tests keep their subject: intra-cluster
+verbs and LTM expansion. Their assertions are unchanged. The double is registered in
+[[test_mock_registry#registry]] as a double of a dependency (`internal-active`). It graduates
+together with these tests' `build_context` patch. The filter itself is tested on a real store in
+`tests/test_stm_composite_members.py`. The proof against green-315's committed tip `c3e04d3`
+is in the `l156-*.log` and `l155-c3e04d3-*.log` files (script `l155-156-proof.sh`, run under
+lockf). {#l156-what}
+
+rel: amends -> [[test_mock_registry#registry]]
+
 ## bug-268 (ruling L152) {#defect}
 
 The defect found while writing AC-0.16 is bug-268: `stm.phase_fields` crashes `rmx scan-prompt`
