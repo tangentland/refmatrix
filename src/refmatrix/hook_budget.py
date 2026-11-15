@@ -35,7 +35,7 @@ HOOK_CAP_UNITS = 10_000
 HOOK_COMMAND_BUDGET_BYTES = int(0.95 * HOOK_CAP_UNITS)
 
 # Per producer (21.1's channel names, plus R11's `recall_state`). The R1 provisional set was
-# kept after R0: under outcome (A) every value is at or under the 9,000 B command budget
+# kept after R0: under outcome (A) every value is at or under the per-command budget (9,500 B since 2026-11-15)
 # (`#outcome-r1-fit`), and the per-prompt 4,000 is d3's POINTER list -- 12 hook lines at
 # 250-370 B fill it and no 2 kB body fits, so bodies stay a `session_start` feature.
 CHANNEL_BUDGET_BYTES: "dict[str, int]" = {
@@ -113,7 +113,7 @@ def _check_tables() -> None:
         total = sum(CHANNEL_BUDGET_BYTES[c] for c in chans)
         if total > HOOK_COMMAND_BUDGET_BYTES:
             raise ValueError(f"hook_budget: command {cmd!r} budget {total} B exceeds the "
-                             f"per-command {HOOK_COMMAND_BUDGET_BYTES} B (0.9 x R0's cap)")
+                             f"per-command {HOOK_COMMAND_BUDGET_BYTES} B (0.95 x R0's cap)")
     carried = {c for chans in HOOK_COMMAND_CHANNELS.values() for c in chans}
     missing = sorted(set(CHANNEL_BUDGET_BYTES) - carried)
     if missing:

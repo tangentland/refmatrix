@@ -60,7 +60,7 @@ def _scaled_budget(base: int, turn: int, *, autoscale: bool,
     return max(base, min(ceiling, base + max(0, turn) * per_turn))
 
 
-def build_topic_composite(
+def build_topic_composite_pending(
     s,
     root,
     *,
@@ -102,15 +102,15 @@ def build_topic_composite(
     root = Path(root)
     session = session or latest_session(root)
     if session is None:
-        return ""
+        return "", _noop
     graph = Stm(root, session=session).focus_graph(top=top)
     topics = topic_composites(graph, k=k)
     if not topics:
-        return ""
+        return "", _noop
     turn = graph.get("turn", 0)
     # Cadence gate: throttle per-prompt injection to every Nth turn.
     if every > 1 and turn % every != 0:
-        return ""
+        return "", _noop
     # Grounded topics only (the user, 2026-11-15: "keep the mechanism, just don't burn context
     # on every input with it"). In session 070141d0 the lead topic was the prompt's own plain
     # words (`context, don, relevant, keep, mechanism, burn, …`) linked to unrelated nodes. A
@@ -118,7 +118,7 @@ def build_topic_composite(
     # the focus graph itself is unchanged and still updates every turn.
     topics = [t for t in topics if _has_grounded_member(t["members"])]
     if not topics:
-        return ""
+        return "", _noop
     # Never re-send an unchanged composite (feedback_injection_presentation_rules): the
     # signature is the topics' member sets, so a turn counter or re-ranked edge alone does not
     # count as a change. Kept per session beside the ring. Fail-open: an unreadable or
@@ -131,7 +131,7 @@ def build_topic_composite(
     mark = stm_dir(root) / f"{_safe(session)}.composite.last"
     try:
         if mark.read_text(encoding="utf-8").strip() == sig:
-            return ""
+            return "", _noop
     except OSError:
         pass                                  # no marker yet: send
     budget = _scaled_budget(
@@ -144,22 +144,53 @@ def build_topic_composite(
         max_expansions=max_expansions, max_tokens=budget,
         turn=turn, intra_edges=intra_edges,
     )
-    if out:
+    def _commit() -> None:
         try:
             mark.write_text(sig, encoding="utf-8")
         except OSError:
             pass                              # fail-open: the next turn re-sends
+    return out, _commit
+
+
+def _noop() -> None:
+    return None
+
+
+def build_topic_composite(*args, **kwargs) -> str:
+    """`build_topic_composite_pending`, with the "sent" marker committed at once: for callers
+    that deliver what they render (a CLI print). scan-prompt uses the pending form and commits
+    only when its byte fit keeps the composite (ch-bsd scan-order r1 #s3)."""
+    out, commit = build_topic_composite_pending(*args, **kwargs)
+    if out:
+        commit()
     return out
 
 
+def clear_sent_markers(root) -> int:
+    """Forget every session's "composite sent" marker under `<root>/stm`, so an unchanged
+    composite is sent once more. Called by save-state, which the PreCompact hook runs: after a
+    compaction the context no longer holds the last composite (ch-bsd scan-order r1 #m1).
+    Returns the count removed; a marker that cannot be removed is reported on stderr."""
+    import sys
+    from .stm import stm_dir
+    n = 0
+    d = stm_dir(Path(root))
+    if not d.is_dir():
+        return 0
+    for f in d.glob("*.composite.last"):
+        try:
+            f.unlink()
+            n += 1
+        except OSError as e:
+            print(f"rmx: could not clear composite marker {f}: {e}", file=sys.stderr)
+    return n
+
+
 def _has_grounded_member(members: "list[str]") -> bool:
-    """A file, a path, or an identifier-shaped name (scan's `_token_shape_score`), not only
-    plain words."""
-    from .scan import _token_shape_score
-    for m in members:
-        if "/" in m or ("." in m.strip(".")) or _token_shape_score(m) > 0.0:
-            return True
-    return False
+    """A file, a path, or an identifier-shaped name (`scan.is_identifier_shaped`, shared with
+    scan-prompt's tier 1), not only plain words or dotted fragments."""
+    from .scan import is_identifier_shaped
+    return any(is_identifier_shaped(m) for m in members)
 
 
 def _render_gmd(
