@@ -208,11 +208,21 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 | D | plan | decision | options (recommendation first) | state | amended into |
 |---|---|---|---|---|---|
 | plan-31 D14 | plan-31 (31.2) | What happens to the existing orphaned learned evidence rows (28,164 on the refmatrix store, 26%, `measurement-learned-rows-cli-store-2026-11-14`)? | — | **decided by the user, 2026-11-15:** "migrate them if they can be resolved, if not, delete them". Resolvable rows are re-attached to their current entity; the rest are deleted through the audited removal path with a manifest (never a silent drop; `feedback_decay_never_loses_knowledge`). The store write is the lead's, announced and backed up | to be amended into `task-31.2` by arch-31b |
+| plan-31 D31 | plan-31 (31.3) | The 15 id-less dated bullets in six folded ledger memories | (rec) the lead appends ids to them, merged together with 31.3; alt: allow-list | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.3` at the spec merge |
+| plan-31 D41 | plan-31 (31.4) | Disposition of the four standing warning classes | (rec) all four fail the gate (`--strict`), none retired | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.4` at the spec merge |
+| plan-31 D42 | plan-31 (31.4) | `amended-by` / `superseded-by` inverse verbs on 5 older memories | (rec) drop them; add the forward edge on `project_daemon_ingest_hard_death_open` first | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.4` at the spec merge |
+| plan-31 D51 | plan-31 (31.5) | Where the injection capture is on | (rec) on by default in every store, local and bounded (64 MiB / 42 days, prompt sha256 only); alt: marker-file opt-in | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
+| plan-31 D52 | plan-31 (31.5) | How 'a week' is counted | (rec) 400 prompts, 6 sessions of ≥ 20, ≥ 80 per block kind; closes at 800 | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
+| plan-31 D53 | plan-31 (31.5) | The per-kind band action table | (rec) confirm it before the numbers; the composite's cut (`--no-composite` in the generated hook) is re-asked with the number in hand | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
+| plan-31 D54 | plan-31 (31.5) | What to do about `ignored` | (rec) report only; handed to 10.6 and the mod design note | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
+| plan-31 D55 | plan-31 (31.5) | A kind whose band is ambiguous or under-sampled | (rec) `shrink` by default; S3 ablation only on the user's go | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
+| plan-31 D56 | plan-31 (31.5) | The capture after 31.5 | (rec) stays on, bounded; 21.5 phase M, plan-10 and 30.6 read it | **decided** by L125 (the architect's recommendation; not a store-on-disk change) | to be amended into `task-31.5` at the spec merge |
+| plan-31 D43 | plan-31 (31.4) | Changing the upstream GMD linter (`~/claude_tools/gmd`: a `--strict` flag, the `session/recall-state` enum line) and one line in the user's global `~/.claude/MEMORY-RULES.md` | (rec) yes: `--strict` upstream, opt-in, passed only by `scripts/lint-gmd.sh` | **open: Q37** (outside this repo, and the user's own instructions file) | — |
 {#decisions-table}
 
 ### Questions to the user {#questions}
 
-Next id: **Q37**. Open: Q32, Q33, Q34, Q35, Q36. Each reply that asks anything ends with the ids still open.
+Next id: **Q38**. Open: Q32, Q33, Q34, Q35, Q36, Q37. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -221,6 +231,7 @@ Next id: **Q37**. Open: Q32, Q33, Q34, Q35, Q36. Each reply that asks anything e
 | Q34 | 2026-11-15 | 24.6 R4 calls `stm.tool_event_fields`, which is in 21.5's frozen build phase and not in `src/`: who builds it? | (a) the plan-24 revision moves the builder into 24.6; (b) un-freeze 21.5 R1 alone, pre-mod | open |
 | Q35 | 2026-11-15 | G22 (operational content out of the skew) and G30 (the `denotes` fold evaluation): the first triage's table kept them 'with step 10', its summary and the freeze line omit them | (a) admit both: G22 after plan-30 release C, G30 folded into 30.6; (b) both post-mod; (c) G30 only | open |
 | Q36 | 2026-11-15 | The rest of the un-triaged list (U3-U17 in freeze-triage-3): admit G32 and the cross-partition `rel:` probe (25.2, 21.5 phase M and 26.5 wait on them); post-mod 19.0 rest, 19.2, 19.5/19.6 frozen parts, 21.3, 21.5 phase B, 21.6, 21.7, plan-20, plan-7 W4-a rows, linked-readonly-store, `legs_ms`; bug-182, bug-224, bug-167/174 follow their post-mod hosts | (a) apply as proposed; (b) item by item | open |
+| Q37 | 2026-11-15 | plan-31 D43: 31.4 reaches zero standing warnings by an opt-in `--strict` flag and one enum line (`session/recall-state`) in the upstream GMD linter (`~/claude_tools/gmd`, vendored here as a committed upstream blob), plus one line in your `~/.claude/MEMORY-RULES.md`. May the plan change the upstream linter and that file? | (a) yes, both; (b) linter only, MEMORY-RULES unchanged; (c) no: 31.4 keeps the change inside this repo's wrapper | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
