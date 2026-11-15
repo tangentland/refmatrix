@@ -7,7 +7,11 @@ before any capture existed. This reads Claude Code session transcripts READ-ONLY
 COUNTS AND BYTE TOTALS ONLY: no prompt, command, payload or path text ever reaches stdout
 (feedback_no_raw_prompts_in_public_repo). It is a sizing aid, not the task's scorer.
 
-Usage:  python3 -I sizing.py <transcript dir> [--b-start ISO] [--c-start ISO]
+Usage:  python3 -I sizing.py <transcript dir> [--b-start ISO] [--c-start ISO] [--since ISO]
+
+`--since` prints one more line: the hook-fired prompts and sessions at or after that UTC
+instant (the "how many prompts is a week" figure; ch-bsd spec r1 M2 could not reproduce it from
+the per-regime lines alone).
 
 `--b-start` / `--c-start` are the UTC instants the 0.83.0 and 0.84.0 builds started serving
 hooks. The defaults are approximations read off the transcripts (the first
@@ -56,11 +60,14 @@ def main(argv: "list[str]") -> int:
         print(__doc__, file=sys.stderr)
         return 2
     b_start, c_start = "2026-11-14T01:00", "2026-11-15T04:30"
+    since = None
     for i, a in enumerate(argv):
         if a == "--b-start":
             b_start = argv[i + 1]
         if a == "--c-start":
             c_start = argv[i + 1]
+        if a == "--since":
+            since = argv[i + 1]
 
     def regime(ts: str) -> str:
         return "A" if ts < b_start else ("B" if ts < c_start else "C")
@@ -118,6 +125,10 @@ def main(argv: "list[str]") -> int:
 
     print(f"transcripts={len(files)} unreadable_lines={unreadable} "
           f"hook_fired_prompts={len(prompts)} sessions={len({p['sid'] for p in prompts})}")
+    if since is not None:
+        recent = collections.Counter(p["sid"] for p in prompts if p["ts"] >= since)
+        print(f"since {since}: prompts={sum(recent.values())} sessions={len(recent)} "
+              f"per_session={sorted(recent.values())}")
     by = collections.defaultdict(list)
     for p in prompts:
         by[regime(p["ts"])].append(p)

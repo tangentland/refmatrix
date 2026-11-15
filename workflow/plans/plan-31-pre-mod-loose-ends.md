@@ -58,10 +58,11 @@ A lint rule: in `workflow/bullshit/IMPRESSIONS.md` and the impression ledgers, e
 `- 20YY-MM-DD` bullet ends with exactly one `{#id}`; a cut bullet fails the lint. RED with a
 truncated-bullet fixture. About an hour. {#t3-body}
 
-**Spec:** [[task-31.3-ledger-anchor-guard]] (drafting, 2026-11-15). It is a third step in
-`scripts/lint-gmd.sh`, not a rule in the vendored linter. The census found 15 whole dated
-bullets in six folded ledgers that never had an id, so the rule is red on the real corpus until
-the proposed `plan-31 D7` ([[plan-of-plans#decisions]]) is decided and applied. {#t3-spec}
+**Spec:** [[task-31.3-ledger-anchor-guard]] (drafting, revision 2 after ch-bsd r1, L133). It is
+a third step in `scripts/lint-gmd.sh`, not a rule in the vendored linter, and it builds the one
+shared helper for the gate's test trees. The census found 15 whole dated bullets in six folded
+ledgers that never had an id; `plan-31 D7` (decided, [[plan-of-plans#decisions]]) gives them
+ids, and that edit lands before the task's GREEN starts. {#t3-spec}
 
 ### 31.4 Retire the warnings nobody acts on {#t4}
 
@@ -70,12 +71,11 @@ instances fixed) or retired from the linter, with the reason recorded; the targe
 warnings, so a new warning is read. Busywork removed, not added: no per-warning fixing of a class
 that is retired. {#t4-body}
 
-**Spec:** [[task-31.4-retire-standing-warnings]] (drafting, 2026-11-15). The 89 are four
-classes: `unknown-memory-type` 47, `rel-target-shape` 28, `ambiguous-stem` 9, `unknown-verb` 5;
-52 of them sit in the memory dir. The spec's table fails the gate on all four through one
-opt-in linter flag and retires none; the linter is vendored from the upstream GMD repository,
-so that flag needs the proposed `plan-31 D10`; D8 and D9 are proposed there too
-([[plan-of-plans#decisions]]). {#t4-spec}
+**Spec:** [[task-31.4-retire-standing-warnings]] (drafting, revision 2 after ch-bsd r1, L133).
+The 89 are four classes: `unknown-memory-type` 47, `rel-target-shape` 28, `ambiguous-stem` 9,
+`unknown-verb` 5; 52 of them sit in the memory dir. All four fail the gate through one opt-in
+linter flag and none is retired (`plan-31 D8`-`D10`, decided, [[plan-of-plans#decisions]]; D10
+is the user's consent to change the upstream GMD linter, Q37 = a). {#t4-spec}
 
 ### 31.5 Scan-prompt injection: measure each block's use, then cut and tighten (Q27 = b) {#t5}
 
@@ -129,18 +129,24 @@ value, it's worth considering taking action." {#t5-ask}
 3. **Ablation only if a band is ambiguous:** replay real prompts with the block removed and
    compare the agent's actions (task 21.7's method).
 
-Runs after 0.84.0 (which superseded the undeployed 0.83.1, L119), ahead of plan-10's dedup;
-feeds 21.5 phase M and 30.6. {#t5-body}
+Runs after 0.84.0 (which superseded the undeployed 0.83.1, L119); feeds 21.5 phase M and 30.6.
+Plan-10's dedupe, which step 1 expected to follow it, is post-mod (ruling L128 in
+[[plan-of-plans#rulings]]). {#t5-body}
 
-**Spec:** [[task-31.5-scan-prompt-block-measure]] (drafting, 2026-11-15). Five sub-steps (S0
-capture, S0b discovery-call scoring, S1 bands, S2 cut, S3 conditional ablation) over two
-releases with a measurement window of 400 to 800 prompts between them. Two things in the steps
-above are corrected there from a sizing of the transcripts: the "59% of bytes, 100% repeated"
-figure is one probe payload of 2026-10-01, not the corpus (about 11% of scan bytes); and a
-fourth class, `followed`, is added beside `ignored` / `avoidable` / `uncovered`, so that a
-fetch of a path the injection delivered is credited to the injection instead of counted
-against the agent. It proposes `plan-31 D1`-`D6`; none is decided until the lead has entered it
-in [[plan-of-plans#decisions]]. {#t5-spec}
+**Spec:** [[task-31.5-scan-prompt-block-measure]] (drafting, revision 2 after ch-bsd r1, L133).
+Five sub-steps (S0 capture, S0b discovery-call scoring, S1 bands, S2 cut, S3 conditional
+ablation) over two releases with a measurement window of 400 to 800 prompts between them.
+Three things in the steps above are corrected there:
+
+- the "59% of bytes, 100% repeated" figure is one probe payload of 2026-10-01, not the corpus
+  (about 11% of scan bytes);
+- a class `followed` is added beside `ignored` / `avoidable` / `uncovered`, so that a fetch of
+  a path the injection delivered is a candidate credit to the injection instead of a count
+  against the agent;
+- the capture stores block payload text, which carries prompt terms, locally in every store;
+  its directory ignores itself (bug-261), and release A also takes bug-256.
+
+`plan-31 D1`-`D6` are decided ([[plan-of-plans#decisions]]). {#t5-spec}
 
 ### 31.6 Lint and ingest resolve a wikilink target the same way (bug-251, Q30 = a) {#t6}
 
@@ -162,18 +168,20 @@ target doc the lint accepts. {#t6-body}
 31.3 and 31.4 are small and may run at any point after 0.83.1. 31.1 after 0.83.1 (it changes
 0.83.1's S2 test input). 31.5 right after 0.83.1. 31.2 after 29.5. 31.6 any time (it touches `tools/gmd/` and the GMD ingest's target resolution; not `store.py`). All before the mod transition. {#order-list}
 
-**Amended 2026-11-15 by the 31.3 / 31.4 / 31.5 specs** (0.83.1 above reads 0.84.0, L119):
+**Amended 2026-11-15 by the 31.3 / 31.4 / 31.5 specs** (0.83.1 above reads 0.84.0, L119). The
+order of record is row 5 and row 14 of [[plan-of-plans#queue]]; this is what the specs add:
 
-- **31.3 → 31.4**, in that order: both edit `scripts/lint-gmd.sh` and rely on the same three
-  gate-tree test helpers. 31.3 merges together with the edit the proposed `plan-31 D7` calls for, or the gate is red on
-  15 findings.
+- **31.5's release A, then 31.3 → 31.4 → 31.1 → 31.6.** 31.3 before 31.4: both edit
+  `scripts/lint-gmd.sh`, and 31.3 builds the shared gate-tree helper the later tasks use. The
+  lead's `plan-31 D7` edit lands before 31.3's GREEN starts.
 - **31.4 and 31.6 are never in flight together:** both change `tools/gmd/lint.py`, which is
-  vendored from the upstream GMD repository, and 31.6 decides how an ambiguous stem is refused
-  ([[task-31.4-retire-standing-warnings#overlap-31-6]]). Either order works.
-- **31.5 is two releases.** Release A (the capture and the composite member filter) ships
-  first and early, because its window is counted in prompts (400 to 800) and accrues while
-  plan-29, plan-30 and the rest of plan-31 are built. The scorer is built during the window.
-  Release B (the cuts) follows the user's read of the bands and precedes plan-10's dedup.
+  vendored from the upstream GMD repository
+  ([[task-31.4-retire-standing-warnings#overlap-31-6]]). 31.6's upstream commit is made on top
+  of 31.4's.
+- **31.5 is two releases.** Release A (the capture, the composite member filter, bug-256) ships
+  first, because its window is counted in prompts (400 to 800) and accrues while plan-29 and
+  the rest of plan-31 are built. The scorer is built during the window. Release B (the cuts)
+  follows the read of the bands (queue row 14).
 {#order-amended}
 
 ## Out of scope {#out-of-scope}
