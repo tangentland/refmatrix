@@ -1,0 +1,8 @@
+lint corpus: 1168 GMD docs; ingest corpus: 1204 authored GMD docs; ingest-only: 36; lint-only: 0
+ingest-only docs by top directory: tests 33, (memory) 1, SETUP.md 1, handoff.md 1
+ids unique for lint, shared in the ingest corpus: 0 []
+stems unique for lint, shared in the ingest corpus: 0 []
+refs through an id that is shared in the ingest corpus: 0
+refs through a stem that is shared in the ingest corpus only: 0
+refs where both the stem and the project form hit: 106; of them a different doc by the two orders: 0
+refs resolved only through a stem several lint docs share: 0 {}

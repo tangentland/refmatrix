@@ -1,0 +1,113 @@
+# resolver_census.py over each fleet repo root + its memory dir, 2026-11-15. Scope is the WHOLE repo root (not each repo's own lint scope), so vendored and duplicate trees are in: counts are an upper bound. No paths.
+### cliquedb
+scope: 7935 file(s) + 263 memory file(s); 809 GMD docs; 6777 duplicate doc id(s) skipped; 16786 ingester names
+rel refs (cross-doc): 5169
+  form           ingest_hit  ingest_miss
+  id                   2107            4
+  stem                   57         2642
+  fold                    0           92
+  dangling                0          267
+  lint resolves, ingest misses: 2738
+body refs (cross-doc): 7883
+  form           ingest_hit  ingest_miss
+  id                   2581            4
+  stem                   64         5064
+  fold                    0           18
+  dangling               91           61
+  lint resolves, ingest misses: 5086
+stems shared by several GMD docs: 1; of them not also a literal id (lint's ambiguous-stem set): 1; refs resolved through one: 0
+### viascope
+scope: 5668 file(s) + 146 memory file(s); 442 GMD docs; 145 duplicate doc id(s) skipped; 7122 ingester names
+rel refs (cross-doc): 1124
+  form           ingest_hit  ingest_miss
+  id                   1087            5
+  stem                    0            8
+  dangling                0           24
+  lint resolves, ingest misses: 13
+body refs (cross-doc): 434
+  form           ingest_hit  ingest_miss
+  id                    433            0
+  dangling                0            1
+  lint resolves, ingest misses: 0
+stems shared by several GMD docs: 5; of them not also a literal id (lint's ambiguous-stem set): 5; refs resolved through one: 0
+### orderly
+scope: 121 file(s) + 2 memory file(s); 56 GMD docs; 0 duplicate doc id(s) skipped; 768 ingester names
+rel refs (cross-doc): 35
+  form           ingest_hit  ingest_miss
+  id                      3            0
+  stem                    0           23
+  project                 0            7
+  dangling                0            2
+  lint resolves, ingest misses: 30
+body refs (cross-doc): 32
+  form           ingest_hit  ingest_miss
+  id                      4            0
+  stem                    0           24
+  project                 0            4
+  lint resolves, ingest misses: 28
+stems shared by several GMD docs: 2; of them not also a literal id (lint's ambiguous-stem set): 1; refs resolved through one: 0
+### cliquet
+scope: 150 file(s) + 56 memory file(s); 175 GMD docs; 0 duplicate doc id(s) skipped; 2961 ingester names
+rel refs (cross-doc): 330
+  form           ingest_hit  ingest_miss
+  id                    219            0
+  stem                    0           97
+  project                 0            8
+  fold                    0            2
+  dangling                0            4
+  lint resolves, ingest misses: 107
+body refs (cross-doc): 2555
+  form           ingest_hit  ingest_miss
+  id                    145            0
+  stem                    0         2129
+  project                 0          280
+  fold                    0            1
+  lint resolves, ingest misses: 2410
+stems shared by several GMD docs: 4; of them not also a literal id (lint's ambiguous-stem set): 2; refs resolved through one: 1
+### atldb
+scope: 125 file(s) + 3 memory file(s); 55 GMD docs; 1 duplicate doc id(s) skipped; 637 ingester names
+rel refs (cross-doc): 28
+  form           ingest_hit  ingest_miss
+  id                      3            0
+  stem                    0           16
+  project                 0            4
+  dangling                0            5
+  lint resolves, ingest misses: 20
+body refs (cross-doc): 10
+  form           ingest_hit  ingest_miss
+  id                      5            0
+  project                 0            5
+  lint resolves, ingest misses: 5
+stems shared by several GMD docs: 2; of them not also a literal id (lint's ambiguous-stem set): 1; refs resolved through one: 0
+### atlftpd
+scope: 124 file(s) + 5 memory file(s); 58 GMD docs; 1 duplicate doc id(s) skipped; 687 ingester names
+rel refs (cross-doc): 29
+  form           ingest_hit  ingest_miss
+  id                      6            0
+  stem                    0           16
+  project                 0            4
+  dangling                0            3
+  lint resolves, ingest misses: 20
+body refs (cross-doc): 9
+  form           ingest_hit  ingest_miss
+  id                      4            0
+  project                 0            5
+  lint resolves, ingest misses: 5
+stems shared by several GMD docs: 2; of them not also a literal id (lint's ambiguous-stem set): 1; refs resolved through one: 0
+### thiquet
+scope: 221 file(s) + 35 memory file(s); 188 GMD docs; 0 duplicate doc id(s) skipped; 2398 ingester names
+rel refs (cross-doc): 790
+  form           ingest_hit  ingest_miss
+  id                    110            0
+  stem                    0          592
+  project                 0           55
+  dangling                0           33
+  lint resolves, ingest misses: 647
+body refs (cross-doc): 1360
+  form           ingest_hit  ingest_miss
+  id                    244            0
+  stem                    0         1027
+  project                 0           76
+  dangling                0           13
+  lint resolves, ingest misses: 1103
+stems shared by several GMD docs: 2; of them not also a literal id (lint's ambiguous-stem set): 1; refs resolved through one: 0

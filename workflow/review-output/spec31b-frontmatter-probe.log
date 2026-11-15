@@ -1,0 +1,67 @@
+# probe a: list-valued id / title on a throwaway store (dev code at f3a508f), 2026-11-15
+id_inline_list         docs_strict   | parse ok doc_id=['a', 'b'] title='bad' | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1435 in ingest_gmd_paths
+id_inline_list         docs_lenient  | parse ok doc_id=['a', 'b'] title='bad' | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1435 in ingest_gmd_paths
+id_inline_list         memory        | parse ok doc_id=['a', 'b'] title='bad' | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1243 in _parse_memory_walk
+id_inline_list         dry-run       | plan_memory_refresh RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1243 in _parse_memory_walk
+id_block_list          docs_strict   | parse ok doc_id=['a', 'b'] title='bad' | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1435 in ingest_gmd_paths
+id_block_list          docs_lenient  | parse ok doc_id=['a', 'b'] title='bad' | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1435 in ingest_gmd_paths
+id_block_list          memory        | parse ok doc_id=['a', 'b'] title='bad' | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1243 in _parse_memory_walk
+id_block_list          dry-run       | plan_memory_refresh RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1243 in _parse_memory_walk
+id_empty               docs_strict   | parse ok doc_id='bad' title='bad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['bad', 'good']
+id_empty               docs_lenient  | parse ok doc_id='bad.md' title='bad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['docs/bad.md', 'good']
+id_empty               memory        | parse ok doc_id='bad' title='bad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['bad', 'good']
+id_empty               dry-run       | plan_memory_refresh OK
+id_empty_brackets      docs_strict   | parse ok doc_id='bad' title='bad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['bad', 'good']
+id_empty_brackets      docs_lenient  | parse ok doc_id='bad.md' title='bad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['docs/bad.md', 'good']
+id_empty_brackets      memory        | parse ok doc_id='bad' title='bad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['bad', 'good']
+id_empty_brackets      dry-run       | plan_memory_refresh OK
+title_inline_list      docs_strict   | parse ok doc_id='tbad' title=['a', 'b'] | ingest: RAISED TypeError: expected string or bytes-like object, got 'list' @ ingest_gmd.py:797 in _title_concept_tokens
+title_inline_list      docs_lenient  | parse ok doc_id='tbad' title=['a', 'b'] | ingest: RAISED TypeError: expected string or bytes-like object, got 'list' @ ingest_gmd.py:797 in _title_concept_tokens
+title_inline_list      memory        | parse ok doc_id='tbad' title=['a', 'b'] | ingest: RAISED TypeError: expected string or bytes-like object, got 'list' @ ingest_gmd.py:797 in _title_concept_tokens
+title_inline_list      dry-run       | plan_memory_refresh OK
+title_block_list       docs_strict   | parse ok doc_id='tbad' title=['a', 'b'] | ingest: RAISED TypeError: expected string or bytes-like object, got 'list' @ ingest_gmd.py:797 in _title_concept_tokens
+title_block_list       docs_lenient  | parse ok doc_id='tbad' title=['a', 'b'] | ingest: RAISED TypeError: expected string or bytes-like object, got 'list' @ ingest_gmd.py:797 in _title_concept_tokens
+title_block_list       memory        | parse ok doc_id='tbad' title=['a', 'b'] | ingest: RAISED TypeError: expected string or bytes-like object, got 'list' @ ingest_gmd.py:797 in _title_concept_tokens
+title_block_list       dry-run       | plan_memory_refresh OK
+title_empty            docs_strict   | parse ok doc_id='tbad' title='tbad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['good', 'tbad']
+title_empty            docs_lenient  | parse ok doc_id='tbad' title='tbad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['good', 'tbad']
+title_empty            memory        | parse ok doc_id='tbad' title='tbad' | ingest: OK docs=2 unparseable=0 non_gmd=0 good_row=yes doc_rows=['good', 'tbad']
+title_empty            dry-run       | plan_memory_refresh OK
+plain_no_gmd_id_list   docs_strict   | parse None | ingest: OK docs=1 unparseable=0 non_gmd=1 good_row=yes doc_rows=['good']
+plain_no_gmd_id_list   docs_lenient  | parse ok doc_id=['a', 'b'] title=['a', 'b'] | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1435 in ingest_gmd_paths
+plain_no_gmd_id_list   memory        | parse ok doc_id=['a', 'b'] title=['a', 'b'] | ingest: RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1243 in _parse_memory_walk
+plain_no_gmd_id_list   dry-run       | plan_memory_refresh RAISED TypeError: cannot use 'list' as a dict key (unhashable type: 'list') @ ingest_gmd.py:1243 in _parse_memory_walk
+---- lint
+id_inline_list         exit=1 |        ^^^^^^^^^^^ / TypeError: cannot use 'list' as a dict key (unhashable type: 'list')
+id_block_list          exit=1 |        ^^^^^^^^^^^ / TypeError: cannot use 'list' as a dict key (unhashable type: 'list')
+id_empty               exit=0 | gmd lint: 2 files, 2 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+id_empty_brackets      exit=0 | gmd lint: 2 files, 2 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+title_inline_list      exit=0 | gmd lint: 2 files, 2 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+title_block_list       exit=0 | gmd lint: 2 files, 2 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+title_empty            exit=0 | gmd lint: 2 files, 2 GMD docs, 0 errors, 0 warnings [phase 2 cross-doc]
+plain_no_gmd_id_list   exit=1 |  / gmd lint: 2 files, 1 GMD docs, 1 errors, 0 warnings [phase 2 cross-doc]
+
+# probe b: other per-file shapes, and RMX_INGEST_NODE_YIELD_EVERY=x
+id_nul           docs     | OK docs=2 unparseable=[]
+id_nul           memory   | OK docs=2 unparseable=[]
+title_nul        docs     | OK docs=2 unparseable=[]
+title_nul        memory   | OK docs=2 unparseable=[]
+tags_string      docs     | OK docs=2 unparseable=[]
+tags_string      memory   | OK docs=2 unparseable=[]
+imports_string   docs     | OK docs=2 unparseable=[]
+imports_string   memory   | OK docs=2 unparseable=[]
+gmd_list         docs     | OK docs=2 unparseable=[]
+gmd_list         memory   | OK docs=2 unparseable=[]
+id_hash          docs     | OK docs=2 unparseable=[]
+id_hash          memory   | OK docs=2 unparseable=[]
+non_utf8         docs     | OK docs=1 unparseable=["UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 30: invalid start byte"]
+non_utf8         memory   | OK docs=1 unparseable=["UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 30: invalid start byte"]
+unclosed_fm      docs     | OK docs=2 unparseable=[]
+unclosed_fm      memory   | OK docs=2 unparseable=[]
+empty_file       docs     | OK docs=2 unparseable=[]
+empty_file       memory   | OK docs=2 unparseable=[]
+only_delim       docs     | OK docs=2 unparseable=[]
+only_delim       memory   | OK docs=2 unparseable=[]
+body_nul         docs     | OK docs=2 unparseable=[]
+body_nul         memory   | OK docs=2 unparseable=[]
+env_node_yield=x docs     | RAISED ValueError: invalid literal for int() with base 10: 'x' @ ingest_gmd.py:1329 in ingest_gmd_paths

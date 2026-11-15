@@ -1,0 +1,37 @@
+rel lines lint resolves by a non-id form (repo sources): 107
+  fold     target_unresolved    6
+  project  other_concept        19
+  stem     other_concept        43
+  stem     stale                8
+  stem     target_unresolved    31
+totals: other_concept 62, stale 8, target_unresolved 37
+by target doc:
+  CLAUDE                                     target_unresolved    29
+  ARCHITECTURE                               other_concept        6
+  SYSTEM                                     other_concept        6
+  bug-registry                               target_unresolved    6
+  PERFORMANCE                                other_concept        5
+  adr-0000-adr-overview                      other_concept        5
+  adr-format                                 other_concept        5
+  agent-doc-primer                           stale                5
+  0001-intuition-lance-integration           other_concept        4
+  INTEGRATION                                other_concept        3
+  adr-0003-canonical-partition-layout        other_concept        3
+  architecture-index                         other_concept        3
+  partition-layout-survey                    other_concept        3
+  adr-0002-subject-memory-container          other_concept        2
+  adr-0004-unified-location-space-index      other_concept        2
+  adr-template                               other_concept        2
+  architecture-readme                        other_concept        2
+  architecture-todo                          other_concept        2
+  intuition-style-hooks                      other_concept        2
+  system_design_review                       stale                2
+  system_design_review                       target_unresolved    2
+  INDEX                                      other_concept        1
+  ONBOARDING                                 other_concept        1
+  PERFORMANCE                                stale                1
+  agent-doc-primer                           other_concept        1
+  concept-doc-template                       other_concept        1
+  design-doc-template                        other_concept        1
+  gmd-migration-guide                        other_concept        1
+  system_design_review                       other_concept        1

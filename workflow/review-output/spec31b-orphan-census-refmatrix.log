@@ -1,0 +1,20 @@
+linkage_evidence rows: 1715353; entity gone (vacuum step 3's set): 1268561; concept gone: 34451
+orphans by kind of row:
+  other: 1221368
+  learned: 30131
+  rel: 17062
+learned rows (by detail): 107574; by `query/` concept: 107563; attached: 77443 on 405 entities; orphaned: 30131
+protected entities: 2204
+learned orphans: 30131
+  file_exists: 30131
+  live_entity: 30078
+  concept_alive: 30120
+  line_zero: 0
+  verifies: 9749
+  verifies_regex: 3318
+  verifies_and_reattachable: 9719
+  pattern_unparsed: 0
+  distinct_rows: 28411
+  pairs (concept, file): 2728; with a live file entity: 2717; pairs_linked_now: 2; pairs_evidence_now: 2
+  files: 411; on disk: 411; with a live entity that is not protected: 383
+  top files: src/refmatrix/cli.py 14639; src/refmatrix/daemon.py 1860; src/refmatrix/store.py 1337; workflow/bug_registry.md 1042; src/refmatrix/verbs.py 712; src/refmatrix/ingest.py 474; src/refmatrix/hub.py 411; workflow/test_mock_registry.md 358

@@ -5,15 +5,15 @@ title: "Plan 31: pre-mod loose ends — graph correctness and GMD hardening admi
 tags: [plan, gmd, graph-correctness, freeze, loose-ends]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-11-15
 ---
 
 # Plan 31: pre-mod loose ends {#root}
 
-**Date:** 2026-11-15. **Status:** drafting — its six tasks (31.1-31.6) are admitted and registered; each
-task spec is written (ch-architect on Fable) and reviewed (ch-bsd) when the plan reaches the head
-of the queue, per [[orchestration#planning]]. **Origin:** the user, 2026-11-15: "write the freeze
+**Date:** 2026-11-15. **Status:** approved — its six tasks (31.1-31.6) each have a task spec written by
+ch-architect on Fable and approved on a ch-bsd MEH-only GO (ruling L125): 31.3, 31.4 and 31.5 by
+L140, 31.1, 31.6 and 31.2 by L149 ([[plan-of-plans#rulings]]), per [[orchestration#planning]]. **Origin:** the user, 2026-11-15: "write the freeze
 line and register the five", after the lead's GMD assessment. The fifth item is plan-30's task 30.6. 31.6 (bug-251) admitted by the user, Q30 = a, 2026-11-15.
 
 rel: part-of -> [[plan-of-plans#freeze]]
@@ -40,6 +40,15 @@ tests of 0.83.1 use the list-valued `id:` as their real raising input; this task
 another real raising input or a registered patch of `ingest_gmd_paths` (L112a). Fleet repos are
 measured for the shape first. {#t1-body}
 
+**Spec:** [[task-31.1-frontmatter-type-refusal]] (approved by L149 on ch-bsd r3's MEH-only GO).
+It closes bug-244 with bug-255 (the lint refuses the same shapes, and the gate checks the two
+sides agree), bug-258 (the skip reaches the caller on `rmx ingest` and `rmx sync`), bug-264
+(a plain edit of a synced GMD doc no longer drops its anchors' inbound edges; moved here by
+L144) and bug-206 (an anchor an edit removed is removed, on the bridge too; L148). No file in
+the fleet has the shape (0 of 1,464 repo files, 0 of 1,057 memory files). `plan-31 D11`
+(decided, [[plan-of-plans#decisions]]): the rest lands, then `Error:` and exit 1. The S2 / M2
+tests get a registered patch. {#t1-spec}
+
 ### 31.2 Purge, vacuum and replay agree about learned evidence (bug-107, bug-247) {#t2}
 
 `purge_path` stops deleting protected learned rows on an edited or deleted file (or drops them only
@@ -51,6 +60,16 @@ bug-107's classification question, and plan-22's audited-removal path. The spec 
 happens to the existing orphans (re-attach, drop with a manifest, or keep), as a user decision.
 Grep learning stays off until this lands. Runs after 29.5 (the purge code moves to
 `store_removal.py`). {#t2-body}
+
+**Spec:** [[task-31.2-learned-evidence-agreement]] (approved by L149 on ch-bsd r3's MEH-only
+GO). It closes bug-107 and bug-247 with bug-259, bug-260 and bug-262 (the compaction and the
+replica's two unapplied clears) and bug-203 (`rmx sync -i` reaches the writer; L136). It takes
+22.6 R4 whole, without 16.6's sidecar, and the learned-row halves of 22.6 R3 and R5 (L134).
+`plan-31 D14` (decided by the user, [[plan-of-plans#decisions]]): the orphaned learned rows
+that resolve are re-attached and the rest are deleted with a manifest; what "resolved" means
+is Q38, open, and the spec carries both readings. On the copy of 2026-11-15 the store holds
+30,131 such rows, not the 28,164 above. The store write is the lead's `rmx vacuum`, after a
+dry run. {#t2-spec}
 
 ### 31.3 Ledger bullets must carry an anchor (bug-242 guard) {#t3}
 
@@ -165,6 +184,15 @@ shapes on a throwaway store, plus a lint-passes-ingest-misses parity census over
 recount with `scripts/check-rel-landing.py` after a reingest shows `target_unresolved` 0 for every
 target doc the lint accepts. {#t6-body}
 
+**Spec:** [[task-31.6-one-wikilink-resolver]] (approved by L149 on ch-bsd r3's MEH-only GO).
+The spec measured bug-251 at 107 lines, not 37: 37 unresolved, 62 bound to a same-named
+path-less concept and 8 stale, and its acceptance is all three classes at 0 (L132). One
+stdlib resolver, upstream first, with the forms id, project prefix and unique stem; `plan-31
+D12` (decided, [[plan-of-plans#decisions]]) drops case and dash folding. By L136 it also
+builds bug-185 R10's stale-edge unlink rule (bug-221; bug-257 is its duplicate) and cleans up
+the 114 evidence-less edges bug-216's re-bind left, in the same user-gated reingest window
+(Q40). {#t6-spec}
+
 ## Order {#order}
 
 31.3 and 31.4 are small and may run at any point after 0.83.1. 31.1 after 0.83.1 (it changes
@@ -185,6 +213,17 @@ order of record is row 5 and row 14 of [[plan-of-plans#queue]]; this is what the
   the rest of plan-31 are built. The scorer is built during the window. Release B (the cuts)
   follows the read of the bands (queue row 14).
 {#order-amended}
+
+**Amended 2026-11-15 by the 31.1 / 31.6 / 31.2 specs** (rulings L139, L144):
+
+- **The upstream linter order is 31.4 → 31.1 → 31.6**, never two in flight, each upstream
+  commit on top of the previous and each re-vendor from the sha that holds the earlier ones:
+  31.1 changes the linter too (bug-255).
+- **31.1 before 31.6** also because both edit `ingest_gmd.py`, and because 31.1's fix for
+  bug-264 must be in before 31.6's reingest binds anything.
+- **31.2 after 29.5**, and after 31.1: it refines the method 31.1 builds for the GMD
+  dispatch.
+{#order-amended-31b}
 
 ## Out of scope {#out-of-scope}
 
