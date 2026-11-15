@@ -134,6 +134,8 @@ after its release deploys ([[orchestration#release]]). {#queue-releases-body}
 
 ### Known stale points, reconciled at RED {#queue-stale}
 
+**bug-218:** read [[agent-brief-bug218-red-notes]] (arch-t56, ten traps and two design gaps, L137) with the spec.
+
 From the 2026-11-14 reviews, for the tasks in the queue. The specs were approved on 2026-11-13
 at `1cf3b9f`; 0.83.0 and 0.84.0 shipped after. {#queue-stale-lead}
 
