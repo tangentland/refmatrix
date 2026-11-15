@@ -1,0 +1,42 @@
+pyc-guard: recompiled 2 timestamp pyc(s) under /Volumes/littlebig/refmatrix-315/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_prompt_text_appears_only_inside_block_text ________________
+
+store = {'base': PosixPath('/private/tmp/cap.tnul65vl'), 'proj': PosixPath('/private/tmp/cap.tnul65vl/proj'), 'root': PosixPath('/private/tmp/cap.tnul65vl/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_prompt_text_appears_only_inside_block_text(store, calib):
+        """AC-0.8 (RED): the record's keys are exactly the schema's; `prompt_sha256` is the
+        prompt's hash; a canary prompt term appears in no field but `blocks[*].text`, there only
+        where the printed payload carried it (a delivered block) or in a dropped block's header;
+        a prompt that produces nothing writes a record with no blocks and no canary.
+    
+        The canary is a prompt term the store does not hold, so the only place a render carries it
+        is the content block's header (its first eight terms). Call 1 delivers that block; call 2
+        (the same prompt, tier 1 tripping the token stop) drops it, so the canary is only in the
+        uncapped render of a dropped block; call 3 is the canary alone, which produces nothing."""
+        p_a = f"{CANARY} {PROMPT}"
+        p_b = CANARY
+        a = _scan(store, "--no-composite", "--max-tokens", "100000", prompt=p_a)
+        assert CANARY in a.stdout, f"fixture: the payload does not carry the canary:\n{a.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:758: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.tnul65vl/proj/.refmatrix')
+qid = '41b7bbcca7b04079b9b2876fec41c93e'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 41b7bbcca7b04079b9b2876fec41c93e (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.tnul65vl/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:329: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_prompt_text_appears_only_inside_block_text
+1 failed, 31 deselected in 23.65s

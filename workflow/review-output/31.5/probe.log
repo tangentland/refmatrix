@@ -1,0 +1,75 @@
+pyc-guard: recompiled 17 timestamp pyc(s) under /Volumes/littlebig/refmatrix-315/src/refmatrix as checked-hash (bug-037)
+same-store repeat equal: True 1355
+turn 1
+CORRUPT [] rc 1 eq-no-comp True STDERR ^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+    return callback(*args, **kwargs)
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 9872, in scan_prompt_cmd
+    phase=stm_mod.phase_fields(root, session, prompt, t0=_PROC_WALL_T0,
+          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               prompt_time=True))
+                               ^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1848, in phase_fields
+    pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1803, in pre_prompt_state
+    live_graph = s._load_graph()
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+    g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+    ^^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'setdefault'
+
+CORRUPT {"turn": 2, "nodes": {"x": 1}, "edges": {}} rc 1 eq-no-comp True STDERR                      ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+    return callback(*args, **kwargs)
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 9872, in scan_prompt_cmd
+    phase=stm_mod.phase_fields(root, session, prompt, t0=_PROC_WALL_T0,
+          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               prompt_time=True))
+                               ^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1849, in phase_fields
+    return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+                                                        ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+    topics = topic_composites(focus_view(pre.graph))
+                              ~~~~~~~~~~^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+    real = [nd for nd in nodes.values() if not nd.get("frontier")]
+                                               ^^^^^^
+AttributeError: 'int' object has no attribute 'get'
+
+CORRUPT {"turn": 2, "nodes": {"a": {"score": "zz"}}, "edges": []} rc 1 eq-no-comp True STDERR kages/click/core.py", line 853, in invoke
+    return callback(*args, **kwargs)
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 9872, in scan_prompt_cmd
+    phase=stm_mod.phase_fields(root, session, prompt, t0=_PROC_WALL_T0,
+          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               prompt_time=True))
+                               ^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1849, in phase_fields
+    return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+                                                        ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+    topics = topic_composites(focus_view(pre.graph))
+                              ~~~~~~~~~~^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+    scored = sorted(
+        real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+    real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+                         ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+                   ~~^^^^^^^^
+KeyError: 'name'
+
+path lens 25 25 lens 1355 1355
+.
+1 passed in 4.34s
