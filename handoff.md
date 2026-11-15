@@ -35,7 +35,7 @@ supersedes its "doing" column:
 | `red-t03` · ch-test-engineer | `refmatrix-t03` · same | `9270f58` | done: bug-269 RED committed | idle |
 | `green-t02` · ch-implementer | `refmatrix-t02-green` · `task-t0.2-reaper-roots-bug253` | `1121b4e` | done: verify own 435 passed/1 skipped; tier-(b) 2 failed = the two AC-6 nodes, E lines identical to `release-0.84.0-full.log` (fixed on master by T0.8) | idle until bsd-t02 reports |
 | `bsd-t02` · ch-bsd | own clone `refmatrix-bsdt02-r1` | range `c4b44d0..1121b4e` | r1 code review + mutation record (incl. R4.6b) | lead ruling L163, fold or merge |
-| `red-315` · ch-test-engineer | `refmatrix-315` · `task-31.5-s0-capture` | `30ac2f6` (+ uncommitted L156 work) | told to finish the AC-0.8 re-proof on `c3e04d3` and commit | green-315 merges |
+| `red-315` · ch-test-engineer | `refmatrix-315` · `task-31.5-s0-capture` | `30ac2f6` (+ uncommitted L156 work) | proof re-queued on the lane in its recreated scratch clone `refmatrix-315-verify` (detached `c3e04d3`; the lead's cleanup removed the first one mid-run; do not remove it until red-315 reports); commits L156 when it passes | green-315 merges |
 | `green-315` · ch-implementer | `refmatrix-315-green` · same | `c3e04d3` | waiting for red-315's commit | merge, re-run the 3 files, ch-bsd review |
 {#agents}
 
