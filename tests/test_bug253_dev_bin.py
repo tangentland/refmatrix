@@ -147,7 +147,11 @@ def test_a_child_run_through_the_helper_runs_this_checkouts_code():
     """The point of the pair: `dev_rmx()` under `dev_env()` imports THIS checkout's
     `refmatrix` (in a clone, not the editable install's tree)."""
     db = _helper()
-    r = subprocess.run([str(db.dev_rmx()), "version", "-v"], env=db.dev_env(),
+    # A wide COLUMNS: `rmx version -v` prints through rich, which wraps a long `code:` path onto
+    # the next line under the default 80 columns (found on the mini lane's long checkout path,
+    # bsd-t02 confirm-lite, 2026-11-15), and the line read below then holds no path.
+    r = subprocess.run([str(db.dev_rmx()), "version", "-v"],
+                       env=dict(db.dev_env(), COLUMNS="1000"),
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     code = next((ln for ln in r.stdout.splitlines() if ln.startswith("code:")), "")
