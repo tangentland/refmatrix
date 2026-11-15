@@ -41,7 +41,9 @@ rel: derives-from -> [[bsd-pattern-handoff-without-sibling-ac]]
    the whole list or says which items it leaves and why. {#q-census}
 4. **The whole path is bounded.** For a timeout or budget: list every call on the path (each
    RPC, retry, leg, hook) and its bound. `daemon.call` defaults to `retries=2`, so the worst
-   case is 3 × the timeout. State the worst case. {#q-bound}
+   case is 3 × the timeout. State the worst case. When the stage loops over a resource with
+   several implementations (a private worker and a hub-shared client), bound each class by name
+   (L177: bug-278). {#q-bound}
 5. **Busy is not absent.** What does the change do when the daemon or worker is busy, slow,
    or down? Try at least busy and down. A failed short ping does not mean the daemon is gone.
    {#q-busy}
@@ -50,7 +52,8 @@ rel: derives-from -> [[bsd-pattern-handoff-without-sibling-ac]]
    patching the value the guard reads. {#q-guard}
 7. **Failures are loud.** Force the failure once and paste what the console shows (exit code
    and stderr; a log line alone is not loud). No `except: pass`, `|| true` or `2>/dev/null` on a
-   memory path. {#q-loud}
+   memory path. Force one failure outside the class your `try` names too: bad input encoding, a
+   permission the handler does not catch (L178: bug-276). {#q-loud}
 8. **Nothing handed off on paper.** Anything deferred ("task X handles it") has an AC in X's
    spec or a registry row, linked. A stated rule or count ("the rule is green on our code") was
    run, and the run is cited. {#q-handoff}

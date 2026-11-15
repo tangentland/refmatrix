@@ -127,3 +127,5 @@
 2026-11-15T13:46:00Z commit=e314b19 verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-15-1310-t08-r1-e314b19.md
 2026-11-15T20:09:00Z commit=1121b4e verdict=DIRTY findings=10 (2B/4S/4M) report=2026-11-15-2009-t02-r1-1121b4e.md
 2026-11-15T21:40:00Z commit=a7b30b3 verdict=GO findings=1 (bug-274, fixed pre-merge) report=confirm-lite text (persisted as INDEX row)
+2026-11-15T22:02:00Z commit=041e3ab verdict=DIRTY findings=8 (1B/3S/4M) report=2026-11-15-2202-t03-r1-041e3ab.md
+2026-11-15T22:03:00Z commit=51bbdfb verdict=DIRTY findings=10 (0B/4S/6M) report=2026-11-15-2203-315-r1-51bbdfb.md
