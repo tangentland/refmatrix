@@ -56,7 +56,11 @@ def make_store():
                            mtype="feedback")
         if holds_question:
             s.link("mentions", s.add_concept("question"), eid)
+        # L178 S3 (bsd-315 r1): the store HOLDS `the`, so the shared stoplist alone keeps it
+        # out of `Members:` (mutation M2-1a, dropping the stoplist check, must fail).
+        s.link("mentions", s.add_concept("the"), eid)
         s.flush_fragments()
+        assert s.resolve_concept_ids("the"), "fixture: the store does not hold `the`"
         made.append((base, s))
         _ring(root)
         return s, root
@@ -81,7 +85,8 @@ def test_stopwords_and_unknown_plain_words_are_not_printed_as_members(make_store
                                                                       holds_question):
     """AC-2.0 (RED at base; M2-1): a topic of `scan-prompt`, `store.py`, `the`, `buigger`,
     `question` prints `scan-prompt`, `store.py`, and `question` only when the store holds
-    that concept. `the` is on the shared stoplist; `buigger` names nothing."""
+    that concept. `the` is on the shared stoplist (and the store holds it as a concept, so
+    only the stoplist keeps it out); `buigger` names nothing."""
     from refmatrix.composite import build_topic_composite
     s, root = make_store(holds_question)
     _topic_members(root)

@@ -199,6 +199,12 @@ def _tier3_names(out: str) -> "list[str]":
     return []
 
 
+def _timed(time_mod, fn) -> float:
+    t = time_mod.perf_counter()
+    fn()
+    return (time_mod.perf_counter() - t) * 1000.0
+
+
 @pytest.fixture(scope="module")
 def calib():
     """`t1`: a --max-tokens at which tier 1 trips at its SECOND bundle (widget_registry
@@ -239,7 +245,15 @@ def calib():
             and CONTENT_HDR not in o1, f"fixture: t1={t1} is not a tier-1 trip:\n{o1}"
         assert _symbol_bundles(o3) == NAMED and CONTENT_HDR in o3 and TOKEN_MARK in o3, (
             f"fixture: t3={t3} is not a tier-3 trip:\n{o3}")
-        return {"t1": t1, "t3": t3, "tier3": tier3, "full": full}
+        # M1 (L178): the fastest of three in-process builds of each tier-3 bundle, with the
+        # hook's per-bundle arguments. A cold CLI child builds no faster, so it is a floor.
+        import time as _time
+        from refmatrix.context import build_context
+        build_ms_min = min(
+            min(_timed(_time, lambda n=n: build_context(s, n, max_tokens=600, max_entities=10,
+                                                        degree=0)) for _ in range(3))
+            for n in tier3)
+        return {"t1": t1, "t3": t3, "tier3": tier3, "full": full, "build_ms_min": build_ms_min}
     finally:
         s.close()
         _teardown(c)
@@ -518,6 +532,13 @@ def test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens(stor
     missing = [n for n in calib["tier3"] if n not in seen]
     assert not missing, f"tier-3 bundles the stop prevented, not stored: {missing} (have {seen})"
     assert rec["capture_built"] >= len(cut) - 1, (rec["capture_built"], len(cut))
+    # M1 (L178, X-1): `capture_ms` is the wall time the capture added, the extra builds
+    # included (R0.2); AC-0.17 reads it. Half the fastest in-process build per built bundle is
+    # a floor no honest record falls under.
+    floor = 0.5 * rec["capture_built"] * calib["build_ms_min"]
+    assert rec["capture_built"] >= 1 and rec["capture_ms"] >= floor, (
+        f"capture_ms {rec['capture_ms']} does not cover {rec['capture_built']} built bundle(s) "
+        f"(floor {floor:.1f} ms at {calib['build_ms_min']:.1f} ms per in-process build)")
     assert not _blocks(rec, state="not_built"), "mode full recorded a not_built block"
     assert [b["kind"] for b in _blocks(rec, kind="marker")], "the token-stop marker is unrecorded"
 
@@ -575,6 +596,29 @@ def test_an_unchanged_composite_is_recorded_as_suppressed_unchanged(store):
     assert [b["state"] for b in comp] == ["suppressed_unchanged"], (
         [(b["kind"], b["state"]) for b in rec["blocks"]])
     assert not comp[0].get("text"), comp[0]
+
+
+def test_a_composite_whose_printed_members_did_not_change_is_suppressed(store):
+    """bug-277 (L178 S2; RED): the unchanged-composite signature is taken over the members
+    the composite PRINTS (R2.0), not over every focus member. After the composite is delivered,
+    `the` (stoplist) and `buigger` (names no concept) join the topic; the printed `Members:`
+    line is the same, so the next call records `suppressed_unchanged` and prints no composite
+    (bsd-315 r1 P2: it was re-sent, recorded `delivered`)."""
+    from refmatrix import stm as stm_mod
+    first = _scan(store, "--max-tokens", "100000")
+    assert COMP_MARK in first.stdout, "fixture: no composite on the first call"
+    stm_mod.Stm(store["root"], SESSION).record(
+        "input", "the parser.py and the lexer_table buigger", refs=GROUNDED + ["the", "buigger"])
+    topics = stm_mod.topic_composites(stm_mod.Stm(store["root"], SESSION).focus_graph(top=40))
+    joined = {m for t in topics for m in t["members"]}
+    assert {"the", "buigger"} & joined, f"fixture: the new words joined no topic: {topics}"
+    second = _scan(store, "--max-tokens", "100000")
+    rec = _record_for(store["root"], _last_qid(store["root"]))
+    comp = _blocks(rec, kind="composite")
+    assert [b["state"] for b in comp] == ["suppressed_unchanged"], (
+        f"bug-277: a composite whose printed members did not change: "
+        f"{[(b['kind'], b['state']) for b in rec['blocks']]}")
+    assert COMP_MARK not in second.stdout, "the unchanged composite was re-sent"
 
 
 def test_a_cadence_skip_is_recorded_as_suppressed_cadence(store):
@@ -872,6 +916,69 @@ def test_a_file_another_process_removed_is_not_an_error(store):
     assert _errors(store["root"]) == [], f"a vanished day file was an error: {_errors(store['root'])}"
 
 
+def test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept(store):
+    """AC-0.9 (L178 M2, X-3; bsd-315 r1 P4 as a test): a capture dir at 0o555 holding a 2020
+    day file. The pruner cannot remove it: the call still exits 0 with its payload, the
+    failure is one `prune_failed` line in errors.jsonl (naming PermissionError), the old file
+    stays, and today's record is appended (today's file and errors.jsonl exist and are
+    writable; only the directory is not)."""
+    _scan(store, "--max-tokens", "100000")              # makes the dir, .gitignore, today's file
+    d = store["root"] / CAP_DIR
+    old = d / "capture-20200101.jsonl"
+    old.write_text("{}\n", encoding="utf-8")
+    (d / "errors.jsonl").write_text("", encoding="utf-8")
+    control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                          RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+    os.chmod(d, 0o555)
+    try:
+        r = _scan_bytes(store, "--max-tokens", "100000", "--no-composite")
+    finally:
+        os.chmod(d, 0o755)
+    assert (r.returncode, r.stdout) == (control.returncode, control.stdout), (
+        f"rc {r.returncode}; stderr {r.stderr[-600:]!r}")
+    errs = _errors(store["root"])
+    assert [e.get("reason") for e in errs] == ["prune_failed"], f"errors.jsonl: {errs}"
+    assert "PermissionError" in (errs[0].get("error") or ""), errs[0]
+    assert old.exists(), "a file the pruner could not remove is gone"
+    _record_for(store["root"], _last_qid(store["root"]))
+
+
+def test_a_capped_errors_file_is_named_on_the_capture_line(store):
+    """AC-0.10 / R0.4 (L178 M2, X-2; RED): errors.jsonl stops growing at 1 MiB, and a capped
+    file is said on the `capture:` line as `errors_capped`, so a count that stopped is not
+    read as a count that is complete."""
+    d = _capture_dir_with_ignore(store["root"])
+    filler = (json.dumps({"ts": "2026-01-01T00:00:00.000Z", "query_id": "filler",
+                          "channel": "scan_prompt", "reason": "append_failed",
+                          "error": None}) + "\n")
+    (d / "errors.jsonl").write_text(filler * (MiB // len(filler) + 1), encoding="utf-8")
+    size = (d / "errors.jsonl").stat().st_size
+    assert size >= MiB, size
+    day = d / f"capture-{_today()}.jsonl"
+    day.write_text("", encoding="utf-8")
+    os.chmod(day, 0o444)
+    _scan(store, "--max-tokens", "100000")              # its append fails; the line is capped
+    assert (d / "errors.jsonl").stat().st_size == size, "errors.jsonl grew past its cap"
+    line = _capture_line(store)
+    assert "errors_capped" in line, f"a capped errors.jsonl is not named: {line!r}"
+
+
+def test_the_coverage_window_starts_at_the_first_capture_record(store):
+    """R0.6 (L178 M3; RED): with no `--since`, the coverage denominator counts the hook calls
+    from the first capture record on, not every hook row `query.log` ever held. Three hook
+    rows from before the capture existed are not uncaptured calls. (With no record at all
+    every hook row counts, so a capture that never wrote reads 0 of N: AC-0.10.)"""
+    with open(store["root"] / "query.log", "a", encoding="utf-8") as f:
+        for i in range(3):
+            f.write(json.dumps({"ts": f"2026-01-0{i + 1}T00:00:00", "kind": "scan",
+                                "body": "old", "source": "scan-prompt", "invocation": "hook",
+                                "outcome": "ok", "query_id": f"old{i}"}) + "\n")
+    _scan(store, "--max-tokens", "100000")
+    line = _capture_line(store)
+    assert _coverage(line) == (1, 1), (
+        f"the coverage counts hook calls from before the first capture record: {line!r}")
+
+
 # ---- AC-0.10 ----------------------------------------------------------------------------------
 
 
@@ -917,6 +1024,73 @@ def test_an_unwritable_capture_dir_shows_as_missing_coverage(store):
         f"stderr {r.stderr[-600:]!r}")
     line = _capture_line(store)
     assert _coverage(line) == (0, 1), f"the capture: line: {line!r}"
+
+
+# bsd-315 r1 P5: a lone surrogate the JSON envelope can carry and click can still print.
+SURROGATE_PROMPT_JSON = "widget_registry \\ud800 harbor lantern"
+
+
+def _surrogate_envelope(c: dict) -> str:
+    return ('{"session_id": "%s", "prompt": "%s", "hook_event_name": "UserPromptSubmit"}'
+            % (SESSION, SURROGATE_PROMPT_JSON))
+
+
+@pytest.mark.parametrize("route,fault", [
+    ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+    ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+])
+def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+        request, route, fault):
+    """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+    class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+    `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+    capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+    from the pruner and from the report). Each call prints what the same call prints with the
+    capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+    its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+    route are both covered."""
+    c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+    if route == "scan_prompt":
+        args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                "100000"]
+    elif route == "prompt_recall":
+        args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+    else:
+        args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+    stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+             (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                          "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+              else ""))
+
+    def call(**env):
+        env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+        return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                              env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                              capture_output=True, timeout=300)
+
+    d = c["root"] / CAP_DIR
+    if fault == "dir-0o300":
+        _capture_dir_with_ignore(c["root"])
+    control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+    assert control.returncode == 0 and control.stdout, (
+        f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+    if fault == "dir-0o300":
+        os.chmod(d, 0o300)
+    try:
+        r = call()
+        line_err = None
+        try:
+            _capture_line(c)
+        except AssertionError as e:
+            line_err = str(e)
+    finally:
+        if d.exists():
+            os.chmod(d, 0o755)
+    err = r.stderr.decode("utf-8", "replace")
+    assert r.returncode == 0 and "Traceback" not in err, (
+        f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+    assert r.stdout == control.stdout, f"bug-276: {route} with {fault} changed the payload"
+    assert line_err is None, f"bug-276: the capture: line is lost: {line_err[:600]}"
 
 
 # ---- AC-0.11 (characterization) ---------------------------------------------------------------
@@ -1013,27 +1187,51 @@ def test_an_errors_only_write_into_a_bare_capture_dir_is_ignored(git_store):
 # ---- AC-0.16 (bug-256) ------------------------------------------------------------------------
 
 
+# AC-0.16's raising input (L178 S4). The corrupt focus graph it used (`[]`) is no longer one:
+# the loader reads a wrong shape as an empty graph for every reader (bug-268). No other real
+# input raises inside the composite build: the graph is validated, the sent marker and the
+# PageRank read fail open, and the store calls are the ones the payload's own sections make.
+# So the composite's dependency `topic_composites` is replaced, IN A CHILD PROCESS ONLY, by one
+# that raises; the real `cli_entry` runs everything else. Registered in test_mock_registry.md.
+_COMPOSITE_RAISES_RUN = r"""
+import sys
+from refmatrix import composite
+def _raise(*a, **kw):
+    raise RuntimeError("injected composite failure (AC-0.16)")
+composite.topic_composites = _raise
+from refmatrix.cli import cli_entry
+sys.argv = ["rmx", *sys.argv[1:]]
+cli_entry()
+"""
+
+
+def _scan_composite_raises(c: dict, *extra, **env) -> subprocess.CompletedProcess:
+    import sys as _sys
+    env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+    return subprocess.run([_sys.executable, "-c", _COMPOSITE_RAISES_RUN, "scan-prompt",
+                           "--text", PROMPT, "--composite-every", "1", *extra], input=b"",
+                          env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                          capture_output=True, timeout=300)
+
+
 def test_a_raising_composite_build_is_recorded_and_counted(store):
-    """AC-0.16 (RED; bug-256, M0-11): the composite build raises through a real input, a
-    corrupt focus-graph file of the newest ring (`[]`: valid JSON, not a graph). No session is
-    passed, so only the composite reads that ring (`stm.phase_fields` reads the envelope's
-    session, and with a session it raised on the same file: bug-268, tested below).
-    stdout is byte-identical to the same call with the composite absent; stderr carries one
-    line naming the exception; the record's `composite_error` names it; `rmx telemetry
-    --context` counts one."""
-    (store["root"] / "stm" / f"{SESSION}.focus.json").write_text("[]", encoding="utf-8")
-    control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
-                          RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
-    r = _scan_bytes(store, "--max-tokens", "100000")
+    """AC-0.16 (bug-256, M0-11): the composite build raises (its dependency
+    `topic_composites`, replaced in the child: see `_COMPOSITE_RAISES_RUN`). stdout is
+    byte-identical to the same call with the composite absent; stderr carries one line naming
+    the exception; the record's `composite_error` names it; `rmx telemetry --context` counts
+    one."""
+    control = _scan_composite_raises(store, "--max-tokens", "100000", "--no-composite",
+                                     RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+    r = _scan_composite_raises(store, "--max-tokens", "100000")
     assert r.returncode == 0, f"rc {r.returncode}: {r.stderr[-1200:]!r}"
     assert r.stdout == control.stdout, "a failing composite changed the payload"
     err_new = [ln for ln in r.stderr.decode("utf-8", "replace").splitlines() if ln.strip()
                and ln not in control.stderr.decode("utf-8", "replace").splitlines()]
-    assert len(err_new) == 1 and "AttributeError" in err_new[0], (
+    assert len(err_new) == 1 and "RuntimeError" in err_new[0], (
         f"bug-256: the composite failure said on stderr: {err_new}")
     rec = _record_for(store["root"], _last_qid(store["root"]))
     ce = json.dumps(rec["composite_error"])
-    assert "AttributeError" in ce and "setdefault" in ce, (
+    assert "RuntimeError" in ce and "injected composite failure" in ce, (
         f"composite_error does not name the exception: {rec['composite_error']!r}")
     line = _capture_line(store)
     assert _count(line, "composite_errors?") == 1, f"the capture: line: {line!r}"
@@ -1131,7 +1329,17 @@ WRONG_SHAPES = {
     "list": "[]",
     "int-node": '{"turn": 2, "nodes": {"x": 1}, "edges": {}}',
     "nameless-node": '{"turn": 2, "nodes": {"a": {"freq": 1}}, "edges": {}}',
+    # Python's json reads `Infinity`; a non-finite turn passes a "number" check and raises
+    # at `int(turn)` (found writing the L178 fold).
+    "nonfinite-turn": '{"turn": Infinity, "nodes": {}, "edges": {}}',
 }
+
+
+def _fault_lines(err: str) -> "list[str]":
+    """stderr lines that say a corrupt focus graph (bug-268's wording: `STM focus graph of
+    session <s> is corrupt (...)`)."""
+    return [ln for ln in err.splitlines()
+            if "focus graph" in ln.lower() and "corrupt" in ln.lower()]
 
 
 def _corrupt(c: dict, shape: str) -> None:
@@ -1175,6 +1383,13 @@ def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
     _assert_survived(r, "scan-prompt")
     assert r.stdout == control.stdout, "a wrong-shaped focus graph changed the payload"
     _assert_counted(store, "scan", "scan-prompt")
+    # L178 S4: the composite reads the same graph. It is read as empty, not raised: the fault
+    # is the corrupt graph, said once for the call, not a composite failure.
+    rec = _record_for(store["root"], _last_qid(store["root"]))
+    assert rec["composite_error"] is None, (
+        f"bug-268: the composite raised on the corrupt graph: {rec['composite_error']!r}")
+    said = _fault_lines(r.stderr.decode("utf-8", "replace"))
+    assert len(said) == 1, f"bug-268: the corrupt graph is said {len(said)} times: {said}"
 
 
 @pytest.fixture
@@ -1212,3 +1427,51 @@ def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shap
     assert rows and rows[-1].get("session") == SESSION, (
         f"fixture: the call did not resolve the corrupt ring's session: {rows[-1:]}")
     _assert_counted(c, "recall", f"memory recall ({route})")
+
+
+@pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+@pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+    """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+    graph and says it once, not only the phase read. Through their entry points:
+    `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+    then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+    `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+    corruption is not sticky: the next hook reads a good graph and says nothing."""
+    from refmatrix import stm as stm_mod
+    _corrupt(store, shape)
+    g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+    if reader == "pin":
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            try:
+                pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+            except Exception as e:      # noqa: BLE001 -- the RED names it
+                pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                            f"{type(e).__name__}: {e}")
+        assert pinned is False, "pin found a node in a graph read as empty"
+        said = _fault_lines(buf.getvalue())
+        assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+        return
+    if reader == "focus-context":
+        r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+        _assert_survived(r, "focus context")
+        said = _fault_lines(r.stderr)
+        assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+        return
+    envelope = {"session_id": SESSION, "prompt": "check widget_registry and parser.py",
+                "hook_event_name": "UserPromptSubmit", "cwd": str(store["proj"]),
+                "transcript_path": ""}
+    r = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+    _assert_survived(r, "focus hook --event input")
+    said = _fault_lines(r.stderr)
+    assert len(said) == 1, f"bug-268: the focus hook said it {len(said)} times: {said}"
+    g = json.loads(g_path.read_text(encoding="utf-8"))
+    assert stm_mod.focus_graph_problem(g) is None, (
+        f"bug-268: the focus hook left the graph corrupt: {g_path.read_text()[:200]}")
+    again = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+    _assert_survived(again, "the next focus hook")
+    assert not _fault_lines(again.stderr), (
+        f"the corruption is sticky: {_fault_lines(again.stderr)}")
