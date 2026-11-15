@@ -331,10 +331,20 @@ def _median_bytes_hook(ix: int, b: int) -> int:
 
 
 def test_rewrite_bytes_is_the_median_of_the_runs(tmp_path, scratch):
-    """ch-bsd r1 #s-5: r1 kept the LAST run's size; sizes vary ~1.3 % run to run."""
+    """ch-bsd r1 #s-5: r1 kept the LAST run's size; sizes vary ~1.3 % run to run.
+
+    bug-130 (T0.3 R3.1/R3.4, 2026-11-15): under suite load a failed store reached the index
+    below and the test failed on a bare KeyError for the missing sizes key, hiding why the
+    store failed. `failed == 0` is asserted first, and its message carries every failed store's
+    captured error (the base sweep's one capture was bug-270's IndexError)."""
     root = _root(tmp_path, "m", rows=1_000)
-    rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep",
-                           bytes_hook=_median_bytes_hook)
+    rows, verdict, code = mc.run([root], scratch, tmp_path / "out" / "rep",
+                                 bytes_hook=_median_bytes_hook)
+    errors = [f"{r.get('store')}: step {r.get('step')}: {r.get('error')}"
+              for r in rows if "error" in r]
+    assert verdict.get("failed", 0) == 0 and not errors, (
+        f"bug-130: {verdict.get('failed')} store(s) failed to measure (exit {code}): "
+        + "; ".join(errors))
     (row,) = rows
     base = row["rewrite_bytes_all"][0]
     # A rerun batch (noisy timings under load) repeats the offsets; the median is unchanged.

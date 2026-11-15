@@ -1,0 +1,132 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t03-green/src/refmatrix as checked-hash (bug-037)
+.............F.F.....................F.................F........F....... [ 84%]
+.............                                                            [100%]
+=================================== FAILURES ===================================
+________________________ test_ac4_a_listed_bound_passes ________________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_ac4_a_listed_bound_passes0')
+
+    def test_ac4_a_listed_bound_passes(tmp_path):
+        (key,) = _keys(CLOCKDIFF)
+        entry = {"key": key, "kind": "legacy", "class": "A"}
+>       ok = _run(tmp_path / "ok", {"test_syn.py": CLOCKDIFF}, [entry], baseline={key})
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_wallclock_census.py:241: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_wallclock_census.py:106: in _run
+    root = _tree(tmp_path, files, timing=timing)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_wallclock_census.py:81: in _tree
+    root.mkdir()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_ac4_a_listed_bound_passes0/ok/tests')
+mode = 511, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_ac4_a_listed_bound_passes0/ok/tests'
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:1011: FileNotFoundError
+_____ test_ac4_fixture_suite_health_is_exempt_by_path_and_nothing_else_is ______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_ac4_fixture_suite_health_0')
+
+    def test_ac4_fixture_suite_health_is_exempt_by_path_and_nothing_else_is(tmp_path):
+>       ok = _run(tmp_path / "a", {"fixtures/suite_health/case_slow.py": CLOCKDIFF}, [])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_wallclock_census.py:257: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_wallclock_census.py:106: in _run
+    root = _tree(tmp_path, files, timing=timing)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_wallclock_census.py:81: in _tree
+    root.mkdir()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_ac4_fixture_suite_health_0/a/tests')
+mode = 511, parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_ac4_fixture_suite_health_0/a/tests'
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:1011: FileNotFoundError
+__________________ test_bug228_and_bug231_tests_hold_no_entry __________________
+
+    def test_bug228_and_bug231_tests_hold_no_entry():
+        """AC-4 / AC-6: the two rows are replaced, not allow-listed, in either kind."""
+        hits = [e["key"] for e in _entries()
+                if (e["key"].startswith("test_plan4_remedy.py::") and "graceful_stop" in e["key"])
+                or (e["key"].startswith("test_task21_1_recall_skip.py::")
+                    and "live_daemon_recall" in e["key"])]
+>       assert hits == [], hits
+E       AssertionError: ['test_plan4_remedy.py::test_graceful_stop_signals_first_then_waits_the_grace::ok is False and 0.9 < elapsed < 3.0']
+E       assert ['test_plan4_...lapsed < 3.0'] == []
+E         
+E         Left contains one more item: 'test_plan4_remedy.py::test_graceful_stop_signals_first_then_waits_the_grace::ok is False and 0.9 < elapsed < 3.0'
+E         Use -v to get more diff
+
+tests/test_wallclock_census.py:480: AssertionError
+________________ test_the_tree_passes_the_budget_outcome_census ________________
+
+    def test_the_tree_passes_the_budget_outcome_census():
+        r = _bc().run_census(TESTS, allow_path=ALLOW)
+>       assert r.ok, r.errors
+E       AssertionError: ['test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row: asserts an outcome a real-time ...h_budget(command, HANG_GUARD_S or a literal), or hold a budget-outcome entry with its reason (29.4 #r3-budget-census)']
+E       assert False
+E        +  where False = BudgetCensusResult(hits=[('test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row', False..._budget(command, HANG_GUARD_S or a literal), or hold a budget-outcome entry with its reason (29.4 #r3-budget-census)']).ok
+
+tests/test_budget_outcome_census.py:197: AssertionError
+_____ test_r3_1_bug130_a_failed_store_fails_on_its_error_not_on_a_keyerror _____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2283/test_r3_1_bug130_a_failed_stor0')
+
+    def test_r3_1_bug130_a_failed_store_fails_on_its_error_not_on_a_keyerror(tmp_path):
+        code, out = _force(tmp_path, "bug130", BUG130)
+        assert code == 1, f"the forced failure did not fail the test (exit {code}):\n{out[-3000:]}"
+        e = "\n".join(_e_lines(out))
+>       assert "KeyError: 'rewrite_bytes_all'" not in out, (
+            f"R3.1/M3.1: the test indexed rewrite_bytes_all before checking `failed`:\n{e}")
+E       AssertionError: R3.1/M3.1: the test indexed rewrite_bytes_all before checking `failed`:
+E         E       AssertionError: bug-130: 1 store(s) failed to measure (exit 1): m: step unexpected: RuntimeError: t03-forced-store-error: the catalog rewrite failed
+E         E       assert (1 == 0)
+E         E        +  where 1 = <built-in method get of dict object at 0x102652140>('failed', 0)
+E         E        +    where <built-in method get of dict object at 0x102652140> = {'failed': 1, 'note': 'no fleet-wide band is applied until every store has a row (R6)', 'verdict': 'INCOMPLETE'}.get
+E       assert "KeyError: '...e_bytes_all'" not in 'F          ...d in 0.56s\n'
+E         
+E         "KeyError: 'rewrite_bytes_all'" is contained here:
+E           d a bare `KeyError: 'rewrite_bytes_all'`, hiding why the store
+E                   failed. `failed == 0` is asserted first, and its message carries every failed store's
+E                   captured error (the base sweep's one capture was bug-270's IndexError)."""
+E                   root = _root(tmp_path, "m", rows=1_000)
+E                   rows, verdict, code = mc.run([root], scratch, tmp_path / "out" / "rep",...
+E         
+E         ...Full output truncated (17 lines hidden), use '-vv' to show
+
+tests/test_t03_flake_diagnostics.py:137: AssertionError
+=============================== warnings summary ===============================
+tests/test_wallclock_census.py::test_the_tree_passes_the_wallclock_census
+tests/test_wallclock_census.py::test_the_legacy_list_starts_at_the_r0_count_and_only_shrinks
+tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+  test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_wallclock_census.py::test_ac4_a_listed_bound_passes - FileN...
+FAILED tests/test_wallclock_census.py::test_ac4_fixture_suite_health_is_exempt_by_path_and_nothing_else_is
+FAILED tests/test_wallclock_census.py::test_bug228_and_bug231_tests_hold_no_entry
+FAILED tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+FAILED tests/test_t03_flake_diagnostics.py::test_r3_1_bug130_a_failed_store_fails_on_its_error_not_on_a_keyerror
+5 failed, 80 passed, 3 warnings in 14.90s

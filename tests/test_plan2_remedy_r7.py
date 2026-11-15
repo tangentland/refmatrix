@@ -175,9 +175,12 @@ def test_cli_partition_probe_reads_the_replica_under_a_held_writer(held_with_rep
         reads.append(a)
         return real(*a, **kw)
     monkeypatch.setattr(verbs, "memory_partition", spy)
-    t0 = time.monotonic()
     assert cli_mod._memory_partition_default(timeout=1.0) == discovery.store_name(d.root)
-    assert time.monotonic() - t0 < 0.8
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.8` ("the budget is not spent") is
+    # an ordering check now. The writer the test holds is held for the whole call, every op but
+    # ping stalls on it, and `dm.call` raises, so the answer above came from the replica while
+    # the writer was held: the daemon was asked nothing that waits on the lock.
+    assert [op for op in d.ops if op != "ping"] == [], d.ops
     assert cli_mod._memory_partition_default(timeout=1.0) == discovery.store_name(d.root)
     assert len(reads) == 2, "the second command did not resolve again -- something cached it"
     assert not hasattr(cli_mod, "_legacy_memory_partition_exists"), (
@@ -190,9 +193,10 @@ def test_verb_memory_partition_reads_the_replica_under_a_held_writer(held_with_r
     from refmatrix import daemon as dm, discovery
     d = held_with_replica
     monkeypatch.setattr(dm, "call", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("asked the daemon")))
-    t0 = time.monotonic()
     assert verbs.memory_partition(d.root, timeout=1.0) == discovery.store_name(d.root)
-    assert time.monotonic() - t0 < 0.8
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.8` is an ordering check now: the
+    # answer came while the test still held the writer, and no lock-bound op reached the daemon.
+    assert [op for op in d.ops if op != "ping"] == [], d.ops
 
 
 def test_verb_memory_partition_falls_back_to_the_daemon_without_a_replica():
@@ -215,14 +219,15 @@ def test_session_start_hook_answers_from_the_replica_under_a_held_writer(held_wi
     from click.testing import CliRunner
     d = held_with_replica
     monkeypatch.setattr(cli_mod, "_root", lambda: d.root)
-    t0 = time.monotonic()
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "--session-start", "--k", "10",
                                          "--scope", "project", "--json", "--timeout", "5"])
-    elapsed = time.monotonic() - t0
     assert r.exit_code == 0, r.output
     rows = json.loads(r.stdout)
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 2.5` on a 5 s budget is replaced by
+    # the outcome it stood for. A probe that ate the budget leaves the recent path no time and
+    # the hook prints [] with a busy word; ROWS, read while the test still holds the writer,
+    # mean the probe did not wait on the lock.
     assert [m["name"] for m in rows] == ["held_row"], (rows, r.stderr)
-    assert elapsed < 2.5, f"{elapsed:.2f}s"
 
 
 def test_cached_replica_never_creates_a_catalog(tmp_path):

@@ -756,7 +756,6 @@ def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, m
     probe.write_text(_TRACKED_PROBE, encoding="utf-8")
     env = _base_env()
     env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
-    t0 = time.monotonic()
     r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
                      bound=HANG_BOUND_S)
     assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
@@ -768,7 +767,10 @@ def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, m
         f"[{layout}/{mode}] a hanging git did not raise TrackedCatalogCheckError: {out}"
     assert "time" in out["msg"].lower(), \
         f"[{layout}/{mode}] the error does not say the git call timed out: {out['msg']!r}"
-    assert time.monotonic() - t0 < HANG_BOUND_S
+    # 29.4 R3 class A (T0.3 + 29.4c, 2026-11-15): the old `elapsed < HANG_BOUND_S` repeated the
+    # kill bound above. `_run_bounded` kills the probe at HANG_BOUND_S and the test fails on
+    # `r is None`, so the outcome (the probe returned, raised the check error, said "time") is
+    # the whole assertion. HANG_BOUND_S keeps its own name as the four kill bounds' value (L141).
 
 
 @pytest.mark.timeout(180)

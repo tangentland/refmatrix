@@ -32,6 +32,10 @@ from refmatrix import handoff, verbs
 from refmatrix import hub as hub_mod
 from refmatrix.store import Store
 from tests.test_plan2_remedy import _PingOnlyDaemon, _SilentDaemon
+from tests.timing import assert_one_deadline, record_transport
+
+# `verbs.memory_partition` probes the daemon once with `min(10.0, timeout)` (bsd-plan3-r4 #b-2).
+PARTITION_PROBE_CAP_S = 10.0
 
 GMD_ROW = {"name": "held_row", "content": "a row the replica can serve", "mtype": "note"}
 
@@ -94,42 +98,50 @@ def test_recall_state_still_says_stale_for_a_dead_pid(tmp_path, monkeypatch):
 
 # ---- #b-2 read budgets on a held writer ---------------------------------------------
 
-def test_memory_get_verb_is_bounded_on_a_held_writer(held):
-    t0 = time.monotonic()
+def test_memory_get_verb_is_bounded_on_a_held_writer(held, monkeypatch):
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 16.0` is replaced by the mechanism:
+    # the held daemon's calls are one attempt each, inside the read budget as one deadline.
+    calls = record_transport(monkeypatch, dm)
     with pytest.raises(verbs.VerbBusyError):
         verbs.memory(held.root, action="get", name="x")
-    assert time.monotonic() - t0 < 16.0, "the read verb must give up within its budget"
+    assert_one_deadline(calls, budget=verbs.MEMORY_READ_BUDGET_S, root=held.root,
+                        what="the read verb must give up within its budget")
 
 
-def test_mcp_recall_default_timeout_is_bounded_on_a_held_writer(held):
+def test_mcp_recall_default_timeout_is_bounded_on_a_held_writer(held, monkeypatch):
     assert inspect.signature(verbs.memory_recall).parameters["timeout"].default == 30.0
-    t0 = time.monotonic()
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 36.0` is replaced by the mechanism:
+    # the default 30 s is one deadline across the held daemon's calls, one attempt each.
+    calls = record_transport(monkeypatch, dm)
     with pytest.raises(verbs.VerbBusyError):
         verbs.memory_recall(held.root, recent=True)
-    assert time.monotonic() - t0 < 36.0
+    assert_one_deadline(calls, budget=30.0, root=held.root)
 
 
 def test_memory_get_cli_reads_the_replica_within_the_budget_on_a_held_writer(held, monkeypatch):
     _snapshot(held.root)
     monkeypatch.setattr(cli_mod, "_root", lambda: held.root)
-    t0 = time.monotonic()
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 16.0` is replaced by the mechanism:
+    # the held daemon is asked once, inside the read budget, before the replica serves the row.
+    calls = record_transport(monkeypatch, dm)
     r = CliRunner().invoke(cli_mod.main, ["memory", "get", "held_row"])
-    elapsed = time.monotonic() - t0
     assert r.exit_code == 0, r.output
     assert "a row the replica can serve" in r.output
     assert "reading the replica" in r.output
-    assert elapsed < 16.0, f"{elapsed:.1f}s to reach the replica"
+    assert_one_deadline(calls, budget=verbs.MEMORY_READ_BUDGET_S, root=held.root,
+                        what="to reach the replica")
 
 
 def test_memory_recall_recent_cli_reads_the_replica_within_the_budget(held, monkeypatch):
     _snapshot(held.root)
     monkeypatch.setattr(cli_mod, "_root", lambda: held.root)
-    t0 = time.monotonic()
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 12.0` is replaced by the mechanism:
+    # `--timeout 5` is one deadline across the held daemon's calls, one attempt each.
+    calls = record_transport(monkeypatch, dm)
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "--recent", "--json", "--timeout", "5"])
-    elapsed = time.monotonic() - t0
     assert r.exit_code == 0, r.output
     assert "held_row" in r.output and "reading the replica" in r.output
-    assert elapsed < 12.0, f"{elapsed:.1f}s"
+    assert_one_deadline(calls, budget=5.0, root=held.root)
 
 
 # ---- #s-3 promote + per-hit get through the typed wrapper -----------------------------
@@ -139,12 +151,13 @@ def test_promote_digest_is_typed_busy_on_a_held_writer(held, monkeypatch):
     s = stm_mod.Stm(held.root, "s9")
     s.record("input", "hello")
     before = {p.name: (p.stat().st_mtime_ns, p.stat().st_size) for p in held.root.glob("catalog*.duckdb")}
-    t0 = time.monotonic()
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 36.0` is replaced by the mechanism:
+    # the digest's write reaches the held daemon once, with `_promote_digest`'s 30 s budget.
+    calls = record_transport(monkeypatch, dm)
     out = handoff._promote_digest(held.root, s)
-    elapsed = time.monotonic() - t0
     assert out.get("error") and "busy" in out["error"], out
     assert "TimeoutError" not in out["error"]
-    assert elapsed < 36.0, f"{elapsed:.1f}s"
+    assert_one_deadline(calls, budget=30.0, root=held.root)
     after = {p.name: (p.stat().st_mtime_ns, p.stat().st_size) for p in held.root.glob("catalog*.duckdb")}
     assert after == before, "the slot was written"
 
@@ -173,15 +186,17 @@ def test_dense_per_hit_get_goes_through_call(monkeypatch, tmp_path):
 
 # ---- #s-4 memory_partition on a held writer --------------------------------------------
 
-def test_memory_partition_raises_busy_on_a_held_writer_without_a_replica(held):
+def test_memory_partition_raises_busy_on_a_held_writer_without_a_replica(held, monkeypatch):
     """No replica to read (rotation layout before the first snapshot): the
     daemon decides, and a held writer is BUSY — never a guessed partition."""
     (held.root / "catalog.duckdb").rename(held.root / "catalog.A.duckdb")
     (held.root / "active").write_text("A")
-    t0 = time.monotonic()
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 16.0` is replaced by the mechanism:
+    # the partition probe is one attempt under `memory_partition`'s 10 s probe cap.
+    calls = record_transport(monkeypatch, dm)
     with pytest.raises(verbs.VerbBusyError):
         verbs.memory_partition(held.root)
-    assert time.monotonic() - t0 < 16.0
+    assert_one_deadline(calls, budget=PARTITION_PROBE_CAP_S, root=held.root)
 
 
 def test_memory_partition_reads_the_replica_under_a_held_writer(held, monkeypatch):
@@ -191,9 +206,11 @@ def test_memory_partition_reads_the_replica_under_a_held_writer(held, monkeypatc
     from refmatrix import discovery
     _snapshot(held.root)
     monkeypatch.setattr(dm, "call", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("asked the daemon")))
-    t0 = time.monotonic()
     assert verbs.memory_partition(held.root) == discovery.store_name(held.root)
-    assert time.monotonic() - t0 < 1.0
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 1.0` ("instant") is an ordering
+    # check: the answer came while the test held the writer, and no op that waits on the lock
+    # reached the held daemon.
+    assert [op for op in held.ops if op != "ping"] == [], held.ops
 
 
 def test_memory_partition_still_guesses_on_an_answered_error(monkeypatch, tmp_path):

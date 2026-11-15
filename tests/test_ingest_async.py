@@ -43,7 +43,7 @@ def _poll_done(d, job_id, timeout=20.0):
 
 
 @duckdb_only
-def test_ingest_path_start_returns_job_then_completes(tmp_path):
+def test_ingest_path_start_returns_job_then_completes(tmp_path, monkeypatch):
     from refmatrix.daemon import _op_ingest_path_start
     proj = tmp_path / "proj"
     (proj / "pkg").mkdir(parents=True, exist_ok=True)
@@ -51,14 +51,34 @@ def test_ingest_path_start_returns_job_then_completes(tmp_path):
     (proj / "README.md").write_text("# Title\n\nsome docs\n")
 
     d, s = _make_daemon(tmp_path)
-    t0 = time.monotonic()
-    r = _op_ingest_path_start(d, {"path": str(proj), "source": "tree"})
-    elapsed = time.monotonic() - t0
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): the old `elapsed < 1.0` is an ordering check.
+    # The job body is held on an event the test owns (the wrapper calls the real body once
+    # released), so the start op is seen to answer while its work has not run.
+    import threading
 
-    # The start call is time-bound — it returns a job handle, not the result.
-    assert "job_id" in r and r["status"] == "running"
-    assert elapsed < 1.0, "start op blocked instead of returning immediately"
-    assert "entities" not in r
+    from refmatrix import daemon as dm_mod
+    from tests.timing import HANG_GUARD_S
+    release, entered = threading.Event(), threading.Event()
+    real_body = dm_mod._op_ingest_path
+
+    def held_body(dd, args):
+        entered.set()
+        assert release.wait(HANG_GUARD_S), "the test never released the ingest body"
+        return real_body(dd, args)
+
+    monkeypatch.setattr(dm_mod, "_op_ingest_path", held_body)
+    try:
+        r = _op_ingest_path_start(d, {"path": str(proj), "source": "tree"})
+        # The start call returns a job handle, not the result, while the body is still held (a
+        # start that ran the body inline would sit in `held_body` until the guard fired).
+        assert "job_id" in r and r["status"] == "running"
+        assert "entities" not in r
+        assert entered.wait(HANG_GUARD_S), "the detached ingest body never started"
+        from refmatrix.daemon import _op_ingest_gmd_status
+        held = _op_ingest_gmd_status(d, {"job_id": r["job_id"]})["job"]
+        assert held["status"] == "running", held
+    finally:
+        release.set()
 
     job = _poll_done(d, r["job_id"])
     assert job["status"] == "done", job

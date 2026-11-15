@@ -39,11 +39,20 @@ def test_ping_retries_before_declaring_a_daemon_dead(tmp_path, monkeypatch):
 
 
 def test_ping_absent_socket_short_circuits(tmp_path, monkeypatch):
-    """No socket = nothing to retry against; must not burn the backoff."""
+    """No socket = nothing to retry against; must not burn the backoff.
+
+    29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): the old `elapsed < 0.2` is replaced by what it
+    protected, asserted directly: no connect attempt is made and no backoff is slept."""
+    import socket as sock_mod
+
     monkeypatch.setattr(dm, "socket_path", lambda root: tmp_path / "nope.sock")
-    t0 = time.time()
+    sockets: list = []
+    sleeps: list = []
+    monkeypatch.setattr(sock_mod, "socket", lambda *a, **k: sockets.append(a) or None)
+    monkeypatch.setattr(dm.time, "sleep", lambda s: sleeps.append(s))
     assert dm.ping(tmp_path, timeout=0.5, retries=2, retry_backoff=0.5) is False
-    assert time.time() - t0 < 0.2
+    assert sockets == [] and sleeps == [], (
+        f"an absent socket was retried: {len(sockets)} connect attempt(s), backoff {sleeps}")
 
 
 def test_daemon_status_reports_busy_for_a_live_unresponsive_process(tmp_path, monkeypatch):

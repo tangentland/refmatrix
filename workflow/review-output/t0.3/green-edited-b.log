@@ -1,0 +1,58 @@
+........................................................................ [ 23%]
+..........FF............................................................ [ 47%]
+........................................................................ [ 71%]
+........................................................................ [ 95%]
+...............                                                          [100%]
+=================================== FAILURES ===================================
+___________ test_spawn_holds_one_deadline_for_launcher_and_readiness ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1099abf50>
+
+    @pytest.mark.timeout(90)
+    def test_spawn_holds_one_deadline_for_launcher_and_readiness(monkeypatch):
+        """W = 3 s, launcher stalls 20 s: one deadline set at entry fails by ~W.
+        At 1acadd2 the launcher alone may take W + 5 = 8 s and then the poll starts
+        a fresh W: ~11 s."""
+        base = _short_dir("rmxs-")
+        root = base / "p" / ".refmatrix"
+        root.parent.mkdir()
+        s = Store(root)
+        s.init()
+        s.close()
+        _slow_launcher_env(base, monkeypatch, 20.0)
+        # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 3.0 + 2.0` is replaced by the
+        # mechanism. The launcher is given only what is left of the ONE 3 s deadline (at 1acadd2 it
+        # got W + 5), and the readiness poll finds that deadline already spent: the error says the
+        # launcher was killed at it, not that a fresh window ran out.
+>       launches = _record_kw(monkeypatch, dm.subprocess, "run", "timeout")
+                                           ^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.daemon' has no attribute 'subprocess'
+
+tests/test_task3_6_r9_remedy.py:513: AttributeError
+__________ test_promote_with_a_slow_launcher_stays_inside_its_budget ___________
+
+cold_global = PosixPath('/tmp/rmxg-nsvfwgw6')
+live_project = PosixPath('/tmp/rmxp-b1rnttih/p/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ce089f0>
+
+    @pytest.mark.timeout(120)
+    def test_promote_with_a_slow_launcher_stays_inside_its_budget(cold_global, live_project,
+                                                                  monkeypatch):
+        """r9 probe: launcher delay 20 s → promote took 25.24 s against its 10 s
+        promise, and said "within 10s" at 25 s."""
+        site_root = _short_dir("rmxss-")
+        # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < MEMORY_READ_BUDGET_S + 3.0` is
+        # replaced by the mechanism: the spawn's readiness window and the launcher's timeout are
+        # what is LEFT of promote's budget, never their own defaults (r9: 25.24 s for a 10 s
+        # promise, a 30 s window plus a W + 5 launcher).
+        ensures = _record_kw(monkeypatch, hub_mod, "ensure_global_daemon", "wait_for_ready")
+        spawns = _record_kw(monkeypatch, dm, "spawn_daemon_subprocess", "wait_for_ready")
+>       launches = _record_kw(monkeypatch, dm.subprocess, "run", "timeout")
+                                           ^^^^^^^^^^^^^
+E       AttributeError: module 'refmatrix.daemon' has no attribute 'subprocess'
+
+tests/test_task3_6_r9_remedy.py:538: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_task3_6_r9_remedy.py::test_spawn_holds_one_deadline_for_launcher_and_readiness
+FAILED tests/test_task3_6_r9_remedy.py::test_promote_with_a_slow_launcher_stays_inside_its_budget
+2 failed, 301 passed in 545.64s (0:09:05)

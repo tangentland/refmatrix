@@ -48,20 +48,35 @@ def test_drain_pool_returns_within_timeout_when_worker_hangs(tmp_path):
 
 
 def test_drain_pool_returns_quickly_when_workers_finish(tmp_path):
+    """29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): the old `elapsed < 1.0` against a 5 s
+    timeout is an ordering check now. The workers are held on an event the test owns, so the
+    drain is seen waiting on them; once they are released it returns, under a drain timeout ten
+    times the hang guard, so returning at all proves it ended on the workers, not the deadline."""
+    from tests.timing import HANG_GUARD_S, wait_for
+
     d = _make_daemon(tmp_path)
     pool = ThreadPoolExecutor(max_workers=2)
+    release = threading.Event()
+    started = threading.Semaphore(0)
 
-    def _quick() -> None:
-        time.sleep(0.05)
+    def _held() -> None:
+        started.release()
+        release.wait()
 
-    pool.submit(_quick)
-    pool.submit(_quick)
-
-    start = time.monotonic()
-    d._drain_pool("test", pool, timeout_s=5.0)
-    elapsed = time.monotonic() - start
-
-    assert elapsed < 1.0, f"drain took {elapsed:.2f}s when workers were fast"
+    futs = [pool.submit(_held), pool.submit(_held)]
+    assert started.acquire(timeout=HANG_GUARD_S) and started.acquire(timeout=HANG_GUARD_S)
+    drained = threading.Event()
+    th = threading.Thread(
+        target=lambda: (d._drain_pool("test", pool, timeout_s=10 * HANG_GUARD_S), drained.set()),
+        daemon=True)
+    th.start()
+    try:
+        # The drain cannot return while the workers are held: it joins them.
+        assert not drained.wait(0.2), "the drain returned while its workers were still running"
+    finally:
+        release.set()
+    wait_for(drained.is_set, what="the drain to return once its workers finished")
+    assert all(f.done() for f in futs)
 
 
 def test_drain_pool_cancels_queued_futures(tmp_path):

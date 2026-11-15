@@ -31,6 +31,7 @@ import os
 import shutil
 import signal
 import socket
+import subprocess
 import time
 from pathlib import Path
 
@@ -44,10 +45,34 @@ from refmatrix import hub as hub_mod
 from refmatrix.store import Store
 from tests.test_plan2_remedy import _PingOnlyDaemon
 from tests.test_plan3_remedy_r4 import _snapshot
+from tests.timing import assert_one_deadline, record_transport
 from tests.test_task3_5_r8_remedy import (  # noqa: F401 — fixtures
     _short_dir, cold_global, live_project)
 
 _REPO = Path(__file__).resolve().parent.parent
+
+
+def _record_kw(monkeypatch, obj, name: str, *keys: str) -> list:
+    """29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): a recording wrapper that calls the REAL
+    `obj.<name>` through and keeps the budget arguments it was given (`keys`), so a test asserts
+    the budget that reached the spawn or the launcher instead of timing the whole command."""
+    real = getattr(obj, name)
+    seen: list = []
+
+    def recording(*a, **kw):
+        rec = {k: kw.get(k) for k in keys}
+        rec["arg0"] = a[0] if a else None
+        seen.append(rec)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(obj, name, recording)
+    return seen
+
+
+def _is_daemon_start(argv) -> bool:
+    """The `rmx daemon start` launcher `spawn_daemon_subprocess` runs (its argv ends in
+    `daemon start ...`); any other `subprocess.run` in the window is not the spawn."""
+    return isinstance(argv, (list, tuple)) and "daemon" in argv and "start" in argv
 _SRC = _REPO / "src" / "refmatrix"
 _TRANSPORT_WORDS = ("did not answer", "busy")
 
@@ -482,16 +507,21 @@ def test_spawn_holds_one_deadline_for_launcher_and_readiness(monkeypatch):
     s.init()
     s.close()
     _slow_launcher_env(base, monkeypatch, 20.0)
-    t0 = time.monotonic()
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 3.0 + 2.0` is replaced by the
+    # mechanism. The launcher is given only what is left of the ONE 3 s deadline (at 1acadd2 it
+    # got W + 5), and the readiness poll finds that deadline already spent: the error says the
+    # launcher was killed at it, not that a fresh window ran out.
+    launches = _record_kw(monkeypatch, subprocess, "run", "timeout")
     try:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError) as ei:
             dm.spawn_daemon_subprocess(root, watch_root=[], wait_for_ready=3.0)
-        elapsed = time.monotonic() - t0
     finally:
         if dm.ping(root):
             dm.stop_daemon(root)
         shutil.rmtree(base, ignore_errors=True)
-    assert elapsed < 3.0 + 2.0, f"{elapsed:.1f}s for a 3s readiness window"
+    starts = [x for x in launches if _is_daemon_start(x["arg0"])]
+    assert len(starts) == 1 and 0 < starts[0]["timeout"] <= 3.0, launches
+    assert "launcher was still running at the deadline" in str(ei.value), str(ei.value)
 
 
 @pytest.mark.timeout(120)
@@ -500,16 +530,24 @@ def test_promote_with_a_slow_launcher_stays_inside_its_budget(cold_global, live_
     """r9 probe: launcher delay 20 s → promote took 25.24 s against its 10 s
     promise, and said "within 10s" at 25 s."""
     site_root = _short_dir("rmxss-")
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < MEMORY_READ_BUDGET_S + 3.0` is
+    # replaced by the mechanism: the spawn's readiness window and the launcher's timeout are
+    # what is LEFT of promote's budget, never their own defaults (r9: 25.24 s for a 10 s
+    # promise, a 30 s window plus a W + 5 launcher).
+    ensures = _record_kw(monkeypatch, hub_mod, "ensure_global_daemon", "wait_for_ready")
+    spawns = _record_kw(monkeypatch, dm, "spawn_daemon_subprocess", "wait_for_ready")
+    launches = _record_kw(monkeypatch, subprocess, "run", "timeout")
     try:
         _slow_launcher_env(site_root, monkeypatch, 20.0)
-        t0 = time.monotonic()
         r = CliRunner().invoke(cli_mod.main, ["memory", "promote", "held_row"])
-        elapsed = time.monotonic() - t0
     finally:
         shutil.rmtree(site_root, ignore_errors=True)
     assert r.exit_code != 0, r.output
-    assert elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0, (
-        f"{elapsed:.1f}s against a promised {verbs.MEMORY_READ_BUDGET_S:g}s: {r.output!r}")
+    budget = verbs.MEMORY_READ_BUDGET_S
+    assert ensures and all(0 < e["wait_for_ready"] <= budget for e in ensures), ensures
+    assert spawns and all(0 < s_["wait_for_ready"] <= budget for s_ in spawns), spawns
+    starts = [x for x in launches if _is_daemon_start(x["arg0"])]
+    assert starts and all(0 < x["timeout"] <= budget for x in starts), launches
 
 
 # ---- #4: kill the four surviving mutants ------------------------------------
@@ -529,10 +567,14 @@ def test_a_held_real_global_daemon_is_busy_and_never_spawned_over(cold_global, l
         spawns.append(a)
         return real_spawn(*a, **kw)
     monkeypatch.setattr(dm, "spawn_daemon_subprocess", spy)
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < MEMORY_READ_BUDGET_S + 3.0` is
+    # replaced by the mechanism: every daemon call is one attempt inside promote's budget, and
+    # the held global store is judged busy by ONE status probe (no retries), never written to.
+    calls = record_transport(monkeypatch, dm)
+    statuses = _record_kw(monkeypatch, discovery, "daemon_status", "retries")
+    writes = _record_kw(monkeypatch, hub_mod, "global_call", "timeout")
     with _held(cold_global):
-        t0 = time.monotonic()
         r = CliRunner().invoke(cli_mod.main, ["memory", "promote", "held_row"])
-        elapsed = time.monotonic() - t0
     assert r.exit_code != 0, r.output
     assert "busy" in r.output, r.output
     assert "not running" not in r.output, r.output
@@ -540,7 +582,10 @@ def test_a_held_real_global_daemon_is_busy_and_never_spawned_over(cold_global, l
     # symptom is DuckDB's lock conflict from the in-process bootstrap.
     assert "Conflicting lock" not in r.output and "IOException" not in r.output, r.output
     assert spawns == [], f"spawned over a held global store: {spawns}"
-    assert elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0, f"{elapsed:.1f}s"
+    assert_one_deadline(calls, budget=verbs.MEMORY_READ_BUDGET_S)
+    global_probes = [st for st in statuses if Path(st["arg0"]) == Path(cold_global)]
+    assert global_probes and all(st["retries"] == 0 for st in global_probes), statuses
+    assert writes == [], f"wrote to a held global store: {writes}"
 
 
 @pytest.mark.timeout(120)
@@ -553,16 +598,19 @@ def test_promote_cannot_start_a_real_overlong_global_root_within_budget(live_pro
     groot.mkdir()
     monkeypatch.setenv("RMX_HOME", str(groot))
     assert len(str(dm.socket_path(groot))) > 104
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < MEMORY_READ_BUDGET_S + 3.0` is
+    # replaced by the mechanism MD broke: the spawn's readiness window is what is left of
+    # promote's budget, not the 30 s default (MD measured 30.45 s).
+    ensures = _record_kw(monkeypatch, hub_mod, "ensure_global_daemon", "wait_for_ready")
     try:
-        t0 = time.monotonic()
         r = CliRunner().invoke(cli_mod.main, ["memory", "promote", "held_row"])
-        elapsed = time.monotonic() - t0
     finally:
         shutil.rmtree(base, ignore_errors=True)
     assert r.exit_code != 0, r.output
     assert "not running" in r.output, r.output
     assert "Errno" not in r.output.splitlines()[-1], r.output
-    assert elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0, f"{elapsed:.1f}s"
+    budget = verbs.MEMORY_READ_BUDGET_S
+    assert ensures and all(0 < e["wait_for_ready"] <= budget for e in ensures), ensures
 
 
 def test_global_write_types_a_daemon_that_vanished_after_the_probe(cold_global, monkeypatch):

@@ -64,12 +64,18 @@ while True:
     if not loaded:
         with open(os.path.join(D, "loads"), "a") as fh:
             fh.write("1\n")
+        while os.path.exists(os.path.join(D, "hold_load")):
+            time.sleep(0.01)                    # a load the TEST holds (29.4 R3 class C)
         time.sleep(LOAD_S); loaded = True
     if op == "info":
         send_frame(_OUT, {"ok": True, "model": "stub/ce", "cost_s_per_doc": ema,
                           "scored_docs": scored}); continue
     rr = float(open(os.path.join(D, "rr_s")).read().strip() or "0")
     docs = req.get("docs") or []
+    with open(os.path.join(D, "rr_in"), "a") as fh:
+        fh.write("1\n")
+    while os.path.exists(os.path.join(D, "hold_rr")):
+        time.sleep(0.01)                        # a rerank the TEST holds (29.4 R3 class C)
     t0 = time.time(); time.sleep(rr)
     if docs:
         pd = (time.time() - t0) / len(docs)
@@ -109,12 +115,43 @@ def stub(monkeypatch):
             return len((root / "loads").read_text().split())
 
         @staticmethod
+        def reranks_in() -> int:
+            p = root / "rr_in"
+            return len(p.read_text().split()) if p.exists() else 0
+
+        @staticmethod
+        def hold(what: str) -> None:
+            """Hold the stub's `load` or `rr` on a file the test owns, until `release`."""
+            (root / f"hold_{what}").write_text("")
+
+        @staticmethod
+        def release(what: str) -> None:
+            (root / f"hold_{what}").unlink(missing_ok=True)
+
+        @staticmethod
         def argv(load_s: float = 0.2) -> list[str]:
             return [sys.executable, str(root / "w.py"), _SRC, str(root), str(load_s)]
 
     yield S
     import shutil
     shutil.rmtree(root, ignore_errors=True)
+
+
+# 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): "skipped at once" bounds (`wall < 0.3`) become
+# ordering checks. The worker is held on a file the test owns (`stub.hold`), the budget is ten
+# times the hang guard, and the call runs on a thread the test waits for under the hang guard:
+# a call that returns at all returned while the worker was held, without spending its budget.
+from tests.timing import HANG_GUARD_S, wait_for
+
+FAR_BUDGET_S = 10 * HANG_GUARD_S
+
+
+def _attempt_while_held(view, docs=("a", "b", "c")) -> str:
+    box: dict = {}
+    th = threading.Thread(target=lambda: box.setdefault("r", _attempt(view, docs)), daemon=True)
+    th.start()
+    wait_for(lambda: "r" in box, what="the budgeted call to return while the worker is held")
+    return box["r"][1]
 
 
 def _attempt(view, docs=("a", "b", "c")):
@@ -183,16 +220,22 @@ def test_the_queue_estimate_is_answered_while_the_worker_is_busy(stub, hub):
     base = RemoteReranker(client)
     stub.rr(0.6)
     assert _attempt(base)[1] == "scored"          # seeds ~0.2 s/doc
-    stub.rr(3.0)
+    # 29.4 R3 class C: `wall < 0.6` is an ordering check. The other rerank is held on the
+    # worker by the test; the estimate must answer "queued" WHILE it is held. A header that
+    # waited on the worker lock would time out and read the worker as cold, not queued.
+    stub.hold("rr")
     other = modelsrv.SharedWorkerClient("rerank", timeout=45.0)
     th = threading.Thread(target=lambda: _attempt(RemoteReranker(other)))
     th.start()
-    time.sleep(0.3)
-    wall, out = _attempt(base.with_budget(2.5), docs=["d"] * 20)
-    th.join()
-    other.close()
+    try:
+        wait_for(lambda: stub.reranks_in() >= 2, what="the other rerank to reach the worker")
+        _wall, out = _attempt(base.with_budget(2.5), docs=["d"] * 20)
+        assert th.is_alive(), "the held rerank finished before the estimate answered"
+    finally:
+        stub.release("rr")
+        th.join()
+        other.close()
     assert out.startswith("skipped") and "queued" in out, out
-    assert wall < 0.6, f"the estimate waited {wall:.2f} s behind the rerank it predicts"
 
 
 def test_a_cold_hub_worker_is_skipped_not_loaded_inside_the_budget(stub, monkeypatch):
@@ -200,7 +243,7 @@ def test_a_cold_hub_worker_is_skipped_not_loaded_inside_the_budget(stub, monkeyp
     from refmatrix import modelsrv, subproc
     from refmatrix.reranker import RemoteReranker
 
-    argv = stub.argv(load_s=3.0)
+    argv = stub.argv(load_s=0.1)
 
     class _StubWC(subproc.WorkerClient):
         def __init__(self, role, **kw):
@@ -210,14 +253,15 @@ def test_a_cold_hub_worker_is_skipped_not_loaded_inside_the_budget(stub, monkeyp
     monkeypatch.setattr(modelsrv, "WorkerClient", _StubWC)
     srv = modelsrv.ModelServer()
     assert srv.start()
+    stub.hold("load")                   # 29.4 R3 class C: the cold load is the test's to end
     try:
         c = modelsrv.SharedWorkerClient("rerank", timeout=45.0)
-        wall, out = _attempt(RemoteReranker(c).with_budget(1.0))
+        out = _attempt_while_held(RemoteReranker(c).with_budget(FAR_BUDGET_S))
         c.close()
     finally:
+        stub.release("load")
         srv.stop()
     assert out.startswith("skipped") and "cold" in out, out
-    assert wall < 0.5, wall
 
 
 # ---- #b-1, private worker --------------------------------------------------
@@ -265,21 +309,45 @@ def test_a_slow_private_rerank_finishes_and_keeps_the_worker(stub):
     finally:
         wc.close()
     assert stub.spawns() == 1, "the budget killed the private model process"
+    # 29.4 R3 class C (T0.3 + 29.4c): `wall2 < 0.6` stood for "the next op does not pay a cold
+    # load"; that is the single load asserted here, so the clock is dropped.
     assert stub.loads() == 1
-    assert out2 == "scored" and wall2 < 0.6, (wall2, out2)
+    assert out2 == "scored", out2
 
 
-def test_a_cold_private_worker_is_skipped_without_spawning(stub):
+def test_a_cold_private_worker_is_skipped_without_spawning(stub, monkeypatch):
+    """bug-190 (T0.3 R3.2/R3.4, 2026-11-15): under suite load this failed `spawns == 1` with no
+    cause. Every spawn's stack is recorded (a wrapper that calls the real `_spawn` through and
+    changes nothing), so a failure names the code path that spawned. Not reproduced in 26 base
+    trials (levels 3/5/8), so by T0.3's band the test gains only this diagnostic; the assertion
+    is unchanged. The harness's captures from those passing trials show a spawn in 22 of them,
+    every one from the background `_warm` thread the cold skip starts by design (r11 #b-1), read
+    before the stub recorded its pid. The old `wall < 0.3` (29.4 R3 class C) is dropped: what it
+    protected, no spawn on the skip path, is the assertion."""
+    import traceback
+
     from refmatrix import subproc
     from refmatrix.reranker import RemoteReranker
 
+    stacks: list = []
+    real_spawn = subproc.WorkerClient._spawn
+
+    def recording_spawn(self):
+        stacks.append("".join(traceback.format_stack(limit=25)[:-1]))
+        return real_spawn(self)
+
+    monkeypatch.setattr(subproc.WorkerClient, "_spawn", recording_spawn)
     wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=3.0))
     try:
-        wall, out = _attempt(RemoteReranker(wc).with_budget(2.0))
+        _wall, out = _attempt(RemoteReranker(wc).with_budget(2.0))
     finally:
         wc.close()
     assert out.startswith("skipped") and "cold" in out, out
-    assert wall < 0.3 and stub.spawns() == 0, (wall, stub.spawns())
+    spawned = stub.spawns()
+    assert spawned == 0, (
+        f"bug-190: the cold skip path spawned a worker ({spawned} stub start(s), "
+        f"{len(stacks)} recorded spawn(s)); the stack of every spawn:\n"
+        + ("\n---\n".join(stacks) or "(none recorded in this process)"))
 
 
 def test_an_evicted_private_worker_reads_as_cold(stub):
@@ -293,11 +361,18 @@ def test_an_evicted_private_worker_reads_as_cold(stub):
         base = RemoteReranker(wc)
         base.model_name
         assert wc.evict_if_idle(0.0)
-        wall, out = _attempt(base.with_budget(1.0))
+        # 29.4 R3 class C (T0.3 + 29.4c): `wall < 0.3` is an ordering check. Any respawn's load
+        # is held by the test, and the budget is far past the hang guard: the call returns
+        # "cold" while no load can finish, so it paid none.
+        stub.hold("load")
+        try:
+            out = _attempt_while_held(base.with_budget(FAR_BUDGET_S))
+            assert not wc.info(nowait=True).get("model"), "the evicted worker read as warm"
+        finally:
+            stub.release("load")
     finally:
         wc.close()
     assert out.startswith("skipped") and "cold" in out, out
-    assert wall < 0.3 and stub.loads() == 1, (wall, stub.loads())
 
 
 def test_the_private_header_tracks_the_cost_of_real_calls(stub):
@@ -576,14 +651,21 @@ def test_the_daemons_reranker_never_loads_a_cold_private_model(stub, monkeypatch
     d._log = lambda *a, **k: None
     d._worker_lock = _th.Lock()
     d._reranker_inst = None
-    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=2.0))
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.1))
     d._rerank_worker = wc
+    # 29.4 R3 class C (T0.3 + 29.4c): `wall < 0.5` is an ordering check. The load is held by
+    # the test, so `_reranker()` returning at all (under the hang guard) means it did not pay
+    # the load; the worker is still cold when it returns.
+    stub.hold("load")
     try:
-        t0 = time.time()
-        r = d._reranker()
-        wall = time.time() - t0
+        box: dict = {}
+        th = threading.Thread(target=lambda: box.setdefault("r", d._reranker()), daemon=True)
+        th.start()
+        wait_for(lambda: "r" in box, what="_reranker() to return while the load is held")
+        r = box["r"]
         assert r is not None
-        assert wall < 0.5, f"_reranker() took {wall:.2f} s on a cold private worker"
+        assert not wc.info(nowait=True).get("model"), "the model loaded before the test let it"
+        stub.release("load")
         assert _until(lambda: wc.info(nowait=True).get("model")), "never warmed"
         assert _attempt(r.with_budget(2.0))[1] == "scored"
     finally:
@@ -825,15 +907,20 @@ def test_a_warming_worker_is_skipped_at_once(stub):
     from refmatrix import subproc
     from refmatrix.reranker import RemoteReranker
 
-    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=2.0))
+    wc = subproc.WorkerClient("rerank", argv=stub.argv(load_s=0.1))
+    # 29.4 R3 class C (T0.3 + 29.4c): `wall < 0.2` is an ordering check. The warm thread's load
+    # is held by the test; a caller that waited on the worker lock could not return before the
+    # test releases it, and the budget is far past the hang guard.
+    stub.hold("load")
     try:
         rr = RemoteReranker(wc)
         _attempt(rr.with_budget(1.0))                  # starts the warm
-        time.sleep(0.1)
-        wall, out = _attempt(rr.with_budget(1.0))
+        wait_for(lambda: stub.loads() >= 1, what="the warm thread to start the load")
+        out = _attempt_while_held(rr.with_budget(FAR_BUDGET_S))
     finally:
+        stub.release("load")
         wc.close()
-    assert "warming" in out and wall < 0.2, (wall, out)
+    assert "warming" in out, out
 
 
 def test_the_startup_warmup_really_loads(stub, monkeypatch):

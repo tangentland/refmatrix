@@ -121,13 +121,29 @@ def test_graceful_stop_signals_first_then_waits_the_grace(stopped):
     assert dm.is_alive(pid), "graceful_stop must never SIGKILL"
 
 
+def _log_tail(root: Path, n: int = 3000) -> str:
+    log = root / "rmxd.log"
+    return log.read_text(errors="replace")[-n:] if log.exists() else "(no rmxd.log)"
+
+
 def test_graceful_stop_on_a_live_daemon_returns_quickly():
+    """bug-231 (29.4 R3 class A; T0.3 + 29.4c, 2026-11-15): `< 8.0` on a `grace=10.0` stop failed
+    under load at 10.05 s and 9.02 s, and the T0.3 base sweep's dominant failure was the grace
+    itself running out (bug-269). The outcome is asserted under the hang guard: the stop returns
+    True and the pid is gone. That the wait ends when the pid goes, not at the deadline, is
+    `test_t03_outcome_mechanisms.py::test_bug231_graceful_stop_returns_when_the_pid_is_gone_not_
+    at_the_deadline`. The elapsed time and the daemon's own log go in the failure message only."""
+    from tests.timing import HANG_GUARD_S
+
     base, root, pid = _spawn()
     try:
         t0 = time.monotonic()
-        assert hub_mod.graceful_stop(root, grace=10.0) is True
-        assert time.monotonic() - t0 < 8.0
-        assert not dm.is_alive(pid)
+        ok = hub_mod.graceful_stop(root, grace=HANG_GUARD_S)
+        elapsed = time.monotonic() - t0
+        alive = dm.is_alive(pid)
+        assert ok is True and not alive, (
+            f"graceful_stop(grace={HANG_GUARD_S:g}) returned {ok} after {elapsed:.1f} s with "
+            f"pid {pid} alive={alive}; rmxd.log tail:\n{_log_tail(root)}")
     finally:
         dm.stop_daemon(root); shutil.rmtree(base, ignore_errors=True)
 
