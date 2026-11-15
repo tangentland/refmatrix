@@ -35,3 +35,13 @@ form, with evidence (command + output, grep list, test node). "N/A" needs a reas
 unanswered question blocks the merge. The questions are ch-bsd's recurring findings: running the
 real path, the test reaching the wiring, the census of callers and siblings, the whole path
 bounded, busy is not absent, the guard can fire, failures loud, nothing handed off on paper.
+
+## RED is the second view, not a second typist (L167)
+
+The spec's ACs are the floor. Write RED from `workflow/SELF_AUDIT.md` as well: for a large change,
+at least (1) one test through the entry point users call (CLI / verb / daemon op / hook), not the
+helper; (2) one test with the daemon or worker BUSY or slow, run on a real test daemon, never by
+patching `ping`/`daemon.call`; (3) one census test that fails when `src/` gains a new caller,
+output path or construction outside the fix (an allowlist, not a hand count). Never patch the
+value a guard reads. If the spec misses a case these find, say so in the RED report; that
+gap is a finding, not scope creep.
