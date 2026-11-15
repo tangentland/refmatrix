@@ -273,3 +273,83 @@ All the changes below are test infrastructure or scripts. No `src/` change is ne
 - **bug-127's test body:** reach `compile_briefs`' ValueError through the daemon op or verb
   path, keeping `"bogus-class"` in the asserted error. This is a test-body change; the lead
   decides whose hands it is in.
+
+## Ruling L142 fold (2026-11-15) {#l142}
+
+rel: amends -> [[#not-followable]]
+
+At tip `c4b42f2`. Runs:
+
+| log | collected | result | exit |
+|---|---|---|---|
+| `l142-daemon-reaper.log` | 16 | 15 failed, 1 passed (the clean-daemon guard) | 1 |
+| `l142-brief-real-daemon.log` | 5 | 5 passed | 0 |
+
+The 12 earlier reaper nodes fail on the same E lines as before (new pids).
+
+### New nodes and their base E lines {#l142-nodes}
+
+| node | base E line | intended |
+|---|---|---|
+| `test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session` (case `case_inprocess_daemon_own_pid.py`) | `the in-process daemon (pid file -> the session itself) was left serving and the session exited 0: nothing reported or stopped it` | see below |
+| `test_r4_3_the_session_header_counts_the_orphans_the_start_swept` | ``no `rmx sandbox: <n> orphan process(es) swept from killed runs` line in the session header after a killed run left pid 15095`` | yes |
+| `test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file` (case `case_leak_daemon_under_sandbox.py`) | ``no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish` line, with a daemon left on /private/tmp/rmx-cdzy470x/s44-xs10d2t0/proj/.refmatrix`` | yes |
+
+**Why the L142 node is not RED at base on its own claim.** At base there is no reaper, so
+nothing can signal the session. Its claim is "not SIGTERMed", and that half holds at base.
+Its precondition also holds and is asserted first: the in-process daemon's `rmxd.pid` names the
+inner pytest (`pidfile == inner_pid`).
+
+The node is therefore RED at base on its other half: exit 0, and nothing reported. It checks
+the signal half before the exit code, in this order:
+- `returncode >= 0` and not 143;
+- then `returncode == 1`;
+- then the `LEAKED IN-PROCESS DAEMON` line and pytest's final summary line.
+
+The node's own RED is a mutation after GREEN: stop the in-process daemon with
+`stop_daemon(root)`, or by its pid file. The inner session then exits -15 or 143, and the node
+fails on the signal assertion. I propose that mutation as **R4.6b**.
+
+### Formats defined by this RED (L142 (6)) {#l142-formats}
+
+- **R4.3:** one line in pytest's session header (`pytest_report_header`), printed before
+  `collected …`:
+  `rmx sandbox: <n> orphan process(es) swept from killed runs`.
+  `<n>` is every orphan process the session-start sweep stopped, from all dead sandboxes it
+  found. The node asserts n ≥ 1, the line's position, and nothing else.
+- **R4.4:** one line printed at session finish:
+  `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish`.
+  `<n>` is counted when the finish hook starts, before anything is stopped or removed. The
+  node asserts n ≥ 1 with one daemon left on a root under the inner sandbox. Printing the
+  line when n = 0 is allowed and not required.
+
+### bug-127's test body (now RED's, L142) {#l142-bug127}
+
+`test_an_unknown_class_fails_loudly_through_the_daemon` now reaches `compile_briefs` through
+`verbs.memory(root, "brief", classes=["bogus-class"])`. That goes through the daemon's
+`memory_brief` op, which is the MCP route. The node asserts that the `VerbError` carries the
+library's own text: `unknown brief class(es): bogus-class`. The fix is in the test only; it
+passes at base (`l142-brief-real-daemon.log`), and the original E line is in
+`base-red-brief-real-daemon.log`. GREEN has nothing to do for bug-127.
+
+Mutations, each taken on `c4b42f2`, each restored with `git checkout` in its own command, with
+`__pycache__` cleared after:
+
+| mutation | log | result |
+|---|---|---|
+| M2.3: `compile_briefs` stops raising (`if False and unknown:`) | `l142-mut-M2.3-brief-no-raise.log` | exit 1, `Failed: DID NOT RAISE <class 'refmatrix.verbs.VerbError'>` |
+| M2.4: re-add `Store(root).close()` in the node while its daemon runs | `l142-mut-M2.4-store-opener.log` | exit 1; `test_bug127_no_test_opens_the_catalog_its_daemon_holds` red |
+
+Under M2.4 the node itself did NOT hit the lock this time, so `Conflicting lock` depends on
+what the daemon holds at that moment. That is why the static node is the mutation's reliable
+witness.
+
+### Points 1-5 and 7 as ruled {#l142-points}
+
+- (1) GREEN edits the eval harness `RMX` onto `tests/devbin.py`.
+- (2) Signal fallback plus never signalling self or an ancestor: the new node covers self. An
+  ancestor (the outer pytest) is not tested. A wrong GREEN would kill the outer session, and
+  that is not a safe fixture.
+- (3) and (4) stand.
+- (5) the fix pins `RMX_LEARN=on`.
+- (7) the lead stopped pid 35281.

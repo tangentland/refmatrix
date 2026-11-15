@@ -1,0 +1,642 @@
+# sha c4b42f2 (base src/tests-infra c4b44d0 + RED tests), clone /Volumes/littlebig/refmatrix-t02 (symlinked .venv-eval)
+# cmd: PYTHONPATH=/Volumes/littlebig/refmatrix-t02/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest tests/test_daemon_reaper.py -p no:cacheprovider -rA --timeout 900
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/littlebig/refmatrix-t02
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collected 16 items
+
+tests/test_daemon_reaper.py F.FFFFFFFFFFFFFF                             [100%]
+
+=================================== FAILURES ===================================
+______ test_ac5_a_leaked_out_of_sandbox_daemon_fails_the_session_by_name _______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_leaked_out_of_sandb0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_leaked_out_of_sandb0/case-info.json')
+
+    def test_ac5_a_leaked_out_of_sandbox_daemon_fails_the_session_by_name(tmp_path, case_info):
+        """bug-229's shape: a real daemon on a `mkdtemp(dir="/tmp")` root, never stopped. The one
+        inner test PASSES, and the session must still exit with pytest's "tests failed" status,
+        print `LEAKED PROCESS` with the daemon's pid, the test id and the store root, and leave no
+        process: the pid is gone and the socket does not answer.
+    
+        Kills mutation 9 (no fork ledger: the daemon's final pid exists only after its double
+        fork, so the LEAKED line would not carry it), 10 (the pid survives), 11 (exit 0) and 22
+        (the root is outside the sandbox, so a reaper that reads `root=` from sandbox pid files
+        prints `unknown`)."""
+        tree = _inner_tree(tmp_path, "case_leak_daemon")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        pid, root = d["pid"], d["root"]
+        assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+>       assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"a daemon (pid {pid}, root {root}) outlived its test and the inner session exited "
+            f"{r.returncode}, not {int(pytest.ExitCode.TESTS_FAILED)}: no reaper failed the "
+            f"session (bug-229)\n{out[-3000:]}")
+E       AssertionError: a daemon (pid 12475, root /private/tmp/shl-e5kghp_u/proj/.refmatrix) outlived its test and the inner session exited 0, not 1: no reaper failed the session (bug-229)
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_leaked_out_of_sandb0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E         
+E         ==================================== PASSES ====================================
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaks_a_daemon
+E         ============================== 1 passed in 0.85s ===============================
+E         
+E       assert 0 == <ExitCode.TESTS_FAILED: 1>
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'pytest', '-p', 'no:cachep...y::test_leaks_a_daemon\n============================== 1 passed in 0.85s ===============================\n', stderr='').returncode
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+tests/test_daemon_reaper.py:210: AssertionError
+_________ test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so __________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_reused_pid_is_not_s0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_reused_pid_is_not_s0/case-info.json')
+
+    def test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so(tmp_path, case_info):
+        """AC-5 fixture 3: a ledger line naming a live, UNRELATED process whose start time is not
+        the ledger's. The reaper must not signal it (a reused pid is someone else's process), and
+        its line says so. Kills mutation 12 (no start-time check: the process is signalled)."""
+        unrelated = subprocess.Popen(["/bin/sleep", "600"])
+        try:
+            # The start times must differ whatever resolution the ledger uses (`ps -o lstart` is
+            # whole seconds): the case's own child starts after the inner session's startup.
+            time.sleep(1.5)
+            tree = _inner_tree(tmp_path, "case_reused_pid")
+            r = _run_inner(tree, case_info, RMX_CASE_TARGET_PID=unrelated.pid)
+            out = _out(r)
+>           assert "no ledger line with pid=" not in out, (
+                "the case could not point a ledger line at the unrelated pid: its own child wrote "
+                "no line to <sandbox root>/children.jsonl (#r4 item 1)\n" + out[-3000:])
+E               AssertionError: the case could not point a ledger line at the unrelated pid: its own child wrote no line to <sandbox root>/children.jsonl (#r4 item 1)
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_reused_pid_is_not_s0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 1 item
+E                 
+E                 tests/test_case.py F                                                     [100%]
+E                 
+E                 =================================== FAILURES ===================================
+E                 ________________ test_points_a_ledger_line_at_an_unrelated_pid _________________
+E                 
+E                     def test_points_a_ledger_line_at_an_unrelated_pid():
+E                         target = int(os.environ["RMX_CASE_TARGET_PID"])
+E                         ledger = ledger_path()
+E                         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+E                         line = None
+E                         try:
+E                             deadline = time.monotonic() + _LEDGER_WAIT_S
+E                             while line is None and time.monotonic() < deadline:
+E                                 if ledger.is_file():
+E                                     for ln in ledger.read_text().splitlines():
+E                                         try:
+E                                             rec = json.loads(ln)
+E                                         except ValueError:
+E                                             continue
+E                                         if isinstance(rec, dict) and rec.get("pid") == child.pid:
+E                                             line = ln
+E                                             break
+E                                 if line is None:
+E                                     time.sleep(0.1)
+E                         finally:
+E                             child.kill()
+E                             child.wait()
+E                 >       assert line is not None, (
+E                             f"no ledger line with pid={child.pid} in {ledger}: the spawn ledger "
+E                             "(<sandbox root>/children.jsonl, task-29.4 #r4 item 1) was not written by the child")
+E                 E       AssertionError: no ledger line with pid=12847 in /private/tmp/rmx-1aw76brb/children.jsonl: the spawn ledger (<sandbox root>/children.jsonl, task-29.4 #r4 item 1) was not written by the child
+E                 E       assert None is not None
+E                 
+E                 tests/test_case.py:43: AssertionError
+E                 =========================== short test summary info ============================
+E                 FAILED tests/test_case.py::test_points_a_ledger_line_at_an_unrelated_pid - As...
+E                 ========================= 1 failed in 60.19s (0:01:00) =========================
+E                 
+E               assert 'no ledger line with pid=' not in '===========...==========\n'
+E                 
+E                 'no ledger line with pid=' is contained here:
+E                           f"no ledger line with pid={child.pid} in {ledger}: the spawn ledger "
+E                 ?           ++++++++++++++++++++++++
+E                               "(<sandbox root>/children.jsonl, task-29.4 #r4 item 1) was not written by the child")
+E                   E       AssertionError: no ledger line with pid=12847 in /private/tmp/rmx-1aw76brb/children.jsonl: the spawn ledger (<sandbox root>/children.jsonl, task-29.4 #r4 item 1) was not written by the child
+E                   E       assert None is not None...
+E                 
+E                 ...Full output truncated (5 lines hidden), use '-vv' to show
+
+tests/test_daemon_reaper.py:250: AssertionError
+______ test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start ______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_killed_runs_orphan_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_killed_runs_orphan_0/case-info.json')
+
+    def test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start(tmp_path, case_info):
+        """AC-5 fixture 4: a run killed with SIGKILL mid-test never reaches teardown, so no
+        session-finish reaper can run (bug-229's most likely cause). The NEXT inner session's start
+        finds the killed run's `/tmp/rmx-*/owner.json` (owner no longer running), stops its
+        ledger's survivors, prints `ORPHAN from a killed run` with the pid, removes the killed
+        run's root, logs the count in `workflow/review-output/leaked-processes.log`, and exits 0
+        (plan-29 D13: a killed run's orphan does not fail the new session). Kills mutation 13."""
+        tree, pid, killed_sandbox = _killed_run(tmp_path, case_info)
+        try:
+            r = _run_inner(tree, tmp_path / "unused-info.json")
+            out = _out(r)
+            line = _line_with(out, "ORPHAN from a killed run", str(pid))
+>           assert line is not None, (
+                f"the next session's start printed no `ORPHAN from a killed run` line for pid "
+                f"{pid} (left by a run killed with SIGKILL):\n{out[-3000:]}")
+E               AssertionError: the next session's start printed no `ORPHAN from a killed run` line for pid 14913 (left by a run killed with SIGKILL):
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_killed_runs_orphan_0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 1 item
+E                 
+E                 tests/test_case.py .                                                     [100%]
+E                 
+E                 ==================================== PASSES ====================================
+E                 =========================== short test summary info ============================
+E                 PASSED tests/test_case.py::test_nothing
+E                 ============================== 1 passed in 0.10s ===============================
+E                 
+E               assert None is not None
+
+tests/test_daemon_reaper.py:314: AssertionError
+_______ test_r4_3_the_session_header_counts_the_orphans_the_start_swept ________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_3_the_session_header_c0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_3_the_session_header_c0/case-info.json')
+
+    def test_r4_3_the_session_header_counts_the_orphans_the_start_swept(tmp_path, case_info):
+        """`#r4` item 3: "the count is in the session header". After a killed run, the next
+        session's header carries `rmx sandbox: <n> orphan process(es) swept from killed runs`
+        with n >= 1, before the `collected` line (other dead sandboxes on the machine may add
+        to n; this run's orphan guarantees at least one)."""
+        tree, pid, killed_sandbox = _killed_run(tmp_path, case_info)
+        try:
+            r = _run_inner(tree, tmp_path / "unused-info.json")
+            out = r.stdout or ""
+            m = _HEADER_COUNT.search(out)
+>           assert m is not None, (
+                "no `rmx sandbox: <n> orphan process(es) swept from killed runs` line in the "
+                f"session header after a killed run left pid {pid}:\n{out[-3000:]}")
+E               AssertionError: no `rmx sandbox: <n> orphan process(es) swept from killed runs` line in the session header after a killed run left pid 15095:
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_3_the_session_header_c0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 1 item
+E                 
+E                 tests/test_case.py .                                                     [100%]
+E                 
+E                 ==================================== PASSES ====================================
+E                 =========================== short test summary info ============================
+E                 PASSED tests/test_case.py::test_nothing
+E                 ============================== 1 passed in 0.13s ===============================
+E                 
+E               assert None is not None
+
+tests/test_daemon_reaper.py:350: AssertionError
+_________ test_ac5_an_in_process_daemon_left_serving_fails_the_session _________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_an_in_process_daemon_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_an_in_process_daemon_0/case-info.json')
+
+    def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_info):
+        """AC-5 fixture 5: a `Daemon` built and served INSIDE the pytest process is not in the
+        spawn ledger. conftest's weak registry of `Daemon` instances finds it still serving; it is
+        printed `LEAKED IN-PROCESS DAEMON root=<…> built in <test id>`, stopped, and the session
+        fails. Kills mutation 16 (the `Daemon.__init__` wrapper records nothing)."""
+        tree = _inner_tree(tmp_path, "case_inprocess_daemon")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        root = d["root"]
+        assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+>       assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"an in-process daemon on {root} was left serving and the session exited "
+            f"{r.returncode}:\n{out[-3000:]}")
+E       AssertionError: an in-process daemon on /private/tmp/shi-s_0icib8/proj/.refmatrix was left serving and the session exited 0:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_an_in_process_daemon_0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E         
+E         ==================================== PASSES ====================================
+E         ___________________ test_leaves_an_in_process_daemon_serving ___________________
+E         ----------------------------- Captured stderr call -----------------------------
+E         === 2026-11-15T05:13:09 daemon starting pid=15175 ===
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaves_an_in_process_daemon_serving
+E         ============================== 1 passed in 0.38s ===============================
+E         
+E       assert 0 == <ExitCode.TESTS_FAILED: 1>
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'pytest', '-p', 'no:cachep...process_daemon_serving\n============================== 1 passed in 0.38s ===============================\n', stderr='').returncode
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+tests/test_daemon_reaper.py:373: AssertionError
+_ test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_l142_an_in_process_daemon0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_l142_an_in_process_daemon0/case-info.json')
+
+    def test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session(tmp_path,
+                                                                                   case_info):
+        """Ruling L142 (2): the reaper never signals its own pid or an ancestor. An in-process
+        `Daemon`'s `rmxd.pid` names the PYTEST process (the case reports it, so the hazard is
+        shown, not assumed); stopping it the way a spawned daemon is stopped (`stop_daemon(root)`,
+        which ends in a signal to the pid file's pid) SIGTERMs the session. Stopped through the
+        weak `Daemon` registry instead, the session reports it, finishes its own summary, and exits
+        with pytest's "tests failed" status -- never by a signal.
+    
+        At base there is no reaper, so nothing can signal the session: the not-signalled half
+        holds and the node is RED on the other half (exit 0, nothing reported). Its own claim is
+        proved by a mutation after GREEN: stop the in-process daemon by `stop_daemon(root)` or by
+        its pid file -> the inner exits -15 / 143 and this node fails on the signal assertion."""
+        tree = _inner_tree(tmp_path, "case_inprocess_daemon_own_pid")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        assert d.get("pidfile") == d.get("inner_pid"), (
+            f"precondition: the in-process daemon's rmxd.pid ({d.get('pidfile')}) should name the "
+            f"inner pytest ({d.get('inner_pid')}): {d!r}")
+        assert r.returncode >= 0 and r.returncode != 128 + signal.SIGTERM, (
+            f"the inner session was killed by a signal (exit {r.returncode}): the reaper signalled "
+            f"its own pid {d.get('inner_pid')}, named by the in-process daemon's rmxd.pid\n"
+            + out[-3000:])
+>       assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"the in-process daemon (pid file -> the session itself) was left serving and the "
+            f"session exited {r.returncode}: nothing reported or stopped it\n{out[-3000:]}")
+E       AssertionError: the in-process daemon (pid file -> the session itself) was left serving and the session exited 0: nothing reported or stopped it
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_l142_an_in_process_daemon0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E         
+E         ==================================== PASSES ====================================
+E         ______ test_leaves_an_in_process_daemon_whose_pid_file_names_this_session ______
+E         ----------------------------- Captured stderr call -----------------------------
+E         === 2026-11-15T05:13:10 daemon starting pid=15182 ===
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaves_an_in_process_daemon_whose_pid_file_names_this_session
+E         ============================== 1 passed in 0.64s ===============================
+E         
+E       assert 0 == <ExitCode.TESTS_FAILED: 1>
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'pytest', '-p', 'no:cachep...ile_names_this_session\n============================== 1 passed in 0.64s ===============================\n', stderr='').returncode
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+tests/test_daemon_reaper.py:408: AssertionError
+____ test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file ____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_4_teardown_counts_the_0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_4_teardown_counts_the_0/case-info.json')
+
+    def test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file(tmp_path,
+                                                                               case_info):
+        """`#r4` item 4: the session-finish hook prints the count of sandbox store roots that
+        still hold a live `rmxd.pid` before removal. Format defined by this RED (ruling L142 (6)):
+        `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish`,
+        counted when the finish hook starts, before anything is stopped or removed. A daemon left
+        on a root under the inner sandbox makes n >= 1."""
+        tree = _inner_tree(tmp_path, "case_leak_daemon_under_sandbox")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        m = re.search(r"^rmx sandbox: (\d+) store root\(s\) under the sandbox hold a live "
+                      r"rmxd\.pid at session finish$", out, re.M)
+>       assert m is not None, (
+            "no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session "
+            f"finish` line, with a daemon left on {_info(case_info).get('root')}:\n{out[-3000:]}")
+E       AssertionError: no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session finish` line, with a daemon left on /private/tmp/rmx-cdzy470x/s44-xs10d2t0/proj/.refmatrix:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_4_teardown_counts_the_0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E         
+E         ==================================== PASSES ====================================
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaks_a_daemon_under_the_sandbox
+E         ============================== 1 passed in 1.47s ===============================
+E         
+E       assert None is not None
+
+tests/test_daemon_reaper.py:429: AssertionError
+___ test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session ____
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_sigstopped_daemon_i0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_sigstopped_daemon_i0/case-info.json')
+
+    def test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session(tmp_path,
+                                                                               case_info):
+        """AC-5 fixture 6 (`#r4` item 8): a daemon left SIGSTOPped is still a leak. It is sent
+        SIGCONT, stopped, reported like any other, and the session fails. Kills mutation 17."""
+        tree = _inner_tree(tmp_path, "case_sigstopped_daemon")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        d = _info(case_info)
+        pid = d["pid"]
+        assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+>       assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"a SIGSTOPped daemon (pid {pid}) was left and the session exited {r.returncode}:\n"
+            + out[-3000:])
+E       AssertionError: a SIGSTOPped daemon (pid 15310) was left and the session exited 0:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_sigstopped_daemon_i0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py .                                                     [100%]
+E         
+E         ==================================== PASSES ====================================
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_leaves_a_stopped_daemon
+E         ============================== 1 passed in 1.47s ===============================
+E         
+E       assert 0 == <ExitCode.TESTS_FAILED: 1>
+E        +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'pytest', '-p', 'no:cachep...eaves_a_stopped_daemon\n============================== 1 passed in 1.47s ===============================\n', stderr='').returncode
+E        +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E        +    where <enum 'ExitCode'> = pytest.ExitCode
+
+tests/test_daemon_reaper.py:445: AssertionError
+_ test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root __
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_a_leaked_plain_child_i0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_a_leaked_plain_child_i0/case-info.json')
+
+    def test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root(tmp_path,
+                                                                                    case_info):
+        """`#r4`'s first sentence: EVERY process the suite starts is known. A plain Python child
+        (not a daemon) left running: its ledger line carries the per-test `REFMATRIX_ROOT` the
+        sandbox gives every child, and no daemon serves that root, so `stop_daemon(root)` alone
+        stops nothing. The pid must still be stopped, reported, and fail the session."""
+        tree = _inner_tree(tmp_path, "case_leak_plain_child")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        pid = _info(case_info)["pid"]
+        try:
+>           assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+                f"an abandoned child (pid {pid}) outlived its test and the session exited "
+                f"{r.returncode}:\n{out[-3000:]}")
+E               AssertionError: an abandoned child (pid 15320) outlived its test and the session exited 0:
+E                 ============================= test session starts ==============================
+E                 platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E                 rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_a_leaked_plain_child_i0/inner
+E                 configfile: pyproject.toml
+E                 plugins: timeout-2.4.0, anyio-4.13.0
+E                 collected 1 item
+E                 
+E                 tests/test_case.py .                                                     [100%]
+E                 
+E                 ==================================== PASSES ====================================
+E                 =========================== short test summary info ============================
+E                 PASSED tests/test_case.py::test_abandons_a_child
+E                 ============================== 1 passed in 0.14s ===============================
+E                 
+E               assert 0 == <ExitCode.TESTS_FAILED: 1>
+E                +  where 0 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python', '-m', 'pytest', '-p', 'no:cachep...:test_abandons_a_child\n============================== 1 passed in 0.14s ===============================\n', stderr='').returncode
+E                +  and   <ExitCode.TESTS_FAILED: 1> = <enum 'ExitCode'>.TESTS_FAILED
+E                +    where <enum 'ExitCode'> = pytest.ExitCode
+
+tests/test_daemon_reaper.py:465: AssertionError
+___ test_ac5_a_registered_spawn_its_fixture_does_not_stop_fails_its_own_test ___
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_registered_spawn_it0')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_registered_spawn_it0/case-info.json')
+
+    def test_ac5_a_registered_spawn_its_fixture_does_not_stop_fails_its_own_test(tmp_path,
+                                                                                 case_info):
+        """A fixture registered through `rmx_sandbox.register_spawn` whose teardown does not stop
+        its daemon fails ITS OWN test, by name, before the session ends (`#r4` item 7: a
+        registered entry's teardown asserts the stop answered and the pid exited). The test that
+        runs after it is untouched."""
+        tree = _inner_tree(tmp_path, "case_register_spawn_unstopped")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+        pid = _info(case_info)["pid"]
+        own = f"{_NODE}test_uses_the_owned_daemon"
+>       assert "ERROR at setup of test_uses_the_owned_daemon" not in out, (
+            "the fixture could not register its daemon through rmx_sandbox.register_spawn(pid, "
+            "root, why) (#r4 item 7), so the test errored at setup, not at the teardown that "
+            "must catch the unstopped spawn:\n" + out[-3000:])
+E       AssertionError: the fixture could not register its daemon through rmx_sandbox.register_spawn(pid, root, why) (#r4 item 7), so the test errored at setup, not at the teardown that must catch the unstopped spawn:
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_registered_spawn_it0/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 2 items
+E         
+E         tests/test_case.py E.                                                    [100%]
+E         
+E         ==================================== ERRORS ====================================
+E         _________________ ERROR at setup of test_uses_the_owned_daemon _________________
+E         
+E             @pytest.fixture
+E             def owned_daemon():
+E                 base, root = store_root("shr-")
+E                 pid = dm.spawn_daemon_subprocess(root, watch_root=[])
+E                 report(pid=pid, root=str(root), base=str(base))
+E         >       rmx_sandbox.register_spawn(pid, root, "case: a fixture that owns a daemon and forgets it")
+E                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         E       AttributeError: module 'rmx_sandbox' has no attribute 'register_spawn'
+E         
+E         tests/test_case.py:16: AttributeError
+E         ==================================== PASSES ====================================
+E         =========================== short test summary info ============================
+E         PASSED tests/test_case.py::test_runs_after
+E         ERROR tests/test_case.py::test_uses_the_owned_daemon - AttributeError: module...
+E         ========================== 1 passed, 1 error in 1.73s ==========================
+E         
+E       assert 'ERROR at se...owned_daemon' not in '===========...==========\n'
+E         
+E         'ERROR at setup of ...es_the_owned_daemon' is contained here:
+E           _________ ERROR at setup of test_uses_the_owned_daemon _________________
+E           
+E               @pytest.fixture
+E               def owned_daemon():
+E                   base, root = store_root("shr-")...
+E         
+E         ...Full output truncated (12 lines hidden), use '-vv' to show
+
+tests/test_daemon_reaper.py:491: AssertionError
+_____________ test_ac5_a_registered_spawn_its_fixture_stops_passes _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_registered_spawn_it1')
+case_info = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_registered_spawn_it1/case-info.json')
+
+    def test_ac5_a_registered_spawn_its_fixture_stops_passes(tmp_path, case_info):
+        """The control: `register_spawn` plus a teardown that stops the daemon passes, exit 0, no
+        `LEAKED` line."""
+        tree = _inner_tree(tmp_path, "case_register_spawn_stopped")
+        r = _run_inner(tree, case_info)
+        out = _out(r)
+>       assert "ERROR at setup of test_uses_the_owned_daemon" not in out, (
+            "the fixture could not register its daemon through rmx_sandbox.register_spawn(pid, "
+            "root, why) (#r4 item 7):\n" + out[-3000:])
+E       AssertionError: the fixture could not register its daemon through rmx_sandbox.register_spawn(pid, root, why) (#r4 item 7):
+E         ============================= test session starts ==============================
+E         platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0
+E         rootdir: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_ac5_a_registered_spawn_it1/inner
+E         configfile: pyproject.toml
+E         plugins: timeout-2.4.0, anyio-4.13.0
+E         collected 1 item
+E         
+E         tests/test_case.py E                                                     [100%]
+E         
+E         ==================================== ERRORS ====================================
+E         _________________ ERROR at setup of test_uses_the_owned_daemon _________________
+E         
+E             @pytest.fixture
+E             def owned_daemon():
+E                 base, root = store_root("shr-")
+E                 pid = dm.spawn_daemon_subprocess(root, watch_root=[])
+E                 report(pid=pid, root=str(root), base=str(base))
+E         >       rmx_sandbox.register_spawn(pid, root, "case: a fixture that owns a daemon and stops it")
+E                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         E       AttributeError: module 'rmx_sandbox' has no attribute 'register_spawn'
+E         
+E         tests/test_case.py:17: AttributeError
+E         =========================== short test summary info ============================
+E         ERROR tests/test_case.py::test_uses_the_owned_daemon - AttributeError: module...
+E         =============================== 1 error in 1.53s ===============================
+E         
+E       assert 'ERROR at se...owned_daemon' not in '===========...==========\n'
+E         
+E         'ERROR at setup of ...es_the_owned_daemon' is contained here:
+E           _________ ERROR at setup of test_uses_the_owned_daemon _________________
+E           
+E               @pytest.fixture
+E               def owned_daemon():
+E                   base, root = store_root("shr-")...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+tests/test_daemon_reaper.py:513: AssertionError
+__ test_r4_an_exec_child_and_its_forked_grandchild_each_write_one_ledger_line __
+
+request = <FixtureRequest for <Function test_r4_an_exec_child_and_its_forked_grandchild_each_write_one_ledger_line>>
+
+    def test_r4_an_exec_child_and_its_forked_grandchild_each_write_one_ledger_line(request):
+        """`#r4` item 1: every Python process that starts under the sandbox appends ONE line to
+        `<sandbox root>/children.jsonl`; `install_from_env()` writes the exec'd child's, and the
+        `os.register_at_fork(after_in_child=…)` callback it registers writes the fork's (a daemon
+        double-forks with no exec, so its final pid is only visible there). The line carries the
+        pid, the parent pid, the argv, the cwd, the child's `REFMATRIX_ROOT` and the test id."""
+        cwd = Path(tempfile.mkdtemp(prefix="led-", dir=os.environ["RMX_SANDBOX_ROOT"])).resolve()
+        root = str(cwd / "store" / ".refmatrix")
+        env = dict(os.environ, REFMATRIX_ROOT=root)
+        r = subprocess.run([sys.executable, "-c", _FORK_CHILD], cwd=str(cwd), env=env,
+                           capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0, r.stderr
+        child, grandchild = (int(x) for x in r.stdout.split())
+        recs = _records(child)
+>       assert len(recs) == 1, (
+            f"expected exactly one ledger line for the exec'd child {child} in {_ledger()}, got "
+            f"{len(recs)}: {recs!r}")
+E       AssertionError: expected exactly one ledger line for the exec'd child 15595 in /private/tmp/rmx-2uwqa_l3/children.jsonl, got 0: []
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_daemon_reaper.py:571: AssertionError
+__________ test_r4_a_fork_of_the_pytest_process_writes_a_ledger_line ___________
+
+    def test_r4_a_fork_of_the_pytest_process_writes_a_ledger_line():
+        """`#r4` item 1: `enter()` registers the at-fork callback in the pytest process too (an
+        in-process `spawn_daemon` forks from here)."""
+        import warnings
+        with warnings.catch_warnings():
+            # the pytest process has threads; the child only runs the at-fork hook and exits
+            warnings.simplefilter("ignore", DeprecationWarning)
+            pid = os.fork()
+        if pid == 0:
+            os._exit(0)
+        os.waitpid(pid, 0)
+>       assert len(_records(pid)) == 1, (
+            f"no single ledger line for pid {pid}, forked from the pytest process ({_ledger()})")
+E       AssertionError: no single ledger line for pid 15598, forked from the pytest process (/private/tmp/rmx-2uwqa_l3/children.jsonl)
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = _records(15598)
+
+tests/test_daemon_reaper.py:600: AssertionError
+_____________ test_r4_enter_writes_owner_json_naming_this_process ______________
+
+    def test_r4_enter_writes_owner_json_naming_this_process():
+        """`#r4` item 3: `enter()` writes `owner.json` (pid and start time), which the next
+        session's start reads to tell a killed run's sandbox from a live one."""
+        owner = Path(os.environ["RMX_SANDBOX_ROOT"]) / "owner.json"
+>       assert owner.is_file(), f"no {owner}: a killed run's sandbox cannot be told from a live one"
+E       AssertionError: no /private/tmp/rmx-2uwqa_l3/owner.json: a killed run's sandbox cannot be told from a live one
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/rmx-2uwqa_l3/owner.json').is_file
+
+tests/test_daemon_reaper.py:608: AssertionError
+__________ test_r4_sweep_orphans_stops_the_live_survivors_of_a_ledger __________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1964/test_r4_sweep_orphans_stops_th0')
+
+    def test_r4_sweep_orphans_stops_the_live_survivors_of_a_ledger(tmp_path):
+        """`#r4` item 9: `rmx_sandbox.sweep_orphans(ledger_path)` is item 3's logic as a function
+        (28.2's paired-run clone daemons sweep their own ledger with it). Given a ledger holding
+        one live process's own line, it stops that process and reports it."""
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+        try:
+            deadline = time.monotonic() + 30
+            while not _records(child.pid) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            recs = _records(child.pid)
+>           assert recs, f"the child {child.pid} wrote no ledger line in {_ledger()}"
+E           AssertionError: the child 15599 wrote no ledger line in /private/tmp/rmx-2uwqa_l3/children.jsonl
+E           assert []
+
+tests/test_daemon_reaper.py:626: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_daemon_reaper.py::test_ac5_a_daemon_stopped_by_its_test_is_no_leak
+FAILED tests/test_daemon_reaper.py::test_ac5_a_leaked_out_of_sandbox_daemon_fails_the_session_by_name
+FAILED tests/test_daemon_reaper.py::test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so
+FAILED tests/test_daemon_reaper.py::test_ac5_a_killed_runs_orphan_is_stopped_at_the_next_session_start
+FAILED tests/test_daemon_reaper.py::test_r4_3_the_session_header_counts_the_orphans_the_start_swept
+FAILED tests/test_daemon_reaper.py::test_ac5_an_in_process_daemon_left_serving_fails_the_session
+FAILED tests/test_daemon_reaper.py::test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session
+FAILED tests/test_daemon_reaper.py::test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file
+FAILED tests/test_daemon_reaper.py::test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session
+FAILED tests/test_daemon_reaper.py::test_r4_a_leaked_plain_child_is_stopped_even_though_its_ledger_names_a_root
+FAILED tests/test_daemon_reaper.py::test_ac5_a_registered_spawn_its_fixture_does_not_stop_fails_its_own_test
+FAILED tests/test_daemon_reaper.py::test_ac5_a_registered_spawn_its_fixture_stops_passes
+FAILED tests/test_daemon_reaper.py::test_r4_an_exec_child_and_its_forked_grandchild_each_write_one_ledger_line
+FAILED tests/test_daemon_reaper.py::test_r4_a_fork_of_the_pytest_process_writes_a_ledger_line
+FAILED tests/test_daemon_reaper.py::test_r4_enter_writes_owner_json_naming_this_process
+FAILED tests/test_daemon_reaper.py::test_r4_sweep_orphans_stops_the_live_survivors_of_a_ledger
+=================== 15 failed, 1 passed in 151.09s (0:02:31) ===================
+# exit 1
