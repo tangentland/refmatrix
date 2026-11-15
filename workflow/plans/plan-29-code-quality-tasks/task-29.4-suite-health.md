@@ -5,7 +5,7 @@ title: "Task 29.4: heal the test suite — four tiers, a sharded runner, outcome
 tags: [task, plan-29, tests, tiers, shards, flaky, wall-clock, daemon, reaper, families, code-quality]
 metadata:
   node_type: task
-  status: pending
+  status: in-progress
   plan: plan-29-code-quality
   created: 2026-11-14
   updated: 2026-11-15

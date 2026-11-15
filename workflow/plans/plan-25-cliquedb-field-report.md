@@ -5,7 +5,7 @@ title: "Plan 25: cliquedb's 2026-11-08 field report — recall that reaches the 
 tags: [plan, bugs, hooks, memory-recall, scan-prompt, stm, helix, grep, cliquedb, budget]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-11-08
   updated: 2026-11-14
 ---
@@ -13,8 +13,8 @@ metadata:
 # Plan 25: cliquedb field report (bug-164..167) {#root}
 
 **Date:** 2026-11-08 (session 8d9a255f).
-**Status:** Approved 2026-11-09 ([[#approval]]); not started (its build waits on the
-ordering below). Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
+**Status:** In progress: 25.1 shipped in 0.83.0 (`d44e359`; D-Q2 waived its order). Approved
+2026-11-09 ([[#approval]]); the rest of its build waits on the ordering below. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
 folded in revision round 1 ([[#rev-round-1]]); r2 DIRTY 0B/3S/7M folded in revision round 2
 ([[#rev-round-2]]); task 25.5 added for bug-174; r3 DIRTY 0B/4S/9M folded in revision round 3
 ([[#rev-round-3]]); r4-lite confirm DIRTY 0B/1S/5M folded in revision round 4 ([[#rev-round-4]]);

@@ -27,6 +27,7 @@ rel: reinforces -> [[feedback_measure_the_outcome_not_the_wall]]
 rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#appendix-memory-rules]]
 rel: depends-on -> [[refmatrix/adr-0005-memory-dir-layout#appendix-forget-step]]
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-26 · L11, plan-26 · L12 (AC-8)"}
 
 ## Requirements {#requirements}
 

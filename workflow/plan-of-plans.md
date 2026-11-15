@@ -434,29 +434,17 @@ Next id: **Q40**. Open: Q38, Q39. Each reply that asks anything ends with the id
 
 The POP rewrite and the archive of the alternate sources landed together on 2026-11-15 (record in [[pop-finished]]). {#pending-bookkeeping-body}
 
-**File statuses that do not yet follow this file.** Each is one edit, in the commit that lands
-this rewrite or the next one that touches the file. {#pending-status}
+**File statuses that do not yet follow this file.** The 2026-11-15 bookkeeping pass applied the
+rest (branch `bookkeeping-1115`; the applied rows are in [[pop-finished]]). Each row left has its
+reason. {#pending-status}
 
-| file | edit | evidence |
-|---|---|---|
-| `plan-3-verbs-parity.md`; `task-3.7-verb-it-backlog.md` | `status: in-progress` → `completed` | D-Q6; `91ddbe0` |
-| `plan-9-context-cost-telemetry.md` | `status: in-progress` → `completed` | D-Q6 |
-| `task-25.1-recall-hook-byte-budget.md` | `status: pending` → `completed` | `d44e359`, `d1be40a`; 0.83.0 `af83867` |
-| `task-26.1-…`, `task-26.4-…` | `status: pending` → `completed` | `9b2c4ac` + `25af9ca`; `0c74872` |
-| `task-19.1-pack-recall-under-budget.md` | `status: pending` → `completed` (its own text: "nothing left to build here") | L14; `d44e359` |
-| `plan-21-…`, `plan-25-…`, `plan-26-…`, `plan-29-…` | `status: approved` → `in-progress`; plan-21's body "Drafting" and plan-25's "not started" removed | `535231e`; `d44e359`; `9432b83`; `3b930e4` |
-| `task-29.4-suite-health.md`; `task-t0-suite-trust-sweep.md` | `status` → `in-progress`; plan-29 `#decisions-next` "Next: 29.1" → "Next: 29.4 stage 2" | `3b930e4`, `a0c7560`; L118 |
-| `task-bug178-…`, `task-bug179-…`, `task-bug195-…`, `task-bug216-rule-docs-in-graph.md` | `status: approved` → `completed` | `76ec748`, `aea4098`, `102524d`, `7aed8df` |
-| `task-bug216-rule-docs-in-graph.md` | add the order edge to bug-185 and L50's wording, owed at the bug-216 merge | L57 M6, L62 M4 |
-| `task-bug218-…`, `task-dq1-…` | body "Status: Drafting" → "Approved" (frontmatter already says so); the dq1 spec's queue slot: after plan-30 release C | L69, L74, L128 |
-| `task-7.4-plan-7-longmemeval.md` | status note "dense blocked on bug-030" → "the dense re-run is T0.6" | bug-030 fixed 2026-09-16 |
-| `plan-24-mod-transport.md` | dated amends notes for D-Q5 and L128 on `#decisions`, `#phase-now` and `#phase-held` (now, or in step 16) | L38, L128; [[#flags]] |
-| `task-compaction-as-handoff.md`, `task-agent-start-context.md`, `task-linked-readonly-store.md` | "queued right after 0.83.0" → "post-mod" | Q28 = a; L128 |
-| `task-10.2-…`, `task-10.4-…`, `task-10.5-…`, `task-10.6-…` | header line: post-mod with 25.1b | L128 |
-| `plan-31-pre-mod-loose-ends.md` | "the five items" and "These four" → six; `status: approved` when its specs merge | Q30 = a; L125 |
-| each plan anchor that holds an open decision | cite its row in [[#decisions]] | [[orchestration#pop-truth]] |
-| `.claude/PROJECT_PROFILE.md` `#corpus` | "unverified until a Claude Code restart" → verified: spawned agents are offered the read-only MCP tools | [[plan-review-fable-2026-11-14-queue#st-3]] |
-| `bug_registry.md` rows 164, 181, 167, 174 and the suite figures in `CLAUDE.md` | not edited by hand: 29.1 owns them | step 7 |
+| file | edit | why it is still here | evidence |
+|---|---|---|---|
+| `plan-24-mod-transport.md` | dated amends notes for D-Q5 and L128 on `#decisions`, `#phase-now` and `#phase-held`, and the citation of its `plan-24 · D1` row | **stays:** the plan-24 freshness revision writes them ([[#queue]] step 16) | L38, L128; [[#flags]] |
+| `plan-31-pre-mod-loose-ends.md` | `status: drafting` → `approved` | **stays:** set in the commit that merges its specs after a ch-bsd MEH-only GO | L125 |
+| `task-26.5-memory-organise-verb.md` | cite the `plan-26 · 26.5 split` row | **stays:** the split is a proposal with no ruling, and no text in the spec holds it yet | [[#decisions]] |
+| `.claude/PROJECT_PROFILE.md` `#corpus` | "unverified until a Claude Code restart" → verified: spawned agents are offered the read-only MCP tools | **stays:** an agent-instruction file that `CLAUDE.md` imports; left for the lead or the user to edit, not a subagent | [[plan-review-fable-2026-11-14-queue#st-3]] |
+| `bug_registry.md` rows 164, 181, 167, 174 and the suite figures in `CLAUDE.md` | not edited by hand | **stays:** 29.1 owns them ([[#queue]] step 6) | [[task-29.1-registry-triage#root]] |
 
 ## Notes {#notes}
 

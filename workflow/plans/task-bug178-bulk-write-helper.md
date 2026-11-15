@@ -5,7 +5,7 @@ title: "Task bug-178: one bulk-write helper; no executemany reaches DuckDB"
 tags: [task, bug-178, duckdb, performance, writer-lock]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   created: 2026-11-09
 ---
 

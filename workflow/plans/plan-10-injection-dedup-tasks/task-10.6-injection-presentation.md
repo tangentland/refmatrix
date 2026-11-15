@@ -13,6 +13,7 @@ metadata:
 # Task 10.6: injection presentation {#root}
 
 > Plan: [[plan-10-injection-dedup]]
+> **Post-mod with 25.1b** (L128, Q32 = a; re-evaluated against the mod first, L127 and L129; [[plan-of-plans#post-mod]]).
 > Status: Pending (drafted 2026-11-13 on presentation rules the user agreed the same day; ch-bsd
 > spec review next)
 > Depends on: [[task-25.1-recall-hook-byte-budget]] merged (the pack and its hook lines);

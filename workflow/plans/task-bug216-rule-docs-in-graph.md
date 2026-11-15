@@ -5,7 +5,7 @@ title: "Task bug-216: GMD rel: edges bind to the doc they cite — bare doc-id t
 tags: [task, bug-216, gmd, ingest, ignore, linkages, graph]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   created: 2026-11-13
   updated: 2026-11-13
   revision: 6
@@ -17,10 +17,13 @@ metadata:
 > taken as the user would, with reasons. Fleet ignore files are NOT changed by this task
 > ([[#fleet]]); that is the user's decision.
 > Depends on: none.
+> Order (L3; L57 M6, L62 M4): this task merged before [[task-bug185-bulk-gmd-ingest]], whose
+> revision round 2 is written against R6's precedence and emits R13's events.
 
 rel: derives-from -> [[bug_registry]]
 rel: derives-from -> [[measurement-task-21.5-relation-gaps-2026-11-13#gmd-gap-correction]]
 rel: related-to -> [[task-bug179-lint-ingest-anchor-parity]]
+rel: related-to -> [[task-bug185-bulk-gmd-ingest]] {order: "bug-216 before bug-185"}
 rel: related-to -> [[feedback_operational_content_not_in_graph]]
 rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 
