@@ -26,7 +26,7 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 070141d0 (2026-11-14/15) {#session-070141d0}
 
-Moved to [[plan-of-plans#questions]] on 2026-11-15 (the user: "any L, D, or Q must be placed in the POP before being amended to a plan"). Q23-Q31 live there with their answers.
+Moved to [[plan-of-plans#questions]] on 2026-11-15 (the user: "any L, D, or Q must be placed in the POP before being amended to a plan"). Q23-Q31 were answered and applied; they are in [[pop-finished]].
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 

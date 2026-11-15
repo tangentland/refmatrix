@@ -138,7 +138,9 @@ The default for plans, task specs and spec revisions. The SDD chain (`/ch-specif
   docs, `L<n>` rows and triage files are evidence the POP row links to; they never hold state the
   POP lacks. A plan or task file's `metadata.status` follows the POP, not the other way. **Every
   `L<n>`, `plan-N D<n>` and `Q<n>` is entered in [[plan-of-plans#ledgers]] first, then amended
-  into a plan** (the user, 2026-11-15). {#pop-truth}
+  into a plan** (the user, 2026-11-15). **The POP is a living doc:** it holds current state only.
+  A finished item (done, applied, answered, superseded) is appended whole to [[pop-finished]],
+  then deleted from the POP in the same commit. {#pop-truth}
 - **Measure before deciding**, read-only: copy `.refmatrix/catalog.read.duckdb` to the
   scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`; never `Store()`
   on a live slot. State go/no-go bands before measuring. {#measure}
