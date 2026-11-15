@@ -146,9 +146,20 @@ def test_a_cap_hit_after_the_target_finished_is_void_and_before_it_is_counted():
 def test_base_band_three_failures_in_ten_is_the_reproducer_and_hangs_count():
     h = _h()
     seq = ["pass"] * 7 + ["fail", "hang", "fail"]
-    assert h.base_band(seq) == {"trials": 10, "failures": 3, "reproducer": True}
+    assert h.base_band(seq) == {"trials": 10, "failures": 3, "reproducer": True,
+                                "decided": True}
     assert h.base_band(["pass"] * 8 + ["fail", "fail"])["reproducer"] is False
-    assert h.base_band(["fail"] * 3)["reproducer"] is False      # fewer than 10 trials
+
+
+def test_base_band_decides_early_once_the_rest_cannot_change_it():
+    """Ruling L141: a level stops early once every row is decided."""
+    h = _h()
+    assert h.base_band(["fail"] * 3) == {"trials": 3, "failures": 3, "reproducer": True,
+                                         "decided": True}
+    assert h.base_band(["pass"] * 8)["decided"] is True           # 0 + 2 left < 3
+    assert h.base_band(["pass"] * 7)["decided"] is False          # 0 + 3 left could reach 3
+    assert h.base_band(["pass"] * 6 + ["fail"])["decided"] is False
+    assert h.base_band(["pass"] * 8 + ["fail"])["decided"] is True  # 1 + 1 left < 3
 
 
 def test_fix_band_needs_45_consecutive_passes_and_any_failure_ends_it():

@@ -159,10 +159,16 @@ def trial_status(outcomes: dict, *, cap_hit: bool, target_exited: bool) -> str:
 
 def base_band(outcomes: list) -> dict:
     """Base trials of one row at one level: failures (hangs included) out of the counted
-    trials, and whether that level is the reproducer."""
+    trials. `reproducer`: >= 3 failures within the level's 10 trials. `decided`: the
+    remaining trials can no longer change that (ruling L141: a level stops early once every
+    row is decided), so a row with 3 failures in its first 3 trials is a reproducer, and a row
+    with 0 failures after 8 is not."""
+    outcomes = list(outcomes)[:BASE_TRIALS]
     fails = sum(1 for o in outcomes if o in ("fail", "hang"))
-    return {"trials": len(outcomes), "failures": fails,
-            "reproducer": len(outcomes) >= BASE_TRIALS and fails >= REPRO_FAILS}
+    left = BASE_TRIALS - len(outcomes)
+    repro = fails >= REPRO_FAILS
+    return {"trials": len(outcomes), "failures": fails, "reproducer": repro,
+            "decided": repro or fails + left < REPRO_FAILS}
 
 
 def fix_band(outcomes: list) -> dict:
@@ -244,6 +250,48 @@ def _kill_group(p: subprocess.Popen) -> None:
             continue
 
 
+_SWEEP_CMD = ("daemon start", "embed_worker", "modelsrv", "rmx_sandbox")
+
+
+def _proc_table() -> dict:
+    rows = subprocess.run(["ps", "-A", "-o", "pid=,command="], capture_output=True,
+                          text=True).stdout.splitlines()
+    out = {}
+    for ln in rows:
+        parts = ln.strip().split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            out[int(parts[0])] = parts[1]
+    return out
+
+
+def _cwd(pid: int) -> str:
+    r = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True,
+                       text=True)
+    return next((ln[1:] for ln in r.stdout.splitlines() if ln.startswith("n")), "")
+
+
+def sweep_leaks(before: set, out: Path) -> list:
+    """After the trial's process groups are gone: any NEW daemon / model worker whose cwd is
+    this clone or a sandbox root (`/private/tmp/rmx-…`) was left by a killed load process
+    (`until-target` stops the load mid-test). Recorded, then stopped; never another tree's."""
+    leaked = []
+    for pid, cmd in _proc_table().items():
+        if pid in before or not any(k in cmd for k in _SWEEP_CMD):
+            continue
+        cwd = _cwd(pid)
+        if not (cwd.startswith(str(REPO)) or "/tmp/rmx-" in cwd):
+            continue
+        leaked.append({"pid": pid, "cwd": cwd, "command": cmd[:300]})
+    if leaked:
+        _snapshot([x["pid"] for x in leaked], out / "leaked-ps-lsof.txt")
+        for x in leaked:
+            try:
+                os.kill(x["pid"], signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+    return leaked
+
+
 def _lines(path: Path) -> int:
     try:
         return len(path.read_text(errors="replace").splitlines())
@@ -258,6 +306,7 @@ def run_trial(level: int, targets: list, out: Path, *, warmup: float, load_mode:
     cap, total = trial_cap(load, targets, weights)
     env = _env(out)
     touches0 = _lines(TOUCHES)
+    before = set(_proc_table())
     load0 = os.getloadavg()
     t0 = time.monotonic()
     w0 = time.time()
@@ -287,6 +336,8 @@ def run_trial(level: int, targets: list, out: Path, *, warmup: float, load_mode:
     # monotonic (mach_absolute_time) does not advance while the host sleeps; the validation
     # trial measured 605 s awake inside 58 min of wall clock (pmset: Sleep / DarkWake cycles).
     wall_clock = time.time() - w0
+    time.sleep(2.0)                      # let a stopped daemon's own exit land first
+    leaked = sweep_leaks(before, out)
     target_exited = target_exit_s is not None
     recs = []
     try:
@@ -298,7 +349,8 @@ def run_trial(level: int, targets: list, out: Path, *, warmup: float, load_mode:
     rec = {
         "level": level, "targets": targets, "load": load, "load_mode": load_mode,
         "warmup_s": warmup, "cap_s": cap, "T_s": total, "wall_s": wall,
-        "wall_clock_s": wall_clock, "cap_hit": cap_hit,
+        "wall_clock_s": wall_clock, "cap_hit": cap_hit, "leaked_after_kill": len(leaked),
+        "leaked": leaked,
         "target_exit_s": target_exit_s, "target_rc": target.returncode,
         "load_rcs": [p.returncode for p in loads], "status": status, "outcomes": outcomes,
         "loadavg_start": load0, "loadavg_end": os.getloadavg(),
@@ -329,13 +381,21 @@ def run_trials(a) -> dict:
         n += 1
         tdir = base / f"trial-{n:03d}"
         cmd = [sys.executable, str(Path(__file__).resolve()), *_trial_args(a, tdir)]
+        # Ruling L141 (3): every trial runs under `caffeinate -i` (the validation trial slept
+        # 48 of its 58 min); the lane lock is taken per trial, outside caffeinate.
+        cmd = ["/usr/bin/caffeinate", "-i", *cmd]
         if a.lock:
             cmd = ["/usr/bin/lockf", a.lock, *cmd]
+        t_req = time.time()
         rc = subprocess.run(cmd, cwd=str(REPO)).returncode
         if rc != 0 or not (tdir / "trial.json").exists():
             raise SystemExit(f"trial {n} failed to run (exit {rc}); see {tdir}")
         rec = json.loads((tdir / "trial.json").read_text())
-        line = {k: rec[k] for k in ("status", "wall_s", "cap_hit", "loadavg_start")}
+        rec["lane_request_to_release_s"] = time.time() - t_req
+        (tdir / "trial.json").write_text(json.dumps(rec, indent=1))
+        line = {k: rec.get(k) for k in ("status", "wall_s", "wall_clock_s", "cap_hit",
+                                        "loadavg_start", "live_socket_touches_added",
+                                        "leaked_after_kill")}
         line["outcomes"] = {k: v["outcome"] for k, v in rec["outcomes"].items()}
         print(f"trial {n}: {json.dumps(line)}", flush=True)
         if rec["status"] == "void":
@@ -347,6 +407,10 @@ def run_trials(a) -> dict:
         counted.append(rec)
         if a.mode == "fix" and any(v["outcome"] != "pass" for v in rec["outcomes"].values()):
             break
+        if a.mode == "base" and all(
+                base_band([r["outcomes"][t]["outcome"] for r in counted])["decided"]
+                for t in a.target):
+            break
     summary = {"level": a.level, "mode": a.mode, "targets": a.target, "voids": voids,
                "noisy": noisy, "trials_run": n, "rows": {}}
     for t in a.target:
@@ -356,7 +420,8 @@ def run_trials(a) -> dict:
             "band": base_band(seq) if a.mode == "base" else fix_band(seq),
             "e_lines": [r["outcomes"][t].get("e_line") for r in counted
                         if r["outcomes"][t]["outcome"] in ("fail",)],
-            "walls_s": [round(r["wall_s"], 1) for r in counted]}
+            "walls_s": [round(r["wall_s"], 1) for r in counted],
+            "wall_clocks_s": [round(r.get("wall_clock_s", 0), 1) for r in counted]}
     (base / "summary.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
     return summary
