@@ -24,8 +24,8 @@ metadata:
 > Ships alone, as release C. **It edits no derive-pass file** ([[#ac-12]]).
 > Before the first `src/` edit: an ADR, authored by `ch-architect` ([[#r1]]).
 > Fixes bug-243.
-> User gates: plan-30 D1 (may the op answer from a graph that is behind). The spec is written
-> to the recommendation, (a); (b) and (c) change two numbers in [[#r4]] and nothing else.
+> User gates: plan-30 D1 (may the op answer from a graph that is behind): decided (a) by the
+> user on 2026-11-15: yes, bounded, as [[#r4]] specifies. The ADR of [[#r1]] can be Accepted.
 > Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]), and after ch-bsd r2
 > ([[#rev-note-3]]).
 

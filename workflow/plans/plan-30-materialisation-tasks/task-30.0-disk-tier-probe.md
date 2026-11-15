@@ -19,7 +19,8 @@ metadata:
 > 29.4's sandboxed short temp roots). No plan-30 task.
 > Runs first, beside 30.5. Tests and one measurement script only: **no file under `src/`
 > changes.** Its output is a verdict that [[task-30.3-disk-tier-fate]] applies.
-> User gates: none here. plan-30 D3 (deleting the files) is asked at 30.3.
+> User gates: none here. plan-30 D3 (moving the files out, on a drop verdict) was decided yes by
+> the user on 2026-11-15 and is carried out at 30.3.
 > Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]).
 
 rel: part-of -> [[plan-30-materialisation]]
@@ -87,7 +88,7 @@ Two numbers decide the tier's fate.
 
 | K + S | V | Verdict | What 30.3 does |
 |---|---|---|---|
-| 1 or more | under 300 s/week | **drop** | removes the tier's code; the files are deleted (plan-30 D3) |
+| 1 or more | under 300 s/week | **drop** | removes the tier's code; the files are moved out of each store (plan-30 D3) |
 | 1 or more | 300 s/week or more | **re-key** | keys on the identity of the catalog file the store reads; every probe here must then pass; a writer census is added |
 | 0 | under 300 s/week | **drop** | as above: a sound copy that saves under five minutes a week is not worth a census duty |
 | 0 | 300 s/week or more | **keep** | the tier stays; its two silent handlers are counted and surfaced; the probes stay as its census |

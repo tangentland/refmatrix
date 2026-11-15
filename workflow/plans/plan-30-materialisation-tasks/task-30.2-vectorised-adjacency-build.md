@@ -20,7 +20,8 @@ metadata:
 > Followed by: [[task-30.3-disk-tier-fate]], then [[task-30.4-daemon-adjacency-ppr-op]].
 > Ships in release B with 30.1 and 30.3: it edits `pagerank.py`, a derive-pass file
 > ([[plan-30-materialisation#releases]]).
-> User gates: release B's re-derive (plan-30 D2).
+> User gates: release B's re-derive (plan-30 D2: decided go by the user on 2026-11-15; one
+> announced window after release B deploys, backups first).
 > Revised 2026-11-15 after ch-bsd r1 and ruling L116 ([[#rev-note-2]]).
 
 rel: part-of -> [[plan-30-materialisation]]
