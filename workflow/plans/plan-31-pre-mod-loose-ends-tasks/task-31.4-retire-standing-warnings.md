@@ -5,19 +5,20 @@ title: "Task 31.4: zero standing lint warnings — each of the four warning clas
 tags: [task, plan-31, gmd, lint, warnings, graph-correctness, freeze]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-31-pre-mod-loose-ends
   created: 2026-11-15
   updated: 2026-11-15
-  revision: 2
+  revision: 3
 ---
 
 # Task 31.4: retire the warnings nobody acts on {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t4]]).
-> Status: Drafting, revision 2. Written by ch-architect on Fable 5.2, 2026-11-15. Revision 2
-> folds ch-bsd spec review r1 per ruling L133 in [[plan-of-plans#rulings]]; the fold table is
-> [[#rev-r1]].
+> Status: **Approved** by ruling L140 in [[plan-of-plans#rulings]] (ch-bsd confirm-lite r2,
+> MEH-only GO; L125), revision 3. Written by ch-architect on Fable 5.2, 2026-11-15. Revision 2
+> folded ch-bsd spec review r1 per ruling L133 ([[#rev-r1]]). r2 left no finding on this spec;
+> revision 3 records the approval and one consequence of 31.3's fold ([[#rev-r2]]).
 > Decisions: `plan-31 D8`-`D10` are decided in [[plan-of-plans#decisions]] and amended in here
 > ([[#decisions]]). D10 (the user, Q37 = a) is the consent to change the upstream GMD linter,
 > which this repository vendors.
@@ -340,3 +341,11 @@ The report is held with this branch until its merge, so its finding ids are writ
 | ch-bsd's recount of the 89 | [[#baseline-run]] |
 | D8, D9 decided (L125); D10 decided (Q37 = a) | [[#decisions]] |
 {#rev-r1-table}
+
+## Revision 3: approval (2026-11-15, ruling L140) {#rev-r2}
+
+ch-bsd confirm-lite r2 was a MEH-only GO with no finding on this spec. One of its findings on
+31.3 (`M5`) reaches here: the gate-tree helper's declared-file check now also requires the
+sibling modules a declared Python file imports ([[task-31.3-ledger-anchor-guard#r6-imports]]).
+This task adds no file to the gate, so it adds no `gate-file` line; 31.6, which follows it,
+must declare `tools/gmd/resolve.py`. {#rev-r2-body}

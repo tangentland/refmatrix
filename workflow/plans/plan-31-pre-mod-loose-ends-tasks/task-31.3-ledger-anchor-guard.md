@@ -5,21 +5,23 @@ title: "Task 31.3: every dated ledger bullet ends with exactly one anchor — a 
 tags: [task, plan-31, gmd, lint, bsd, impressions, ledger, freeze]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-31-pre-mod-loose-ends
   created: 2026-11-15
   updated: 2026-11-15
-  revision: 2
+  revision: 3
 ---
 
 # Task 31.3: dated ledger bullets carry an anchor {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t3]]).
-> Status: Drafting, revision 2. Written by ch-architect on Fable 5.2, 2026-11-15. Revision 2
-> folds ch-bsd spec review r1 per ruling L133 in [[plan-of-plans#rulings]]; the fold table is
-> [[#rev-r1]].
+> Status: **Approved** by ruling L140 in [[plan-of-plans#rulings]] (ch-bsd confirm-lite r2,
+> MEH-only GO; L125), revision 3. Written by ch-architect on Fable 5.2, 2026-11-15. Revision 2
+> folded ch-bsd spec review r1 per ruling L133 ([[#rev-r1]]); revision 3 folds r2's `M5`
+> ([[#rev-r2]]).
 > Depends on: nothing in code. **Precondition of GREEN:** the lead's `plan-31 D7` edit to six
-> ledger memories ([[#d7-ids]]), recorded before GREEN starts ([[#r5]]).
+> ledger memories ([[#d7-ids]]), recorded before GREEN starts ([[#r5]]). The lead applied it on
+> 2026-11-15 (POP; the census then reads 312 dated bullets, 312 with one end anchor).
 > Queue: row 5 of [[plan-of-plans#queue]], after 31.5's capture release and before 31.4.
 > Runs before [[task-31.4-retire-standing-warnings]]: both edit `scripts/lint-gmd.sh`, and 31.4
 > and 31.6 build on the helper this task adds ([[#r6]]).
@@ -178,10 +180,18 @@ across the same three places; this task makes it once (ruling L133, B2).
   nothing.
 {#r6-list}
 
-**The bypass check.** A test scans `tests/*.py` for any line that copies or writes
-`lint-gmd.sh` into a tree outside `tests/gmd_gate_tree.py` and fails naming the file and line.
-Its own "sees" guard: the scan must find the helper's copy, or the scan itself is broken.
-{#r6-bypass}
+**The bypass check.** A test scans `tests/**/*.py`, subdirectories included, for any line
+outside `tests/gmd_gate_tree.py` that copies or writes `lint-gmd.sh` into a tree, or that
+`copytree`s `scripts/` or `tools/gmd/` (which would carry the gate along unseen). It fails
+naming the file and line. Its own "sees" guard: the scan must find the helper's copy, or the
+scan itself is broken. {#r6-bypass}
+
+**Imports are declared too.** The wrapper names the scripts it runs, not what they import.
+31.6's `tools/gmd/resolve.py` is imported by `lint.py` and named nowhere in the wrapper, so a
+check of the wrapper's paths alone would pass with its `gate-file` line missing, and every
+copied tree would then fail at a distance. The declared-file check therefore also reads each
+declared Python file and requires every sibling module it imports from its own directory to be
+declared. {#r6-imports}
 
 ## Acceptance criteria {#acceptance}
 
@@ -228,12 +238,18 @@ tests into a tmp tree; their text is synthetic.
   more `gate-file` line, the helper places that file too);
   `test_every_file_the_gate_runs_is_declared` (every `"$ROOT/…"` script or tool path the
   wrapper assigns is in the declared list, and every declared file exists);
+  `test_every_sibling_import_of_a_declared_file_is_declared` ([[#r6-imports]]: for each
+  declared Python file, each module it imports that exists beside it must be declared; proven
+  on a copy of the tree where a declared file gains `import sibling_fixture` with no
+  `gate-file` line);
   `test_a_helper_tree_runs_every_step` (a tree of clean mini-docs passes
   `assert_gate_ran_clean`, the shared verdict in `tests/test_gmd_lint_requires_version.py`).
   At base there is no helper and no declared list. {#ac-9}
 - **AC-10 (RED at base): no gate tree is built by hand.**
   `tests/test_gmd_gate_tree.py::test_no_test_builds_a_gate_tree_by_hand` ([[#r6-bypass]]). At
-  base it names the three helpers. {#ac-10}
+  base it names the three helpers. Its fixture cases, on planted files in a tmp `tests/`
+  tree: a copy of `lint-gmd.sh` in `tests/sub/test_x.py`, and a `copytree` of `scripts/` and
+  of `tools/gmd/`; each is named. {#ac-10}
 - **AC-11 (gate, before GREEN): the precondition is recorded.** The implementation summary
   quotes the census output of [[#r5-steps]] step 2, with the date of the lead's edit, ahead of
   GREEN's first commit. {#ac-11}
@@ -257,6 +273,8 @@ tests into a tmp tree; their text is synthetic.
 | M13 | the helper hard-codes its file set instead of reading the wrapper | [[#ac-9]] (`test_the_helper_places_exactly_the_declared_files`) |
 | M14 | one helper goes back to copying `lint-gmd.sh` itself | [[#ac-10]] |
 | M15 | the bypass scan's pattern is broken so it matches nothing | [[#ac-10]] (its "sees" assertion) |
+| M16 | the bypass scan reads only `tests/*.py`; then: it ignores `copytree` | [[#ac-10]] (the subdirectory case; the `copytree` cases) |
+| M17 | the sibling-import check is removed | [[#ac-9]] (`test_every_sibling_import_of_a_declared_file_is_declared`) |
 {#mutations-table}
 
 ## Caller census {#census}
@@ -386,3 +404,13 @@ The report is held with this branch until its merge, so its finding ids are writ
 | `B2`'s third instance (31.6's `resolve.py`) | [[#r6-list]]: 31.6 adds one `gate-file` line |
 | D7 decided (L125), ordered by L133 | [[#d7]] |
 {#rev-r1-table}
+
+## Revision 3: the ch-bsd r2 fold (2026-11-15, ruling L140) {#rev-r2}
+
+ch-bsd confirm-lite r2 was a MEH-only GO; ruling L140 approves the spec once its share folds.
+
+| Finding | Change here |
+|---|---|
+| `M5`: the bypass scan missed subdirectories and `copytree`; the declared-file check missed imports | [[#r6-bypass]]: `tests/**/*.py`, and `copytree` of `scripts/` or `tools/gmd/`; [[#r6-imports]] and a third test in [[#ac-9]]; fixture cases in [[#ac-10]]; mutations M16, M17 |
+| the D7 precondition | met: the lead applied the 15 ids on 2026-11-15 (header) |
+{#rev-r2-table}

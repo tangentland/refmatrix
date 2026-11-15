@@ -5,20 +5,21 @@ title: "Task 31.5: the per-prompt injection, measured per block — capture the 
 tags: [task, plan-31, scan-prompt, recall, injection, stm, telemetry, measurement, freeze]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-31-pre-mod-loose-ends
   created: 2026-11-15
   updated: 2026-11-15
-  revision: 2
+  revision: 3
 ---
 
 # Task 31.5: the per-prompt injection, measured per block {#root}
 
 > Plan: [[plan-31-pre-mod-loose-ends]] ([[plan-31-pre-mod-loose-ends#t5]]; Q27 = b, now in
 > [[pop-finished]]).
-> Status: Drafting, revision 2. Written by ch-architect on Fable 5.2, 2026-11-15. Revision 2
-> folds ch-bsd spec review r1 (DIRTY 3B/8S/11M) per ruling L133 in [[plan-of-plans#rulings]];
-> the fold table is [[#rev-r1]]. A ch-bsd confirm-lite follows ([[orchestration#planning]]).
+> Status: **Approved** by ruling L140 in [[plan-of-plans#rulings]] (ch-bsd confirm-lite r2,
+> MEH-only GO; L125: plan-31 specs are approved on that GO), revision 3. Written by
+> ch-architect on Fable 5.2, 2026-11-15. Revision 2 folded ch-bsd spec review r1 (DIRTY
+> 3B/8S/11M) per ruling L133 ([[#rev-r1]]); revision 3 folds r2's five MEHs ([[#rev-r2]]).
 > Depends on: 0.84.0 deployed (the block order, the 9,500 B command budget, the grounded-topic
 > filter and the unchanged-composite marker; [[bsd-scanorder-r1-ca22b79]], ruling L120 in
 > [[plan-review-2026-11-13#lead]]).
@@ -208,7 +209,7 @@ or drops whole. Each block carries one state:
 | `delivered` | in the payload the command printed | yes |
 | `dropped_bytes` | rendered, then dropped by the `--max-bytes` fit | yes |
 | `dropped_tokens` | cut by the `--max-tokens` section stop: the bundle that tripped it, and every bundle the stop prevented from being built | yes ([[#r0-5]]) |
-| `not_built` | only under [[#r0-5]]'s cheaper path: a symbol bundle after the one that tripped the stop | no: its name only |
+| `not_built` | only in capture mode `names` ([[#r0-4-mode]]): a symbol bundle after the one that tripped the stop | no: its name only |
 | `suppressed_unchanged` | the composite, not rendered because its member-set signature equals the last delivered one | no: the signature only |
 | `suppressed_cadence` | the composite, skipped by `--composite-every` | no |
 {#r0-1-states}
@@ -222,8 +223,8 @@ two tiers different positions. {#r0-1-kinds}
 
 **The content block is never `not_built`.** The content bundle is built before any section is
 rendered. When tier 1 trips the token stop, `scan_prompt` returns before rendering it; the
-capture renders it and stores it as `dropped_tokens`, with text, at no build cost, on the full
-path and on the cheaper path alike. {#r0-1-content}
+capture renders it and stores it as `dropped_tokens`, with text, at no build cost, in mode
+`full` and in mode `names` alike. {#r0-1-content}
 
 Rows the cross-section dedup removed are counted per block (`dedup_rows`), not stored.
 {#r0-1-dedup}
@@ -239,9 +240,9 @@ other log writer), after the payload is printed:
 - `prompt_sha256` and `prompt_chars`. **No field holds the prompt**;
 - `budget_bytes`, `max_tokens`, `payload_sha256` (equal to the call's `block_sha`),
   `payload_bytes`;
-- **the capture's own outcome:** `capture_ms` (the wall time the capture added before the
-  command exits: the extra builds plus the append), `capture_built` (bundles built only for
-  the capture), `pruned` (day files this call removed), and `composite_error` (the exception's
+- **the capture's own outcome:** `capture_mode` (`full` or `names`, [[#r0-4-mode]]),
+  `capture_ms` (the wall time the capture added before the command exits: the extra builds
+  plus the append), `capture_built` (bundles built only for the capture; 0 in mode `names`), `pruned` (day files this call removed), and `composite_error` (the exception's
   class and message when the composite build raised, else null; [[#r0-7]]);
 - `blocks`: in render order, each with `i`, `kind`, `state`, `bytes`, `sha256`, `names` (the
   item names the block carries), `dedup_rows`, and `text` where [[#r0-1-states]] says so. A
@@ -283,9 +284,12 @@ analyses read, are untouched. The same holds for the recall emitter. {#r0-2-outc
 - **Where:** `<store root>/injection-capture/capture-<UTC yyyymmdd>.jsonl`, one file per UTC
   day, in the store the call resolved. Hits from the global store are recorded in the calling
   project's file with `scope: global`.
-- **The directory ignores itself.** Before its first append the writer creates
-  `injection-capture/.gitignore` containing `*`. A repository's own ignore rules cannot be
-  relied on: atlftpd ignores nothing under `.refmatrix/`, the default branches of cliquet,
+- **The directory ignores itself.** Before **every** write into the directory (a record, or a
+  line of `errors.jsonl`) the writer checks that `injection-capture/.gitignore` exists and
+  creates it, containing `*`, when it does not. One `stat` per call. A check made only when the
+  directory is created would leave a directory that already exists without the file (a crash
+  between the `mkdir` and the write, a hand-made directory) written into unprotected. A
+  repository's own ignore rules cannot be relied on: atlftpd ignores nothing under `.refmatrix/`, the default branches of cliquet,
   atldb and prep_prolific lack the line, and `rmx save-state --commit` runs `git add -A`
   (bug-261, bug-214; ch-bsd r1 B1).
 - **Bound:** 64 MiB per store across all day files. Estimated cost is 15 kB per prompt,
@@ -307,6 +311,14 @@ analyses read, are untouched. The same holds for the recall emitter. {#r0-2-outc
   `<store root>/injection-capture.off` exists, or when `REFMATRIX_NO_TELEMETRY` is set. The
   first two turn off the capture and nothing else: the `query.log` row and the recall events
   are still written. When off, the writer creates no directory.
+- **Mode: both capture paths ship in release A, behind one setting.** `full` builds every
+  bundle the token stop skipped. `names` builds nothing extra: it stores the bundle that
+  tripped the stop and the content block, and records later symbol bundles as `not_built`.
+  The mode is read, first match wins, from `RMX_INJECTION_CAPTURE` (`full` or `names`), then
+  from the one word in `<store root>/injection-capture.mode`, then from the release default
+  that [[#r0-5-bands]] chose. An unrecognised word turns the capture off and shows on the
+  report line as an invalid mode. Changing the mode is a setting change in one store, not a
+  release (ruling L140). {#r0-4-mode}
 - **Why per-day files and not rename rotation:** appending to a day file needs no rename, so
   two writers cannot rotate over each other.
 {#r0-4-list}
@@ -329,33 +341,49 @@ words. The bundles past the stop are tier 3, which is where the hub words are. {
    copy is opened, `read_only=True`. A store built from `docs/` and `src/` has far fewer edges
    per hub word and would understate the cost. `HOME` is redirected to a scratch directory so
    the dev build cannot reach the live hub; `REFMATRIX_ROOT` is not exported.
-2. **In fresh processes, through the hook's own command.** Each run is a new process running
-   the generated `scan_cmd`'s scan-prompt command line, from the throwaway root, with a prompt
-   envelope on stdin. If the copy root cannot serve the CLI's read path, each run instead times
-   the same `scan_prompt` call in a fresh interpreter, and the summary says which was used.
+2. **In fresh processes, with the hook's arguments, on the dev binary by path.** Each run is
+   a new process running `<checkout>/.venv-eval/bin/rmx scan-prompt` with the arguments of the
+   generated `scan_cmd`, from the throwaway root, with a prompt envelope on stdin. It is never
+   a bare `rmx`: the hook's environment puts `$HOME/bin` first on `PATH`, and with `HOME`
+   redirected a bare `rmx` can resolve to the deployed build, which has no capture, so both
+   arms would time the same code. The summary records `rmx version -v` from that exact binary.
+   If the copy root cannot serve the CLI's read path, each run instead times the same
+   `scan_prompt` call in a fresh `.venv-eval` interpreter, and the summary says which was
+   used.
 3. **On a prompt set that trips the stop.** The committed synthetic set of 40 prompts
    ([[#files]]) is built from repository vocabulary: at least half trip the token stop, and at
    least 10 leave hub words in tier 3.
-4. **At least 200 runs per arm,** capture on and capture off (by the switch of [[#r0-4]])
-   alternating, once quiet and once beside a running suite. The worse run is read.
+4. **At least 200 runs per arm,** capture off and capture on in mode `full` (by the switch and
+   the mode of [[#r0-4]]) alternating, once quiet and once beside a running suite. The worse
+   run is read. When the band sends the default to `names`, the same runs are made in that
+   mode.
 5. **Counting what the leg produced.** Beside wall p50 and p95 per arm, the summary reports
    `capture_built` per call and milliseconds per built bundle
    ([[feedback_measure_the_outcome_not_the_wall]]).
 {#r0-5-method}
 
-The band is read from the p95 of `capture_ms`:
+The band is read from the p95 of `capture_ms`, and it sets the release default of the mode.
+Both modes are built either way ([[#r0-4-mode]]):
 
-| `capture_ms`, p95 | Action |
+| `capture_ms`, p95 | Release default |
 |---|---|
-| at most 250 ms | ship: every token-cut bundle is built and stored |
-| 250 to 750 ms | the cheaper path: the bundle that tripped the stop is stored (it was already built), and so is the content block ([[#r0-1-content]]); later symbol bundles are recorded as `not_built` with their names only. Re-measure; ship when at most 250 ms |
-| over 750 ms after the cheaper path | do not ship; report to the lead with the profile |
+| mode `full` at most 250 ms | `full`: every token-cut bundle is built and stored |
+| mode `full` over 250 ms | `names`: the bundle that tripped the stop is stored (it was already built), and so is the content block ([[#r0-1-content]]); later symbol bundles are recorded as `not_built` with their names only. Mode `names` is then measured the same way |
+| mode `names` over 750 ms | the capture does not ship on; report to the lead with the profile |
 {#r0-5-bands}
 
 A `not_built` block has no text and no items. S0b counts a target that matches only a
 `not_built` name as `avoidable_unverified`, a separate column. {#r0-5-not-built}
 
-The band chosen before release is checked again on the live path after it ([[#ac-0-17]]).
+The band is checked again on the live path after release A, over the first 100 captured hook
+prompts in this store ([[#ac-0-17]]). The fallback is a setting, never a release:
+
+| Live `capture_ms`, p95 | What happens |
+|---|---|
+| mode `full` at most 250 ms | the window runs on |
+| mode `full` over 250 ms | the lead **first** creates `injection-capture.off` in this store: the capture stops, telemetry stays on, the window is paused. Then the lead writes `names` into `injection-capture.mode`, removes the off marker, and the window restarts from that instant; the next 100 captured prompts are read |
+| mode `names` at most 750 ms | the window runs on in mode `names`; S0b's `avoidable_unverified` column carries what `full` would have verified |
+| mode `names` over 750 ms | the capture stays off (the off marker is put back) and the lead gets the profile. S0b and S1 do not run on an unmeasured window; the task stops at S0 and reports it |
 {#r0-5-live}
 
 ### R0.6: a capture that stops is visible {#r0-6}
@@ -409,9 +437,11 @@ unless the test says so.
   `test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens`,
   `test_content_after_a_tier_1_token_stop_is_stored_with_text` ([[#r0-1-content]]),
   `test_an_unchanged_composite_is_recorded_as_suppressed_unchanged`,
-  `test_a_cadence_skip_is_recorded_as_suppressed_cadence`. If [[#r0-5-bands]] selects the
-  cheaper path, the second test asserts `not_built` for the symbol bundles after the one that
-  tripped the stop, and the third is unchanged. {#ac-0-3}
+  `test_a_cadence_skip_is_recorded_as_suppressed_cadence`. Both capture paths exist, so both
+  are tested whatever the release default: the second test runs in mode `full`, and
+  `test_names_mode_records_later_bundles_as_not_built` runs the same prompt in mode `names`
+  (the tripping bundle and the content block stored with text, later symbol bundles
+  `not_built`, `capture_built` 0, `capture_mode` `names` on the record). {#ac-0-3}
 - **AC-0.4 (guard, green at base; proven by mutation M0-1): the payload is unchanged.**
   `test_the_capture_never_changes_the_payload`: the same store and prompt give byte-identical
   stdout with the capture on and off, for a prompt that trips the token stop and one that trips
@@ -457,9 +487,10 @@ unless the test says so.
   tree, and the generated hook block is byte-identical to base (the existing hooks-in-sync
   tests). {#ac-0-12}
 - **AC-0.13 (measurement): the cost is inside a band.** The implementation summary holds the
-  [[#r0-5-method]] run: the store copy's size, the command used, runs per arm, wall p50 and
+  [[#r0-5-method]] run: the store copy's size, the binary's path and its `rmx version -v`
+  output, the command used, runs per arm, wall p50 and
   p95 per arm quiet and loaded, `capture_ms` p50 and p95, `capture_built` per call,
-  milliseconds per built bundle, and the action of [[#r0-5-bands]] taken. {#ac-0-13}
+  milliseconds per built bundle, and the release default [[#r0-5-bands]] gave. {#ac-0-13}
 - **AC-0.14 (measurement, live, after release A): the capture is the production path.** On the
   deployed build, one real prompt in this project produces a record whose delivered blocks
   match that prompt's `hook_success.stdout` in the transcript (prefix match: the same command
@@ -467,7 +498,10 @@ unless the test says so.
 - **AC-0.15 (RED): the capture never shows in `git status`.**
   `test_the_capture_dir_ignores_itself`: in a throwaway git repository with no ignore rules at
   all, holding a store, after one `scan-prompt` call, `git status --porcelain -uall` lists
-  nothing under `injection-capture/`, and `git add -A` stages nothing from it. {#ac-0-15}
+  nothing under `injection-capture/`, and `git add -A` stages nothing from it.
+  `test_an_existing_capture_dir_without_gitignore_gets_one`: the directory is made by hand,
+  with no `.gitignore`, before the call; after one call the same two checks hold. A third
+  case does the same when the call's only write is a line of `errors.jsonl`. {#ac-0-15}
 - **AC-0.16 (RED): a failing composite is counted.**
   `test_a_raising_composite_build_is_recorded_and_counted`: with the composite build made to
   raise through a real input (a corrupt ring file; a patch of a dependency only if no real
@@ -475,13 +509,17 @@ unless the test says so.
   call with the composite absent, the capture record's `composite_error` names the exception,
   stderr carries one line, and `rmx telemetry --context` counts one. {#ac-0-16}
 - **AC-0.17 (measurement, live, after release A): the band holds on the live path.** Over the
-  first 100 captured hook prompts in this store, the p95 of `capture_ms` is inside the band
-  chosen before release. If it is not, the cheaper path ships as a follow-up release (A.1)
-  and the window restarts from it. {#ac-0-17}
-- **AC-0.18 (RED): the capture switch turns off the capture only.**
+  first 100 captured hook prompts in this store, the p95 of `capture_ms` is read against
+  [[#r0-5-live]], and the row that applied, the settings changed and their instants are
+  recorded in the measurement doc. On a miss the lead's first act is the off marker. No row of
+  that table needs a release. {#ac-0-17}
+- **AC-0.18 (RED): the capture switch turns off the capture only, and the mode is a setting.**
   `test_the_capture_switch_leaves_telemetry_on`, parametrised over `RMX_INJECTION_CAPTURE=0`
   and the marker file: no capture directory is created, and the call's `query.log` row and
-  recall events are written as usual. `test_no_telemetry_implies_no_capture`. {#ac-0-18}
+  recall events are written as usual. `test_no_telemetry_implies_no_capture`.
+  `test_the_mode_file_selects_the_path`: with `names` in `injection-capture.mode` the record's
+  `capture_mode` is `names`; the environment value outranks the file; an unrecognised word
+  writes no record and shows as an invalid mode on the `capture:` line. {#ac-0-18}
 
 ## S0b: discovery calls, scored against the injection {#s0b}
 
@@ -645,8 +683,8 @@ Tests are in `tests/test_score_injection_blocks.py`, on a synthetic fixture unde
 ### R1.0: the window, counted in prompts and sessions {#r1-0}
 
 "About a week of normal use" is counted, not timed (`plan-31 D2`, [[#d2]]). The window opens at
-release A's deploy in this store, or at A.1's if [[#ac-0-17]] forces it, and closes when all
-three hold:
+release A's deploy in this store, or at the instant the mode was changed if [[#r0-5-live]]
+changed it, and closes when all three hold:
 
 1. at least **400** hook-fired main-loop prompts with a joined capture record;
 2. in at least **6** sessions of 20 or more such prompts each;
@@ -731,10 +769,18 @@ The table is confirmed before the numbers (`plan-31 D3`, [[#d3]]). `keep` means 
 
 No action removes the scan-prompt hook or the recall hook. {#actions-floor}
 
-Two actions of the first draft are gone: turning a named bundle into a pointer line, and
-dropping item kinds with no labelled use from a kept block. Both are new presentation, which
-[[plan-of-plans#post-mod]] sends after the mod, and neither was admitted (ch-bsd r1 M10). The
-composite's shrink no longer drops the external bridges, for which no knob exists.
+Two actions of the first draft are gone, for different reasons (ch-bsd r2 M4):
+
+- **Turning a named bundle into a pointer line** is new presentation, which
+  [[plan-of-plans#post-mod]] sends after the mod. The plan never asked for it.
+- **Dropping item kinds with no labelled use from a kept block** (the per-item tighten) is a
+  content filter, not presentation. It is dropped because it had no knob and no test, and
+  ruling L133 took "tested or dropped" as dropped. It was the only thing behind the plan's
+  "over 15% is kept and tightened", so that line of the plan now reads "kept; tightened only
+  by the member filter (R2.0) and the shrink knobs" ([[plan-31-pre-mod-loose-ends#t5]];
+  recorded for the user in ruling L140).
+
+The composite's shrink no longer drops the external bridges, for which no knob exists.
 {#actions-removed}
 
 ### S1 acceptance criteria {#s1-acceptance}
@@ -877,10 +923,11 @@ Committed fix first; one at a time; each must FAIL a test, not hang it
 | M0-7 | the pruner removes the current day's file; then: removes nothing; then: keeps appending over the bound | [[#ac-0-9]] |
 | M0-8 | a failed append raises; then: writes no `errors.jsonl` line | [[#ac-0-10]] |
 | M0-9 | recall records only the named hits | [[#ac-0-7]] |
-| M0-10 | the writer does not create `injection-capture/.gitignore` | [[#ac-0-15]] |
+| M0-10 | the writer does not create `injection-capture/.gitignore`; then: it creates it only when it creates the directory | [[#ac-0-15]] (the first test; then the existing-directory tests) |
 | M0-11 | `_composite_text` goes back to a silent `comp = ""` | [[#ac-0-16]] |
 | M0-12 | the capture switch is ignored; then: it also disables the `query.log` row | [[#ac-0-18]] |
 | M0-13 | the verb's pack branch writes a capture record | [[#ac-0-11]] |
+| M0-14 | mode `names` builds the skipped bundles anyway; then: the mode file is ignored | [[#ac-0-3]] (`test_names_mode_…`); [[#ac-0-18]] (`test_the_mode_file_selects_the_path`) |
 | M0b-1 | a fetch of a delivered path is classed `ignored` | [[#ac-0b-1]] |
 | M0b-2 | dropped outranks delivered; then: lag 7+ feeds the rate | [[#ac-0b-2]] |
 | M0b-3 | plain words become targets (the pilot's `bash_name` leg) | [[#ac-0b-3]] |
@@ -920,8 +967,8 @@ base.
 
 | File | Change | Release |
 |---|---|---|
-| `src/refmatrix/telemetry.py` | the capture writer (self-ignore, switch, pruner, hard stop, `errors.jsonl`) and the `capture:` report line | A |
-| `src/refmatrix/scan.py` | blocks carry kind and state; token-cut bundles built for the capture; `_composite_text` records its failure | A |
+| `src/refmatrix/telemetry.py` | the capture writer (self-ignore, switch, mode, pruner, hard stop, `errors.jsonl`) and the `capture:` report line | A |
+| `src/refmatrix/scan.py` | blocks carry kind and state; both capture paths (`full` builds the token-cut bundles, `names` does not); `_composite_text` records its failure | A |
 | `src/refmatrix/cli.py`, `src/refmatrix/verbs.py` | hand the blocks to the writer after the payload is printed | A |
 | `src/refmatrix/composite.py` | the member filter ([[#r2-0]]) | A |
 | `tests/test_injection_capture.py`, `tests/test_stm_composite_members.py` | new | A |
@@ -938,14 +985,15 @@ base.
 Both releases change a hook's output or the store's logs, so each is a major release (`0.N.0`)
 gated by the full suite on merged `master` ([[orchestration#release]]). Neither is a release of
 its own: release A ships in R1 and release B in R8 of [[plan-of-plans#queue-releases]]. The
-cheaper-path follow-up of [[#ac-0-17]] (A.1), if it is needed, is a ninth gate that plan does
-not hold; the lead schedules it. {#files-release}
+fallback of [[#ac-0-17]] is a setting inside R1, not a release
+([[plan-of-plans#queue-releases-contingent]], ruling L140). Release A changes no hook command;
+`hooks.py` is edited only in release B. {#files-release}
 
 ## Risks {#risks}
 
 1. **The capture slows a hook that is already slow** (bug-182). Bounded by [[#r0-5-bands]],
-   measured on a copy of the live catalog, checked again live ([[#ac-0-17]]), with a cheaper
-   path and a stop.
+   measured on a copy of the live catalog, checked again live ([[#r0-5-live]]), with an off
+   marker the lead sets first, a cheaper mode that is a setting, and a stop.
 2. **The window is not "normal use".** It runs while plan-29 and plan-30 are built by an
    orchestrating lead. That is the population ([[#limits-cannot]] items 5 and 6); the result
    is not extended beyond it.
@@ -1081,3 +1129,18 @@ so its finding ids are written as code. This spec's share:
 | `M11`: the content bundle's state on a tier-1 stop | [[#r0-1-content]], a third test in [[#ac-0-3]], mutation M0-5 |
 | D1-D6 decided (L125, L133) | [[#decisions]] |
 {#rev-r1-table}
+
+## Revision 3: the ch-bsd r2 fold (2026-11-15, ruling L140) {#rev-r2}
+
+ch-bsd confirm-lite r2 read `3f6de0b..661bc73`: MEH-only GO, all 22 r1 findings closed, five
+MEHs. Ruling L140 approves the spec once they fold. The report is held with this branch until
+its merge, so its finding ids are written as code. This spec's share:
+
+| Finding | Change here |
+|---|---|
+| `M1`: the AC-0.17 fallback was a release, with no stop row | [[#r0-4-mode]]: release A builds both capture paths behind one setting; `capture_mode` on the record; [[#r0-5-bands]] sets only the release default; [[#r0-5-live]]: the live table, the off marker first, and the stop row for mode `names` over 750 ms; [[#ac-0-3]] tests both paths; [[#ac-0-17]], [[#ac-0-18]] rewritten; mutation M0-14; [[#files-release]] cites the POP instead of a ninth gate |
+| `M2`: the cost method did not name the binary | [[#r0-5-method]] step 2: `.venv-eval/bin/rmx` by path, never a bare `rmx`; [[#ac-0-13]] records its `rmx version -v` |
+| `M3`: `.gitignore` only before the first append | [[#r0-4]]: checked before every write, created if absent; [[#ac-0-15]] gains the existing-directory and `errors.jsonl`-first cases; mutation M0-10 gains its second step |
+| `M4`: the per-item tighten was dropped for the wrong reason | [[#actions-removed]] gives the reason (no knob, no test) and names the plan line that changed |
+| `M5` | 31.3's ([[task-31.3-ledger-anchor-guard#rev-r2]]) |
+{#rev-r2-table}
