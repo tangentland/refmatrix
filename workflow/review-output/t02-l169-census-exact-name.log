@@ -1,0 +1,52 @@
+# mini-lane slot=rmxtest1 sha=10d3309084ce62cfa014bd61915255a21bfe4d1a host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 13:28:46 load={ 3.76 9.07 8.13 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t02-l169-census-exact-name.LeWl/src/refmatrix as checked-hash (bug-037)
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[loads-another-file-names-devbin-exactly] _
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-6/test_the_by_path_branch_accept5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105dc8750>
+harness = 'loads-another-file-names-devbin-exactly', imports_it = True
+ok = False
+
+    @pytest.mark.parametrize("harness,imports_it,ok", [
+        ("loads-devbin", True, True),
+        ("loads-devbin", False, False),
+        ("own-lookup", True, False),
+        ("loads-another-file", True, False),
+        ("names-only", True, False),
+        ("loads-another-file-names-devbin-exactly", True, False),
+    ], ids=["loads-devbin", "harness-not-imported", "own-lookup", "loads-another-file",
+            "names-only", "loads-another-file-names-devbin-exactly"])
+    def test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin(tmp_path, monkeypatch,
+                                                                        harness, imports_it, ok):
+        """green-t02's fold (6bf0082, ch-bsd T0.2 r1 MEH-3) lets a test file pass the census when
+        the harness it imports loads tests/devbin.py by path (`VIA_HARNESS`). A planted file whose
+        harness does NOT load devbin by path must still fail; only the loading harness, actually
+        imported, passes ([[feedback_clean_corpus_hides_a_dead_gate]]). The census's own data
+        (`VIA_HARNESS`) is pointed at the planted harness; the census logic is not replaced."""
+        mod = sys.modules[__name__]
+        harness_file = tmp_path / "planted_harness.py"
+        harness_file.write_text(_HARNESS_SRC[harness])
+        monkeypatch.setitem(mod.VIA_HARNESS, "test_planted.py", ("planted_harness", harness_file))
+        src = ("import planted_harness as h\n\n" if imports_it else "import os\n\n") + \
+            "def test_x():\n    assert h.RMX\n"
+        got = mod._uses_devbin("test_planted.py", src)
+>       assert got is ok, (
+            f"harness {harness!r} (imported: {imports_it}) -> _uses_devbin {got}, expected {ok}: "
+            + ("the by-path branch accepted a harness that does not load tests/devbin.py"
+               if got else "the by-path branch refused a harness that loads tests/devbin.py"))
+E       AssertionError: harness 'loads-another-file-names-devbin-exactly' (imported: True) -> _uses_devbin True, expected False: the by-path branch accepted a harness that does not load tests/devbin.py
+E       assert True is False
+
+tests/test_bug253_dev_bin.py:335: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[loads-devbin]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[harness-not-imported]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[own-lookup]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[loads-another-file]
+PASSED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[names-only]
+FAILED tests/test_bug253_dev_bin.py::test_the_by_path_branch_accepts_only_a_harness_that_loads_devbin[loads-another-file-names-devbin-exactly]
+1 failed, 5 passed in 0.31s
+exit 1
