@@ -1,0 +1,69 @@
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-t03/src/refmatrix as checked-hash (bug-037)
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+____________ test_l159_the_live_test_warmed_before_its_hook_passes _____________
+
+    def test_l159_the_live_test_warmed_before_its_hook_passes():
+        src = _base()
+        assert src.count(LIVE_WITH) == 1, "the frozen copy no longer holds the live with-block"
+>       assert LIVE not in _bc().violations(src.replace(LIVE_WITH, LIVE_WARM_BEFORE), REL)
+                           ^^^^^
+
+tests/test_budget_outcome_census.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _bc():
+>       from tests import budget_outcome_census
+E       ImportError: cannot import name 'budget_outcome_census' from 'tests' (unknown location)
+
+tests/test_budget_outcome_census.py:43: ImportError
+____________ test_l159_must_fail_the_readiness_call_after_the_hook _____________
+
+    def test_l159_must_fail_the_readiness_call_after_the_hook():
+        src = _base().replace(LIVE_WITH, LIVE_WARM_AFTER)
+>       assert LIVE in _bc().violations(src, REL)
+                       ^^^^^
+
+tests/test_budget_outcome_census.py:180: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _bc():
+>       from tests import budget_outcome_census
+E       ImportError: cannot import name 'budget_outcome_census' from 'tests' (unknown location)
+
+tests/test_budget_outcome_census.py:43: ImportError
+________ test_l159_must_fail_the_readiness_call_in_a_different_function ________
+
+    def test_l159_must_fail_the_readiness_call_in_a_different_function():
+>       assert _bc().violations(WARM_IN_ANOTHER_FUNCTION, "test_syn.py") == [
+               ^^^^^
+            "test_syn.py::test_ok_warmed_by_a_helper"]
+
+tests/test_budget_outcome_census.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _bc():
+>       from tests import budget_outcome_census
+E       ImportError: cannot import name 'budget_outcome_census' from 'tests' (unknown location)
+
+tests/test_budget_outcome_census.py:43: ImportError
+___________ test_l159_a_synthetic_test_warmed_before_its_hook_passes ___________
+
+    def test_l159_a_synthetic_test_warmed_before_its_hook_passes():
+>       assert _bc().violations(WARM_BEFORE_SYNTHETIC, "test_syn.py") == []
+               ^^^^^
+
+tests/test_budget_outcome_census.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _bc():
+>       from tests import budget_outcome_census
+E       ImportError: cannot import name 'budget_outcome_census' from 'tests' (unknown location)
+
+tests/test_budget_outcome_census.py:43: ImportError
+=========================== short test summary info ============================
+FAILED tests/test_budget_outcome_census.py::test_l159_the_live_test_warmed_before_its_hook_passes
+FAILED tests/test_budget_outcome_census.py::test_l159_must_fail_the_readiness_call_after_the_hook
+FAILED tests/test_budget_outcome_census.py::test_l159_must_fail_the_readiness_call_in_a_different_function
+FAILED tests/test_budget_outcome_census.py::test_l159_a_synthetic_test_warmed_before_its_hook_passes
+4 failed, 15 deselected in 0.22s

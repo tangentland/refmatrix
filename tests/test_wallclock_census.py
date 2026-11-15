@@ -78,7 +78,7 @@ def _census():
 
 def _tree(tmp_path: Path, files: dict, *, timing: str = TIMING_OK) -> Path:
     root = tmp_path / "tests"
-    root.mkdir()
+    root.mkdir(parents=True)       # callers pass a per-case subdir (tmp_path / "ok"), L160
     (root / "timing.py").write_text(timing)
     for rel, src in files.items():
         p = root / rel
@@ -89,7 +89,7 @@ def _tree(tmp_path: Path, files: dict, *, timing: str = TIMING_OK) -> Path:
 
 def _specs(tmp_path: Path) -> Path:
     d = tmp_path / "plans"
-    d.mkdir()
+    d.mkdir(parents=True)
     # The file name is NOT the id: the census resolves the frontmatter id (29.4 #r3-kinds).
     (d / "some-other-file-name.md").write_text(SPEC)
     return d
@@ -97,6 +97,7 @@ def _specs(tmp_path: Path) -> Path:
 
 def _allow(tmp_path: Path, entries: list) -> Path:
     p = tmp_path / "wallclock_allow.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"entries": entries}, indent=1))
     return p
 
@@ -472,9 +473,12 @@ def test_the_legacy_list_starts_at_the_r0_count_and_only_shrinks():
 
 
 def test_bug228_and_bug231_tests_hold_no_entry():
-    """AC-4 / AC-6: the two rows are replaced, not allow-listed, in either kind."""
+    """AC-4 / AC-6: the two rows are replaced, not allow-listed, in either kind. Only bug-231's
+    own test is matched: its sibling `test_graceful_stop_signals_first_then_waits_the_grace`
+    holds a legitimate class-B entry (L160)."""
     hits = [e["key"] for e in _entries()
-            if (e["key"].startswith("test_plan4_remedy.py::") and "graceful_stop" in e["key"])
+            if (e["key"].startswith("test_plan4_remedy.py::")
+                and "graceful_stop_on_a_live_daemon" in e["key"])
             or (e["key"].startswith("test_task21_1_recall_skip.py::")
                 and "live_daemon_recall" in e["key"])]
     assert hits == [], hits

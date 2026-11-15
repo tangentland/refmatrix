@@ -340,6 +340,35 @@ from lock to release (`wall_clock_s`). Queue waits are not held time.
   the load level. The data do not say what changed.
 {#base-sweep-notes}
 
+## L159: readiness before the hook, a third budget control form {#l159-readiness}
+
+`tests/test_budget_outcome_census.py` gains four nodes. Two pass cases: the frozen bug-228 copy
+with `d.wait_models_warm()` before `h.run_hook`, and a synthetic test with the same order. Two
+must-fail cases: the readiness call AFTER the hook, and the call made in a helper function
+(`_ready(d)`), not in the test function itself. `red-l159-readiness-form.log`: exit 1, 19
+collected, 15 deselected (`-k l159`), 4 failed, each E `ImportError: cannot import name
+'budget_outcome_census' from 'tests'`. At base the census module does not exist, so this is the
+only E line any of them can show. The cases that tell the forms apart are the two must-fails, and
+they bite once the census exists. They kill the mutation "count a `wait_models_warm` call
+anywhere in the function, or in any function the test calls".
+{#l159-readiness-body}
+
+## bug-269: a stop during warm-up (ruling L161) {#bug269}
+
+`tests/test_bug269_stop_during_warmup.py::test_bug269_a_stop_during_warmup_does_not_wait_out_the_warmup`.
+A real `SandboxDaemon` runs, and its embed worker's cold load is held open for 20 s by a
+registered preload. The preload wraps `Embedder.__init__` in the worker process only; the
+daemon, the warm thread, `WorkerClient` and the stop path are not patched. The test waits for
+the hold, sends the `stop` op, and asserts an ordering outcome (29.4 R3, class C): the daemon
+exits while the warm-up is still held, before the preload writes `released`. No clock is
+asserted. A local hang guard (hold + 120 s) raises if nothing happens.
+
+RED at `d81ed07` + this file, under lockf: `red-bug269.log`, exit 1, 1 collected, 1 failed,
+25.60 s. E `AssertionError: bug-269: the stop waited out the warm-up: the embed worker's load
+was released (after the 20 s hold) before the daemon exited (rc=0)`. The log tail shows
+`embedder warm in 22.5s` before the exit. No worker or daemon from the run was left afterwards.
+{#bug269-body}
+
 ## Mock registry rows {#mock-rows}
 
 Added to `workflow/test_mock_registry.md#registry` (three rows): the `t03_force` fault
