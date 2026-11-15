@@ -7,13 +7,15 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-14
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 17.4: daily facts.log backup copy {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (added 2026-10-14 after commit 32dde06; first reviewed in
+> Status: Pending (**revision round 15, 2026-11-13**: `FOLD_OPS` imports 16.6's
+> `edge_records.FOLD_RULES`, which carries bug-216 R13's four ops; the AST-equality test covers
+> them; see [[#rev-round-15]]. Added 2026-10-14 after commit 32dde06; first reviewed in
 > [[bsd-plan23-17-spec-rereview-r3-6091648]]; revision round 3: ns17-r3-3, ns17-r3-4, nm17-r3-6,
 > see [[#rev-round-3]]. Revision round 5: ns17-r4-2, nm17-r4-1, see [[#rev-round-5]]. Revision
 > round 6: ns17-r6-1, see [[#rev-round-6]]. Revision round 7: nm17-r7-1, see [[#rev-round-7]].
@@ -22,10 +24,12 @@ metadata:
 > (d9cf), see [[#rev-round-12]]. Revision round 14: the shared restating function (d9ch (c)),
 > see [[#rev-round-14]].
 > Round 2: [[#rev-round-2]])
-> Depends on: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
+> Depends on (round 15): 16.6 merged (its `edge_records.FOLD_RULES`, imported by R6 step 3;
+> `#queue` item 8 builds 16.6 first) and bug-216 merged (R13's ops). Then: 17.2 (the hub tick and its `maintenance_steps` registry, NOT 23.1's daemon tick
 > registry), 23.0 (sandbox)
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
+rel: depends-on -> [[task-16.6-learned-row-validation#rev-round-15]]
 rel: depends-on -> [[task-17.2-hub-nightly-tick]]
 rel: depends-on -> [[task-23.0-test-sandbox]]
 rel: related-to -> [[project_factslog_audit_verdict]]
@@ -223,7 +227,17 @@ once-a-day COPY under `backups/` is what Time Machine backs up. {#why-body}
              module-level `FOLD_OPS: frozenset[str]` (every op it handles, folded into the counts or
              explicitly ignored for them: `entity`, `tombstone`,
              `protect`, `noise`, `link`, `unlink`, `evidence`, `track`, `untrack`,
-             `memory_content`, `linkage_type` at HEAD, `store.py:7969-8027`). An event whose
+             `memory_content`, `linkage_type` at HEAD, `store.py:7969-8027`). **Round 15:**
+             `FOLD_OPS` = `edge_records.BASE_FOLD_OPS` (those 11 ops) ∪ the keys of
+             `edge_records.FOLD_RULES`. Both are IMPORTED, never restated (bsd-spec-t4 r2 M5) ([[task-16.6-learned-row-validation#rev-round-15]]). The fold applies each
+             imported rule:
+             - `"ignored"`: `learned_provenance`, `learned_provenance_move`;
+             - `"evidence_clear_by_file"` (`rel_evidence_clear`): drop from the folded
+               `evidence` count the rows of its partition and `file` with a `rel: `-prefixed
+               detail, folded at or before it in the fold's order (the rebuild's: `ts`, ties
+               by log position). It is NOT count-neutral;
+             - `"pending_table"` (`pending_ref`, `pending_ref_delete`, `pending_refs_clear`):
+               ignored for the counts, because `pending_refs` is not in the count check. An event whose
              `op` is not in `FOLD_OPS` stops verification with `unknown event op <op> at line
              <N>` (a failed check: in (c) the backup fallback runs, and it fails the same way
              if the backup carries the op), never a skip. A test reads
@@ -394,7 +408,12 @@ All in 23.0's sandbox, on tmp stores; no live store is touched.
      catalog has an un-checkpointed `.wal`, the catalog file's bytes change across a refused
      (a) run).
    - **The fold's op set is pinned to replay's (ns17-r9-2).** The AST test of R6 step 3 passes
-     at HEAD (the dispatch set equals `FOLD_OPS`). Mutations, each must FAIL: one op removed
+     at HEAD (the dispatch set equals `FOLD_OPS`). **Round 15:** HEAD here is a `master`
+     carrying bug-216 and 16.6, so the set includes R13's four ops through the imported
+     `FOLD_RULES`. A fixture live log with a GMD doc re-ingested once (its `rel:` evidence
+     appended, `rel_evidence_clear`, appended again) gives fold counts equal to
+     `rmx rebuild --from-log --json`'s. Mutation: `rel_evidence_clear` folded as count-neutral
+     FAILS (the fold's `evidence` count is high by the cleared rows). Mutations, each must FAIL: one op removed
      from `FOLD_OPS` (the set test); a fixture live log carrying one event with the RESERVED
      test-only op `op: "__rmx_test_unknown_op__"` makes the script print `unknown event op
      __rmx_test_unknown_op__ at line <N>` and fail verification; with the unknown-op check
@@ -556,3 +575,28 @@ already decides by the last event per edge key, and the fold counts no sidecar r
 
 rel: derives-from -> [[plan-review-2026-10-14#t12-approvals]]
 rel: related-to -> [[task-22.6-removal-entry-points#r5-restated-fn]]
+
+## Revision round 15 (2026-11-13) {#rev-round-15}
+
+Source: the ch-bsd spec review of `spec-wave-t4` at `db701e8`, S5, with the lead's ruling. After
+bug-216 merges, `rebuild_index_from_log` dispatches `rel_evidence_clear`, `pending_ref`,
+`pending_ref_delete` and `pending_refs_clear`. Round 14's `FOLD_OPS` listed none of them, so the
+AST-equality test would be red from this task's first build. `rel_evidence_clear` also changes
+the evidence count, so a fold that ignored it would fail verification on every live log with a
+re-ingested GMD doc. 16.6 builds before this task (`#queue` item 8) and defines the rules in
+`edge_records.FOLD_RULES`, and this task imports them. 16.6 does not edit this task's script,
+because that script does not exist when 16.6 is built.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+| finding | answered at |
+|---|---|
+| S5 (R13's ops missing from `FOLD_OPS`; `rel_evidence_clear` not count-neutral; 16.6 edited a file that does not exist yet) | [[#r6-restore]] step 3 (imported `FOLD_RULES`, three rules), [[#ac-9]] (re-ingested-doc fold case + count-neutral mutation), header `depends-on` 16.6 |
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]

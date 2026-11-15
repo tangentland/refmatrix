@@ -7,17 +7,23 @@ metadata:
   node_type: task
   status: pending
   created: 2026-10-07
-  updated: 2026-10-15
+  updated: 2026-11-13
 ---
 
 # Task 17.3: fleet rollout {#root}
 
 > Plan: [plan-17-nightly-store-maintenance](../plan-17-nightly-store-maintenance.md)
-> Status: Pending (revision round 7, 2026-10-15: nm17-r7-3's hold bound from the watchdog and
+> Status: Pending (**revision round 9, 2026-11-13**: order and user gates restated, no
+> requirement changed (plan review L40, L45); see [[#rev-round-9]]. Earlier: revision round 7, 2026-10-15: nm17-r7-3's hold bound from the watchdog and
 > nm17-r7-1's runbook text, see [[#rev-round-7]]; revision round 6, 2026-10-15: ns17-r6-1's third restore scenario, see
 > [[#rev-round-6]]; revision round 5, 2026-10-14: ns17-r4-2's runbook text, see [[#rev-round-5]];
 > revision round 3: ns17-r3-2, nm17-r3-2, nm17-r3-4; see [[#rev-round-3]]. Round 2: ns17-3, ns17-5, ns17-6, d9c; see [[#rev-round-2]])
-> Depends on: 17.1, 17.2, 17.4; deployed
+> Depends on: 17.1, 17.2, 17.4; deployed. Build order (round 9, L40): 17.1 → 17.2 → 17.4 →
+> **17.3**; it is the last plan-17 task.
+> **User-gated (round 9, L40, L45):** step 4's orphan release (`--confirm-orphans` runs only
+> after the user confirms each capped dataset), the backup deletion (R1, AC-7), and step 6's
+> `sudo tmutil addexclusion`, which the user runs. An unattended run stops at each; nothing
+> here is decided on the user's behalf.
 
 rel: part-of -> [[plan-17-nightly-store-maintenance]]
 rel: depends-on -> [[task-17.1-vectors-maintain-op]]
@@ -256,3 +262,20 @@ round-7 table above is unchanged history.
 | nm23-r8-4 (line drift: 17.3 cited `daemon.py:1319-1337` and `:3732`) | [[#r2-measure]] hold bound (cited by symbol + HEAD line: `Daemon._start_heartbeat` `:1323-1358`, `_op_stats` `:3817`; 0.78.2's completion touch named) |
 
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r8-23ad703#nm23-r8-4]]
+
+## Revision round 9 (2026-11-13) {#rev-round-9}
+
+Source: [[plan-review-2026-11-13#lead]] L40 (bsd-pop-r3 R2: "plan-17 order is 17.1 → 17.2 → 17.4 →
+17.3 (task-17.3:20: depends on 17.4). 17.3 is user-gated") and L45 (user gates taken from the
+specs). Header only: the dependency on 17.4 was already stated; the order and the three gates
+are now named where an unattended run reads them.
+
+rel: derives-from -> [[plan-review-2026-11-13#lead]]
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t4 r3 MEH-only (0B/0S/4M) and r4-lite MEH-only (0B/0S/1M, the lead's bug-216 order edge), L62 | `workflow/bullshit/2026-11-14-0045-spec-t4-r3-e591c60.md`, `workflow/bullshit/2026-11-14-0055-spec-t4-r4-lite-ff44120.md` (over `spec-wave-t4` up to `ff44120`; `6a87bfb` finishes M2 wording only) | `metadata.status` stays `pending`, which means approved to build within the records above |
+
+rel: derives-from -> [[bsd-spec-t4-r4-lite-ff44120]]
