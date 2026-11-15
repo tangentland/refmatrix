@@ -64,6 +64,10 @@ perf-bitmap. green-216 may miss its own run ending — tail the log
 
 ## Next {#next}
 
+**Pre-mod freeze in force** ([[plan-of-plans#freeze]], user 2026-11-15): only 0.83.1, plan-29,
+plan-30 (+ 30.6) and plan-31 before the mod; anything else goes to the post-mod list unless it
+breaks something live. The procedure is [[orchestration]].
+
 1. Collect green-216 (or re-dispatch from the briefs file); check its L114 mutation table.
 2. **Ship 0.83.1:** merge `--no-ff` → bump `pyproject.toml` + `__init__.py` → full suite on master
    (log, E lines vs `release-0.83.0-full.log`) → deploy (ff, `daemon restart --relaunch`,
