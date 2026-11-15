@@ -359,6 +359,22 @@ def test_r4_3_the_session_header_counts_the_orphans_the_start_swept(tmp_path, ca
             shutil.rmtree(killed_sandbox, ignore_errors=True)
 
 
+def _assert_stopped_after_the_leak_line(out: str) -> None:
+    """ch-bsd T0.2 r1 S1 (ruling L169): a reported in-process daemon is also STOPPED. The
+    reaper's stop step prints `serve loop ended` once the serve thread has run its shutdown,
+    and `serve loop STILL RUNNING …` when it has not; X1 (no stop op sent) survived every node
+    that only read the LEAKED line."""
+    leak = out.find("LEAKED IN-PROCESS DAEMON")
+    assert leak >= 0, f"no `LEAKED IN-PROCESS DAEMON` line:\n{out[-3000:]}"
+    assert "STILL RUNNING" not in out, (
+        f"the reaper reported the in-process daemon but its serve loop is STILL RUNNING:\n"
+        + out[-3000:])
+    ended = out.find("serve loop ended", leak)
+    assert ended > leak, (
+        "no `serve loop ended` after the `LEAKED IN-PROCESS DAEMON` line: the daemon was "
+        f"reported, not shown stopped:\n{out[-3000:]}")
+
+
 def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_info):
     """AC-5 fixture 5: a `Daemon` built and served INSIDE the pytest process is not in the
     spawn ledger. conftest's weak registry of `Daemon` instances finds it still serving; it is
@@ -379,6 +395,7 @@ def test_ac5_an_in_process_daemon_left_serving_fails_the_session(tmp_path, case_
         f"the line does not name the daemon's root {root}: {line!r}")
     assert f"{_NODE}test_leaves_an_in_process_daemon_serving" in line, (
         f"the line does not name the test that built it: {line!r}")
+    _assert_stopped_after_the_leak_line(out)
 
 
 def test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session(tmp_path,
@@ -412,6 +429,7 @@ def test_l142_an_in_process_daemon_is_stopped_without_signalling_its_own_session
     final = [m.start() for m in re.finditer(r"^=+ .*\b(passed|failed)\b.* =+$", out, re.M)]
     assert leak >= 0 and final, out[-3000:]
     assert "Terminated" not in out, out[-3000:]
+    _assert_stopped_after_the_leak_line(out)
 
 
 def test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file(tmp_path,
@@ -430,6 +448,65 @@ def test_r4_4_teardown_counts_the_sandbox_store_roots_with_a_live_pid_file(tmp_p
         "no `rmx sandbox: <n> store root(s) under the sandbox hold a live rmxd.pid at session "
         f"finish` line, with a daemon left on {_info(case_info).get('root')}:\n{out[-3000:]}")
     assert int(m.group(1)) >= 1, m.group(0)
+
+
+def test_l154_the_stdlib_resource_tracker_is_the_one_exempt_process(tmp_path, case_info):
+    """Ruling L154; ch-bsd T0.2 r1 S2 (L169). The REAL multiprocessing resource tracker, started
+    as a direct child of the session (`resource_tracker.ensure_running()`, what loading torch
+    does), ends with its parent by construction: it is exempt. The session exits 0, prints the
+    exempt line naming its pid, and counts it in the summary line (`… 0 leaks; <n> exempt
+    process(es) …`), never silently."""
+    tree = _inner_tree(tmp_path, "case_resource_tracker")
+    r = _run_inner(tree, case_info)
+    out = _out(r)
+    pid = _info(case_info)["pid"]
+    try:
+        assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+        assert r.returncode == 0, (
+            f"the stdlib resource tracker (pid {pid}, a direct child of the session) failed the "
+            f"session (exit {r.returncode}); it is the one exempt process (L154)\n"
+            + out[-3000:])
+        assert _line_with(out, f"pid={pid} exempt") is not None, (
+            f"no exempt line naming the tracker pid {pid}:\n{out[-3000:]}")
+        m = re.search(r"rmx sandbox: 0 leaks; (\d+) exempt process\(es\)", out)
+        assert m is not None and int(m.group(1)) >= 1, (
+            f"the exemption is not counted in the session's summary line:\n{out[-3000:]}")
+        assert "LEAKED" not in out, out[-3000:]
+        assert _gone_within(pid, _GONE_GRACE_S), (
+            f"the resource tracker {pid} outlived its session: the exemption's premise "
+            "(it ends with its parent) does not hold")
+    finally:
+        if _alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def test_l154_a_grandchild_with_the_trackers_argv_is_not_exempt(tmp_path, case_info):
+    """ch-bsd T0.2 r1 S2 (L169): the exemption is for a DIRECT child of the session with the
+    tracker's exact argv. A grandchild carrying that argv (here, under a plain child that is
+    left running) is a leak like any other: `LEAKED PROCESS pid=<grandchild>`, stopped, and the
+    session fails. Mutation X2 (drop the direct-child condition) survived r1; this node kills
+    it."""
+    tree = _inner_tree(tmp_path, "case_tracker_argv_grandchild")
+    r = _run_inner(tree, case_info)
+    out = _out(r)
+    d = _info(case_info)
+    gc, mid = d["pid"], d["mid"]
+    try:
+        assert "1 passed" in out, f"the fixture test itself must pass:\n{out[-3000:]}"
+        assert _line_with(out, f"pid={gc} exempt") is None, (
+            f"the grandchild {gc} (its parent is {mid}, not the session) was exempted as the "
+            f"resource tracker:\n{out[-3000:]}")
+        assert _line_with(out, "LEAKED PROCESS", f"pid={gc}") is not None, (
+            f"no `LEAKED PROCESS pid={gc}` line for the grandchild with the tracker's argv:\n"
+            + out[-3000:])
+        assert r.returncode == pytest.ExitCode.TESTS_FAILED, (
+            f"a leaked grandchild did not fail the session (exit {r.returncode}):\n"
+            + out[-3000:])
+        assert _gone_within(gc, _GONE_GRACE_S), f"the grandchild {gc} survived the reaper"
+    finally:
+        for p in (gc, mid):
+            if _alive(p):
+                os.kill(p, signal.SIGKILL)
 
 
 def test_ac5_a_sigstopped_daemon_is_continued_stopped_and_fails_the_session(tmp_path,

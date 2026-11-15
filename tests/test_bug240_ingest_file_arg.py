@@ -14,7 +14,7 @@ verdict: a non-zero exit, exactly one `Error:` line, that line names `rmx sync -
 file is NOT ingested by the refused call.
 
 Real CLI, real daemon (spawned by the dev `rmx`, this checkout's code via PYTHONPATH), throwaway
-store under a SHORT `/tmp` mkdtemp root (macOS `sun_path`). The daemon-down route (the CLI's
+store under a SHORT `short_root()` root (macOS `sun_path`). The daemon-down route (the CLI's
 in-process `_ingest`) is driven too: the same command, a different write path. Guard: `rmx
 ingest <dir>` still ingests the directory.
 """
@@ -23,12 +23,12 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
 
 REPO = Path(__file__).resolve().parents[1]
@@ -63,7 +63,7 @@ def _wait_sock(root: Path) -> None:
 @pytest.fixture(params=["daemon", "in_process"])
 def proj(request):
     assert RMX.exists(), f"dev rmx missing at {RMX}"
-    base = Path(tempfile.mkdtemp(prefix="b240.", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b240.")).resolve()
     p = base / "proj"
     for rel, text in FILES.items():
         f = p / rel

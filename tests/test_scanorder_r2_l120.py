@@ -31,7 +31,7 @@ call again delivers nothing (unchanged), then EVERY command the generated hook c
 dev `rmx`, a Claude Code envelope on stdin), and the next call delivers the same composite again.
 Where the fix lives (PreCompact or SessionStart) is GREEN's choice; both event sets run.
 
-Throwaway stores under SHORT `/tmp` mkdtemp roots; in-process `Store`, no daemon; hook commands
+Throwaway stores under SHORT `short_root()` roots; in-process `Store`, no daemon; hook commands
 run with the dev `rmx` first on PATH and `REFMATRIX_ROOT` naming the throwaway store. No mocks.
 """
 from __future__ import annotations
@@ -41,12 +41,12 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from refmatrix import stm as stm_mod
 from refmatrix.composite import build_topic_composite
 from refmatrix.ingest_gmd import ingest_gmd_paths
@@ -89,7 +89,7 @@ def _doc(i: int, body: str) -> str:
 
 @pytest.fixture
 def env():
-    base = Path(tempfile.mkdtemp(prefix="sco.", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("sco.")).resolve()
     proj = base / "proj"
     docs = proj / "docs"
     docs.mkdir(parents=True)

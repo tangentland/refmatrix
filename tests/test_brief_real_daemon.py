@@ -14,12 +14,12 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
 
 RMX = dev_rmx()
@@ -27,7 +27,7 @@ RMX = dev_rmx()
 
 @pytest.fixture
 def daemon_root():
-    tmp = Path(tempfile.mkdtemp(prefix="/tmp/bd."))
+    tmp = Path(rmx_sandbox.short_root("bd."))
     root = tmp / ".refmatrix"
     env = {**dev_env(), "REFMATRIX_ROOT": str(root),
            "RMX_INVOCATION_SOURCE": "eval"}
