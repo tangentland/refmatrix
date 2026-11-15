@@ -12,7 +12,8 @@ a helper function of its file, or through a fixture, conftest fixtures included)
 comparison of an outcome field (`OUTCOME_FIELDS`) with a string. A hit passes only when, in the
 same function, it builds the command it runs with `tests.timing.with_budget(command, seconds)`,
 `seconds` a literal or `HANG_GUARD_S` imported from `tests.timing` (ruling L141: `with_budget` and
-reasoned entries only; the knob forms are not read). Otherwise it fails, or holds a
+reasoned entries only; the knob forms are not read), or (provisional, pending the lead's ruling)
+it waits on a harness readiness signal before it runs the hook. Otherwise it fails, or holds a
 `budget-outcome` entry with a non-empty `reason` in `tests/wallclock_allow.json`.
 
 What this census cannot see is an outcome asserted through another shape (an exit code, a row
@@ -30,7 +31,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REAL_DAEMON_HELPERS = frozenset({"SandboxDaemon", "spawn_daemon_subprocess"})
+# The harness readiness signals (29.4 #r3-bug228's readiness branch, ruled by L157 (1)): a test
+# that waits on one before the hook runs has taken the pre-op leg (boot, model warm-up), which
+# held >= 90% of bug-228's overrun, off the budget. PROVISIONAL pending the lead's ruling on the
+# census form (29.4 #r3-budget-census names only `with_budget` and the knob forms).
+READINESS_CALLS = frozenset({"wait_models_warm"})
 OUTCOME_FIELDS = frozenset({"outcome"})
+RUN_CALLS = frozenset({"run_hook", "run_cmd"})
 TIMING_MODULE = "tests.timing"
 BUDGET_HELPER = "with_budget"
 HANG_GUARD = "HANG_GUARD_S"
@@ -184,7 +191,21 @@ def _controls_budget(fn: ast.AST, tree: ast.Module) -> bool:
                 (k.value for k in n.keywords if k.arg == "seconds"), None)
             if seconds is not None and readable(seconds):
                 return True
-    return False
+    return _waits_ready_before_the_run(fn)
+
+
+def _waits_ready_before_the_run(fn: ast.AST) -> bool:
+    """A readiness call (`READINESS_CALLS`) on a line before the first call that runs the hook
+    or CLI child (`run_hook`, `run_cmd`): waiting AFTER the run decides nothing."""
+    calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)]
+
+    def name(c: ast.Call):
+        f = c.func
+        return f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+
+    ready = [c.lineno for c in calls if name(c) in READINESS_CALLS]
+    runs = [c.lineno for c in calls if name(c) in RUN_CALLS]
+    return bool(ready and runs and min(ready) < min(runs))
 
 
 def _hits(source: str, relpath: str, extra: frozenset = frozenset()) -> list:

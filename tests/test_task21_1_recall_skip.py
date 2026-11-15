@@ -196,10 +196,19 @@ def test_ac2b_live_daemon_recall_writes_one_ok_recall_row(root):
     """AC-2b, "the same run against a live sandbox daemon logs outcome=ok": the same generated
     command, served by a real `rmx daemon` on the sandbox root, writes exactly one kind=recall
     row with outcome=ok (`ok`: an answer was rendered, however many items), budget_s=5 and the
-    envelope's session."""
+    envelope's session.
+
+    bug-228 (T0.3 + 29.4c, 2026-11-15; ruling L157 (1)): at load 3 this failed `skipped_budget`
+    with latency 5,018 ms because the embedder's cold load (5.6-9.1 s from daemon start) spent
+    the 5 s budget before the recall op ran. The hook now runs after the daemon's startup
+    warm-up has finished for both models (bug-184's readiness signal, `wait_models_warm`), so
+    the side of the budget the run falls on is no longer decided by the cold load. Whether a
+    live recall meets its 5 s budget under load is a product question, recorded in its own
+    registry row, not asserted here."""
     _seed_memories(root)
     before = len(_recall_rows(root))
-    with h.SandboxDaemon(root):
+    with h.SandboxDaemon(root) as d:
+        d.wait_models_warm()
         r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=240)
     rows = _recall_rows(root)[before:]
     assert len(rows) == 1, (
