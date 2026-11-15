@@ -1011,7 +1011,11 @@ the test that needs it, and it adds a parameter with the current behaviour as it
   that [[#r10]] claims for it (ch-bsd r2 `#m11`).
 - A class-B test that needs a clock in one of those files does not get it here: the test
   stays in the allow list, and the edit is routed to 29.2 R7's release, as a line in the
-  summary and a note on the allow-list entry.
+  summary and a note on the allow-list entry. **The commit that routes such an edit also adds
+  the receiving AC to 29.2**, a bullet in the shape of [[task-29.2-mypy-gate#ac-29]] that names
+  the file, the edit and the allow-list entry it deletes. Without that bullet the edit is not
+  routed: it is raised to the lead (ch-bsd T0 fresh r2 M4; ruling L123). There is no such edit
+  today.
 - **The exception is T0.4's edits to `store.py`**, which are T0's text: R4.1's deletion of the
   `_read_via_duckdb` state and of its stale mentions, and R4.7's one-line `_log_event`
   docstring ([[task-t0-suite-trust-sweep#r4-1]], [[task-t0-suite-trust-sweep#r4-7]]; widened from the deletion alone by ruling L122).
@@ -1172,3 +1176,7 @@ Three edits, each a fold of ch-bsd's confirm-lite r1 on T0's freshness revision
 
 P1, P5 and P6, which revision note 6 listed as open, are ruled. No other requirement, AC or
 mutation changed. {#rev-note-7-body}
+
+**Round 3 (ruling L123; [[bsd-spec-t0-fresh-r2-f6b32e2]], M4).** [[#files-src-note]]: a
+class-B clock edit is routed to 29.2 only by a commit that also adds its receiving AC there.
+{#rev-note-7-r3}

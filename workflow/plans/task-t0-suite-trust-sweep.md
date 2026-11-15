@@ -21,8 +21,8 @@ metadata:
 > [[plan-review-2026-11-13#goal-horizon]]) after ch-bsd r3 came back MEH-only; the MEH is folded
 > ([[#decision-approved]]). The lead's rulings on the first draft's choices and on each review
 > round are in [[#rulings]], [[#rev-r1]], [[#rev-r2]] and [[#rev-r3]]. Revised 2026-11-15 for
-> freshness and the 29.4 fold ([[#rev-note-fresh]]), and again after its review
-> ([[#rev-note-fresh-2]], ruling L122).
+> freshness and the 29.4 fold ([[#rev-note-fresh]]), and again after its two reviews
+> ([[#rev-note-fresh-2]], ruling L122; [[#rev-note-fresh-3]], ruling L123).
 > Depends on: what 29.4 depends on ([[task-29.4-suite-health#root]]), and 29.4's stage 0, which
 > is done ([[task-29.4-r0-durations]]). Queue item 1 is on `master`: bug-212 (`cc061f4`),
 > bug-216 (`7aed8df`), 25.1 rev 7 (`d44e359`, `d1be40a`). Every T0 branch starts from the
@@ -373,7 +373,7 @@ and a clone with none, run with the main tree's interpreter and `PYTHONPATH=<clo
   ([[#ac-1-5]]; ch-bsd r1 M1).
 - **The 18 venv pins are stage-1 scope and are retired in stage 2** (ch-bsd r1 M5; ruling
   L122, ruled before stage 1 because T0.1' builds R1.1 first). bug-253's helper covers every
-  file that looks up the dev `rmx`, the seven pinned files included. Once a pinned file uses
+  file that looks up the dev `rmx`, the six venv-pinned files included. Once a pinned file uses
   the helper it no longer skips in a no-venv clone, and its pin goes in the same commit (R1.2:
   the pins follow the tests). So T0.1' builds R1.1's venv condition as written, AC-1.2 and
   AC-1.4 are met at stage 1 and stand as stage-1 evidence, and stage 2 then removes the 18
@@ -522,9 +522,17 @@ reasons the tests actually skip with. Those are:
     **RED at base:** the shipped script takes no fallback, because its `-d` test is satisfied by
     the empty dir; it exits 1 on the memory-id `dangling-doc` errors, and stderr carries no
     fallback line. The new test needs the resolver to build its decoy, so as a pytest node it
-    fails at base on the missing module, like AC-1.6's cases. The RED for the stated reason is
-    therefore recorded as a logged run of the shipped script against the same decoy (R0.3),
-    with both E lines quoted (R0.2). ch-bsd's r1 probes are that run and case 1's, at `5b04e2d`.
+    fails at base on the missing module, like AC-1.6's cases. Its stated-reason RED is
+    recorded in two parts (ch-bsd r2 M1; ruling L123):
+    - **The base run.** The RED author runs the shipped script, the real `scripts/lint-gmd.sh`,
+      at T0.1's base in a symlinked clone, against the same decoy. The log (R0.3) quotes the
+      exit code and both E lines (R0.2). It is corroborated by ch-bsd's r1 probes at `5b04e2d`,
+      which used a copy of the script with `DEVPY` re-pointed and are not this record.
+    - **The node's own RED is a mutation RED.** After GREEN the node is run under M1.6. It
+      goes red on its own assertions: no fallback line, and the memory-id `dangling-doc`
+      count. The summary quotes those E lines as this node's recorded RED for the intended
+      reason. The lead accepts a mutation RED for this one node (L123): a stated-reason node at
+      base would need a third copy of the slug logic, which is what R1.4 removes.
   - **After R1.4**, in both cases, `./scripts/lint-gmd.sh` prints the fallback stderr line (with
     `empty` in case 2, with the chain in case 1), and its error count and E lines **equal the
     main tree's at the same sha**. The tests pass when the main tree's gate exits 0 at that sha,
@@ -556,7 +564,10 @@ reasons the tests actually skip with. Those are:
     populated dir. B's dir is chosen, and the line names A as `absent` and B as used. The same
     with A's dir present and empty: the line says `empty` for A;
   - **cycle**: clone A's origin is clone B and B's is A, and neither slug has a populated dir.
-    The resolver returns no dir, the line says `cycle`, and the call returns (it does not loop);
+    The resolver returns no dir, the line says `cycle`, and the call returns (it does not
+    loop). The test runs with the bound intact and under a wall deadline (R0.4), so a broken
+    guard fails on the message and a broken guard plus a broken bound fails on the deadline
+    (ch-bsd r2 M2);
   - **bound**: a chain of 6 local origins where only the sixth has a populated dir. No dir is
     chosen and the line says `bound of 5`. With the populated dir at the fifth, it is chosen.
 
@@ -577,13 +588,18 @@ reasons the tests actually skip with. Those are:
     empty-directory run goes red with the memory-id errors and the "no memory dir" line, and so
     does the absent-case repo-scope test;
   - M1.5: silence the fallback's stderr line (AC-1.6 red);
-  - M1.6: treat an existing own-slug dir as present whatever it holds (AC-1.6's empty case red);
+  - M1.6: treat an existing own-slug dir as present whatever it holds (AC-1.6's empty case
+    red, and AC-1.5 case 2's node red with no fallback line and the memory-id `dangling-doc`
+    count; that run is the node's recorded RED, [[#ac-1-5]]);
   - M1.7: skip origin canonicalisation (AC-1.6's relative and `.git` cases red);
   - M1.8 (ch-bsd r1 M2): put the slug derivation back into `scripts/lint-gmd.sh`, beside a
     working resolver call (AC-1.7 red; AC-1.5 and AC-1.6 stay green, which is the point);
   - M1.9 (ch-bsd r1 S1): follow one hop only (AC-1.6's chained case red, and AC-1.5's case 1);
-  - M1.10 (ch-bsd r1 S1): drop the visited-path guard (AC-1.6's cycle case red: it must fail on
-    the bound's message or on a deadline, never hang, R0.4).
+  - M1.10 (ch-bsd r1 S1): drop the visited-path guard (AC-1.6's cycle case red: with the bound
+    intact the walk ends on `bound of 5`, so the `cycle` assertion fails; it never hangs,
+    R0.4);
+  - M1.11 (ch-bsd r2 M2; ruling L123): drop the bound, or raise it (AC-1.6's bound case red:
+    the sixth origin's dir is chosen).
   {#t0-1-mutations}
 
 ### Files {#t0-1-files}
@@ -646,19 +662,26 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
   (`DEVPY`, line 23 at `f45b9a3`) is in the same bug and has the same owner (L122: it stays
   here, not with T0.1').
 - **The helper covers every file that looks up the dev `rmx`** (ch-bsd r1 M5; ruling L122), so
-  that one definition of "the dev rmx" is left, not two. At `f45b9a3` twelve test files name
-  `<checkout>/.venv-eval/bin`:
-  - the six that error or fail in a no-venv clone: `tests/test_bug240_ingest_file_arg.py`,
-    `tests/test_bug240_ingest_file_arg_mcp.py`, `tests/test_bug241_r2_l112.py` and
-    `tests/test_bug241_rule_docs_reingest.py` name the path;
-    `tests/test_bug241_r3_l114.py` errors through the fixtures it imports from
-    `test_bug241_r2_l112`; `tests/test_scanorder_r2_l120.py` fails on the same path;
-  - the seven pinned files of [[#t0-1-skip-reasons]], which skip where the six error.
+  that one definition of "the dev rmx" is left, not two. At `f45b9a3` eleven files name it;
+  the helper covers them, and `test_bug241_r3_l114.py` through its import;
+  `test_repo_hooks_in_sync.py` keeps its hooks pin (ch-bsd r2 M3; ruling L123). The eleven,
+  under `tests/`:
+  - five that error or fail in a no-venv clone: `test_bug240_ingest_file_arg.py:33`,
+    `test_bug240_ingest_file_arg_mcp.py:38`, `test_bug241_r2_l112.py:46`,
+    `test_bug241_rule_docs_reingest.py:46`, `test_scanorder_r2_l120.py:57` (`DEV_BIN`);
+  - six that skip there, holding the 18 venv pins: `test_brief_real_daemon.py:23`,
+    `test_grep_argv_order_e2e.py:48`, `test_grep_count_rows_e2e.py:27`,
+    `test_grep_evidence_verified.py:39`, `test_grep_learning_replay.py:66`,
+    `test_grep_no_flag_bundle.py:65`.
 
-  R0 re-runs the grep at the branch base and the summary lists what it found.
+  `test_bug241_r3_l114.py` does not name the path; it errors through the fixtures it imports
+  from `test_bug241_r2_l112`. `test_repo_hooks_in_sync.py`, the seventh pinned file, never
+  looks up the dev `rmx`, so the helper does not apply to it. Eight more files mention
+  `.venv-eval` without a lookup (conftest, three symlink fixtures, four docstrings or
+  comments). R0 re-runs the grep at the branch base and the summary lists what it found.
 - **Stage 2 retires the 18 venv pins and R1.1's venv half.** A pinned file that uses the
   helper no longer skips for a missing checkout venv, so its `skipif` and its pin go in the
-  same commit (R1.2: the pins follow the tests). When all seven are done:
+  same commit (R1.2: the pins follow the tests). When all six are done:
   - `_CLONE_ONLY_SKIPS` holds one entry, the hooks test, under R1.1's hooks condition;
   - R1.1's venv condition guards nothing and is deleted, and AC-1.2's layouts assert the
     hooks-only set;
@@ -666,8 +689,9 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
     is not pinned, so a machine without `rg` fails the session there, which is correct;
   - AC-1.4's 19 pinned skips stand as stage-1 evidence and are not re-asserted.
 
-  The stage-2 summary quotes a run of the seven files in a no-venv clone: no error from a
-  missing dev `rmx`, and one skip, the hooks pin, reported as pinned.
+  The stage-2 summary quotes a run of the seven pinned files of [[#t0-1-skip-reasons]] in a
+  no-venv clone: no error from a missing dev `rmx`, and one skip, the hooks pin, reported as
+  pinned.
 - **Afterwards** the five errored files have real durations for the first time. Stage 0's
   weights understate them ([[task-29.4-r0-durations#weights-gaps]]), and L121 asks for the
   re-weighting after this fix.
@@ -735,7 +759,8 @@ owner: this stage-2 branch (T0.2 + 29.4b), or the next RED that touches those fi
 On the same branch, not by this spec's requirements: 29.4b's files
 ([[task-29.4-suite-health#files]]: conftest, `rmx_sandbox.py`, `tests/test_daemon_reaper.py`,
 `tests/test_tmp_root_census.py`, the 28 files that call `spawn_daemon_subprocess`), and
-bug-253's ([[#t0-2-bug253]]: the twelve test files, their shared helper, the 18 pins and R1.1's
+bug-253's ([[#t0-2-bug253]]: the eleven test files that name the dev bin, `test_bug241_r3_l114.py`
+through its import, their shared helper, the 18 pins and R1.1's
 venv condition in `tests/conftest.py`, `tests/test_t0_skip_gate.py` for AC-1.2's layouts, and
 the `DEVPY` lookup in `scripts/lint-gmd.sh`). {#t0-2-files-shared}
 
@@ -743,7 +768,8 @@ the `DEVPY` lookup in `scripts/lint-gmd.sh`). {#t0-2-files-shared}
 
 Named by the lead (ruling L122; ch-bsd r1 M8), because conftest, the sandbox and the reaper
 load in every test and a branch full suite is not run ([[#r0-verify-sets]]):
-- T0.2's own files and the twelve bug-253 files;
+- T0.2's own files, the eleven files that name the dev bin, and `test_bug241_r3_l114.py`
+  ([[#t0-2-bug253]]);
 - every file stage 0's tier rule puts in run tier (b): 126 files, 2,065 s serial
   ([[task-29.4-r0-durations#tiers]]);
 - the sandbox tests (every `tests/test_*sandbox*.py`) and the reaper tests
@@ -1772,7 +1798,7 @@ rel: derives-from -> [[plan-review-2026-11-13#lead]] {ruling: "L122"}
 | M2 / P2 nothing checked that two copies became one | new static AC-1.7; M1.8 puts the slug derivation back into the script and must turn it red | [[#ac-1-7]], [[#t0-1-mutations]] |
 | M3 29.4's exception was narrower than T0.4's `store.py` edits | the exception names R4.1 and R4.7 | [[task-29.4-suite-health#files-src-note]], [[#t0-4-files]] |
 | M4 / P5 the proposed command used a flag that does not exist | the twin has a second run: `pytest -rA` over the eight files, exit code and counts quoted; no `--files` | [[#r7-5]], [[#ac-7-3]] |
-| M5 / P7 two definitions of "the dev rmx" | bug-253's helper covers all twelve files; stage 2 retires the 18 venv pins and R1.1's venv half; AC-1.4 stands as stage-1 evidence | [[#t0-2-bug253]], [[#t0-1-bug253]], [[#r1-1]], [[#t0-2-files-shared]] |
+| M5 / P7 two definitions of "the dev rmx" | bug-253's helper covers every file that names the dev bin (eleven: [[#rev-note-fresh-3]] corrects this round's "twelve"); stage 2 retires the 18 venv pins and R1.1's venv half; AC-1.4 stands as stage-1 evidence | [[#t0-2-bug253]], [[#t0-1-bug253]], [[#r1-1]], [[#t0-2-files-shared]] |
 | M6 / P8 AC-2.1 assumed a `home=` parameter | R2.1 and AC-2.1 use the routes that need no `src/` change | [[#r2-1]], [[#ac-2-1]] |
 | M7 / P3 bug-228's branch if it never fails | one sentence in 29.4: build the "otherwise" split; the product row records "not reproduced in N trials at levels 3/5/8" | [[task-29.4-suite-health#r3-bug228]], [[#t0-3-bug228-legs]] |
 | M8 no verify set for the branches that edit conftest | the two sets the lead named | [[#r0-verify-sets]], [[#t0-1-verify]], [[#t0-2-verify]] |
@@ -1801,6 +1827,29 @@ look at them. {#rev-note-fresh-2-own}
 **Lint for this round.** Same commands as [[#rev-note-fresh-lint]]: both exited 0 (lint 0
 errors; parity 0 divergent docs). {#rev-note-fresh-2-lint}
 
+## Revision note 3 (2026-11-15, ch-bsd confirm-lite r2; ruling L123) {#rev-note-fresh-3}
+
+ch-bsd's confirm-lite r2 of round 2 (`f34b40c..f6b32e2`) came back MEH-only (0B/0S/4M), GO,
+persisted as `workflow/bullshit/2026-11-15-0939-spec-t0-fresh-r2-f6b32e2.md`. The lead ruled
+that the four MEHs fold before the merge and that it checks the fold itself (L123,
+[[plan-review-2026-11-13#lead]]). AC-29's third bullet in 29.2 stays. No test was run and no
+`src/` or test file was edited. {#rev-note-fresh-3-lead}
+
+rel: derives-from -> [[bsd-spec-t0-fresh-r2-f6b32e2]]
+rel: derives-from -> [[plan-review-2026-11-13#lead]] {ruling: "L123"}
+
+| finding | resolution | where |
+|---|---|---|
+| M1 AC-1.5 case 2's node has no stated-reason RED of its own | M1.6 also names that node; its run under M1.6 after GREEN is its recorded RED, a mutation RED the lead accepts for this one node; the RED author re-takes the shipped-script run at T0.1's base with the real script in a symlinked clone, exit code quoted; the bsd r1 probes are "corroborated by" | [[#ac-1-5]], [[#t0-1-mutations]] |
+| M2 the bound had no mutation | M1.11 (drop or raise the bound) turns AC-1.6's bound case red; the cycle test runs with the bound intact and a wall deadline; M1.10's wording says why it fails and does not hang | [[#ac-1-6]], [[#t0-1-mutations]] |
+| M3 "twelve files" was wrong | eleven files name the dev bin and are listed with their lines; `test_bug241_r3_l114.py` is covered through its import; `test_repo_hooks_in_sync.py` keeps its hooks pin; the 18 venv pins sit in six files, not seven | [[#t0-2-bug253]], [[#t0-1-bug253]], [[#t0-2-files-shared]], [[#t0-2-verify]] |
+| M4 29.4 still routed class-B clock edits to 29.2 with no receiving AC | the routing commit also adds the receiving AC to 29.2, or the edit is not routed | [[task-29.4-suite-health#files-src-note]] |
+
+{#rev-note-fresh-3-table}
+
+**Lint for this round.** Same commands as [[#rev-note-fresh-lint]]: both exited 0 (lint 0
+errors; parity 0 divergent docs). {#rev-note-fresh-3-lint}
+
 ## Decision {#decision}
 
 | date | decision | by | basis |
@@ -1808,6 +1857,7 @@ errors; parity 0 divergent docs). {#rev-note-fresh-2-lint}
 | 2026-11-13 | `metadata.status: approved` | the lead | Approved by the lead on the user's pattern (d9co route) after ch-bsd r3 MEH-only, `bsd-spec-t0-r3-efe618c`, MEH folded ([[#rev-r3]]) |
 | 2026-11-15 | `approved` stands; the text is revised for freshness and the 29.4 fold ([[#rev-note-fresh]]) | ch-architect, on the lead's brief | [[task-29.4-suite-health#fold-deltas]], ruling L121. A ch-bsd confirm-lite on the revision's diff comes before the merge; P1 to P8 are open for the lead |
 | 2026-11-15 | round 2: ch-bsd confirm-lite r1 (DIRTY 10, 0B/2S/8M) folded whole ([[#rev-note-fresh-2]]); P1 to P8 ruled | the lead (ruling L122); text by ch-architect | [[bsd-spec-t0-fresh-r1-5b04e2d]]. A confirm-lite r2 comes before the merge |
+| 2026-11-15 | round 3: ch-bsd confirm-lite r2 was MEH-only GO; its four MEHs folded ([[#rev-note-fresh-3]]) | the lead (ruling L123); text by ch-architect | [[bsd-spec-t0-fresh-r2-f6b32e2]]. The lead checks this fold itself; no third review round |
 
 {#decision-approved}
 
