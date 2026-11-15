@@ -64,19 +64,24 @@ perf-bitmap. green-216 may miss its own run ending — tail the log
 
 ## Next {#next}
 
-**The queue lives in the POP only:** [[plan-of-plans#queue]] (the user, 2026-11-15: "the source of
-truth must be the POP"). This file does not repeat it. Open questions and decisions:
-[[plan-of-plans#ledgers]]. Procedure: [[orchestration]].
+**The queue lives in the POP only:** [[plan-of-plans#queue]]. Ledgers: [[plan-of-plans#ledgers]]
+(L125-L162 this session). Procedure: [[orchestration]]. 0.84.0 is deployed; nothing deploys
+until R1's major release gate.
 
 ## Open {#open}
 
-- See [[plan-of-plans#questions]] and [[plan-of-plans#decisions]].
+- **Agents in flight:** [[agent-briefs-inflight-2026-11-15b]] (green-t02, red-t03, green-t03,
+  red-315, green-315). Check each one's queued test log yourself.
+- **Questions:** none open (next id Q42).
 - **Not pushed:** dev master is far ahead of `origin/main` (the user pushes).
 - **Throwaway clones on `/Volumes/littlebig`:** many `refmatrix-*` clones from 2026-11-13..15;
-  remove when no longer wanted (look first).
+  remove when no longer wanted (look first). Scratch store copies:
+  `refmatrix-spec31b-scratch/`, `refmatrix-t56-fresh/.scratch/`.
+- **User action pending (bug-261):** add `.refmatrix/` to atlftpd's `.gitignore`; merge the
+  ignore branches in cliquet, atldb, prep_prolific.
 
 ## Resume {#resume}
 
-1. `/recall-state`; read [[plan-of-plans#queue]] (the state) and this file.
+1. `/recall-state`; read [[plan-of-plans#queue]] and [[plan-of-plans#ledgers]] (the state), then [[agent-briefs-inflight-2026-11-15b]].
 2. `ListAgents`; collect agents in flight or re-dispatch from `workflow/agents/`.
 3. Never run the dev-venv `rmx` against the live store with a bumped version.
