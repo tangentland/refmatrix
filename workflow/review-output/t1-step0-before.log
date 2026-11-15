@@ -1,0 +1,17 @@
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/pilot/refmatrix/src/refmatrix as checked-hash (bug-037)
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+______________________ test_no_new_round_named_test_files ______________________
+
+    def test_no_new_round_named_test_files():
+        allowed = set(json.loads(ALLOW.read_text()))
+>       assert check(TESTS, allowed) == []
+E       AssertionError: assert ['new round/b...inks.py', ...] == []
+E         
+E         Left contains 90 more items, first extra item: 'new round/bug/remedy/RED-named test file: test_bridge_move_safety_r1.py'
+E         Use -v to get more diff
+
+tests/test_suite_discipline.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_suite_discipline.py::test_no_new_round_named_test_files - A...
+1 failed, 2 passed in 0.18s
