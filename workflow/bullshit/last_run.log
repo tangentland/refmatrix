@@ -116,3 +116,4 @@
 2026-11-15T01:52:45Z commit=bba7313 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-15-0152-bug241-bug240-r2-bba7313.md
 2026-11-15T02:02:20Z commit=a169c17 verdict=DIRTY findings=8 (0B/3S/5M) report=2026-11-15-0202-plan30-spec-r1.md
 2026-11-15T03:40:13Z commit=ca22b79 verdict=DIRTY findings=5 (0B/3S/2M) report=2026-11-15-0340-scanorder-r1-ca22b79.md
+2026-11-15T09:18:43Z commit=5b04e2d verdict=DIRTY findings=10 (0B/2S/8M) report=2026-11-15-0918-spec-t0-fresh-r1-5b04e2d.md
