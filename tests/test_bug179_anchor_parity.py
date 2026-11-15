@@ -582,8 +582,12 @@ def _base_lint_src() -> str:
     return p.stdout
 
 
-def _run_gate(root: Path):
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+def _run_gate(root: Path, **extra: str):
+    # bug-253: `RMX_DEV_PYTHON` names the gate's dev interpreter when the checkout has no
+    # `.venv-eval`; it is stripped unless a test passes it, so the no-venv contract below is
+    # tested on the checkout's own layout.
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "RMX_DEV_PYTHON")}
+    env.update(extra)
     p = subprocess.run(["bash", str(root / "scripts" / "lint-gmd.sh")],
                        capture_output=True, text=True, cwd=root, env=env, timeout=120)
     return p.returncode, p.stdout + p.stderr
@@ -643,6 +647,34 @@ def test_ac10_a_missing_dev_interpreter_exits_2_and_names_it(gate_roots):
     code, out = _run_gate(root)
     assert code == 2, f"exit {code}:\n{out}"
     assert ".venv-eval" in out, out
+
+
+def test_bug253_a_named_dev_interpreter_runs_the_gate_in_a_checkout_with_no_venv(gate_roots):
+    """bug-253 (task-t0-suite-trust-sweep `#t0-2-bug253`; L121 names `lint-gmd.sh`'s `DEVPY`
+    lookup as the same bug): a littlebig clone has no `.venv-eval` of its own; it runs with the
+    dev tree's interpreter. The caller names that interpreter in `RMX_DEV_PYTHON` (a test passes
+    `sys.executable`, as tests/devbin.py does for the dev `rmx`), and the gate runs both steps
+    under it. At c4b44d0 the gate exited 2, `dev interpreter not found at
+    <checkout>/.venv-eval/bin/python`, before lint ran (the stage-0 E line for
+    `test_the_repo_scope_is_clean_under_the_stricter_gate`)."""
+    root = _gate_root(lint_src=None, doc=PLANTED_FIXED, venv=False)
+    gate_roots.append(root)
+    code, out = _run_gate(root, RMX_DEV_PYTHON=sys.executable)
+    assert "not found at" not in out and code != 2, (
+        f"the gate did not run with RMX_DEV_PYTHON={sys.executable} and no .venv-eval "
+        f"(exit {code}):\n{out}")
+    assert code == 0, f"exit {code}:\n{out}"
+
+
+def test_bug253_a_named_dev_interpreter_that_is_missing_exits_2_and_names_it(gate_roots):
+    """The named interpreter is a precondition like the venv's: one that does not exist stops
+    the gate with exit 2 and names the path it was given, never a narrower gate."""
+    root = _gate_root(lint_src=None, doc=PLANTED_FIXED, venv=False)
+    gate_roots.append(root)
+    missing = str(root / "no-such-python")
+    code, out = _run_gate(root, RMX_DEV_PYTHON=missing)
+    assert code == 2, f"exit {code}:\n{out}"
+    assert missing in out, f"the gate did not name RMX_DEV_PYTHON={missing}:\n{out}"
 
 
 # ------------------------------------------- audit s3: a crash never passes

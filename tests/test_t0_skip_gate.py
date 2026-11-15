@@ -12,10 +12,11 @@ actually skip with, so a pinned test that started skipping for a NEW reason pass
 
 What is pinned here (task-t0-suite-trust-sweep `#t0-1`):
 - R1.1 / AC-1.2: `allowed_skips(checkout)` in `tests/conftest.py` builds the allowed set per
-  entry: the 18 dev-venv pins only when `<checkout>/.venv-eval/bin/rmx` does not exist; the
-  hooks pin only when the installed hooks belong to another checkout (`installed_root`, decided
-  the way the test decides it). Layouts: no venv, a real venv, a half-built venv dir, a
-  symlinked venv (with and without `bin/rmx` behind it), foreign hooks, no hooks file.
+  entry: the hooks pin only when the installed hooks belong to another checkout
+  (`installed_root`, decided the way the test decides it). Layouts: no venv, a real venv, a
+  half-built venv dir, a symlinked venv (with and without `bin/rmx` behind it), foreign hooks,
+  no hooks file. Stage 2 (`#t0-2-bug253`, bug-253) retired the 18 dev-venv pins and R1.1's
+  venv condition: every layout's set is hooks-only, whatever its venv.
 - R1.2: every pinned value is the test's own `reason=` string, verbatim.
 - AC-1.1 in-session: this session's `ALLOWED_SKIPS` (and the registered gate's) is the builder
   applied to this checkout.
@@ -42,42 +43,11 @@ pytest_plugins = ["pytester"]
 
 _REPO = Path(__file__).resolve().parents[1]
 
-# The 18 dev-venv pins and the one hooks pin, each with the test's own `reason=` verbatim
-# (task-t0-suite-trust-sweep `#t0-1-skip-reasons`, re-read at 9a5a98a).
-_BRIEF = "tests/test_brief_real_daemon.py::"
-_ARGV = "tests/test_grep_argv_order_e2e.py::"
-_COUNT = "tests/test_grep_count_rows_e2e.py::"
-VENV_PINS = {
-    _BRIEF + "test_an_unknown_class_fails_loudly_through_the_daemon": "dev rmx not built",
-    _BRIEF + "test_brief_runs_end_to_end_through_a_real_daemon": "dev rmx not built",
-    _BRIEF + "test_saved_briefs_do_not_grow_the_corpus_on_rerun": "dev rmx not built",
-    _BRIEF + "test_the_gmd_flag_does_not_crash_through_a_real_daemon": "dev rmx not built",
-    _ARGV + "test_a_directory_walk_keeps_its_files_GROUPED": "dev venv rmx not built",
-    _ARGV + "test_a_named_file_still_wins_its_argv_slot_against_a_walk":
-        "dev venv rmx not built",
-    _ARGV + "test_named_paths_come_back_in_argument_order_not_fanout_order":
-        "dev venv rmx not built",
-    _ARGV + "test_the_tool_itself_is_the_one_that_scrambles": "needs rmx + rg",
-    _COUNT + "test_a_directory_with_no_match_gets_a_zero_row_per_file":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_directory_with_some_matches_keeps_its_zero_rows":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_missing_file_beside_a_directory_is_not_a_bare_zero":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_missing_file_beside_a_match_still_exits_2":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_a_missing_file_exits_2_and_says_so": "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_two_spellings_keep_their_own_prefix_on_n":
-        "dev venv rmx or /usr/bin/grep missing",
-    _COUNT + "test_two_spellings_of_one_file_are_two_rows":
-        "dev venv rmx or /usr/bin/grep missing",
-    "tests/test_grep_evidence_verified.py::test_a_fully_filtered_answer_falls_through_to_the_floor":
-        "dev venv rmx not built",
-    "tests/test_grep_learning_replay.py::test_arm_a_learns_and_arm_b_learns_exactly_nothing":
-        "needs the dev venv's rmx console script",
-    "tests/test_grep_no_flag_bundle.py::test_the_documented_pipe_count_works_with_a_bare_flag":
-        "dev venv rmx not built",
-}
+# The one pin left (task-t0-suite-trust-sweep `#t0-2-bug253`, stage 2): the hooks test, with its
+# own `reason=` verbatim. The 18 dev-venv pins of stage 1 are retired with their skips: the six
+# files that held them resolve the dev `rmx` from the interpreter running the suite
+# (tests/devbin.py, bug-253), so a checkout's missing `.venv-eval` no longer skips anything and
+# R1.1's venv condition guards nothing. AC-1.4's 19 pinned skips stand as stage-1 evidence.
 HOOKS_PINS = {
     "tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated":
         "hooks belong to another checkout of this commit",
@@ -150,16 +120,17 @@ def _layout(tmp_path: Path, venv: str, hooks: str) -> Path:
 
 
 _LAYOUTS = [
-    # (id, venv, hooks, expected allowed set)
-    ("no-venv", "none", "self", VENV_PINS),
+    # (id, venv, hooks, expected allowed set). Stage 2 (#t0-2-bug253): the checkout's venv
+    # decides nothing; the layouts with and without one are kept to show exactly that.
+    ("no-venv", "none", "self", {}),
     ("real-venv", "real", "self", {}),
-    ("half-built-venv-dir", "half-built", "self", VENV_PINS),
+    ("half-built-venv-dir", "half-built", "self", {}),
     ("symlinked-venv-foreign-hooks", "symlink", "foreign", HOOKS_PINS),
     ("symlinked-venv-own-hooks", "symlink", "self", {}),
-    ("symlinked-venv-without-rmx", "symlink-empty", "self", VENV_PINS),
+    ("symlinked-venv-without-rmx", "symlink-empty", "self", {}),
     ("foreign-hooks-real-venv", "real", "foreign", HOOKS_PINS),
-    ("foreign-hooks-no-venv", "none", "foreign", {**VENV_PINS, **HOOKS_PINS}),
-    ("no-hooks-file-no-venv", "none", "none", VENV_PINS),
+    ("foreign-hooks-no-venv", "none", "foreign", HOOKS_PINS),
+    ("no-hooks-file-no-venv", "none", "none", {}),
 ]
 
 
@@ -169,9 +140,9 @@ _LAYOUTS = [
                          ids=[l[0] for l in _LAYOUTS])
 def test_the_allowed_set_follows_each_skips_own_condition(pytestconfig, tmp_path, venv, hooks,
                                                           expected):
-    """AC-1.2: the exact allowed set for each checkout layout. A `.venv-eval` that is a symlink
-    resolving outside the checkout satisfies neither condition by itself (mutation M1.1, the
-    single `is_dir()` switch, fails the half-built, symlinked and foreign-hooks layouts)."""
+    """AC-1.2: the exact allowed set for each checkout layout. Stage 2 (`#t0-2-bug253`): the
+    checkout's venv decides nothing, so a builder that still adds the 18 venv pins for a
+    missing `bin/rmx` fails the no-venv, half-built and symlinked-without-rmx layouts."""
     build = _builder(pytestconfig)
     checkout = _layout(tmp_path, venv, hooks)
     got = dict(build(checkout))
@@ -194,12 +165,13 @@ def test_the_hooks_pin_is_decided_the_way_the_hooks_test_decides_it(pytestconfig
 
 
 def test_every_pin_is_its_tests_own_reason_verbatim(pytestconfig, tmp_path):
-    """R1.2: with every condition true, the builder pins exactly the 19 nodeids, and each value
-    is a `reason="…"` string literal in that test's own file. A test whose reason changes must
+    """R1.2: with every condition true, the builder pins exactly the hooks nodeid (stage 2
+    retired the 18 venv pins, `#t0-2-bug253`), and its value is a `reason="…"` string literal
+    in that test's own file. A test whose reason changes must
     change its pin in the same commit; this goes red when only one of them moved."""
     build = _builder(pytestconfig)
     got = dict(build(_layout(tmp_path, "none", "foreign")))
-    assert got == {**VENV_PINS, **HOOKS_PINS}, got
+    assert got == HOOKS_PINS, got
     stale = []
     for nodeid, reason in got.items():
         src = (_REPO / nodeid.split("::")[0]).read_text()
@@ -212,19 +184,16 @@ def test_every_pin_is_its_tests_own_reason_verbatim(pytestconfig, tmp_path):
 
 def test_this_sessions_allowed_set_is_the_builder_on_this_checkout(pytestconfig):
     """AC-1.1, from inside the session: the pins this run allows are what each pin's own
-    condition says about THIS checkout. In a littlebig clone with a symlinked `.venv-eval` that
-    is exactly the hooks pin (the venv rmx exists through the symlink; the committed
-    `.claude/settings.json` names the main tree), and at T0.1's base it was empty."""
+    condition says about THIS checkout. In any littlebig clone, with or without a `.venv-eval`,
+    that is exactly the hooks pin (the committed `.claude/settings.json` names the main tree);
+    in the main tree it is empty."""
     mod = _conftest(pytestconfig)
     expected = {}
-    if not (_REPO / ".venv-eval" / "bin" / "rmx").exists():
-        expected.update(VENV_PINS)
     owner = hooks_mod.installed_root(_REPO)
     if owner is not None and owner != _REPO:
         expected.update(HOOKS_PINS)
     assert dict(mod.ALLOWED_SKIPS) == expected, (
-        f"ALLOWED_SKIPS for {_REPO} (venv rmx exists: "
-        f"{(_REPO / '.venv-eval' / 'bin' / 'rmx').exists()}, hooks owner: {owner}) is "
+        f"ALLOWED_SKIPS for {_REPO} (hooks owner: {owner}) is "
         f"{dict(mod.ALLOWED_SKIPS)!r}; each pin's own condition gives {expected!r}")
     build = getattr(mod, "allowed_skips", None)
     assert callable(build) and dict(build(_REPO)) == expected

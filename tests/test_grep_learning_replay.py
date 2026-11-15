@@ -124,5 +124,16 @@ def test_the_harness_never_points_at_the_live_store():
 def test_the_harness_uses_the_dev_venv_rmx_not_the_deployed_one():
     """The deployed `rmx` on PATH runs ~/refmatrix. A harness verifying dev code
     with it would measure the wrong tree (feedback_rmx_binary_is_deploy), and a
-    dev-version rmx pointed at the live store trips the hub version handshake."""
-    assert glr.RMX.parts[-3:] == (".venv-eval", "bin", "rmx")
+    dev-version rmx pointed at the live store trips the hub version handshake.
+
+    bug-253 (task-t0-suite-trust-sweep `#t0-2-bug253`): "the dev venv's rmx" is the bin dir of
+    the interpreter running the suite, as `tests/devbin.py` defines it for the test files. It
+    was `<checkout>/.venv-eval/bin/rmx`, which a littlebig clone does not have (it runs the
+    dev tree's interpreter with `PYTHONPATH=<clone>/src`), so the replay node could only skip
+    there."""
+    import os
+    assert Path(glr.RMX) == Path(sys.executable).parent / "rmx", (
+        f"the harness's dev rmx is {glr.RMX}, not the running interpreter's "
+        f"{Path(sys.executable).parent / 'rmx'}")
+    deploy = Path(os.environ.get("RMX_SANDBOX_REAL_HOME", str(Path.home()))) / "refmatrix"
+    assert deploy not in Path(glr.RMX).parents, f"{glr.RMX} is the deployed rmx"

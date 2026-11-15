@@ -1,0 +1,195 @@
+"""bug-253 (task-t0-suite-trust-sweep `#t0-2-bug253`; rulings L121, L122 M5, L123 M3): ONE
+definition of "the dev `rmx`", and it is the interpreter running the suite.
+
+WHY. The 29.4 stage-0 serial run in the no-venv clone `/Volumes/littlebig/refmatrix-r0` at
+`4c6a0c6` errored in 127 tests on one E line, `AssertionError: dev rmx missing at
+<clone>/.venv-eval/bin/rmx`, and failed 2 more for the same cause: the fixtures located the
+subprocess `rmx` as `<checkout>/.venv-eval/bin/rmx`, and a littlebig clone has no venv of its
+own (ORCHESTRATION runs clones with the dev tree's interpreter and `PYTHONPATH=<clone>/src`).
+Eleven files under `tests/` named that path, each its own way; six of them SKIPPED instead of
+erroring, which is why 18 pins existed in `tests/conftest.py` at all.
+
+The fix (the bug row's own text): resolve the dev `rmx` from the bin directory of
+`sys.executable`, with the checkout's `src` first on `PYTHONPATH` for the child, through ONE
+helper the files share -- `tests/devbin.py`:
+- `dev_bin() -> Path`: `Path(sys.executable).parent` (NOT resolved: a venv's `bin/python` is a
+  symlink to the base interpreter, whose bin holds no `rmx`);
+- `dev_rmx() -> Path`: `dev_bin() / "rmx"`;
+- `dev_env(env=None) -> dict`: a COPY of `env` (default `os.environ`) whose `PYTHONPATH` has
+  this checkout's `src` first and keeps the other absolute entries (the sandbox's
+  `tests/sandbox_site` rides there); `os.environ` is not modified.
+
+What is pinned here:
+- the helper's three answers, and a real `rmx version -v` child through it reporting code
+  from THIS checkout's `src`;
+- convergence, statically: no file under `tests/` but the helper builds the
+  `.venv-eval/bin` path (two exemptions by name, each with its reason); each of the eleven
+  files imports the helper; the six that skipped carry no skip on a missing dev `rmx`;
+- the pins follow the tests (R1.2): `tests/conftest.py`'s allowed set is built without the
+  checkout venv (`tests/test_t0_skip_gate.py` asserts the hooks-only sets per layout);
+- (in `tests/test_grep_learning_replay.py`) the eval harness that file's pinned node drives,
+  `eval/production/grep_learning_replay.py`, names the same dev `rmx`, or the replay node cannot
+  run in a clone once its skip is gone.
+"""
+from __future__ import annotations
+
+import ast
+import importlib
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+_REPO = Path(__file__).resolve().parents[1]
+_TESTS = _REPO / "tests"
+HELPER = _TESTS / "devbin.py"
+
+# task-t0-suite-trust-sweep `#t0-2-bug253`, re-read at c4b44d0: the eleven files that look up
+# the dev `rmx` (five errored in a no-venv clone, six skipped there holding the 18 pins).
+ERRORING = ("test_bug240_ingest_file_arg.py", "test_bug240_ingest_file_arg_mcp.py",
+            "test_bug241_r2_l112.py", "test_bug241_rule_docs_reingest.py",
+            "test_scanorder_r2_l120.py")
+SKIPPING = ("test_brief_real_daemon.py", "test_grep_argv_order_e2e.py",
+            "test_grep_count_rows_e2e.py", "test_grep_evidence_verified.py",
+            "test_grep_learning_replay.py", "test_grep_no_flag_bundle.py")
+ELEVEN = ERRORING + SKIPPING
+
+# Files that build a `.venv-eval/bin` path WITHOUT looking up the dev rmx; each is a fixture
+# that MAKES a checkout layout, not a lookup.
+NOT_A_LOOKUP = {
+    "test_t0_skip_gate.py": "AC-1.2's fixture checkouts: it creates `.venv-eval/bin/rmx` in tmp "
+                            "layouts to show the allowed set does not depend on them",
+    "test_bug253_dev_bin.py": "this file: the patterns it scans for",
+}
+
+# A path into a checkout venv's bin dir, in the spellings the eleven used at c4b44d0:
+# `X / ".venv-eval" / "bin"`, `".venv-eval/bin…"`, and a parts tuple `(".venv-eval", "bin", …)`.
+_LOOKUP = re.compile(
+    r"""\.venv-eval['"]\s*/\s*['"]bin\b"""
+    r"""|\.venv-eval/bin\b"""
+    r"""|['"]\.venv-eval['"]\s*,\s*['"]bin['"]""")
+
+
+def _helper():
+    assert HELPER.is_file(), (
+        f"no {HELPER.relative_to(_REPO)}: the dev rmx is still looked up by each file on its "
+        "own (bug-253; task-t0-suite-trust-sweep #t0-2-bug253)")
+    sys.path.insert(0, str(_TESTS)) if str(_TESTS) not in sys.path else None
+    return importlib.import_module("devbin")
+
+
+# ---- the helper ------------------------------------------------------------------------------
+
+def test_the_dev_rmx_is_the_bin_dir_of_the_interpreter_running_the_suite():
+    """The interpreter running the suite IS the dev interpreter (in the main tree that is
+    `.venv-eval/bin/python`; in a clone it is the same file, found through `sys.executable`,
+    never through the clone's own `.venv-eval`)."""
+    db = _helper()
+    want = Path(sys.executable).parent
+    assert Path(db.dev_bin()) == want, (db.dev_bin(), want)
+    assert Path(db.dev_rmx()) == want / "rmx", (db.dev_rmx(), want / "rmx")
+    assert os.access(db.dev_rmx(), os.X_OK), f"{db.dev_rmx()} is not an executable rmx"
+    assert ".venv-eval" not in HELPER.read_text().replace("`.venv-eval`", ""), (
+        "the helper must not name a checkout's .venv-eval; it reads sys.executable")
+
+
+def test_dev_env_puts_this_checkouts_src_first_and_keeps_absolute_entries():
+    db = _helper()
+    site = str(_TESTS / "sandbox_site")
+    base = {"PYTHONPATH": os.pathsep.join([site, "/opt/elsewhere"]), "X": "1"}
+    before = dict(os.environ)
+    env = db.dev_env(base)
+    assert env is not base and base["PYTHONPATH"] == os.pathsep.join([site, "/opt/elsewhere"])
+    pp = env["PYTHONPATH"].split(os.pathsep)
+    assert pp[0] == str(_REPO / "src"), pp
+    assert site in pp and "/opt/elsewhere" in pp, pp
+    assert env["X"] == "1"
+    assert dict(os.environ) == before, "dev_env modified os.environ"
+    assert db.dev_env()["PYTHONPATH"].split(os.pathsep)[0] == str(_REPO / "src")
+
+
+def test_a_child_run_through_the_helper_runs_this_checkouts_code():
+    """The point of the pair: `dev_rmx()` under `dev_env()` imports THIS checkout's
+    `refmatrix` (in a clone, not the editable install's tree)."""
+    db = _helper()
+    r = subprocess.run([str(db.dev_rmx()), "version", "-v"], env=db.dev_env(),
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    code = next((ln for ln in r.stdout.splitlines() if ln.startswith("code:")), "")
+    assert str(_REPO / "src" / "refmatrix") in code, (
+        f"the dev rmx child ran code from elsewhere: {code!r}\n{r.stdout[-1500:]}")
+
+
+# ---- convergence ------------------------------------------------------------------------------
+
+def test_no_test_file_but_the_helper_looks_up_a_checkout_venv_bin():
+    """One definition left, not two ([[feedback_converge_repeated_shapes]])."""
+    found = []
+    for f in sorted(_TESTS.rglob("*.py")):
+        if "__pycache__" in f.parts or f == HELPER or f.name in NOT_A_LOOKUP:
+            continue
+        for n, ln in enumerate(f.read_text().splitlines(), 1):
+            if _LOOKUP.search(ln):
+                found.append(f"{f.relative_to(_REPO)}:{n}: {ln.strip()}")
+    assert not found, ("files that still build `<checkout>/.venv-eval/bin` themselves; they "
+                       "use tests/devbin.py (bug-253):\n  " + "\n  ".join(found))
+
+
+def _imports_devbin(src: str) -> bool:
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import) and any(
+                a.name in ("devbin", "tests.devbin") for a in node.names):
+            return True
+        if isinstance(node, ast.ImportFrom) and node.module in ("devbin", "tests.devbin"):
+            return True
+    return False
+
+
+@pytest.mark.parametrize("name", ELEVEN)
+def test_each_of_the_eleven_uses_the_helper(name):
+    src = (_TESTS / name).read_text()
+    assert _imports_devbin(src), (
+        f"tests/{name} does not import tests/devbin.py; it looked up the dev rmx itself "
+        "(bug-253, #t0-2-bug253)")
+
+
+def _skip_reasons(src: str) -> list:
+    """Every `reason=` string literal of a `skipif`/`skip` call, and every `pytest.skip("…")`
+    message, in a source."""
+    out = []
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+        if name not in ("skipif", "skip"):
+            continue
+        for kw in node.keywords:
+            if kw.arg in ("reason", "msg") and isinstance(kw.value, ast.Constant):
+                out.append(str(kw.value.value))
+        if name == "skip" and node.args and isinstance(node.args[0], ast.Constant):
+            out.append(str(node.args[0].value))
+    return out
+
+
+@pytest.mark.parametrize("name", SKIPPING)
+def test_the_six_no_longer_skip_on_a_missing_dev_rmx(name):
+    """`#t0-2-bug253`: a pinned file that uses the helper no longer skips for a missing
+    checkout venv, so its `skipif` goes with its pin (R1.2: the pins follow the tests).
+    `test_the_tool_itself_is_the_one_that_scrambles` keeps a skip for a missing `rg` only."""
+    bad = [r for r in _skip_reasons((_TESTS / name).read_text())
+           if re.search(r"\brmx\b|venv", r)]
+    assert not bad, f"tests/{name} still skips on the dev rmx: {bad!r}"
+
+
+def test_the_conftest_pins_no_venv_skip_and_tests_no_checkout_venv():
+    """`#t0-2-bug253`: `_CLONE_ONLY_SKIPS` holds one entry, the hooks test, under R1.1's hooks
+    condition; R1.1's venv condition guards nothing and is deleted."""
+    src = (_TESTS / "conftest.py").read_text()
+    assert "_VENV_RMX_PINS" not in src, "tests/conftest.py still carries the 18 venv pins"
+    body = src.split("def allowed_skips", 1)[-1].split("\nALLOWED_SKIPS", 1)[0]
+    assert ".venv-eval" not in body, (
+        "allowed_skips still tests the checkout's .venv-eval:\n" + body)
