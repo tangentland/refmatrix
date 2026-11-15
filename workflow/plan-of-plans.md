@@ -80,7 +80,7 @@ section. {#queue-quiet-lead}
 | group | tasks | rule |
 |---|---|---|
 | **Free of the four modules:** may run beside plan-29 at any time, 29.5's window included | M lane: T0.6, G32, the `rel:` probe, 25.2's R0 replay (after G32), bug-218's R0. Build: 31.3 (scripts, `lint-gmd.sh`), 31.4 (`tools/gmd/lint.py`, docs), T0.2 (`conftest.py`, scripts), T0.3 (tests, `eval/`), T0.8 (`telemetry.py`), 29.1 (docs and a checker). P lane: plan-31's spec reviews, 30.6's spec, plan-24's amends notes | no ordering against 29.5 |
-| **Edit the four modules and are scheduled before 29.5:** merged before its window opens, or held until after it | T0.4 (`cli.py`, `daemon.py`, `store.py`), T0.5 (`cli.py`, `verbs.py`), T0.7 (`daemon.py`), 31.5 step 0 (`cli.py`, `verbs.py`, with `scan.py`, `hooks.py`), 31.1 (`cli.py`, `daemon.py`, with `ingest_gmd.py`), 31.6 (one method in `store.py`, with `ingest_gmd.py`; after 31.1) | all on `master` at step 4's sha, which is 29.5's baseline |
+| **Edit the four modules and are scheduled before 29.5:** merged before its window opens, or held until after it | T0.4 (`cli.py`, `daemon.py`, `store.py`), T0.5 (`cli.py`, `verbs.py`), T0.7 (`daemon.py`), 31.5 step 0 (`cli.py`, `verbs.py`, with `scan.py`, `telemetry.py`, `composite.py`; no hook command changes, so no install window; `hooks.py` only in the R8 cut), 31.1 (`cli.py`, `daemon.py`, with `ingest_gmd.py`), 31.6 (one method in `store.py`, with `ingest_gmd.py`; after 31.1) | all on `master` at step 4's sha, which is 29.5's baseline |
 | **Edit the four modules and come after 29.5:** built on the split tree | 29.3, 29.2; 31.2 (`daemon.py`, and `store_removal.py`, which exists only after the split); 30.4 (`store.py`, `daemon.py`); G22 (`cli.py`, `store.py`, `verbs.py`); 26.5, 26.7, the 26.6 R3 residual, 26.9, 27.0; 10.3, 25.2, 25.3; bug-185, 23.1, 23.3, 23.5; bug-218 R1-R7; 21.2, 21.4; 31.5's cut | none starts its RED before 29.5 merges; 29.6 re-points their citations |
 | **No `src/` at all** | 30.0, 30.6 with G30, 21.5 phase M, 26.8, 27.1 to 27.6 except 27.0 | live steps and measurements; they wait only on what they measure or roll out |
 
@@ -92,6 +92,8 @@ One test lane, and a major release (`0.N.0`) costs one full suite of about an ho
 `master` (L118, L119, L131). Every task below changes a shared path, so each group is a major
 release. The grouping is the fewest gates the fixed points allow; the fixed points are in the
 last column. {#queue-releases-lead}
+
+**Contingent:** if 31.5's live cost check (AC-0.17) fails after R1, the cheaper capture path ships as **R1.1**, a major (it changes a hook's output), before R2 opens. {#queue-releases-contingent}
 
 | release | holds | fixed by |
 |---|---|---|
