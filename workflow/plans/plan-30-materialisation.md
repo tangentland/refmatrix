@@ -161,9 +161,19 @@ so no invalidation. Independent of the adjacency tasks. Its closing measurement 
 `neighbors` and `topn` end to end, which is the evidence the deferred item below waits on.
 Spec: [[task-30.5-load-bitmap-row-read]]. {#t5-summary}
 
+### 30.6 Measure what each edge type is worth to retrieval (admitted 2026-11-15) {#t6}
+
+Admitted under the pre-mod freeze ([[plan-of-plans#freeze]]; the user, 2026-11-15). Per edge type
+(and per walk depth), does including it improve retrieval relevance at a fixed context budget,
+using ADR-0004's per-type evaluation grid ([[adr-0004-unified-location-space-index#q-expansion]])
+on the production path? Types that do not earn their bytes stop being produced or injected; types
+that do get their weight from the measurement. Go/no-go bands are written before the run. **Spec
+pending** (ch-architect on Fable, then ch-bsd), written when plan-30 starts; it does not gate
+30.0-30.5, and it runs after 30.4 so it measures the daemon-held adjacency path. {#t6-summary}
+
 ## Order {#order}
 
-30.0 ∥ 30.5 (independent; tests only, and one method) → 30.1 → 30.2 → 30.3 → 30.4. Each task
+30.0 ∥ 30.5 (independent; tests only, and one method) → 30.1 → 30.2 → 30.3 → 30.4 → 30.6. Each task
 runs RED → GREEN → mutation → ch-bsd. {#order-list}
 
 ## Releases {#releases}
