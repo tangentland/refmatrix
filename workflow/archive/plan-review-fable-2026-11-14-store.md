@@ -5,12 +5,18 @@ title: "Plan review (Fable), 2026-11-14: store, daemon and measurement tracks af
 tags: [plan-review, store, daemon, measurement, plan-16, plan-17, plan-18, plan-22, plan-23, plan-28, plan-29]
 metadata:
   node_type: review
-  status: reported
+  status: archived
   created: 2026-11-14
   updated: 2026-11-14
 ---
 
 # Plan review (Fable): store, daemon and measurement tracks after 0.83.0 {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 **Verdict: no task in T4, T5, T6 or the measurement lane is ready to start its RED as written.**
 Fourteen findings block a RED or a GREEN, and every spec needs one freshness revision. Three causes

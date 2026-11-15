@@ -5,11 +5,17 @@ title: "Plan review 2026-10-07: consolidation proposals and execution order acro
 tags: [planning, review, consolidation, sequencing]
 metadata:
   node_type: review
-  status: applied
+  status: archived
   created: 2026-10-07
 ---
 
 # Plan review, 2026-10-07 {#root}
+
+> **ARCHIVED 2026-11-15** (the user: "archive any other doc that acts as an alternate source of truth").
+> Not a source of truth: order, scope, status and the live L / D / Q ledgers are in [[plan-of-plans]];
+> finished items are in [[pop-finished]]. This file is kept unchanged otherwise, as history and evidence;
+> its ids and anchors still resolve.
+
 
 The user, 2026-10-07: "given the amount of plan restructuring, we should review all open plans
 looking for areas to consolidate and determine the optimal execution order". A read-only review of

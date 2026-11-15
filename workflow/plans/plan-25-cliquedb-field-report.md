@@ -25,15 +25,15 @@ plan review's decisions: 25.1 ships alone in 0.83.0 (D-Q2); its revision 8 becom
 marker (L16); 25.4 and 25.5 close as superseded by 16.5 (L42). No `src/` or `tests/` change is
 made by this document.
 **Location:** `workflow/plans/plan-25-cliquedb-field-report.md`; stage is `metadata.status`.
-**Ordering authority:** the user's override [[plan-of-plans#override-2026-11-08]] as amended the
-same day by [[plan-of-plans#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
+**Ordering authority:** the user's override [[pop-finished#override-2026-11-08]] as amended the
+same day by [[pop-finished#override-2026-11-08b]]: task 3.7, then plan-26 (memory-layer
 organisation), then plan-27 (its fleet rollout), then THIS plan, then plan-24.
 
 rel: depends-on -> [[constitution]]
 rel: implements -> [[tdd-governance]]
 rel: derives-from -> [[bug_registry#registry]]
-rel: implements -> [[plan-of-plans#override-2026-11-08]]
-rel: implements -> [[plan-of-plans#override-2026-11-08b]]
+rel: implements -> [[pop-finished#override-2026-11-08]]
+rel: implements -> [[pop-finished#override-2026-11-08b]]
 rel: depends-on -> [[task-3.7-verb-it-backlog]]
 rel: depends-on -> [[plan-26-memory-organisation]]
 rel: depends-on -> [[plan-27-memory-fleet-rollout]]
@@ -48,7 +48,7 @@ rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
-rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: implements -> [[pop-finished#goal-2026-11-09-scope]]
 rel: reinforces -> [[feedback_measure_the_path_users_run]]
 rel: reinforces -> [[feedback_green_tests_are_not_a_working_command]]
 rel: reinforces -> [[feedback_no_raw_prompts_in_public_repo]]
@@ -389,18 +389,18 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 | N1 (SKETCHY) d10's replica-first order spawns a private worker with the daemon up and the hub down | `"shared"` order: hub-worker replica → daemon RPC → `recall.shared_embedder` replica only on `VerbAbsentError`, matching 3.7 `verbs.py:2321-2336`, `:2357-2361`; d10 reworded; AC-4 (i) + mutation | [[#principle]], [[task-25.1-recall-hook-byte-budget#r5]], [[task-25.1-recall-hook-byte-budget#rev-round-4]] |
 | N2 `embedder_policy` in the MCP schema | rides the verb's `**internal` channel like `trace` (`verbs.py:928`; schema skips only `**kwargs`, `verbs.py:136`); AC-7 reworded | [[task-25.1-recall-hook-byte-budget#r5]], [[task-25.1-recall-hook-byte-budget#acceptance]] |
 | N3 25.5 join key has no `pid` | ts second + pattern in argv + root + path-less argv; ambiguous excluded and counted (20 unique / 15 ambiguous on 35 rows) | [[task-25.5-substring-bre-metas#r3]] |
-| N4 25.5 re-measure trigger | queue line in [[plan-of-plans#queue-bug174-remeasure]] (M ≥ 30 or 2026-12-31); `rmx telemetry --agent-usage` prints the `bre_meta_literal` count | [[task-25.5-substring-bre-metas#r4]], [[task-25.5-substring-bre-metas#rev-round-4]] |
+| N4 25.5 re-measure trigger | queue line in [[pop-finished#queue-bug174-remeasure]] (M ≥ 30 or 2026-12-31); `rmx telemetry --agent-usage` prints the `bre_meta_literal` count | [[task-25.5-substring-bre-metas#r4]], [[task-25.5-substring-bre-metas#rev-round-4]] |
 | N5 bug-181 unscheduled | NOT folded: pending the user | [[task-25.1-recall-hook-byte-budget#open-decisions]] |
 | N6 UserPromptSubmit provisional sum overflows under (B) | R1 names both events (9,256 B > 8,488 B) | [[task-25.1-recall-hook-byte-budget#r1]] |
 
 ## Revision round 5 (2026-11-09) {#rev-round-5}
 
-Folds the user's scope decision of 2026-11-09 ([[plan-of-plans#goal-2026-11-09-scope]]): bug-181
+Folds the user's scope decision of 2026-11-09 ([[pop-finished#goal-2026-11-09-scope]]): bug-181
 (an MCP `project=` that resolves nothing silently reads the cwd store) joins task 25.1. This
 closes r4-lite N5 ([[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]) and 25.1's d12. Detail in
 [[task-25.1-recall-hook-byte-budget#rev-round-5]].
 
-rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: implements -> [[pop-finished#goal-2026-11-09-scope]]
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
 
 | finding | change | anchor |
@@ -423,7 +423,7 @@ task-25.5-substring-bre-metas; 5 of 5, each frontmatter `id` equal to its stem, 
   [[#rev-round-4]] (the report allows the N1 fold to be self-verified); N5 was the one item left,
   waiting on the user. {#approval-basis}
 - **The last blocker:** the user decided on 2026-11-09 to fold bug-181 into 25.1
-  ([[plan-of-plans#goal-2026-11-09-scope]]); folded in [[#rev-round-5]]. {#approval-bug181}
+  ([[pop-finished#goal-2026-11-09-scope]]); folded in [[#rev-round-5]]. {#approval-bug181}
 - **What approval does not change:** the build order stays [[#ordering]] (3.7, plan-26, plan-27,
   then 25.1-25.5, before plan-24), and every task still records RED at HEAD after its
   dependencies merge. {#approval-order}
@@ -435,7 +435,7 @@ task-25.5-substring-bre-metas; 5 of 5, each frontmatter `id` equal to its stem, 
   dependencies merge. {#approval-order-amended}
 
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
-rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: implements -> [[pop-finished#goal-2026-11-09-scope]]
 
 ## Revision round 6 (2026-11-13, the plan review's decisions) {#rev-round-6}
 

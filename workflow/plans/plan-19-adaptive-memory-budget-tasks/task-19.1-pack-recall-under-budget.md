@@ -289,7 +289,7 @@ rel: derives-from -> [[bsd-plan2-hooks-reproducible-r9-ffed3df]]
 
 Record only; no requirement or AC of this task changes here. Added per
 [[bsd-plan25-spec-r1-2f4a1df#m9]] so a builder does not follow stale text. The user ordered
-plan-25 ahead of plan-19's wave ([[plan-of-plans#override-2026-11-08b]]).
+plan-25 ahead of plan-19's wave ([[pop-finished#override-2026-11-08b]]).
 
 rel: related-to -> [[task-25.1-recall-hook-byte-budget]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]

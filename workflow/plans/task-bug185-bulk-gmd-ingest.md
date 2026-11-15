@@ -15,7 +15,7 @@ metadata:
 > Status: **Approved** (2026-11-09, revision round 1: every finding of
 > [[bsd-bug185-spec-r1-da67220]] (0B/4S/5M) folded, see [[#rev-round-1]]; no user decision
 > remained). Decided by [[bsd-plan23-3-5-freshness-62a2465#b1]] fix step 2: no user decision
-> remained; the user's goal ([[plan-of-plans#goal-2026-11-09-scope]]) puts bug-177's holders in
+> remained; the user's goal ([[pop-finished#goal-2026-11-09-scope]]) puts bug-177's holders in
 > scope.
 > **Revision round 2 (2026-11-13): freshness against bug-216** ([[#rev-round-2]]; plan review
 > L3, L4, L31). R2 resolves with bug-216 R6's precedence. The "minted earlier" rule never beats a

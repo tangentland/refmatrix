@@ -236,7 +236,7 @@ intended. If it is intended, cover it in AC-20's boot case.
 
 ### MEH m3: bug-182 says it is in the goal queue; the goal does not list it {#m3}
 
-The bug-182 row says "In the pre-plan-24 queue ([[plan-of-plans#goal-2026-11-09]])". The goal
+The bug-182 row says "In the pre-plan-24 queue ([[pop-finished#goal-2026-11-09]])". The goal
 line (`plan-of-plans.md:57`) names items (1)-(7) with bug-177 and bug-179, and no bug-182 (0 hits).
 
 **Fix:** Add bug-182 to the goal line as its own item (measure first), or drop the claim from

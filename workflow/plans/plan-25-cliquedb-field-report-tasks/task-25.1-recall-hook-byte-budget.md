@@ -44,7 +44,7 @@ rel: derives-from -> [[bsd-plan25-spec-r1-2f4a1df]]
 rel: derives-from -> [[bsd-plan25-spec-r2-5b8ed15]]
 rel: derives-from -> [[bsd-plan25-spec-r3-2f64edb]]
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
-rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: implements -> [[pop-finished#goal-2026-11-09-scope]]
 rel: depends-on -> [[reference_hook_output_10k_cap]]
 rel: related-to -> [[project_recall_hook_savestate_noise_fix]]
 rel: related-to -> [[task-24.2a-hook-verbs-explicit-session]]
@@ -87,7 +87,7 @@ Three code facts shape the fix (read at `fbee6c9`):
   with mtype `project`. Its FILE says `metadata.type: project` (hand-authored; 4 of cliquedb's
   `savestate_*.md` files). The fix is a memory-layer fact OWNED by
   [[task-26.4-savestate-mtype-normalisation]] (plan-26 lands first,
-  [[plan-of-plans#override-2026-11-08b]]); this task re-asserts it on the packed path ([[#r2b]]).
+  [[pop-finished#override-2026-11-08b]]); this task re-asserts it on the packed path ([[#r2b]]).
 
 ## Deltas from task 19.1 {#deltas}
 
@@ -312,7 +312,7 @@ mutation is carried (AC-14 maps them) unless a row below says otherwise.
     single site (`_RecallCall`, `cli.py:12837`) emits `delivered` from them, never for a trimmed
     hit. The packer emits nothing. {#r9}
 11. **R10 A named MCP target that resolves nothing is an error, on every tool** (bug-181; folded
-    by the user's decision of 2026-11-09, d12, [[plan-of-plans#goal-2026-11-09-scope]]; sized by
+    by the user's decision of 2026-11-09, d12, [[pop-finished#goal-2026-11-09-scope]]; sized by
     [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]). R5 makes `project=` load-bearing for recall
     (the moved leg reads the NAMED store's replica), so a name that resolves nothing must not
     quietly become the cwd store. {#r10}
@@ -644,7 +644,7 @@ Unit tables (AC-9) are in addition, never instead ([[feedback_measure_the_path_u
 | d8 | No daemon and no hub worker on a hook | exit 0, nothing injected, counted through the existing recorder (`outcome: "error"`, `error: "VerbAbsentError: …"`); today it exits 1 (a hook error). Interactive and MCP callers: per d10 |
 | d10 | Daemonless embedder policy (r3 #s1, decided as the user would) | hook modes stay hub-only (5 s budget; a spawn or in-process load is 6-33 s); leg order hub-worker replica → daemon RPC → `recall.shared_embedder(root)` replica ONLY on `VerbAbsentError` (no daemon); interactive and MCP use that last step as 3.7's graph verbs do, in the no-daemon branch only (r4 #n1); `embedder_policy` rides `**internal` (r4 #n2); `warnings` name the leg and the embedder |
 | d11 | SessionStart budget (r3 #m9) | same per-command unit and per-event reserve as UserPromptSubmit; R0 probes both events; `focus context` capped through `fit_blocks`; AC-12b |
-| d12 | Does bug-181 (MCP silent cwd fallback, `mcp._resolve_root`) join 25.1 (r4 #n5) | **decided by the user, 2026-11-09: folded** ([[plan-of-plans#goal-2026-11-09-scope]]); [[#r10]] raises `VerbUnknownProjectError` (a `VerbArgsError`) on every MCP tool; `project=None` keeps the cwd behaviour; AC-4 (e) R10 legs + AC-14 mutation |
+| d12 | Does bug-181 (MCP silent cwd fallback, `mcp._resolve_root`) join 25.1 (r4 #n5) | **decided by the user, 2026-11-09: folded** ([[pop-finished#goal-2026-11-09-scope]]); [[#r10]] raises `VerbUnknownProjectError` (a `VerbArgsError`) on every MCP tool; `project=None` keeps the cwd behaviour; AC-4 (e) R10 legs + AC-14 mutation |
 | d9 | Budget unit | the generated hook COMMAND (what Claude Code caps); producers sharing a command share its budget; every rmx producer is hard-capped; non-rmx hooks get a measured reserve |
 
 ## Revision round 1 (2026-11-09) {#rev-round-1}
@@ -710,11 +710,11 @@ rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
 
 ## Revision round 5 (2026-11-09) {#rev-round-5}
 
-Folds the user's decision of 2026-11-09 ([[plan-of-plans#goal-2026-11-09-scope]]): bug-181 joins
+Folds the user's decision of 2026-11-09 ([[pop-finished#goal-2026-11-09-scope]]): bug-181 joins
 this task, closing d12 and r4-lite N5 ([[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]). The `src`
 lines cited were re-read at master `5a4ced8`.
 
-rel: implements -> [[plan-of-plans#goal-2026-11-09-scope]]
+rel: implements -> [[pop-finished#goal-2026-11-09-scope]]
 rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720#n5]]
 
 | finding | change | anchor |
