@@ -16,6 +16,8 @@
 # up to MINI_LANE_WAIT_S (default 3600) then exit 4. Never falls back to a local run.
 set -u
 REPO=${1:?repo dir}; REF=${2:?ref}; NAME=${3:?log name}; shift 3
+# a log name is one path component: "/" would make mktemp and `git worktree add` fail (bug-273)
+NAME=$(printf '%s' "$NAME" | tr '/ ' '--')
 [ $# -gt 0 ] || { echo "mini-lane: no test files given" >&2; exit 2; }
 SSH=(ssh -o BatchMode=yes -o ForwardX11=no -o ConnectTimeout=10)
 SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}") || { echo "mini-lane: bad ref $REF" >&2; exit 2; }

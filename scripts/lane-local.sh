@@ -15,6 +15,8 @@
 # All slots busy → waits (15 s polls) up to LOCAL_LANE_WAIT_S (default 3600), then exit 4.
 set -u
 REPO=$(cd "${1:?repo dir}" && pwd); REF=${2:?ref}; NAME=${3:?log name}; shift 3
+# a log name is one path component: "/" would make mktemp and `git worktree add` fail (bug-273)
+NAME=$(printf '%s' "$NAME" | tr '/ ' '--')
 [ $# -gt 0 ] || { echo "local-lane: no test files given" >&2; exit 2; }
 SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}") || { echo "local-lane: bad ref $REF" >&2; exit 2; }
 ARGS=$(printf '%q ' "$@")
