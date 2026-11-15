@@ -1,0 +1,86 @@
+scope: 745 file(s) + 411 memory file(s); 1153 GMD docs; 0 duplicate doc id(s) skipped; 15547 ingester names
+
+rel refs (cross-doc): 5198
+  form           ingest_hit  ingest_miss
+  id                   5085            0
+  stem                    0           82
+  project                 0           19
+  fold                    0           12
+  lint resolves, ingest misses: 113
+    CLAUDE: 29  (form stem)
+    SYSTEM: 6  (form stem)
+    PERFORMANCE: 6  (form stem)
+    ARCHITECTURE: 6  (form stem)
+    agent-doc-primer: 6  (form stem)
+    bug-registry: 6  (form fold)
+    system_design_review: 5  (form stem)
+    adr-0000-adr-overview: 5  (form project)
+    adr-format: 5  (form stem)
+    0001-intuition-lance-integration: 4  (form stem)
+    INTEGRATION: 3  (form stem)
+    adr-0003-canonical-partition-layout: 3  (form project)
+    architecture-index: 3  (form project)
+    partition-layout-survey: 3  (form stem)
+    adr-0002-subject-memory-container: 2  (form project)
+    adr-0004-unified-location-space-index: 2  (form project)
+    intuition-style-hooks: 2  (form stem)
+    adr-template: 2  (form stem)
+    architecture-readme: 2  (form project)
+    architecture-todo: 2  (form project)
+    project-phase-c-shipped: 2  (form fold)
+    gmd-migration-guide: 1  (form stem)
+    concept-doc-template: 1  (form stem)
+    design-doc-template: 1  (form stem)
+    ONBOARDING: 1  (form stem)
+    INDEX: 1  (form stem)
+    project-daemon-signal-hang: 1  (form fold)
+    feedback-refmatrix-dev-deploy-split: 1  (form fold)
+    project-daemon-sigabrt-diagnosed: 1  (form fold)
+    project-daemon-index-drift-recurrence: 1  (form fold)
+
+body refs (cross-doc): 4971
+  form           ingest_hit  ingest_miss
+  id                   4863            0
+  stem                    0           55
+  project                 0           19
+  fold                    0           34
+  lint resolves, ingest misses: 108
+    agent-doc-primer: 8  (form stem)
+    PERFORMANCE: 6  (form stem)
+    adr-format: 6  (form stem)
+    project-rmx-scoring-stack: 6  (form fold)
+    ARCHITECTURE: 5  (form stem)
+    0001-intuition-lance-integration: 5  (form stem)
+    project-queued-work: 5  (form fold)
+    INTEGRATION: 4  (form stem)
+    adr-template: 4  (form stem)
+    project-partitions-canon: 4  (form fold)
+    SYSTEM: 3  (form stem)
+    adr-0000-adr-overview: 3  (form project)
+    adr-0002-subject-memory-container: 3  (form project)
+    adr-0003-canonical-partition-layout: 3  (form project)
+    adr-0004-unified-location-space-index: 3  (form project)
+    architecture-todo: 3  (form project)
+    partition-layout-survey: 3  (form stem)
+    project-csn-eval-baseline: 3  (form fold)
+    system_design_review: 2  (form stem)
+    concept-doc-template: 2  (form stem)
+    design-doc-template: 2  (form stem)
+    architecture-readme: 2  (form project)
+    architecture-index: 2  (form project)
+    project-daemon-arch: 2  (form fold)
+    INDEX: 2  (form stem)
+    bug-registry: 2  (form fold)
+    project-phase-c-shipped: 2  (form fold)
+    project-deploy-viascope-rmx-memory: 2  (form fold)
+    project-phase-b-intuition-memory: 2  (form fold)
+    project-daemon-sigabrt-diagnosed: 2  (form fold)
+    gmd-migration-guide: 1  (form stem)
+    intuition-style-hooks: 1  (form stem)
+    ONBOARDING: 1  (form stem)
+    project-python-env: 1  (form fold)
+    feedback-no-silent-failures: 1  (form fold)
+    reference-utilities-dir: 1  (form fold)
+    project-rrf-landed: 1  (form fold)
+
+stems shared by several GMD docs: 61; of them not also a literal id (lint's ambiguous-stem set): 4; refs resolved through one: 9

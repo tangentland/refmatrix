@@ -1,0 +1,14 @@
+# frontmatter_census.py, 2026-11-15, base f3a508f. Repos walked as the code+docs ingest walks them; memory dirs as the bridge does.
+# columns: root kind files unreadable fm id_list id_empty title_list title_empty yaml_nonstr nested_id
+root	kind	files	unreadable	fm	id_list	id_empty	title_list	title_empty	yaml_nonstr	nested_id
+refmatrix	repo	786	0	778	0	0	0	0	0	0
+cliquedb	repo	167	0	156	0	0	0	0	0	0
+viascope	repo	198	0	164	0	0	0	0	0	0
+orderly	repo	39	0	39	0	0	0	0	0	0
+cliquet	repo	47	0	47	0	0	0	0	0	0
+atldb	repo	30	0	24	0	0	0	0	0	0
+atlftpd	repo	41	0	40	0	0	0	0	0	0
+thiquet	repo	156	0	139	0	0	0	0	0	0
+TOTAL	-	1464	-	1387	0	0	0	0	0	0
+# memory dirs: every ~/.claude/projects/*/memory (30 dirs, 20 non-empty), summed
+TOTAL	-	1057	-	1031	0	0	0	0	0	1
