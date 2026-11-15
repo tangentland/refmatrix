@@ -228,7 +228,10 @@ def _snapshot(pids: list, path: Path) -> None:
 
 
 def _kill_group(p: subprocess.Popen) -> None:
-    for sig, wait in ((signal.SIGTERM, 15.0), (signal.SIGKILL, 5.0)):
+    """SIGINT first so pytest runs its teardowns (a test's daemon is stopped by its fixture),
+    then SIGTERM, then SIGKILL. The validation trial (2026-11-15) saw SIGINT end one of three
+    load processes; the other two ran on until SIGTERM."""
+    for sig, wait in ((signal.SIGINT, 20.0), (signal.SIGTERM, 15.0), (signal.SIGKILL, 5.0)):
         if p.poll() is not None:
             return
         try:
@@ -257,6 +260,7 @@ def run_trial(level: int, targets: list, out: Path, *, warmup: float, load_mode:
     touches0 = _lines(TOUCHES)
     load0 = os.getloadavg()
     t0 = time.monotonic()
+    w0 = time.time()
     loads = [_pytest(files, out / f"load-{i}.log", env) for i, files in enumerate(load)]
     time.sleep(warmup)
     target = _pytest(["-p", "t03_capture", *targets], out / "target.log", env)
@@ -280,6 +284,9 @@ def run_trial(level: int, targets: list, out: Path, *, warmup: float, load_mode:
             break
         time.sleep(0.5)
     wall = time.monotonic() - t0
+    # monotonic (mach_absolute_time) does not advance while the host sleeps; the validation
+    # trial measured 605 s awake inside 58 min of wall clock (pmset: Sleep / DarkWake cycles).
+    wall_clock = time.time() - w0
     target_exited = target_exit_s is not None
     recs = []
     try:
@@ -290,7 +297,8 @@ def run_trial(level: int, targets: list, out: Path, *, warmup: float, load_mode:
     status = trial_status(outcomes, cap_hit=cap_hit, target_exited=target_exited)
     rec = {
         "level": level, "targets": targets, "load": load, "load_mode": load_mode,
-        "warmup_s": warmup, "cap_s": cap, "T_s": total, "wall_s": wall, "cap_hit": cap_hit,
+        "warmup_s": warmup, "cap_s": cap, "T_s": total, "wall_s": wall,
+        "wall_clock_s": wall_clock, "cap_hit": cap_hit,
         "target_exit_s": target_exit_s, "target_rc": target.returncode,
         "load_rcs": [p.returncode for p in loads], "status": status, "outcomes": outcomes,
         "loadavg_start": load0, "loadavg_end": os.getloadavg(),

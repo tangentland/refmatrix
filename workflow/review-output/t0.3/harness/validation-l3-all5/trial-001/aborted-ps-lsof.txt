@@ -1,0 +1,421 @@
+  PID  PPID ELAPSED      TIME COMMAND
+77749 77747   41:43   0:51.26 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m pytest -q -p no:cacheprovider tests/test_memory_bridge.py tests/test_bug212_r4_red.py tests/test_plan3_remedy_r4.py tests/test_bug216_hidden_no_pollution.py tests/test_task3_6_r9_remedy.py tests/test_plan3_remedy_r6.py tests/test_bug225_handoff_trunk.py tests/test_memory_compile_remedy_r1.py
+77750 77747   41:43   0:50.70 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m pytest -q -p no:cacheprovider tests/test_task25_1_recall_budget.py tests/test_task21_1_used_events.py tests/test_memory_compile_scope.py tests/test_bridge_move_safety_r1.py tests/test_bug212_r6_red.py tests/test_rerank_budget_real_clients.py tests/test_plan3_remedy_r3.py tests/test_plan4_remedy.py tests/test_bug212_r1_remedy.py
+77751 77747   41:43   1:04.09 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m pytest -q -p no:cacheprovider tests/test_bridge_move_safety.py tests/test_plan3_remedy_r5.py tests/test_savestate_mtype.py tests/test_modelsrv.py tests/test_sync_fails_loudly_r2.py tests/test_task21_1_emitters.py tests/test_plan4_remedy_r3.py tests/test_catalog_measure.py
+93724 77749   00:09   0:00.04 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -c import sys,time; print('ready', flush=True); time.sleep(300) rmx daemon start
+
+==== lsof -p 77751 (exit 0)
+COMMAND   PID    USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+Python  77751 tholley  cwd      DIR               1,25       952             1595612 /Volumes/littlebig/refmatrix-t03
+Python  77751 tholley  txt      REG               1,15     66200           310717331 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  77751 tholley  txt      REG               1,15    425104           310522129 /opt/local/lib/libintl.8.dylib
+Python  77751 tholley  txt      REG               1,15    146680           310722596 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     87288           310722569 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     86952           310722567 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     87088           310722447 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    126728           310722497 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     89688           310722451 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    168896            16290910 /opt/local/lib/libffi.8.dylib
+Python  77751 tholley  txt      REG               1,15    188736           310513199 /opt/local/lib/libz.1.3.2.dylib
+Python  77751 tholley  txt      REG               1,15    347600           310522879 /opt/local/lib/liblzma.5.dylib
+Python  77751 tholley  txt      REG               1,15    206016            16274024 /opt/local/lib/libbz2.1.0.8.dylib
+Python  77751 tholley  txt      REG               1,15   2289328 1152921500312524573 /usr/lib/dyld
+Python  77751 tholley  txt      REG               1,15    152064           310722533 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    124520           310722493 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   2319840           485254667 /opt/local/lib/libiconv.2.dylib
+Python  77751 tholley  txt      REG               1,15    186024           310722559 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    105568           310722563 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    181800           310722572 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   1215360           310666684 /opt/local/lib/libzstd.1.5.7.dylib
+Python  77751 tholley  txt      REG               1,15     83864           310722553 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_uuid.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    103152           310722483 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_heapq.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     88240           310722513 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    127296           310722582 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     88440           310722509 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_posixsubprocess.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    207344           310722479 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_elementtree.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    318728            39333774 /opt/local/lib/libmpdec.4.0.1.dylib
+Python  77751 tholley  txt      REG               1,15   1541120           310722588 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/unicodedata.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15  12269368           310717325 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Python
+Python  77751 tholley  txt      REG               1,15    409248           310722477 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_decimal.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    313776           310536227 /opt/local/lib/libexpat.1.11.3.dylib
+Python  77751 tholley  txt      REG               1,15    189200           310722576 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/pyexpat.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    222864           310722525 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    126392           310722465 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_csv.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    186472           310722561 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/array.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    130080           310722491 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_interpreters.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    131440           310722578 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/readline.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     88976           310722511 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_queue.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    212112           310722445 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_asyncio.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    169120           310722481 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    433800           310722529 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ssl.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    659600           167202076 /opt/local/lib/libncurses.6.dylib
+Python  77751 tholley  txt      REG               1,15    376128            90746166 /opt/local/lib/libedit.0.dylib
+Python  77751 tholley  txt      REG               1,15    312256           310722527 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_sqlite3.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   1806864           310546323 /opt/local/libexec/openssl3/lib/libssl.3.dylib
+Python  77751 tholley  txt      REG               1,15    308576           310722505 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_pickle.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    157872           310722449 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     67496           473338586 /Library/Preferences/Logging/.plist-cache.rlLQWvb2
+Python  77751 tholley  txt      REG               1,15     84032           310722531 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_statistics.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     88848           310722586 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/termios.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    126800           310722557 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zoneinfo.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    154848           298126533 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/linalg/_umath_linalg.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    948480           298613843 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyroaring.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    350560           310722467 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ctypes.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    109456           300299417 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_orc.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15     79648           300300011 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_python_parquet_encryption.2400.dylib
+Python  77751 tholley  txt      REG               1,15   2380448           310569590 /opt/local/lib/libsqlite3.3.53.1.dylib
+Python  77751 tholley  txt      REG               1,15    166008           300299437 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_json.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    221264           300299454 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_substrait.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   9914608           310546318 /opt/local/libexec/openssl3/lib/libcrypto.3.dylib
+Python  77751 tholley  txt      REG               1,15    307888           300299400 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_acero.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    415160           300299429 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_fs.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15  45263296           495527258 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_duckdb.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    369672           300299409 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_csv.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    150704           300299422 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_parquet_encryption.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    145312           300299403 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_azurefs.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    325160           300299419 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_parquet.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   3572792           300299996 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/lib.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   1975936           300300005 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_python.2400.dylib
+Python  77751 tholley  txt      REG               1,15   2737920           300300002 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_dataset.2400.dylib
+Python  77751 tholley  txt      REG               1,15    928576           300299414 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    147424           300299432 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_gcsfs.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    151912           300299435 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_hdfs.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    323352           300299446 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_parquet_encryption.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    306296           310722485 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    185976           300299452 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_s3fs.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   4768464           300300013 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_substrait.2400.dylib
+Python  77751 tholley  txt      REG               1,15   2220288           300300000 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_acero.2400.dylib
+Python  77751 tholley  txt      REG               1,15   1137632           300299405 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_compute.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15    563312           300299443 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_parquet.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   4774184           300300015 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libparquet.2400.dylib
+Python  77751 tholley  txt      REG               1,15   3695624           298126618 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/_core/_multiarray_umath.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15   4169712           329192311 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pydantic_core/_pydantic_core.cpython-314-darwin.so
+Python  77751 tholley  txt      REG               1,15  15689296           300300001 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_compute.2400.dylib
+Python  77751 tholley  txt      REG               1,15  45756120           300299999 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow.2400.dylib
+Python  77751 tholley  txt      REG               1,15 143385344           350939164 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/lance.abi3.so
+Python  77751 tholley    0r     CHR                3,2       0t0                 339 /dev/null
+Python  77751 tholley    1u     REG               1,15         0           496224733 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpz0nxo95g
+Python  77751 tholley    2u     REG               1,15         0           496224734 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpccxx54on
+Python  77751 tholley    3r     CHR                3,2       0t0                 339 /dev/null
+Python  77751 tholley    4r     CHR                3,2       0t0                 339 /dev/null
+Python  77751 tholley    5w     REG               1,25        88             1665433 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-2.log
+Python  77751 tholley    6u     REG               1,15         0           496224733 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpz0nxo95g
+Python  77751 tholley    7w     REG               1,25        88             1665433 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-2.log
+Python  77751 tholley    8u     REG               1,15         0           496224734 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpccxx54on
+Python  77751 tholley    9w     REG               1,25        88             1665433 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-2.log
+Python  77751 tholley   10w     CHR                3,2       0t0                 339 /dev/null
+Python  77751 tholley   11r     REG               1,15   9449472           496225956 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-jqz8k970/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   12r     REG               1,15  11808768           496227008 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-yptxxls8/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   13u  KQUEUE                                                  count=0, state=0xa
+Python  77751 tholley   14u    unix 0x4d9b651de0178328       0t0                     /tmp/rmxsockidxbs2xn/models.sock
+Python  77751 tholley   15u     REG               1,15     12288           496275645 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1899/test_daemon_falls_back_when_sh1/store/.refmatrix/catalog.duckdb
+Python  77751 tholley   16u  KQUEUE                                                  count=0, state=0xa
+Python  77751 tholley   17u  KQUEUE                                                  count=0, state=0xa
+Python  77751 tholley   18u    unix 0xd334cbd56cac2e07       0t0                     ->0x8ae341078186bc1d
+Python  77751 tholley   19u    unix 0x8ae341078186bc1d       0t0                     ->0xd334cbd56cac2e07
+Python  77751 tholley   20u    unix 0xd334cbd56cac2e07       0t0                     ->0x8ae341078186bc1d
+Python  77751 tholley   21r     REG               1,15   8400896           496235539 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-1f6hvevf/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   22r     REG               1,15   3158016           496238421 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-c4jxircx/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   23r     REG               1,15   3158016           496244184 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-dk6lfn9c/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   24u     REG               1,15  13119488           496245620 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-d5n970md/proj/.refmatrix/catalog.duckdb
+Python  77751 tholley   25w     REG               1,15      5912           496247137 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx262-d5n970md/proj/.refmatrix/catalog.duckdb.wal
+Python  77751 tholley   26r     REG               1,15   3158016           496270061 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-1ps7vw8z/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   27r     REG               1,15   4468736           496249366 /private/tmp/rmxs-0pqvotmt/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   28r     REG               1,15   4468736           496266120 /private/tmp/rmxs-akfu3sui/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   29r     REG               1,15   4468736           496251401 /private/tmp/rmxs-mxpqgfxa/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   30r     REG               1,15   4468736           496266208 /private/tmp/rmxs-o3rttly2/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   31r     REG               1,15   4468736           496247215 /private/tmp/rmxs-6vx1zg_t/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   32r     REG               1,15   3158016           496270323 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-ak8pdvs7/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   33r     REG               1,15   8663040           496273421 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-pv25x4aw/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   34r     REG               1,15   3158016           496274515 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-qbzq34co/proj/.refmatrix/catalog.read.duckdb
+Python  77751 tholley   35w     REG               1,15     14941           496275646 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1899/test_daemon_falls_back_when_sh1/store/.refmatrix/catalog.duckdb.wal
+Python  77751 tholley   36u    unix 0x8d806dc70523b3f3       0t0                     ->0x7f2b412a02d0c87c
+Python  77751 tholley   37r     REG               1,15   3158016           496274887 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx264-4p_ff_x8/proj/.refmatrix/catalog.read.duckdb
+
+==== lsof -p 77750 (exit 0)
+COMMAND   PID    USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+Python  77750 tholley  cwd      DIR               1,25       952             1595612 /Volumes/littlebig/refmatrix-t03
+Python  77750 tholley  txt      REG               1,15     66200           310717331 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  77750 tholley  txt      REG               1,15    425104           310522129 /opt/local/lib/libintl.8.dylib
+Python  77750 tholley  txt      REG               1,15    146680           310722596 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     87288           310722569 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     86952           310722567 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   2319840           485254667 /opt/local/lib/libiconv.2.dylib
+Python  77750 tholley  txt      REG               1,15     87088           310722447 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    126728           310722497 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     89688           310722451 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    168896            16290910 /opt/local/lib/libffi.8.dylib
+Python  77750 tholley  txt      REG               1,15    188736           310513199 /opt/local/lib/libz.1.3.2.dylib
+Python  77750 tholley  txt      REG               1,15    105568           310722563 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   2289328 1152921500312524573 /usr/lib/dyld
+Python  77750 tholley  txt      REG               1,15    347600           310522879 /opt/local/lib/liblzma.5.dylib
+Python  77750 tholley  txt      REG               1,15    206016            16274024 /opt/local/lib/libbz2.1.0.8.dylib
+Python  77750 tholley  txt      REG               1,15    103152           310722483 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_heapq.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     83864           310722553 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_uuid.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    186024           310722559 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    124520           310722493 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    152064           310722533 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   1215360           310666684 /opt/local/lib/libzstd.1.5.7.dylib
+Python  77750 tholley  txt      REG               1,15     88240           310722513 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    207344           310722479 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_elementtree.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    181800           310722572 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    318728            39333774 /opt/local/lib/libmpdec.4.0.1.dylib
+Python  77750 tholley  txt      REG               1,15   1541120           310722588 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/unicodedata.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     88440           310722509 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_posixsubprocess.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15  12269368           310717325 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Python
+Python  77750 tholley  txt      REG               1,15    127296           310722582 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    313776           310536227 /opt/local/lib/libexpat.1.11.3.dylib
+Python  77750 tholley  txt      REG               1,15    189200           310722576 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/pyexpat.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    409248           310722477 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_decimal.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    222864           310722525 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    126392           310722465 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_csv.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    186472           310722561 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/array.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    130080           310722491 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_interpreters.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    131440           310722578 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/readline.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     88976           310722511 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_queue.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    212112           310722445 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_asyncio.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    169120           310722481 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    433800           310722529 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ssl.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    659600           167202076 /opt/local/lib/libncurses.6.dylib
+Python  77750 tholley  txt      REG               1,15    376128            90746166 /opt/local/lib/libedit.0.dylib
+Python  77750 tholley  txt      REG               1,15    312256           310722527 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_sqlite3.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   1806864           310546323 /opt/local/libexec/openssl3/lib/libssl.3.dylib
+Python  77750 tholley  txt      REG               1,15    157872           310722449 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    350560           310722467 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ctypes.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     67496           473338586 /Library/Preferences/Logging/.plist-cache.rlLQWvb2
+Python  77750 tholley  txt      REG               1,15    308576           310722505 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_pickle.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     88848           310722586 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/termios.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    154848           298126533 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/linalg/_umath_linalg.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    948480           298613843 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyroaring.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    126800           310722557 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zoneinfo.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15     79648           300300011 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_python_parquet_encryption.2400.dylib
+Python  77750 tholley  txt      REG               1,15    166008           300299437 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_json.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    109456           300299417 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_orc.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   2380448           310569590 /opt/local/lib/libsqlite3.3.53.1.dylib
+Python  77750 tholley  txt      REG               1,15    307888           300299400 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_acero.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   9914608           310546318 /opt/local/libexec/openssl3/lib/libcrypto.3.dylib
+Python  77750 tholley  txt      REG               1,15    415160           300299429 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_fs.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    369672           300299409 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_csv.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    150704           300299422 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_parquet_encryption.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    221264           300299454 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_substrait.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    145312           300299403 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_azurefs.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   3695624           298126618 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/_core/_multiarray_umath.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    325160           300299419 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_parquet.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    323352           300299446 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_parquet_encryption.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    147424           300299432 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_gcsfs.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    928576           300299414 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    151912           300299435 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_hdfs.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    306296           310722485 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    185976           300299452 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_s3fs.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15    563312           300299443 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_parquet.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15  45263296           495527258 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_duckdb.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   1975936           300300005 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_python.2400.dylib
+Python  77750 tholley  txt      REG               1,15   1137632           300299405 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_compute.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   3572792           300299996 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/lib.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15   2737920           300300002 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_dataset.2400.dylib
+Python  77750 tholley  txt      REG               1,15   4768464           300300013 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_substrait.2400.dylib
+Python  77750 tholley  txt      REG               1,15   2220288           300300000 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_acero.2400.dylib
+Python  77750 tholley  txt      REG               1,15   4774184           300300015 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libparquet.2400.dylib
+Python  77750 tholley  txt      REG               1,15   4169712           329192311 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pydantic_core/_pydantic_core.cpython-314-darwin.so
+Python  77750 tholley  txt      REG               1,15  15689296           300300001 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_compute.2400.dylib
+Python  77750 tholley  txt      REG               1,15  45756120           300299999 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow.2400.dylib
+Python  77750 tholley  txt      REG               1,15 143385344           350939164 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/lance.abi3.so
+Python  77750 tholley    0r     CHR                3,2       0t0                 339 /dev/null
+Python  77750 tholley    1u     REG               1,15         0           496224735 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpmyoufe4i
+Python  77750 tholley    2u     REG               1,15         0           496224737 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpd_2cex_h
+Python  77750 tholley    3r     CHR                3,2       0t0                 339 /dev/null
+Python  77750 tholley    4r     CHR                3,2       0t0                 339 /dev/null
+Python  77750 tholley    5w     REG               1,25       191             1665432 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-1.log
+Python  77750 tholley    6u     REG               1,15         0           496224735 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpmyoufe4i
+Python  77750 tholley    7w     REG               1,25       191             1665432 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-1.log
+Python  77750 tholley    8u     REG               1,15         0           496224737 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpd_2cex_h
+Python  77750 tholley    9w     REG               1,25       191             1665432 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-1.log
+Python  77750 tholley   10w     CHR                3,2       0t0                 339 /dev/null
+Python  77750 tholley   11r     REG               1,15  11284480           496269974 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-_35rkhsl/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   12r     REG               1,15   8925184           496225337 /private/tmp/rmx-r2rq5e7i/p25b-6jibircq/fxb/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   13r     REG               1,15   8925184           496225928 /private/tmp/rmx-r2rq5e7i/p25a-w2y1a_fe/fxa/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   14r     REG               1,15  11284480           496270246 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-gkret9_6/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   15r     REG               1,15  15478784           496226867 /private/tmp/rmx-r2rq5e7i/p25-zjsa850l/fxproj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   16r     REG               1,15  10760192           496270839 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-z4z7j7tp/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   17r     REG               1,15   9449472           496229904 /private/tmp/rmx-r2rq5e7i/p25l-phb3f_gy/fxleg/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   18r     REG               1,15  10760192           496240287 /private/tmp/rmx-r2rq5e7i/p25f-69kwap9c/fxfew/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   19u  KQUEUE                                                  count=0, state=0xa
+Python  77750 tholley   20u  KQUEUE                                                  count=0, state=0xa
+Python  77750 tholley   21u  KQUEUE                                                  count=0, state=0xa
+Python  77750 tholley   22u    unix 0x72dc99c63c959841       0t0                     ->0xf2767fb1792fbd1e
+Python  77750 tholley   23u    unix 0xf2767fb1792fbd1e       0t0                     ->0x72dc99c63c959841
+Python  77750 tholley   24u    unix 0x72dc99c63c959841       0t0                     ->0xf2767fb1792fbd1e
+Python  77750 tholley   25r     REG               1,15  12070912           496271145 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-mbelmc98/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   26r     REG               1,15   3158016           496273482 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-asktx_nw/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   27r     REG               1,15   3158016           496273809 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-id330xhp/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   28r     REG               1,15   3158016           496274133 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-2uvdyy0h/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   29r     REG               1,15   3158016           496274356 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-o_f7mjo3/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   30r     REG               1,15   6565888           496274564 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-hn94pwx7/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   31r     REG               1,15   6565888           496275689 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/r266-2fclo9qk/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   32r     REG               1,15   3158016           496275772 /private/tmp/r1-pnkhhtxd/proj/.refmatrix/catalog.read.duckdb
+Python  77750 tholley   33u    unix 0x4b25cb4187e353ee       0t0                     ->0x94a3e4ce05ef3ee0
+
+==== lsof -p 77749 (exit 0)
+COMMAND   PID    USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+Python  77749 tholley  cwd      DIR               1,25       952             1595612 /Volumes/littlebig/refmatrix-t03
+Python  77749 tholley  txt      REG               1,15     66200           310717331 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  77749 tholley  txt      REG               1,15    425104           310522129 /opt/local/lib/libintl.8.dylib
+Python  77749 tholley  txt      REG               1,15    146680           310722596 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     87288           310722569 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    168896            16290910 /opt/local/lib/libffi.8.dylib
+Python  77749 tholley  txt      REG               1,15   2289328 1152921500312524573 /usr/lib/dyld
+Python  77749 tholley  txt      REG               1,15   2319840           485254667 /opt/local/lib/libiconv.2.dylib
+Python  77749 tholley  txt      REG               1,15     86952           310722567 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     87088           310722447 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    126728           310722497 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     89688           310722451 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    188736           310513199 /opt/local/lib/libz.1.3.2.dylib
+Python  77749 tholley  txt      REG               1,15    124520           310722493 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    347600           310522879 /opt/local/lib/liblzma.5.dylib
+Python  77749 tholley  txt      REG               1,15    206016            16274024 /opt/local/lib/libbz2.1.0.8.dylib
+Python  77749 tholley  txt      REG               1,15    152064           310722533 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    105568           310722563 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    186024           310722559 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    103152           310722483 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_heapq.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     83864           310722553 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_uuid.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   1215360           310666684 /opt/local/lib/libzstd.1.5.7.dylib
+Python  77749 tholley  txt      REG               1,15     88240           310722513 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    207344           310722479 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_elementtree.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    181800           310722572 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    318728            39333774 /opt/local/lib/libmpdec.4.0.1.dylib
+Python  77749 tholley  txt      REG               1,15   1541120           310722588 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/unicodedata.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     88440           310722509 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_posixsubprocess.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    127296           310722582 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    313776           310536227 /opt/local/lib/libexpat.1.11.3.dylib
+Python  77749 tholley  txt      REG               1,15    189200           310722576 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/pyexpat.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15  12269368           310717325 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Python
+Python  77749 tholley  txt      REG               1,15    409248           310722477 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_decimal.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    222864           310722525 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    126392           310722465 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_csv.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    186472           310722561 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/array.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    130080           310722491 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_interpreters.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    131440           310722578 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/readline.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     88976           310722511 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_queue.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    212112           310722445 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_asyncio.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    169120           310722481 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    433800           310722529 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ssl.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   1806864           310546323 /opt/local/libexec/openssl3/lib/libssl.3.dylib
+Python  77749 tholley  txt      REG               1,15    659600           167202076 /opt/local/lib/libncurses.6.dylib
+Python  77749 tholley  txt      REG               1,15    312256           310722527 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_sqlite3.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    376128            90746166 /opt/local/lib/libedit.0.dylib
+Python  77749 tholley  txt      REG               1,15    308576           310722505 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_pickle.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    157872           310722449 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     67496           473338586 /Library/Preferences/Logging/.plist-cache.rlLQWvb2
+Python  77749 tholley  txt      REG               1,15     88848           310722586 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/termios.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    350560           310722467 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ctypes.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    126800           310722557 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zoneinfo.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    948480           298613843 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyroaring.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    154848           298126533 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/linalg/_umath_linalg.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15     79648           300300011 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_python_parquet_encryption.2400.dylib
+Python  77749 tholley  txt      REG               1,15    109456           300299417 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_orc.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   2380448           310569590 /opt/local/lib/libsqlite3.3.53.1.dylib
+Python  77749 tholley  txt      REG               1,15    166008           300299437 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_json.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   9914608           310546318 /opt/local/libexec/openssl3/lib/libcrypto.3.dylib
+Python  77749 tholley  txt      REG               1,15    307888           300299400 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_acero.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    221264           300299454 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_substrait.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    145312           300299403 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_azurefs.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    150704           300299422 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_parquet_encryption.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15  45263296           495527258 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_duckdb.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    415160           300299429 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_fs.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    369672           300299409 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_csv.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    325160           300299419 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset_parquet.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    147424           300299432 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_gcsfs.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    151912           300299435 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_hdfs.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   3695624           298126618 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/_core/_multiarray_umath.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    323352           300299446 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_parquet_encryption.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    928576           300299414 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_dataset.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   1975936           300300005 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_python.2400.dylib
+Python  77749 tholley  txt      REG               1,15    185976           300299452 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_s3fs.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    306296           310722485 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   3572792           300299996 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/lib.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   1137632           300299405 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_compute.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15    563312           300299443 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/_parquet.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15   2220288           300300000 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_acero.2400.dylib
+Python  77749 tholley  txt      REG               1,15   4768464           300300013 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_substrait.2400.dylib
+Python  77749 tholley  txt      REG               1,15   2737920           300300002 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_dataset.2400.dylib
+Python  77749 tholley  txt      REG               1,15   4774184           300300015 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libparquet.2400.dylib
+Python  77749 tholley  txt      REG               1,15  15689296           300300001 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow_compute.2400.dylib
+Python  77749 tholley  txt      REG               1,15   4169712           329192311 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pydantic_core/_pydantic_core.cpython-314-darwin.so
+Python  77749 tholley  txt      REG               1,15  45756120           300299999 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyarrow/libarrow.2400.dylib
+Python  77749 tholley  txt      REG               1,15 143385344           350939164 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/lance.abi3.so
+Python  77749 tholley    0r     CHR                3,2       0t0                 339 /dev/null
+Python  77749 tholley    1u     REG               1,15         0           496224736 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpu7d91iia
+Python  77749 tholley    2u     REG               1,15         0           496224738 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpzie92mpj
+Python  77749 tholley    3r     CHR                3,2       0t0                 339 /dev/null
+Python  77749 tholley    4r     CHR                3,2       0t0                 339 /dev/null
+Python  77749 tholley    5w     REG               1,25        85             1665431 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-0.log
+Python  77749 tholley    6u     REG               1,15         0           496224736 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpu7d91iia
+Python  77749 tholley    7w     REG               1,25        85             1665431 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-0.log
+Python  77749 tholley    8u     REG               1,15         0           496224738 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/tmpzie92mpj
+Python  77749 tholley    9w     REG               1,25        85             1665431 /Volumes/littlebig/refmatrix-t03/workflow/review-output/t0.3/harness/validation-l3-all5/trial-001/load-0.log
+Python  77749 tholley   10w     CHR                3,2       0t0                 339 /dev/null
+Python  77749 tholley   11r     REG               1,15   8400896           496225146 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-ew02vx1a/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   12r     REG               1,15   8138752           496225254 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-timsvejl/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   13r     REG               1,15   3158016           496225472 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-xjdj9xfy/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   14r     REG               1,15  13643776           496228769 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-s0sebl6a/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   15r     REG               1,15   3158016           496228843 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-lvem8vk2/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   16r     REG               1,15   8138752           496229639 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-2ffhrdiw/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   17r     REG               1,15   3158016           496229789 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-2nel7asd/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   18r     REG               1,15  14430208           496244659 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-icri8cl6/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   19r     REG               1,15   3158016           496245631 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-vx470goq/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   20r     REG               1,15   3158016           496253184 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-pgf2nix1/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   21r     REG               1,15   3158016           496254506 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-1ze9lm__/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   22u  KQUEUE                                                  count=0, state=0xa
+Python  77749 tholley   23u     REG               1,15     12288           496275591 /private/tmp/rmxs-0tlm4v0z/.refmatrix/catalog.A.duckdb
+Python  77749 tholley   24r     REG               1,15   4468736           496274452 /private/tmp/rmxs-qu4dksnh/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   25u  KQUEUE                                                  count=0, state=0xa
+Python  77749 tholley   26u  KQUEUE                                                  count=0, state=0xa
+Python  77749 tholley   27u    unix 0xf44692730ede8d85       0t0                     ->0xcaf01a44b284e65b
+Python  77749 tholley   28u    unix 0xcaf01a44b284e65b       0t0                     ->0xf44692730ede8d85
+Python  77749 tholley   29u    unix 0xf44692730ede8d85       0t0                     ->0xcaf01a44b284e65b
+Python  77749 tholley   30u     REG               1,15   2109440           496255798 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-1nns0toa/proj/.refmatrix/catalog.duckdb
+Python  77749 tholley   31w     REG               1,15      1175           496255822 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-1nns0toa/proj/.refmatrix/catalog.duckdb.wal
+Python  77749 tholley   32r     REG               1,15   3158016           496255976 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-i0v3kl15/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   33r     REG               1,15   8138752           496258279 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-ptswa8v_/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   34r     REG               1,15   3158016           496260306 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-8qvep0rl/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   35r     REG               1,15   3158016           496261835 /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-k45ewlzb/proj/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   36w     REG               1,15     14949           496275593 /private/tmp/rmxs-0tlm4v0z/.refmatrix/catalog.duckdb.wal
+Python  77749 tholley   37     PIPE 0x65d48cc71ff1e50c     16384                     
+Python  77749 tholley   38     PIPE 0xadceabfece99b2b0     16384                     ->0x6ef2c290a28df926
+Python  77749 tholley   39u    unix  0xcc30f1d17d3aa00       0t0                     /tmp/rmxs-0tlm4v0z/.refmatrix/rmxd.sock
+Python  77749 tholley   40r     REG               1,15   4468736           496274619 /private/tmp/rmxs-wlbigol3/.refmatrix/catalog.read.duckdb
+Python  77749 tholley   41     PIPE 0x582ef144f0d54060     16384                     
+Python  77749 tholley   42u    unix 0x8442613cdc08c307       0t0                     ->0x16651e148a01d2c0
+Python  77749 tholley   43u    unix 0x35dbabdbb4aa68bb       0t0                     /tmp/rmxs-0tlm4v0z/.refmatrix/rmxd.sock
+Python  77749 tholley   44u    unix 0x16651e148a01d2c0       0t0                     /tmp/rmxs-0tlm4v0z/.refmatrix/rmxd.sock
+
+==== lsof -p 93724 (exit 0)
+COMMAND   PID    USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+Python  93724 tholley  cwd    DIR               1,25      952             1595612 /Volumes/littlebig/refmatrix-t03
+Python  93724 tholley  txt    REG               1,15    66200           310717331 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  93724 tholley  txt    REG               1,15   425104           310522129 /opt/local/lib/libintl.8.dylib
+Python  93724 tholley  txt    REG               1,15   188736           310513199 /opt/local/lib/libz.1.3.2.dylib
+Python  93724 tholley  txt    REG               1,15   124520           310722493 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   105568           310722563 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   189200           310722576 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/pyexpat.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   152064           310722533 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15    89688           310722451 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15  2289328 1152921500312524573 /usr/lib/dyld
+Python  93724 tholley  txt    REG               1,15   313776           310536227 /opt/local/lib/libexpat.1.11.3.dylib
+Python  93724 tholley  txt    REG               1,15    87088           310722447 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15  2319840           485254667 /opt/local/lib/libiconv.2.dylib
+Python  93724 tholley  txt    REG               1,15   206016            16274024 /opt/local/lib/libbz2.1.0.8.dylib
+Python  93724 tholley  txt    REG               1,15   146680           310722596 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   186024           310722559 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   126728           310722497 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15    88240           310722513 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15    87288           310722569 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   222864           310722525 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15   347600           310522879 /opt/local/lib/liblzma.5.dylib
+Python  93724 tholley  txt    REG               1,15   181800           310722572 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15    86952           310722567 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so
+Python  93724 tholley  txt    REG               1,15  1215360           310666684 /opt/local/lib/libzstd.1.5.7.dylib
+Python  93724 tholley  txt    REG               1,15 12269368           310717325 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Python
+Python  93724 tholley    0r   CHR                3,2      0t0                 339 /dev/null
+Python  93724 tholley    1   PIPE 0x6ef2c290a28df926    16384                     ->0xadceabfece99b2b0
+Python  93724 tholley    2u   CHR                3,2      0t0                 339 /dev/null
