@@ -1,0 +1,241 @@
+{
+ "level": 3,
+ "mode": "base",
+ "targets": [
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs",
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning",
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file",
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row",
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "voids": 0,
+ "noisy": false,
+ "trials_run": 9,
+ "rows": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "fail",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 9,
+    "failures": 1,
+    "reproducer": false,
+    "decided": true
+   },
+   "e_lines": [
+    "E       KeyError: 'rewrite_bytes_all'"
+   ],
+   "walls_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ],
+   "wall_clocks_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ]
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 9,
+    "failures": 0,
+    "reproducer": false,
+    "decided": true
+   },
+   "e_lines": [],
+   "walls_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ],
+   "wall_clocks_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ]
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 9,
+    "failures": 0,
+    "reproducer": false,
+    "decided": true
+   },
+   "e_lines": [],
+   "walls_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ],
+   "wall_clocks_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ]
+  },
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "fail",
+    "fail",
+    "fail",
+    "fail",
+    "fail"
+   ],
+   "band": {
+    "trials": 9,
+    "failures": 5,
+    "reproducer": true,
+    "decided": true
+   },
+   "e_lines": [
+    "E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-dl76f75o/r/4', ...}",
+    "E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-fdzmgyds/r/4', ...}",
+    "E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-vop5mihh/r/4', ...}",
+    "E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-dito6722/r/4', ...}",
+    "E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-gix7dlqu/r/4', ...}"
+   ],
+   "walls_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ],
+   "wall_clocks_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ]
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "fail",
+    "fail",
+    "fail",
+    "fail",
+    "fail",
+    "fail"
+   ],
+   "band": {
+    "trials": 9,
+    "failures": 6,
+    "reproducer": true,
+    "decided": true
+   },
+   "e_lines": [
+    "E           assert (733208.751545541 - 733200.727182) < 8.0",
+    "E           AssertionError: assert False is True",
+    "E           AssertionError: assert False is True",
+    "E           AssertionError: assert False is True",
+    "E           AssertionError: assert False is True",
+    "E           AssertionError: assert False is True"
+   ],
+   "walls_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ],
+   "wall_clocks_s": [
+    47.8,
+    46.0,
+    57.3,
+    59.3,
+    92.3,
+    89.5,
+    94.0,
+    88.3,
+    93.6
+   ]
+  }
+ }
+}

@@ -1,0 +1,16 @@
+{"node": "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs", "event": "start", "t": 1794763515.6940548}
+{"node": "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs", "event": "report", "phase": "setup", "outcome": "passed", "duration": 0.04773604194633663, "e_lines": [], "crash": null, "t": 1794763515.742374}
+{"node": "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs", "event": "report", "phase": "call", "outcome": "passed", "duration": 0.669901708024554, "e_lines": [], "crash": null, "t": 1794763516.412731}
+{"node": "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs", "event": "report", "phase": "teardown", "outcome": "passed", "duration": 0.0007907079998403788, "e_lines": [], "crash": null, "t": 1794763516.413694}
+{"node": "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning", "event": "start", "t": 1794763516.446739}
+{"node": "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning", "event": "report", "phase": "setup", "outcome": "passed", "duration": 0.05308258393779397, "e_lines": [], "crash": null, "t": 1794763516.500321}
+{"node": "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning", "event": "report", "phase": "call", "outcome": "passed", "duration": 0.0008040829561650753, "e_lines": [], "crash": null, "t": 1794763516.501367}
+{"node": "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning", "event": "report", "phase": "teardown", "outcome": "passed", "duration": 0.0009188749827444553, "e_lines": [], "crash": null, "t": 1794763516.502975}
+{"node": "tests/test_watch.py::test_run_watcher_picks_up_new_file", "event": "start", "t": 1794763516.509352}
+{"node": "tests/test_watch.py::test_run_watcher_picks_up_new_file", "event": "report", "phase": "setup", "outcome": "passed", "duration": 0.06196416600141674, "e_lines": [], "crash": null, "t": 1794763516.571682}
+{"node": "tests/test_watch.py::test_run_watcher_picks_up_new_file", "event": "report", "phase": "call", "outcome": "passed", "duration": 0.4120274999877438, "e_lines": [], "crash": null, "t": 1794763516.98411}
+{"node": "tests/test_watch.py::test_run_watcher_picks_up_new_file", "event": "report", "phase": "teardown", "outcome": "passed", "duration": 0.0005547499749809504, "e_lines": [], "crash": null, "t": 1794763516.985253}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "start", "t": 1794763516.985589}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "report", "phase": "setup", "outcome": "passed", "duration": 0.05280066700652242, "e_lines": [], "crash": null, "t": 1794763517.0388942}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "report", "phase": "call", "outcome": "passed", "duration": 6.386733707971871, "e_lines": [], "crash": null, "t": 1794763523.426241}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "event": "report", "phase": "teardown", "outcome": "passed", "duration": 0.001841292018070817, "e_lines": [], "crash": null, "t": 1794763523.4283001}

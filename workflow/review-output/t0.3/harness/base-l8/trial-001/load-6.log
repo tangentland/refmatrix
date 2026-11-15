@@ -1,0 +1,5 @@
+....
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2078: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+4 passed in 99.02s (0:01:39)

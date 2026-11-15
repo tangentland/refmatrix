@@ -1,0 +1,99 @@
+{
+ "level": 3,
+ "targets": [
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs",
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning",
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file",
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row",
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "load": [
+  [
+   "tests/test_memory_bridge.py",
+   "tests/test_bug212_r4_red.py",
+   "tests/test_plan3_remedy_r4.py",
+   "tests/test_bug216_hidden_no_pollution.py",
+   "tests/test_task3_6_r9_remedy.py",
+   "tests/test_plan3_remedy_r6.py",
+   "tests/test_bug225_handoff_trunk.py",
+   "tests/test_memory_compile_remedy_r1.py"
+  ],
+  [
+   "tests/test_task25_1_recall_budget.py",
+   "tests/test_task21_1_used_events.py",
+   "tests/test_memory_compile_scope.py",
+   "tests/test_bridge_move_safety_r1.py",
+   "tests/test_bug212_r6_red.py",
+   "tests/test_rerank_budget_real_clients.py",
+   "tests/test_plan3_remedy_r3.py",
+   "tests/test_plan4_remedy.py",
+   "tests/test_bug212_r1_remedy.py"
+  ],
+  [
+   "tests/test_bridge_move_safety.py",
+   "tests/test_plan3_remedy_r5.py",
+   "tests/test_savestate_mtype.py",
+   "tests/test_modelsrv.py",
+   "tests/test_sync_fails_loudly_r2.py",
+   "tests/test_task21_1_emitters.py",
+   "tests/test_plan4_remedy_r3.py",
+   "tests/test_catalog_measure.py"
+  ]
+ ],
+ "load_mode": "until-target",
+ "warmup_s": 20.0,
+ "cap_s": 6307.200000000001,
+ "T_s": 2102.4,
+ "wall_s": 93.95480158296414,
+ "wall_clock_s": 93.95488810539246,
+ "cap_hit": false,
+ "leaked_after_kill": 0,
+ "leaked": [],
+ "target_exit_s": 48.94194275001064,
+ "target_rc": 1,
+ "load_rcs": [
+  2,
+  2,
+  -15
+ ],
+ "status": "counted",
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 1.1655112919397652
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0012442909646779299
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.4422935829497874
+  },
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-vop5mihh/r/4', ...}",
+   "call_s": 13.547341709025204
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E           AssertionError: assert False is True",
+   "call_s": 12.056162667111494
+  }
+ },
+ "loadavg_start": [
+  16.53076171875,
+  16.46435546875,
+  15.06005859375
+ ],
+ "loadavg_end": [
+  13.30419921875,
+  15.81201171875,
+  14.98828125
+ ],
+ "live_socket_touches_added": 0,
+ "sha": "dcebb15c73c50afd9110720ba505be9b96ce9c8b",
+ "lane_request_to_release_s": 105.55672311782837
+}

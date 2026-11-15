@@ -1,0 +1,18 @@
+....F                                                                    [100%]
+=================================== FAILURES ===================================
+_____________ test_graceful_stop_on_a_live_daemon_returns_quickly ______________
+
+    def test_graceful_stop_on_a_live_daemon_returns_quickly():
+        base, root, pid = _spawn()
+        try:
+            t0 = time.monotonic()
+            assert hub_mod.graceful_stop(root, grace=10.0) is True
+>           assert time.monotonic() - t0 < 8.0
+E           assert (733208.751545541 - 733200.727182) < 8.0
+E            +  where 733208.751545541 = <built-in function monotonic>()
+E            +    where <built-in function monotonic> = time.monotonic
+
+tests/test_plan4_remedy.py:129: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+1 failed, 4 passed in 19.56s

@@ -1,0 +1,43 @@
+...FF                                                                    [100%]
+=================================== FAILURES ===================================
+____________ test_ac2b_live_daemon_recall_writes_one_ok_recall_row _____________
+
+root = PosixPath('/private/tmp/rmx-gix7dlqu/r/4/.refmatrix')
+
+    def test_ac2b_live_daemon_recall_writes_one_ok_recall_row(root):
+        """AC-2b, "the same run against a live sandbox daemon logs outcome=ok": the same generated
+        command, served by a real `rmx daemon` on the sandbox root, writes exactly one kind=recall
+        row with outcome=ok (`ok`: an answer was rendered, however many items), budget_s=5 and the
+        envelope's session."""
+        _seed_memories(root)
+        before = len(_recall_rows(root))
+        with h.SandboxDaemon(root):
+            r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=240)
+        rows = _recall_rows(root)[before:]
+        assert len(rows) == 1, (
+            f"R3: one kind=recall row per recall call; got {len(rows)}: {rows}\n"
+            f"stderr={r.stderr[-800:]}")
+>       assert rows[0]["outcome"] == "ok", rows[0]
+E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-gix7dlqu/r/4', ...}
+E       assert 'skipped_budget' == 'ok'
+E         
+E         - ok
+E         + skipped_budget
+
+tests/test_task21_1_recall_skip.py:208: AssertionError
+_____________ test_graceful_stop_on_a_live_daemon_returns_quickly ______________
+
+    def test_graceful_stop_on_a_live_daemon_returns_quickly():
+        base, root, pid = _spawn()
+        try:
+            t0 = time.monotonic()
+>           assert hub_mod.graceful_stop(root, grace=10.0) is True
+E           AssertionError: assert False is True
+E            +  where False = <function graceful_stop at 0x10700e8d0>(PosixPath('/tmp/rmxp4-vknwxe3s/proj/.refmatrix'), grace=10.0)
+E            +    where <function graceful_stop at 0x10700e8d0> = hub_mod.graceful_stop
+
+tests/test_plan4_remedy.py:128: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row
+FAILED tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+2 failed, 3 passed in 36.51s
