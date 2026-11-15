@@ -5,7 +5,7 @@ title: "Task 25.1: per-prompt recall goes through the verb, and every UserPrompt
 tags: [task, plan-25, bug-164, memory-recall, scan-prompt, hooks, budget, pack, verbs, cliquedb]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   plan: plan-25-cliquedb-field-report
   created: 2026-11-08
   updated: 2026-11-14

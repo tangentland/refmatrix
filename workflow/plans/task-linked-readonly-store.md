@@ -12,7 +12,8 @@ metadata:
 # Task: linked read-only store {#root}
 
 > Status: drafting (2026-11-14). The user's design (Q16, "we can just check if the refmatrix dir
-> is a symlink"), scheduled as Q16 a: a small task right after 0.83.0, built on bug-212's
+> is a symlink"), scheduled as Q16 a; **post-mod** since L128 (re-evaluated against the mod first, L127 and L129;
+> [[plan-of-plans#post-mod]]); built on bug-212's
 > store-level write check (bug-212, branch `task-bug212-worktree-hook-crashes`). Until it ships, agents use `scripts/rmx-master`. A ch-bsd spec round
 > precedes approval.
 

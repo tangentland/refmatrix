@@ -5,7 +5,7 @@ title: "Task 7.4: REPORT.md, committed results artifact, README citation"
 tags: [task, plan-7]
 metadata:
   node_type: task
-  status: complete (symbolic only; dense blocked on bug-030)
+  status: complete (symbolic only; the dense re-run is T0.6)
   plan: plan-7-longmemeval
 ---
 

@@ -5,7 +5,7 @@ title: "Plan 29: code quality — triage the backlog, gate the types, converge r
 tags: [plan, code-quality, refactor, typing, tests, registry, cli]
 metadata:
   node_type: plan
-  status: approved
+  status: in-progress
   created: 2026-11-14
   updated: 2026-11-14
 ---
@@ -191,4 +191,4 @@ rides on these tasks. {#non-goals-list}
    them in full before the merge and records the loss. No task 29.7. **plan-29 D19 confirmed by the
    user** (L113): `store` stays a module ([[task-29.5-split-giant-modules#decisions]]).
 
-Recorded as L104-L111 in [[plan-review-2026-11-13#lead]]. Next: 29.1. {#decisions-next}
+Recorded as L104-L111 in [[plan-review-2026-11-13#lead]]. Next: 29.4 stage 2. {#decisions-next}

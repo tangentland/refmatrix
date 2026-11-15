@@ -5,7 +5,7 @@ title: "Task 26.4: a save-state's type is session/recall-state wherever it came 
 tags: [task, plan-26, save-state, mtype, bridge, recall, bug-164]
 metadata:
   node_type: task
-  status: pending
+  status: completed
   plan: plan-26-memory-organisation
   updated: 2026-11-09
 ---

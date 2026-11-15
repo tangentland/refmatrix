@@ -5,7 +5,7 @@ title: "Task bug-195: a one-shot, backed-up repair of hook values cut by bug-193
 tags: [task, bug-195, bug-193, memory, hooks, repair, plan-26]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   updated: 2026-11-10
 ---
 

@@ -97,6 +97,7 @@ rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#ns23-r7-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm23-r7-1]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm23-r7-2]]
 rel: derives-from -> [[bsd-plan23-17-spec-rereview-r7-331b414#nm23-r7-3]]
+rel: depends-on -> [[plan-of-plans#decisions]] {row: "plan-23 · 23.1 split"}
 
 ## Facts at HEAD `b1c4324` this spec builds on {#facts}
 
