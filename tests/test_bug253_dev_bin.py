@@ -65,12 +65,40 @@ NOT_A_LOOKUP = {
     "test_bug253_dev_bin.py": "this file: the patterns it scans for",
 }
 
-# A path into a checkout venv's bin dir, in the spellings the eleven used at c4b44d0:
-# `X / ".venv-eval" / "bin"`, `".venv-eval/bin…"`, and a parts tuple `(".venv-eval", "bin", …)`.
-_LOOKUP = re.compile(
-    r"""\.venv-eval['"]\s*/\s*['"]bin\b"""
-    r"""|\.venv-eval/bin\b"""
-    r"""|['"]\.venv-eval['"]\s*,\s*['"]bin['"]""")
+# A path into a checkout venv's bin dir, in the spellings the eleven used at c4b44d0, read from
+# the CODE (comments and docstrings that tell the history are not lookups):
+# `X / ".venv-eval" / "bin"`, a parts tuple `(".venv-eval", "bin", …)`, and a string literal
+# holding `.venv-eval/bin`.
+_VENV, _BIN = ".venv-eval", "bin"
+
+
+def _div_chain(node) -> list:
+    """The operands of an `a / b / c` chain, left to right."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        return _div_chain(node.left) + [node.right]
+    return [node]
+
+
+def _consecutive(nodes) -> bool:
+    vals = [n.value if isinstance(n, ast.Constant) else None for n in nodes]
+    return any(a == _VENV and b == _BIN for a, b in zip(vals, vals[1:]))
+
+
+def venv_bin_lookups(src: str) -> list:
+    """Line numbers where `src` builds a path into a checkout's `.venv-eval/bin`."""
+    tree = ast.parse(src)
+    docstrings = {id(n.value) for n in ast.walk(tree)
+                  if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+    hits = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div) and _consecutive(_div_chain(n)):
+            hits.add(n.lineno)
+        elif isinstance(n, (ast.Tuple, ast.List)) and _consecutive(n.elts):
+            hits.add(n.lineno)
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str) and \
+                id(n) not in docstrings and f"{_VENV}/{_BIN}" in n.value:
+            hits.add(n.lineno)
+    return sorted(hits)
 
 
 def _helper():
@@ -131,11 +159,27 @@ def test_no_test_file_but_the_helper_looks_up_a_checkout_venv_bin():
     for f in sorted(_TESTS.rglob("*.py")):
         if "__pycache__" in f.parts or f == HELPER or f.name in NOT_A_LOOKUP:
             continue
-        for n, ln in enumerate(f.read_text().splitlines(), 1):
-            if _LOOKUP.search(ln):
-                found.append(f"{f.relative_to(_REPO)}:{n}: {ln.strip()}")
+        lines = f.read_text().splitlines()
+        for n in venv_bin_lookups(f.read_text()):
+            found.append(f"{f.relative_to(_REPO)}:{n}: {lines[n - 1].strip()}")
     assert not found, ("files that still build `<checkout>/.venv-eval/bin` themselves; they "
                        "use tests/devbin.py (bug-253):\n  " + "\n  ".join(found))
+
+
+@pytest.mark.parametrize("src,hit", [
+    ('RMX = REPO / ".venv-eval" / "bin" / "rmx"\n', True),
+    ('B = Path(__file__).parents[1] / ".venv-eval" / "bin"\n', True),
+    ('assert p.parts[-3:] == (".venv-eval", "bin", "rmx")\n', True),
+    ('x = "/repo/.venv-eval/bin/python"\n', True),
+    ('(root / ".venv-eval").symlink_to(prefix)\n', False),
+    ('"""a docstring naming <checkout>/.venv-eval/bin/rmx"""\n', False),
+    ('# a comment: .venv-eval/bin/rmx\nx = 1\n', False),
+], ids=["div-chain", "div-chain-dir", "parts-tuple", "string", "symlink-fixture", "docstring",
+        "comment"])
+def test_the_lookup_scan_sees_each_spelling(src, hit):
+    """Must-fail and must-pass cases for the scan itself, so a scan that stopped seeing a
+    spelling is caught on input it must flag ([[feedback_clean_corpus_hides_a_dead_gate]])."""
+    assert bool(venv_bin_lookups(src)) is hit, (src, venv_bin_lookups(src))
 
 
 def _imports_devbin(src: str) -> bool:
