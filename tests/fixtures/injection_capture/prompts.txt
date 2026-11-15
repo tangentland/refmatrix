@@ -1,0 +1,40 @@
+why does scan_prompt call build_context twice when the daemon is busy
+check that fit_blocks keeps the composite when the memory budget allows it
+the partition resolver in resolve_partition returns the wrong partition for a fresh session
+look at ingest_gmd and tell me why the memory rows lose their partition
+does memory_recall fall back to the replica when the daemon socket is gone
+trace how log_query writes the session and query id for a hook call
+what does replica_merge do with a memory that changed in two partitions
+explain store_lock contention between the daemon writer and save_state
+compare content_rank with build_context for a prompt about session memory
+why does stop_daemon leave the partition marker behind after a restart
+find where emit_call stamps the payload sha and the session turn
+make phase_fields tolerate a missing ring for a new session
+the daemon logs a FatalException in snapshot_catalog after a memory sync
+how does topic_composites split the focus graph into topics for the session
+review hook_budget and recall_pack for the per prompt memory budget
+is sync_paths safe to run while the daemon holds the writer slot
+purge_path removes a file but its memory row stays in the partition
+where does latest_session pick the ring when two sessions overlap
+add a counter to serve_forever for requests the daemon refused
+what calls with_partition and does any caller skip the memory partition
+can read_store serve a recall when the daemon is restarting
+show me how scan.py orders tier one bundles before the content block
+why does composite.py print stopwords as members of a topic
+the store.py writer and the daemon.py ops registry disagree on partition ids
+check telemetry.py for the context report and the hook call coverage
+does cli.py echo the payload before or after the recall events
+look into stm.py and the focus graph decay for a long session
+how does verbs.py route a memory recall when the hub is down
+summarize what handoff.py writes at save state and at recall state
+the primer lists _store and _root as top symbols, is that useful
+why is memory_partition resolved twice on the session start hook
+explain the replica fall through in memory_recall for the precompact hook
+what does daemon_status report when the daemon fast exits
+check ingest_path and ingest_gmd_paths for silent skips on a bad file
+how are the partition and memory kinds mapped in event_kind
+the hub restarts the daemon fleet on a version mismatch, where is that
+find the test for fit_blocks and the omitted trailer line
+why does build_context return an empty bundle for a session card
+look at read_with_fallback and whether it hides a daemon error
+the context bundle for store_lock repeats the same memory rows twice

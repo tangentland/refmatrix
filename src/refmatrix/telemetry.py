@@ -1196,6 +1196,10 @@ def summarize_context(root: Path, *, since: "str | None" = None,
 
     total_bytes = sum(int(r["out_bytes"]) for r in counted)
     return {
+        # Task 31.5 R0.6 (2026-11-15): the injection capture's state and coverage, the ONE
+        # `capture:` line. The scan hook discards stderr, so this is where a capture that
+        # stopped, or a composite that failed (bug-256), becomes visible.
+        "capture": capture_report(root, since=since),
         "counted": len(counted),
         "uncounted": uncounted,
         "total_bytes": total_bytes,
@@ -2005,3 +2009,454 @@ def agent_usage_report(root: Path, *, since: "str | None" = None,
     out.append("note: stm_events_n counts every ring line until 19.0 R2 stamps "
                "an origin on subagent events.")
     return out
+
+
+# ---- task 31.5 S0: the per-prompt injection capture ---------------------------------------------
+#
+# Why (plan-31 task 31.5, release A, 2026-11-15): every prompt pays for `rmx scan-prompt` (up to
+# 9,000 B) and the per-prompt recall pack, and the 2026-11-13 pilot could not support a cut: it
+# saw only what reached the model. What rmx rendered and then dropped (the byte fit, the token
+# stop, an unchanged or cadence-skipped composite) was never logged, and nothing was split by
+# block. The capture writes ONE record per hook call, after the payload is printed, holding every
+# block with its kind and its state. It is per call, carries text and is bounded and prunable, so
+# it is its own file joined by `query_id`, not new fields on the per-item recall-event schema.
+#
+# Privacy (ruling L133 B1, bug-261): block text echoes prompt terms (the content header lists up
+# to eight), so the directory writes its own `.gitignore` (`*`) before EVERY write into it. A
+# fleet repo's own ignore rules cannot be relied on, and `rmx save-state --commit` runs
+# `git add -A`. The prompt itself is stored only as a sha256.
+
+CAPTURE_DIR = "injection-capture"
+CAPTURE_OFF_MARKER = "injection-capture.off"
+CAPTURE_MODE_FILE = "injection-capture.mode"
+CAPTURE_ENV = "RMX_INJECTION_CAPTURE"
+CAPTURE_ERRORS_NAME = "errors.jsonl"
+# `full` builds every bundle the token stop skipped; `names` builds nothing extra and records
+# later symbol bundles as `not_built` (R0.4 `#r0-4-mode`, ruling L140 M1: both paths ship, the
+# choice is a setting in one store, never a release).
+CAPTURE_MODES = ("full", "names")
+# The release default the pre-release cost band chose (R0.5 `#r0-5-bands`, AC-0.13, measured
+# 2026-11-15 on a copy of this project's live catalog, fresh processes, the hook's arguments):
+# mode `full` ran `capture_ms` p95 in seconds, far over the 250 ms row, so the default is
+# `names`, whose p95 sat in single-digit milliseconds, under 750 ms. The numbers are in
+# `workflow/implementation_summaries/task-31.5-s0-capture.md#band`. `full` stays one setting
+# away (`injection-capture.mode`).
+CAPTURE_DEFAULT_MODE = "names"
+CAPTURE_CHANNELS = ("scan_prompt", "prompt_recall", "session_start", "precompact")
+CAPTURE_KINDS = ("symbol_named", "content", "symbol_other", "composite", "recall_hit", "marker")
+CAPTURE_STATES = ("delivered", "dropped_bytes", "dropped_tokens", "not_built",
+                  "suppressed_unchanged", "suppressed_cadence", "delivered_hook_only")
+# R0.4: 64 MiB per store across all day files (15 kB per prompt, 30 kB at worst: at least 2,000
+# prompts), 42 days (the longest window 21.5 R12 reads), errors.jsonl stops at 1 MiB.
+CAPTURE_BOUND_BYTES = 64 * 1024 * 1024
+CAPTURE_RETENTION_DAYS = 42
+CAPTURE_ERRORS_CAP_BYTES = 1024 * 1024
+CAPTURE_RECORD_V = 1
+# Room the pruner leaves for the record it is about to append: the record's own length is known
+# only once its `pruned` list is, so the pruner aims under the bound by the record's length
+# without that list plus this slack, and the append then checks the exact length.
+_CAPTURE_PRUNE_SLACK = 4096
+_CAPTURE_DAY_RE = re.compile(r"^capture-(\d{8})\.jsonl$")
+
+
+class CaptureState(typing.NamedTuple):
+    """The capture switch as one store and this process's environment set it (R0.4).
+    `mode` is `full` / `names` when the capture is on, else None; `off_by` names the switch
+    that turned it off; `invalid` describes an unrecognised mode word (the capture is then off,
+    and the report line says `invalid mode`)."""
+    mode: "str | None"
+    off_by: "str | None"
+    invalid: "str | None"
+
+    @property
+    def on(self) -> bool:
+        return self.mode is not None
+
+
+def capture_state(root: Path) -> CaptureState:
+    """Is the capture on in `root`'s store, and in which mode? First match wins:
+    `REFMATRIX_NO_TELEMETRY` (no telemetry means no capture), `RMX_INJECTION_CAPTURE=0`, the
+    marker file `<root>/injection-capture.off`, then the mode: `RMX_INJECTION_CAPTURE`
+    (`full` / `names`), the one word in `<root>/injection-capture.mode`, the release default.
+    An unrecognised word, in the variable or the file, turns the capture OFF (fail closed: a
+    mistyped setting never captures in a mode nobody chose) and is reported as an invalid
+    mode. The first two switches turn off the capture and nothing else (AC-0.18)."""
+    if _disabled():
+        return CaptureState(None, "REFMATRIX_NO_TELEMETRY", None)
+    raw = os.environ.get(CAPTURE_ENV)
+    word = (raw or "").strip()
+    if word == "0":
+        return CaptureState(None, f"{CAPTURE_ENV}=0", None)
+    if (Path(root) / CAPTURE_OFF_MARKER).exists():
+        return CaptureState(None, CAPTURE_OFF_MARKER, None)
+    if word:
+        if word.lower() in CAPTURE_MODES:
+            return CaptureState(word.lower(), None, None)
+        return CaptureState(None, "invalid mode", f"{word!r} in {CAPTURE_ENV}")
+    mf = Path(root) / CAPTURE_MODE_FILE
+    try:
+        fword = mf.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return CaptureState(CAPTURE_DEFAULT_MODE, None, None)
+    except (OSError, UnicodeDecodeError) as e:
+        return CaptureState(None, "invalid mode",
+                            f"{CAPTURE_MODE_FILE} unreadable ({type(e).__name__}: {e})")
+    if fword.lower() in CAPTURE_MODES:
+        return CaptureState(fword.lower(), None, None)
+    return CaptureState(None, "invalid mode", f"{fword!r} in {CAPTURE_MODE_FILE}")
+
+
+def _sha256_text(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def capture_block(kind: str, state: str, *, text: "str | None" = None,
+                  names: "typing.Iterable[str]" = (), dedup_rows: int = 0, **extra) -> dict:
+    """One scan block of a capture record (R0.2): `kind`, `state`, `bytes` and `sha256` of
+    `text` when the state stores text (else null), the item `names` it carries, the rows the
+    cross-section dedup removed from it (`dedup_rows`, counted, never stored) and `text`. An
+    unknown kind or state is a caller bug and raises."""
+    if kind not in CAPTURE_KINDS:
+        raise ValueError(f"capture_block: unknown kind {kind!r}")
+    if state not in CAPTURE_STATES:
+        raise ValueError(f"capture_block: unknown state {state!r}")
+    b = {"kind": kind, "state": state,
+         "bytes": len(text.encode("utf-8")) if text is not None else None,
+         "sha256": _sha256_text(text) if text is not None else None,
+         "names": list(names), "dedup_rows": int(dedup_rows), "text": text}
+    b.update(extra)
+    return b
+
+
+def capture_hit(*, state: str, name: str, rank: int, mtype: "str | None", scope: str,
+                hook_bytes: "int | None", content: "str | None") -> dict:
+    """One `recall_hit` block (R0.2): the hit's identity, its hook line's bytes (newline
+    included) and its body's bytes and sha256, from the memory's content. No body text is
+    stored: a memory body is addressable by name."""
+    if state not in ("delivered", "delivered_hook_only", "dropped_bytes"):
+        raise ValueError(f"capture_hit: a recall hit cannot be {state!r}")
+    body = str(content) if content else None
+    return {"kind": "recall_hit", "state": state, "name": name, "rank": int(rank),
+            "mtype": mtype, "scope": scope or "project", "hook_bytes": hook_bytes,
+            "body_bytes": len(body.encode("utf-8")) if body is not None else None,
+            "body_sha256": _sha256_text(body) if body is not None else None,
+            "names": [name]}
+
+
+def _capture_say(msg: str) -> None:
+    """One stderr line for callers that keep stderr. The generated scan hook discards stderr
+    (`2>/dev/null`), so every failure is ALSO counted in errors.jsonl where it can be, and a
+    directory that cannot be written shows as missing coverage on the report line (R0.6)."""
+    print(f"rmx: injection capture: {msg}", file=sys.stderr)
+
+
+def _capture_ignore(d: Path) -> bool:
+    """`injection-capture/.gitignore` (`*`) exists, created when absent, checked before EVERY
+    write into the directory (ruling L140 M3): a check made only when the directory is created
+    would leave a hand-made directory, or one left by a crash between the mkdir and the write,
+    written into unprotected. One stat per call. False (and said) when it cannot be made: then
+    nothing is written into the directory."""
+    g = d / ".gitignore"
+    try:
+        os.stat(g)
+        return True
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        _capture_say(f"{g} unreadable ({type(e).__name__}: {e}); nothing written")
+        return False
+    try:
+        fd = os.open(str(g), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        return True                    # a parallel hook process made it first
+    except OSError as e:
+        _capture_say(f"cannot create {g} ({type(e).__name__}: {e}); nothing written")
+        return False
+    try:
+        os.write(fd, b"*\n")
+    except OSError as e:
+        _capture_say(f"cannot write {g} ({type(e).__name__}: {e}); nothing written")
+        return False
+    finally:
+        os.close(fd)
+    return True
+
+
+def _capture_error(d: Path, *, reason: str, channel: str, query_id: "str | None",
+                   exc: "BaseException | None" = None) -> None:
+    """One `errors.jsonl` line per failed or skipped append (R0.4): ts, query_id, channel,
+    reason and the error's class and message. No payload text. Said on stderr too; stops
+    growing at 1 MiB (said, never silently)."""
+    err = f"{type(exc).__name__}: {exc}" if exc is not None else None
+    _capture_say(f"{reason} for query {query_id}" + (f" ({err})" if err else ""))
+    if not _capture_ignore(d):
+        return
+    p = d / CAPTURE_ERRORS_NAME
+    try:
+        size = os.stat(p).st_size
+    except FileNotFoundError:
+        size = 0
+    except OSError as e:
+        _capture_say(f"{p} unreadable ({type(e).__name__}: {e}); {reason} not counted")
+        return
+    if size >= CAPTURE_ERRORS_CAP_BYTES:
+        _capture_say(f"{p} is at its {CAPTURE_ERRORS_CAP_BYTES} B cap; {reason} not counted")
+        return
+    line = (json.dumps({"ts": event_ts(), "query_id": query_id, "channel": channel,
+                        "reason": reason, "error": err}) + "\n").encode("utf-8")
+    try:
+        fd = os.open(str(p), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    except OSError as e:
+        _capture_say(f"cannot append to {p} ({type(e).__name__}: {e}); {reason} not counted")
+        return
+    try:
+        os.write(fd, line)
+    except OSError as e:
+        _capture_say(f"cannot append to {p} ({type(e).__name__}: {e}); {reason} not counted")
+    finally:
+        os.close(fd)
+
+
+def _capture_day_files(d: Path) -> "list[tuple[str, Path]]":
+    """(yyyymmdd, path) of every day file the directory LISTS, oldest first. A listed name may
+    already be gone: two hook processes prune in parallel."""
+    out = []
+    try:
+        names = os.listdir(d)
+    except FileNotFoundError:
+        return []
+    for n in names:
+        m = _CAPTURE_DAY_RE.match(n)
+        if m:
+            out.append((m.group(1), d / n))
+    return sorted(out)
+
+
+def _capture_prune(d: Path, today: str, *, reserve: int, channel: str,
+                   query_id: "str | None") -> "tuple[list[str], int]":
+    """R0.4's write-time retention and bound, before the append: remove every earlier day file
+    older than 42 days, then the oldest earlier day files while the total plus `reserve` (the
+    record about to be appended) exceeds 64 MiB. The current day's file is never removed.
+    Returns the names removed and the bytes of the day files left.
+
+    A listed file whose stat or unlink says it does not exist was removed by the other hook
+    process of the same prompt: not an error, not listed, not counted (AC-0.9). Any other
+    stat or unlink failure is counted in errors.jsonl (`prune_failed`) and the file is kept
+    in the total, so a file that cannot be removed still holds the bound."""
+    import datetime as _dt
+    cutoff = (_dt.datetime.strptime(today, "%Y%m%d")
+              - _dt.timedelta(days=CAPTURE_RETENTION_DAYS)).strftime("%Y%m%d")
+    present: "list[tuple[str, Path, int]]" = []
+    for day, p in _capture_day_files(d):
+        try:
+            size = os.stat(p).st_size
+        except FileNotFoundError:
+            continue                     # listed, then gone: the other process pruned it
+        except OSError as e:
+            _capture_error(d, reason="prune_failed", channel=channel, query_id=query_id,
+                           exc=e)
+            size = 0
+        present.append((day, p, size))
+    pruned: "list[str]" = []
+
+    def _remove(p: Path) -> bool:
+        try:
+            os.unlink(p)
+        except FileNotFoundError:
+            return True                  # removed by the other process meanwhile
+        except OSError as e:
+            _capture_error(d, reason="prune_failed", channel=channel, query_id=query_id,
+                           exc=e)
+            return False
+        pruned.append(p.name)
+        return True
+
+    kept: "list[tuple[str, Path, int]]" = []
+    for day, p, size in present:
+        if day != today and day < cutoff and _remove(p):
+            continue
+        kept.append((day, p, size))
+    total = sum(size for _d, _p, size in kept)
+    survivors: "list[tuple[str, Path, int]]" = []
+    for day, p, size in kept:            # oldest first
+        if day != today and total + reserve > CAPTURE_BOUND_BYTES and _remove(p):
+            total -= size
+            continue
+        survivors.append((day, p, size))
+    return pruned, sum(size for _d, _p, size in survivors)
+
+
+def write_capture(root: Path, *, channel: str, invocation: str, session: "str | None",
+                  query_id: "str | None", prompt: "str | None", budget_bytes: "int | None",
+                  max_tokens: "int | None", payload: "bytes | None", mode: str,
+                  blocks: "list[dict]", capture_built: int = 0, build_ms: float = 0.0,
+                  composite_error: "str | None" = None, stm_error: "str | None" = None,
+                  t0: "float | None" = None, now: "float | None" = None) -> "dict | None":
+    """THE capture writer (R0.2, R0.4): one JSON line per hook call, appended to
+    `<root>/injection-capture/capture-<UTC yyyymmdd>.jsonl` AFTER the payload was printed.
+    Returns the record written, or None when none was (each such case is said on stderr and
+    counted in errors.jsonl where the directory can hold it). Never raises on an I/O failure:
+    a failed capture changes neither the payload nor the exit status (AC-0.10).
+
+    `payload` is the exact bytes the command wrote (None when it wrote nothing); `blocks` come
+    from `capture_block` / `capture_hit` in render order (`i` is assigned here); `build_ms` is
+    the time the producer spent on capture-only work (the bundles the token stop skipped) and
+    `t0` (`time.perf_counter()`) the instant the caller began the capture after its print, so
+    `capture_ms` is the wall time the capture added before the command exits. The prompt is
+    stored as sha256 and length only."""
+    if channel not in CAPTURE_CHANNELS:
+        raise ValueError(f"write_capture: {channel!r} is not a capture channel")
+    if mode not in CAPTURE_MODES:
+        raise ValueError(f"write_capture: unknown capture mode {mode!r}")
+    import hashlib
+    from refmatrix import __version__
+    t_start = time.perf_counter() if t0 is None else t0
+    now_s = time.time() if now is None else float(now)
+    today = time.strftime("%Y%m%d", time.gmtime(now_s))
+    root = Path(root)
+    d = root / CAPTURE_DIR
+    if not root.is_dir():
+        _capture_say(f"no store at {root}; record for query {query_id} not written")
+        return None
+    try:
+        d.mkdir(exist_ok=True)
+    except OSError as e:
+        _capture_say(f"cannot create {d} ({type(e).__name__}: {e}); record for query "
+                     f"{query_id} not written")
+        return None
+    if not _capture_ignore(d):
+        return None
+    out = payload if payload is not None else b""
+    rec: "dict[str, Any]" = {
+        "v": CAPTURE_RECORD_V, "ts": event_ts(now_s), "rmx_version": __version__,
+        "channel": channel, "invocation": invocation, "session": session,
+        "query_id": query_id,
+        "prompt_sha256": (hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+                          if prompt else None),
+        "prompt_chars": len(prompt) if prompt else 0,
+        "budget_bytes": budget_bytes, "max_tokens": max_tokens,
+        "payload_sha256": hashlib.sha256(out).hexdigest(), "payload_bytes": len(out),
+        "capture_mode": mode, "capture_ms": None, "capture_built": int(capture_built),
+        "pruned": [], "composite_error": composite_error, "stm_error": stm_error,
+        "blocks": [{"i": i, **b} for i, b in enumerate(blocks)],
+    }
+    estimate = len(json.dumps(rec, ensure_ascii=False).encode("utf-8")) + _CAPTURE_PRUNE_SLACK
+    pruned, total = _capture_prune(d, today, reserve=estimate, channel=channel,
+                                   query_id=query_id)
+    rec["pruned"] = pruned
+    rec["capture_ms"] = round(float(build_ms) + (time.perf_counter() - t_start) * 1000.0, 1)
+    line = (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8")
+    if total + len(line) > CAPTURE_BOUND_BYTES:
+        # The hard stop within a day (R0.4): only the current day's file is left and it is
+        # at the bound, so no record is appended until the next UTC day.
+        _capture_error(d, reason="over_bound", channel=channel, query_id=query_id)
+        return None
+    day_file = d / f"capture-{today}.jsonl"
+    try:
+        fd = os.open(str(day_file), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    except OSError as e:
+        _capture_error(d, reason="append_failed", channel=channel, query_id=query_id, exc=e)
+        return None
+    try:
+        # One write() of one complete line on an O_APPEND descriptor, as the event log does;
+        # a regular file takes it whole. A short write is completed, and a line torn by a
+        # parallel writer is counted by the reader (`malformed`), never skipped silently.
+        view = memoryview(line)
+        while view:
+            n = os.write(fd, view)
+            view = view[n:]
+    except OSError as e:
+        _capture_error(d, reason="append_failed", channel=channel, query_id=query_id, exc=e)
+        return None
+    finally:
+        os.close(fd)
+    return rec
+
+
+def _capture_channel_of_row(row: dict) -> "str | None":
+    """The capture channel a query.log row is, or None: a scan row is `scan_prompt`; a recall
+    row is its R11 channel when that is a capture channel."""
+    if row.get("kind") == "scan":
+        return "scan_prompt"
+    if row.get("kind") == "recall":
+        ch = channel_of_row(row)
+        return ch if ch in CAPTURE_CHANNELS else None
+    return None
+
+
+def capture_report(root: Path, *, since: "str | None" = None) -> dict:
+    """What the capture holds and how much of the hook traffic it covers (R0.6), for the ONE
+    `capture:` line of `rmx telemetry --context`: the switch state, the day files and their
+    bytes, the newest record, and over the report window: captured records against hook calls
+    in `query.log` (a hook call is a `query.log` row with `invocation` `hook` on a capture
+    channel; a record counts when its `query_id` is one of them), errors by reason from
+    errors.jsonl, records with a `composite_error` (bug-256) or an `stm_error` (bug-268), and
+    unparseable lines (`malformed`, a line torn by a parallel writer). With `since`, a record
+    or error line is in the window when its `query_id` is on a `query.log` row of the window
+    (query.log stamps local time, the capture UTC: the join key, not the clock, decides)."""
+    root = Path(root)
+    st = capture_state(root)
+    d = root / CAPTURE_DIR
+    files, total_bytes, malformed = 0, 0, 0
+    records: "list[dict]" = []
+    for _day, p in _capture_day_files(d):
+        try:
+            total_bytes += os.stat(p).st_size
+            files += 1
+            with open(p, "rb") as f:
+                for raw in f:
+                    if not raw.strip():
+                        continue
+                    try:
+                        r = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, ValueError):
+                        malformed += 1
+                        continue
+                    if isinstance(r, dict):
+                        records.append(r)
+                    else:
+                        malformed += 1
+        except FileNotFoundError:
+            continue                     # pruned by a hook process while this report read
+    qrows = read_query_log(root, since=since)
+    window = {r.get("query_id") for r in qrows} if since else None
+    hook_qids = {r.get("query_id") for r in qrows
+                 if r.get("invocation") == "hook" and _capture_channel_of_row(r)}
+    in_win = [r for r in records if window is None or r.get("query_id") in window]
+    errs, e_bad = _read_jsonl_counted(d / CAPTURE_ERRORS_NAME)
+    reasons = Counter(str(e.get("reason")) for e in errs
+                      if window is None or e.get("query_id") in window)
+    return {
+        "on": st.on, "mode": st.mode, "off_by": st.off_by, "invalid": st.invalid,
+        "day_files": files, "total_bytes": total_bytes,
+        "newest": max((str(r.get("ts")) for r in records if r.get("ts")), default=None),
+        "records": len(in_win),
+        "captured": len({r.get("query_id") for r in in_win} & hook_qids),
+        "hook_calls": len(hook_qids),
+        "errors": dict(sorted(reasons.items())),
+        "errors_unparseable": e_bad,
+        "composite_errors": sum(1 for r in in_win if r.get("composite_error")),
+        "stm_errors": sum(1 for r in in_win if r.get("stm_error")),
+        "malformed": malformed,
+    }
+
+
+def capture_line(rep: dict) -> str:
+    """`capture_report` as the ONE `capture:` line (R0.6). An off capture says which switch
+    turned it off, so an absent count is never read as "no errors" (R0.7)."""
+    if rep["on"]:
+        state = f"on (mode {rep['mode']})"
+    elif rep["off_by"] == "invalid mode":
+        state = f"off (invalid mode: {rep['invalid']})"
+    else:
+        state = f"off ({rep['off_by']})"
+    calls = rep["hook_calls"]
+    errs = " ".join(f"{k}={v}" for k, v in rep["errors"].items()) or "none"
+    if rep["errors_unparseable"]:
+        errs += f" unparseable={rep['errors_unparseable']}"
+    return (f"capture: {state} · {rep['day_files']} day file(s), {rep['total_bytes']:,} B, "
+            f"newest {rep['newest'] or 'none'} · {rep['captured']} captured of {calls} hook "
+            f"call{'' if calls == 1 else 's'} ({rep['records']} record(s)) · errors {errs} · "
+            f"composite_errors={rep['composite_errors']} · stm_errors={rep['stm_errors']} · "
+            f"malformed={rep['malformed']}")

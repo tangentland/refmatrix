@@ -40,12 +40,16 @@ class Packed:
     """`text` (the payload), `spans` (one per NAMED hit, in order: the hit's identity plus
     `offset_bytes`/`bytes` of its hook line, newline included, and `body_offset_bytes`/
     `body_bytes` of its body or None), `named` (the named hits' names, in order), `more` (the
-    trailer's count = hits given but not named) and `payload_bytes` (UTF-8 length of text)."""
+    trailer's count = hits given but not named) and `payload_bytes` (UTF-8 length of text).
+    `line_bytes` (task 31.5 S0, 2026-11-15): the UTF-8 bytes of EVERY hit's hook line, newline
+    included, named or not, in rank order, so the injection capture can record what a hit the
+    budget left behind the `+M more` trailer would have cost."""
     text: str
     spans: "list[dict]" = field(default_factory=list)
     named: "list[str]" = field(default_factory=list)
     more: int = 0
     payload_bytes: int = 0
+    line_bytes: "list[int]" = field(default_factory=list)
 
 
 def _one_line(text: str) -> str:
@@ -210,7 +214,8 @@ def pack(rows: "Sequence[dict]", *, hooks: "Mapping[str, str]", max_bytes: int,
             text = clip_utf8(head + err, max_bytes)
         else:
             text = head + err
-        return Packed(text=text, spans=[], named=[], more=n, payload_bytes=nbytes(text))
+        return Packed(text=text, spans=[], named=[], more=n, payload_bytes=nbytes(text),
+                      line_bytes=[nbytes(ln) for ln in lines])
     if not n:
         text = clip_utf8(head, max_bytes)
         return Packed(text=text, spans=[], named=[], more=0, payload_bytes=nbytes(text))
@@ -248,4 +253,5 @@ def pack(rows: "Sequence[dict]", *, hooks: "Mapping[str, str]", max_bytes: int,
         pos += nbytes(block)
     text = head + "".join(lines[:kept]) + body_text + tail
     return Packed(text=text, spans=spans, named=[str(r.get("name")) for r in named_rows],
-                  more=dropped, payload_bytes=nbytes(text))
+                  more=dropped, payload_bytes=nbytes(text),
+                  line_bytes=[nbytes(ln) for ln in lines])

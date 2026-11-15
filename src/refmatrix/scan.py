@@ -12,6 +12,8 @@ import json
 import math
 import os
 import re
+import sys
+import time
 
 from refmatrix.terms import STOPWORDS as _STOPWORDS
 from pathlib import Path
@@ -912,6 +914,7 @@ def scan_prompt(
     rerank_timeout: float = 5.0,
     trace: "dict | None" = None,
     max_bytes: "int | None" = None,
+    capture: "str | None" = None,
 ) -> str:
     """Emit context bundles for a prompt's symbols.
 
@@ -930,9 +933,33 @@ def scan_prompt(
     per-symbol bundles, the composite), whole blocks only, with a one-line
     `# [+N block(s) omitted …]` trailer; `delivered` then names only what the kept blocks
     carry. scan-prompt reached 11,555 B on its own live (`--max-tokens` is a token estimate,
-    not a byte cap), and Claude Code previews any hook output over 10,000 UTF-16 units."""
+    not a byte cap), and Claude Code previews any hook output over 10,000 UTF-16 units.
+
+    `capture` (task 31.5 S0, release A, 2026-11-15): `"full"` or `"names"` asks for the call's
+    blocks for the injection capture, handed back through `trace["capture"]` (the same hand-off
+    as `retrieved` / `delivered`; the returned text is unchanged). Every block is recorded in
+    render order with its kind (`symbol_named`, `content`, `symbol_other`, `composite`,
+    `marker`) and its state: `delivered`, `dropped_bytes` (the `max_bytes` fit dropped it),
+    `dropped_tokens` (the `max_tokens` stop cut it), `not_built`, `suppressed_unchanged`,
+    `suppressed_cadence`. Past the token stop, mode `full` builds the bundles the stop skipped
+    (counted in `built`, timed in `build_ms`) and mode `names` builds none, recording them as
+    `not_built` names; in both modes the tripping bundle (already built) and the content
+    bundle (built before any section) are stored with text. Capture-only bundles never enter
+    `retrieved`, never write a helix readership row (they reached no output) and never touch
+    the payload. `trace["composite_error"]` (bug-256) is the composite build's exception
+    class and message, else None; the failure is also said on stderr, one line."""
+
+    if capture is not None:
+        if capture not in ("full", "names"):
+            raise ValueError(f"scan_prompt: unknown capture mode {capture!r}")
+        if trace is None or fmt == "json":
+            raise ValueError("scan_prompt: capture needs the trace hand-off and the text "
+                             "format (a JSON render is an answer, not a hook payload)")
 
     _comp_commit: list = []          # the composite's "sent" marker, committed on delivery
+    # Why the composite is absent, for the capture: `build_topic_composite_pending` fills it.
+    _comp_status: dict = {}
+    _comp_error: list = []
 
     def _composite_text() -> str:
         if not composite or composite_root is None or fmt == "json":
@@ -942,10 +969,20 @@ def scan_prompt(
             comp, commit = build_topic_composite_pending(
                 s, composite_root, k=composite_k,
                 expand=composite_expand, max_tokens=composite_max_tokens,
-                every=composite_every, intra_edges=composite_intra_edges)
+                every=composite_every, intra_edges=composite_intra_edges,
+                status=_comp_status)
             if comp:
                 _comp_commit.append(commit)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 -- bug-256: said and counted, never silent
+            # bug-256 (2026-11-15): this was `except Exception: comp = ""`, so a composite
+            # that failed was indistinguishable from one that was absent, and the hook's
+            # `2>/dev/null` hid anything else. The payload stays as it is (no composite); the
+            # failure is one stderr line for callers that keep stderr, and `composite_error`
+            # on the call's capture record, counted by `rmx telemetry --context`.
+            err = " ".join(f"{type(e).__name__}: {e}".split())
+            _comp_error.append(err)
+            print(f"rmx scan-prompt: STM composite build failed, sent without it ({err})",
+                  file=sys.stderr)
             comp = ""
         return comp or ""
 
@@ -1029,6 +1066,13 @@ def scan_prompt(
 
     retrieved: list[dict] = []
     marks: list[tuple[int, list[dict]]] = []
+    # Task 31.5 S0: what the capture knows per `parts` entry (kind, names, dedup_rows), the
+    # capture-only blocks the token stop cut (inserted before the stop's marker), and the
+    # capture's own cost.
+    part_meta: "list[dict]" = []
+    cut_blocks: "list[dict]" = []
+    cut_at: list = []                    # the `parts` index of the token-stop marker
+    cap = {"built": 0, "build_ms": 0.0}
 
     def _retrieve(b) -> None:
         retrieved.extend(bundle_items(b))
@@ -1051,6 +1095,36 @@ def scan_prompt(
         for rank, it in enumerate(delivered, 1):
             it["rank"] = rank
         trace["delivered"] = delivered
+
+    def _capture_blocks(blocks: "list[str]", text: str, kept: int, comp: str) -> "list[dict]":
+        """The call's blocks for the capture, in render order: every `parts` block
+        (`delivered` when the fit kept it, else `dropped_bytes`, with the exact text the fit
+        saw), the capture-only blocks the token stop cut before its marker, the composite
+        (rendered, or why it is absent), and the fit's omission trailer as a `marker`."""
+        from refmatrix.telemetry import capture_block
+        out: "list[dict]" = []
+        stop = cut_at[0] if cut_at else len(parts)
+        for i, meta in enumerate(part_meta):
+            if i == stop:
+                out.extend(cut_blocks)
+            out.append(capture_block(meta["kind"], "delivered" if i < kept else
+                                     "dropped_bytes", text=blocks[i], names=meta["names"],
+                                     dedup_rows=meta["dedup_rows"]))
+        if stop >= len(part_meta):
+            out.extend(cut_blocks)
+        if comp:
+            out.append(capture_block("composite", "delivered" if kept == len(blocks) else
+                                     "dropped_bytes", text=blocks[-1],
+                                     names=_composite_names(comp)))
+        elif _comp_status.get("state") == "cadence":
+            out.append(capture_block("composite", "suppressed_cadence"))
+        elif _comp_status.get("state") == "unchanged":
+            out.append(capture_block("composite", "suppressed_unchanged",
+                                     signature=_comp_status.get("signature")))
+        if kept < len(blocks):
+            head = "".join(blocks[:kept])
+            out.append(capture_block("marker", "delivered", text=text[len(head):]))
+        return out
 
     def _finish() -> str:
         """Join the rendered sections (+ the composite), fit them to `max_bytes` when set,
@@ -1075,6 +1149,13 @@ def scan_prompt(
             _comp_commit[0]()
         if trace is None:
             return text
+        trace["composite_error"] = _comp_error[0] if _comp_error else None
+        if capture is not None:
+            t_blocks = time.perf_counter()
+            cblocks = _capture_blocks(blocks, text, kept, comp)
+            cap["build_ms"] += (time.perf_counter() - t_blocks) * 1000.0
+            trace["capture"] = {"blocks": cblocks, "built": cap["built"],
+                                "build_ms": round(cap["build_ms"], 1)}
         _set_retrieved()
         offs, pos = [], 0
         for p in parts:
@@ -1146,27 +1227,38 @@ def scan_prompt(
     first = [n for n in matches if _is_named_identifier(n)]
     rest = [n for n in matches if not _is_named_identifier(n)]
 
-    def _drop_shown(b) -> bool:
-        """Remove rows an earlier section showed; False when nothing is left."""
+    def _drop_shown(b) -> "tuple[bool, int]":
+        """Remove rows an earlier section showed; (False, n) when nothing is left. `n` is the
+        rows removed: the capture counts them per block (`dedup_rows`), never stores them."""
+        removed = 0
         if shown:
             for ln in list(b.groups):
                 kept = [e for e in b.groups[ln] if _render_key(e.entity.name) not in shown]
+                removed += len(b.groups[ln]) - len(kept)
                 if kept:
                     b.groups[ln] = kept
                 else:
                     del b.groups[ln]
-        return bool(b.groups)
+        return bool(b.groups), removed
 
     def _mark_shown(b) -> None:
         for entries in b.groups.values():
             for e in entries:
                 shown.add(_render_key(e.entity.name))
 
-    def _add_section(header: str, rendered: str, ritems: "list[dict]") -> None:
-        """One block: optional header + body. Item spans shift by the prefix's bytes."""
+    def _section_prefix(header: str) -> str:
         prefix = (header + "\n\n") if header else ""
-        if parts:
+        if parts or cut_blocks:
             prefix = "\n" + prefix          # one blank line between sections
+        return prefix
+
+    def _names_of(ritems: "list[dict]") -> "list[str]":
+        return list(dict.fromkeys(str(it["name"]) for it in ritems if it.get("name")))
+
+    def _add_section(header: str, rendered: str, ritems: "list[dict]", *, kind: str,
+                     dedup_rows: int) -> None:
+        """One block: optional header + body. Item spans shift by the prefix's bytes."""
+        prefix = _section_prefix(header)
         pb = len(prefix.encode("utf-8"))
         items = []
         for it in ritems:
@@ -1176,43 +1268,128 @@ def scan_prompt(
                 it["body_offset_bytes"] += pb
             items.append(it)
         parts.append(prefix + rendered)
+        part_meta.append({"kind": kind, "names": _names_of(ritems), "dedup_rows": dedup_rows})
         marks.append((len(parts) - 1, items))
 
-    def _symbol_sections(names: "list[str]") -> bool:
+    def _capture_cut(kind: str, names: "list[str]", header: str) -> str:
+        """Past the token stop (capture only): the bundles the stop prevented, in render
+        order. Mode `full` builds and renders each one as `dropped_tokens` (counted in
+        `built`); mode `names` builds none and records each name as `not_built`. The
+        cross-section dedup runs on as in an uncapped render. Returns the tier header if no
+        bundle took it. Never `_retrieve`: these items were not retrieved for the payload."""
+        from refmatrix.telemetry import capture_block
+        for name in names:
+            if capture == "names":
+                cut_blocks.append(capture_block(kind, "not_built", names=[name]))
+                continue
+            b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
+                              degree=degree)
+            cap["built"] += 1
+            if b.anchor is None or not b.groups:
+                continue
+            ok, removed = _drop_shown(b)
+            if not ok:
+                continue
+            b.helix_pending.clear()           # reached no output: no readership row
+            rendered, ritems = render_text_spans(b)
+            cut_blocks.append(capture_block(kind, "dropped_tokens",
+                                            text=_section_prefix(header) + rendered,
+                                            names=_names_of(ritems), dedup_rows=removed))
+            header = ""
+            _mark_shown(b)
+        return header
+
+    def _content_header() -> str:
+        terms = [c for c in cands if c.lower() not in _PROMPT_STOPWORDS]
+        return f"# refmatrix content matches for prompt: {', '.join((terms or cands)[:8])}"
+
+    def _tier_header(names: "list[str]") -> str:
+        return f"# refmatrix context for prompt-mentioned symbols: {', '.join(names)}"
+
+    def _symbol_sections(names: "list[str]", kind: str) -> bool:
         """Render `names`' bundles under one header; False when `max_tokens` ran out."""
         nonlocal used
         if not names:
             return True
-        header = f"# refmatrix context for prompt-mentioned symbols: {', '.join(names)}"
-        for name in names:
+        header = _tier_header(names)
+        for idx, name in enumerate(names):
             b = build_context(s, name, max_tokens=per_concept_tokens, max_entities=10,
                               degree=degree)
             if b.anchor is None or not b.groups:
                 continue
             _retrieve(b)
-            if not _drop_shown(b):
+            ok, removed = _drop_shown(b)
+            if not ok:
                 continue
             rendered, ritems = render_text_spans(b)
             cost = len(rendered) // 4 + (len(header) // 4 if header else 0)
             if used + cost > max_tokens:
+                if capture is not None:
+                    # Task 31.5 R0.1: the bundle that tripped the stop (already built and
+                    # rendered) is stored with its text, then what the stop prevented.
+                    from refmatrix.telemetry import capture_block
+                    t_cut = time.perf_counter()
+                    cut_blocks.append(capture_block(
+                        kind, "dropped_tokens", text=_section_prefix(header) + rendered,
+                        names=_names_of(ritems), dedup_rows=removed))
+                    _mark_shown(b)
+                    _capture_cut(kind, names[idx + 1:], "")
+                    cap["build_ms"] += (time.perf_counter() - t_cut) * 1000.0
+                cut_at.append(len(parts))
                 parts.append("# [truncated by --max-tokens]")
+                part_meta.append({"kind": "marker", "names": [], "dedup_rows": 0})
                 return False
-            _add_section(header, rendered, ritems)
+            _add_section(header, rendered, ritems, kind=kind, dedup_rows=removed)
             header = ""                       # the header rides on the tier's first bundle
             used += cost
             _mark_shown(b)
         return True
 
-    if not _symbol_sections(first):
+    if not _symbol_sections(first, "symbol_named"):
+        if capture is not None:
+            # R0.1 `#r0-1-content`: the content bundle was built before any section, so the
+            # capture renders it at no build cost, in mode `full` and mode `names` alike; then
+            # tier 3, which the stop never reached.
+            from refmatrix.telemetry import capture_block
+            t_cut = time.perf_counter()
+            if cbundle is not None:
+                ok, removed = _drop_shown(cbundle)
+                if ok:
+                    cbundle.helix_pending.clear()      # reached no output: no readership row
+                    rendered, ritems = render_text_spans(cbundle)
+                    cut_blocks.append(capture_block(
+                        "content", "dropped_tokens",
+                        text=_section_prefix(_content_header()) + rendered,
+                        names=_names_of(ritems), dedup_rows=removed))
+                    _mark_shown(cbundle)
+            if rest:
+                _capture_cut("symbol_other", rest, _tier_header(rest))
+            cap["build_ms"] += (time.perf_counter() - t_cut) * 1000.0
         return _finish()
     if cbundle is not None:
-        terms = [c for c in cands if c.lower() not in _PROMPT_STOPWORDS]
-        header = f"# refmatrix content matches for prompt: {', '.join((terms or cands)[:8])}"
+        header = _content_header()
         _retrieve(cbundle)
-        if _drop_shown(cbundle):
+        ok, removed = _drop_shown(cbundle)
+        if ok:
             rendered, ritems = render_text_spans(cbundle)
-            _add_section(header, rendered, ritems)
+            _add_section(header, rendered, ritems, kind="content", dedup_rows=removed)
             used += (len(header) + len(rendered)) // 4
             _mark_shown(cbundle)
-    _symbol_sections(rest)
+    _symbol_sections(rest, "symbol_other")
     return _finish()
+
+
+_COMPOSITE_MEMBERS = re.compile(r"^Members: (.*)$", re.M)
+_COMPOSITE_TARGET = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _composite_names(comp: str) -> "list[str]":
+    """The item names a rendered composite carries, for its capture block: every printed
+    topic member, then every `[[target]]` of its `rel:` lines, first occurrence order. Read
+    from the composite's own render (`composite._render_gmd`, whose two line shapes these
+    are), never from the payload around it."""
+    names: "list[str]" = []
+    for m in _COMPOSITE_MEMBERS.finditer(comp):
+        names += [n.strip() for n in m.group(1).split(",") if n.strip()]
+    names += _COMPOSITE_TARGET.findall(comp)
+    return list(dict.fromkeys(names))

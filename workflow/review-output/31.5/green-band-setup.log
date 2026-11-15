@@ -1,0 +1,13 @@
+{"copy": "/private/tmp/claude-501/m315.8Zev/p/.refmatrix/catalog.read.duckdb", "bytes": 1363685376, "entities": 172764}
+refmatrix 0.84.0
+code: /Volumes/littlebig/refmatrix-315-green/src/refmatrix/__init__.py  [DEV 
+TREE]
+  code /Volumes/littlebig/refmatrix-315-green/src/refmatrix/__init__.py but the 
+venv belongs to /Users/tholley/claude_tools/refmatrix — reinstall the deploy 
+venv from its own tree (/Users/tholley/claude_tools/refmatrix/.venv/bin/python 
+-m pip install -e /Users/tholley/claude_tools/refmatrix)
+dev reason: venv-mismatch
+venv tree: /Users/tholley/claude_tools/refmatrix
+deploy root: (none — RMX_DEPLOY_ROOT unset and no ~/refmatrix)
+editable target: /Users/tholley/claude_tools/refmatrix/src
+

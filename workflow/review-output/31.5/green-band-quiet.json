@@ -1,0 +1,48 @@
+{
+ "label": "quiet",
+ "off": {
+  "n": 200,
+  "rc_nonzero": 0,
+  "wall_p50": 3180.0,
+  "wall_p95": 9490.3,
+  "load1_mean": 9.59,
+  "trips": 200,
+  "prompts_tripping": 40
+ },
+ "full": {
+  "n": 200,
+  "rc_nonzero": 0,
+  "wall_p50": 3609.1,
+  "wall_p95": 11268.1,
+  "load1_mean": 9.61,
+  "trips": 200,
+  "prompts_tripping": 40,
+  "records": 200,
+  "capture_ms_p50": 602.4,
+  "capture_ms_p95": 2041.3,
+  "capture_ms_max": 3750.7,
+  "capture_built_mean": 1.48,
+  "capture_built_max": 2,
+  "calls_with_builds": 180,
+  "ms_per_built_bundle_agg": 487.2,
+  "ms_per_built_bundle_p50": 316.45
+ },
+ "names": {
+  "n": 200,
+  "rc_nonzero": 0,
+  "wall_p50": 3170.8,
+  "wall_p95": 9329.8,
+  "load1_mean": 9.56,
+  "trips": 200,
+  "prompts_tripping": 40,
+  "records": 200,
+  "capture_ms_p50": 1.7,
+  "capture_ms_p95": 5.2,
+  "capture_ms_max": 11.6,
+  "capture_built_mean": 0,
+  "capture_built_max": 0,
+  "calls_with_builds": 0,
+  "ms_per_built_bundle_agg": 0.0,
+  "ms_per_built_bundle_p50": null
+ }
+}
