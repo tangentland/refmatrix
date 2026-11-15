@@ -359,6 +359,17 @@ rel: related-to -> [[task-bug216-rule-docs-in-graph#r9]]
 rel: specified-by -> [[task-bug216-denotes-fold-evaluation]]
 rel: derives-from -> [[plan-review-2026-11-13#lead]]
 
+- **2026-11-13 (lead, on the user's pattern; plan review 2026-11-13 L49, spec wave t56): two
+  derived paths join [[#a14-removal-scope]]'s derived-cleanup list.** (1) `vacuum` step 3b
+  ([[task-22.6-removal-entry-points#r10]]) deletes a `linkage_evidence` row whose two ends are
+  live and whose edge is gone, excluding learned-grep rows (knowledge, plan-22's): an ingest
+  evidence row is re-derived by re-ingesting its file. Manifest first, an `evidence_stale_drop`
+  event per dropped copy. (2) bug-218 R4's re-orientation of pre-fix `memory link` rows
+  ([[task-bug218-reinforcement-edge-direction#r4]]) is a repair, not a removal: the same
+  statement is written back in the canonical orientation, behind a backup and a manifest, as a
+  user-gated daemon op. Neither is a knowledge removal, so neither routes through plan-22's
+  confirm. {#d-2026-11-13-t56}
+
 ## Amendment 2026-10-14 (APPROVED by the user, 2026-10-14) {#amend-2026-10-14}
 
 Decision d9i of [[plan-review-2026-10-14#t9]]. Drafted from the Wave 0 spec reviews; nothing below
@@ -420,3 +431,11 @@ rel: amends -> [[#rule-no-delete]]
 - Graduation thresholds (cycle identity Jaccard; how many sessions; what counts as "used").
 - ~~intropretor's unported modules: port / adapt / skip~~ — resolved 2026-10-06, see
   [[#intropretor]]. Left open from it: what "used" means for graduation. {#q-intropretor}
+
+## Approval (2026-11-14, d9co) {#approval-2026-11-14}
+
+| decision | basis | status |
+|---|---|---|
+| The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bug-218, 22.2 and 22.6 met the bar at r5 (L69) | `workflow/bullshit/2026-11-14-0135-spec-t56-r7-eafd733.md` (over `spec-wave-t56` up to `eafd733`; r1-r6 in the same ledger) | the document's own status is unchanged; the revised records above are approved |
+
+rel: derives-from -> [[bsd-spec-t56-r7-a4e449b]]
