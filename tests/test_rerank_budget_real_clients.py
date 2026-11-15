@@ -316,24 +316,29 @@ def test_a_slow_private_rerank_finishes_and_keeps_the_worker(stub):
 
 
 def test_a_cold_private_worker_is_skipped_without_spawning(stub, monkeypatch):
-    """bug-190 (T0.3 R3.2/R3.4, 2026-11-15): under suite load this failed `spawns == 1` with no
-    cause. Every spawn's stack is recorded (a wrapper that calls the real `_spawn` through and
-    changes nothing), so a failure names the code path that spawned. Not reproduced in 26 base
-    trials (levels 3/5/8), so by T0.3's band the test gains only this diagnostic; the assertion
-    is unchanged. The harness's captures from those passing trials show a spawn in 22 of them,
-    every one from the background `_warm` thread the cold skip starts by design (r11 #b-1), read
-    before the stub recorded its pid. The old `wall < 0.3` (29.4 R3 class C) is dropped: what it
-    protected, no spawn on the skip path, is the assertion."""
+    """bug-190 (T0.3, ruling L164, 2026-11-15): under suite load this failed `spawns == 1`.
+    The harness's captures from 22 of 26 PASSING base trials show why: every spawn came from the
+    background `_warm` thread that the cold skip starts by design (r11 #b-1), and the test read
+    the stub's `spawns` file in a race with it (`close()` does not retire, so the warm could
+    spawn after it). What the test claims is that the BUDGETED CALL does not spawn: so every
+    spawn is recorded with its thread and stack (a wrapper that calls the real `_spawn`
+    through), the assertion is "no spawn on the caller's thread", and the client is retired at
+    the end, so the designed background warm can neither respawn after the test nor leave a
+    stub process behind. The old `wall < 0.3` (29.4 R3 class C) is dropped: the outcome it
+    stood for, no spawn on the skip path, is the assertion. R3.4: a failure names every spawn's
+    thread and stack."""
     import traceback
 
     from refmatrix import subproc
     from refmatrix.reranker import RemoteReranker
 
-    stacks: list = []
+    caller = threading.get_ident()
+    spawns: list = []
     real_spawn = subproc.WorkerClient._spawn
 
     def recording_spawn(self):
-        stacks.append("".join(traceback.format_stack(limit=25)[:-1]))
+        t = threading.current_thread()
+        spawns.append((t.ident, t.name, "".join(traceback.format_stack(limit=25)[:-1])))
         return real_spawn(self)
 
     monkeypatch.setattr(subproc.WorkerClient, "_spawn", recording_spawn)
@@ -341,13 +346,14 @@ def test_a_cold_private_worker_is_skipped_without_spawning(stub, monkeypatch):
     try:
         _wall, out = _attempt(RemoteReranker(wc).with_budget(2.0))
     finally:
-        wc.close()
+        wc.retire()
     assert out.startswith("skipped") and "cold" in out, out
-    spawned = stub.spawns()
-    assert spawned == 0, (
-        f"bug-190: the cold skip path spawned a worker ({spawned} stub start(s), "
-        f"{len(stacks)} recorded spawn(s)); the stack of every spawn:\n"
-        + ("\n---\n".join(stacks) or "(none recorded in this process)"))
+    on_caller = [sp for sp in spawns if sp[0] == caller]
+    assert not on_caller, (
+        f"bug-190: the cold skip path spawned a worker on the caller's thread "
+        f"({len(on_caller)} of {len(spawns)} recorded spawn(s)); every spawn, thread and stack:\n"
+        + "\n---\n".join(f"[{name}{' = caller' if ident == caller else ''}]\n{stack}"
+                          for ident, name, stack in spawns))
 
 
 def test_an_evicted_private_worker_reads_as_cold(stub):
