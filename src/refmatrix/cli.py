@@ -9891,6 +9891,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                            session=session, query_id=qid, prompt=prompt, budget_bytes=cap,
                            max_tokens=max_tokens, payload=payload, mode=capture_mode,
                            blocks=cap_info.get("blocks") or [],
+                           blocks_error=cap_info.get("error"),
                            capture_built=int(cap_info.get("built") or 0),
                            build_ms=float(cap_info.get("build_ms") or 0.0),
                            composite_error=trace.get("composite_error"),
@@ -13382,7 +13383,7 @@ class _RecallCall:
                                    session=self.session, query_id=self.tlog.query_id,
                                    prompt=self.query, budget_bytes=self.pack_bytes,
                                    max_tokens=None, payload=self.payload, mode=mode,
-                                   blocks=self._capture_blocks(), stm_error=stm_error,
+                                   blocks=self._capture_blocks, stm_error=stm_error,
                                    t0=time.perf_counter())
 
     def _capture_blocks(self) -> "list[dict]":

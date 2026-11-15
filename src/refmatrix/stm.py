@@ -1402,30 +1402,34 @@ class Stm:
                 pass
 
     # ---- focus graph (maintained, scored) ----
-    def _load_graph(self, *, strict: bool = False) -> dict:
-        """The raw focus graph. An absent or unparseable file is an empty graph, as always.
-        `strict` (bug-268, 2026-11-15): a file that parses but is not a focus graph raises
-        `FocusGraphCorrupt` naming the file and what is wrong, before any field is read. The
-        telemetry phase read (`phase_fields`) is strict so its callers can count the
-        corruption; the other readers keep their behaviour."""
+    def _load_graph(self) -> dict:
+        """The raw focus graph, for EVERY reader. An absent or unparseable file is an empty
+        graph, as always. A file that parses but is not a focus graph (`focus_graph_problem`)
+        is corrupt (bug-268, folded by ruling L178, 2026-11-15): it is said once per process
+        in one stderr line, recorded for the call's capture record (`graph_corruption`), and
+        read as an empty graph, so the next focus hook rewrites it. Before the fold only the
+        telemetry phase read checked the shape; the focus hook (`snapshot_pre_prompt`,
+        `_ingest_into_graph`), `focus_graph` (the composite, `focus context`) and `pin` raised
+        on `[]` and the hook died before it could rewrite the file, so the corruption stuck."""
         if not self._graph_path.exists():
             return {"turn": 0, "nodes": {}, "edges": {}}
         try:
             g = json.loads(self._graph_path.read_text())
-            if strict:
-                problem = focus_graph_problem(g)
-                if problem:
-                    raise FocusGraphCorrupt(f"{self._graph_path.name}: {problem}")
-            g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
-            return g
         except (json.JSONDecodeError, OSError):
             return {"turn": 0, "nodes": {}, "edges": {}}
+        problem = focus_graph_problem(g)
+        if problem:
+            _say_corrupt(self._graph_path, problem)
+            return {"turn": 0, "nodes": {}, "edges": {}}
+        g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+        return g
 
     def _save_graph(self, g: dict) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         tmp = self._graph_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(g))
         tmp.replace(self._graph_path)
+        _CORRUPT_SEEN.pop(str(self._graph_path), None)     # rewritten: no longer corrupt
 
     def _apply_turn(self, g: dict, refs: list[str], *, new_turn: bool) -> None:
         """Fold one event's refs into graph `g` in place — the pure ingest step,
@@ -1789,8 +1793,12 @@ PRE_PROMPT_SKEW_S = 10.0
 
 
 def prompt_sha(prompt: str) -> str:
+    """sha256 of the prompt. `surrogatepass` (bug-276's class, found in the L178 fold's real
+    run, 2026-11-15): a lone surrogate in the hook envelope's prompt made this strict encode
+    raise in `pre_prompt_state` once a `<session>.pre.json` existed, so `scan-prompt` exited 1
+    whether or not the capture was on."""
     import hashlib
-    return hashlib.sha256((prompt or "").encode("utf-8")).hexdigest()
+    return hashlib.sha256((prompt or "").encode("utf-8", "surrogatepass")).hexdigest()
 
 
 class PrePromptState(typing.NamedTuple):
@@ -1809,7 +1817,7 @@ def pre_prompt_state(root: Path, session: str, prompt: str, *, t0: float) -> Pre
     snapshot's values (`source=snapshot`), else the live ones (`source=live`). Exact because
     the snapshot is written before the input hook's first change to the ring or the graph."""
     s = Stm(root, session)
-    live_graph = s._load_graph(strict=True)     # bug-268: a wrong shape is corrupt, raised
+    live_graph = s._load_graph()                # bug-268: a wrong shape reads empty, said
     live_n = s.events_n()
     try:
         pre = json.loads(s._pre_path().read_text())
@@ -1823,7 +1831,12 @@ def pre_prompt_state(root: Path, session: str, prompt: str, *, t0: float) -> Pre
         if close and isinstance(pre.get("graph"), dict):
             problem = focus_graph_problem(pre["graph"])
             if problem:
-                raise FocusGraphCorrupt(f"{s._pre_path().name} graph: {problem}")
+                # bug-268: a wrong-shaped snapshot graph is corrupt like the live one: said
+                # once, and the live state is read instead.
+                _say_corrupt(s._pre_path(), f"its graph: {problem}")
+                return PrePromptState(graph=live_graph, topic_cache={},
+                                      turn=int(live_graph.get("turn", 0)),
+                                      events_n=live_n, source="live", topic_match={})
             return PrePromptState(graph=pre["graph"], topic_cache=pre.get("topic_cache") or {},
                                   turn=int(pre.get("turn") or 0),
                                   events_n=int(pre.get("events_n") or 0), source="snapshot",
@@ -1845,13 +1858,41 @@ def phase_inputs(pre: PrePromptState, prompt: "str | None") -> dict:
             "overlap": overlap, "stm_source": pre.source}
 
 
-class FocusGraphCorrupt(ValueError):
-    """A focus-graph file (`<session>.focus.json`, or the graph of `<session>.pre.json`) that
-    is valid JSON of the wrong shape (bug-268)."""
+# bug-268: the corrupt focus-graph files this process read (path -> what is wrong), and the
+# ones it has already said, so a call that reads one file several times says it once.
+_CORRUPT_SEEN: "dict[str, str]" = {}
+_CORRUPT_SAID: "set[str]" = set()
+
+
+def _say_corrupt(path: Path, problem: str) -> None:
+    """Record a corrupt focus-graph file and say it in ONE stderr line per process."""
+    import sys
+    key = str(path)
+    _CORRUPT_SEEN[key] = f"{Path(path).name}: {problem}"
+    if key in _CORRUPT_SAID:
+        return
+    _CORRUPT_SAID.add(key)
+    print(f"rmx: STM focus graph {Path(path).name} is corrupt ({problem}); read as an empty "
+          f"graph, the next focus hook rewrites it", file=sys.stderr)
+
+
+def graph_corruption(root: Path, session: "str | None") -> "str | None":
+    """What was wrong with `session`'s focus graph or snapshot graph, if THIS process read one
+    of them corrupt and nothing rewrote it since; else None (bug-268, for `stm_error`)."""
+    if not session:
+        return None
+    s = Stm(root, session)
+    found = [_CORRUPT_SEEN[k] for k in (str(s._graph_path), str(s._pre_path()))
+             if k in _CORRUPT_SEEN]
+    return "; ".join(found) or None
 
 
 def _is_num(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    """A finite JSON number. `json` reads `Infinity` / `NaN`, and a non-finite `turn` passed
+    a plain number check, then raised OverflowError at `int(turn)` (found in the L178 fold)."""
+    import math
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)
+            and math.isfinite(v))
 
 
 def focus_graph_problem(g) -> "str | None":
@@ -1895,20 +1936,17 @@ def focus_graph_problem(g) -> "str | None":
 
 def phase_fields_checked(root: Path, session: "str | None", prompt: "str | None", *,
                          t0: float, prompt_time: bool) -> "tuple[dict, str | None]":
-    """`phase_fields`, with a corrupt focus graph COUNTED instead of raised (bug-268): the
-    phase fields are then null (nothing could be read; never a guess), the class and message
-    come back as the second value for the call's capture record (`stm_error`, counted on the
-    `rmx telemetry --context` line), and one stderr line says it for callers that keep
-    stderr. The payload was already printed; the call still writes its recall events."""
-    import sys
-    try:
-        return phase_fields(root, session, prompt, t0=t0, prompt_time=prompt_time), None
-    except FocusGraphCorrupt as e:
-        err = " ".join(f"{type(e).__name__}: {e}".split())
-        print(f"rmx: STM focus graph of session {session} is corrupt ({err}); phase fields "
-              f"not recorded", file=sys.stderr)
+    """`phase_fields` plus the call's `stm_error` (bug-268): when this process read the
+    session's focus graph (or its snapshot graph) corrupt, the phase fields are null (an empty
+    graph read in its place is not this session's phase; never a guess) and the second value
+    says what was wrong, for the capture record and its count on the `capture:` line. The
+    corruption itself was already said on stderr, once, by the loader."""
+    phase = phase_fields(root, session, prompt, t0=t0, prompt_time=prompt_time)
+    err = graph_corruption(root, session)
+    if err:
         return {"turn": None, "stm_session": None, "stm_source": None, "stm_events_n": None,
                 "focus_topics_n": None, "overlap": None}, err
+    return phase, None
 
 
 def phase_fields(root: Path, session: "str | None", prompt: "str | None", *, t0: float,
@@ -1918,8 +1956,8 @@ def phase_fields(root: Path, session: "str | None", prompt: "str | None", *, t0:
     this prompt among the session's recorded prompts. `session_start` / `precompact` have
     no prompt: the live state (`stm_source=live`, `overlap: null`) and `turn` = the live
     graph's `turn - 1`. No session: every field null (never another session's ring). A focus
-    graph of the wrong shape raises `FocusGraphCorrupt` (bug-268); `phase_fields_checked` is
-    the hook callers' form."""
+    graph of the wrong shape reads empty (bug-268); `phase_fields_checked` is the hook
+    callers' form, which nulls the fields and returns the corruption."""
     empty = {"turn": None, "stm_session": None, "stm_source": None, "stm_events_n": None,
              "focus_topics_n": None, "overlap": None}
     if not session:
@@ -1928,23 +1966,22 @@ def phase_fields(root: Path, session: "str | None", prompt: "str | None", *, t0:
         pre = pre_prompt_state(root, session, prompt or "", t0=t0)
         return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
     s = Stm(root, session)
-    g = s._load_graph(strict=True)
+    g = s._load_graph()
     live = PrePromptState(graph=g, topic_cache={}, turn=int(g.get("turn", 0)),
                           events_n=s.events_n(), source="live", topic_match={})
-    return {"turn": live_turn(root, session, strict=True), "stm_session": session,
+    return {"turn": live_turn(root, session), "stm_session": session,
             **phase_inputs(live, None)}
 
 
-def live_turn(root: Path, session: "str | None", *, strict: bool = False) -> "int | None":
+def live_turn(root: Path, session: "str | None") -> "int | None":
     """The `turn` of a non-prompt-time event (R9): the live graph's `turn - 1`, the ordinal
-    of the prompt being answered; null with no session or no ring. `strict`: see
-    `Stm._load_graph` (bug-268)."""
+    of the prompt being answered; null with no session or no ring."""
     if not session:
         return None
     s = Stm(root, session)
     if not s._path.exists() and not s._graph_path.exists():
         return None
-    return int(s._load_graph(strict=strict).get("turn", 0)) - 1
+    return int(s._load_graph().get("turn", 0)) - 1
 
 
 # ---- D9: ONE hook-envelope reader -----------------------------------------------------------

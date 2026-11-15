@@ -242,8 +242,10 @@ other log writer), after the payload is printed:
   `payload_bytes`;
 - **the capture's own outcome:** `capture_mode` (`full` or `names`, [[#r0-4-mode]]),
   `capture_ms` (the wall time the capture added before the command exits: the extra builds
-  plus the append), `capture_built` (bundles built only for the capture; 0 in mode `names`), `pruned` (day files this call removed), and `composite_error` (the exception's
-  class and message when the composite build raised, else null; [[#r0-7]]);
+  plus the append), `capture_built` (bundles built only for the capture; 0 in mode `names`), `pruned` (day files this call removed), `composite_error` (the exception's
+  class and message when the composite build raised, else null; [[#r0-7]]), and `stm_error`
+  (what was wrong with the session's focus graph when this call read it corrupt, bug-268,
+  else null; added by rulings L153 and L178);
 - `blocks`: in render order, each with `i`, `kind`, `state`, `bytes`, `sha256`, `names` (the
   item names the block carries), `dedup_rows`, and `text` where [[#r0-1-states]] says so. A
   `recall_hit` block carries `name`, `rank`, `mtype`, `scope`, `hook_bytes`, `body_bytes`,

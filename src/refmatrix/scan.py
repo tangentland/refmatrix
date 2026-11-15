@@ -1072,7 +1072,19 @@ def scan_prompt(
     part_meta: "list[dict]" = []
     cut_blocks: "list[dict]" = []
     cut_at: list = []                    # the `parts` index of the token-stop marker
-    cap = {"built": 0, "build_ms": 0.0}
+    cap = {"built": 0, "build_ms": 0.0, "error": None}
+
+    def _capture_guarded(work) -> None:
+        """Run capture-only work (past the token stop, before the print) so that no failure
+        of it can cost the payload (bug-276, L178 S1): it is timed into `build_ms`, and an
+        exception is kept for the writer's guard (`capture_failed`) instead of raised."""
+        t = time.perf_counter()
+        try:
+            work()
+        except Exception as e:  # noqa: BLE001 -- counted by the writer, never raised here
+            cap["error"] = cap["error"] or f"{type(e).__name__}: {e}"
+        finally:
+            cap["build_ms"] += (time.perf_counter() - t) * 1000.0
 
     def _retrieve(b) -> None:
         retrieved.extend(bundle_items(b))
@@ -1152,10 +1164,14 @@ def scan_prompt(
         trace["composite_error"] = _comp_error[0] if _comp_error else None
         if capture is not None:
             t_blocks = time.perf_counter()
-            cblocks = _capture_blocks(blocks, text, kept, comp)
+            try:
+                cblocks, cerr = _capture_blocks(blocks, text, kept, comp), cap["error"]
+            except Exception as e:  # noqa: BLE001 -- bug-276: the payload is kept, the
+                # failure goes to the writer's guard as `capture_failed` (L178 S1)
+                cblocks, cerr = [], cap["error"] or f"{type(e).__name__}: {e}"
             cap["build_ms"] += (time.perf_counter() - t_blocks) * 1000.0
             trace["capture"] = {"blocks": cblocks, "built": cap["built"],
-                                "build_ms": round(cap["build_ms"], 1)}
+                                "build_ms": round(cap["build_ms"], 1), "error": cerr}
         _set_retrieved()
         offs, pos = [], 0
         for p in parts:
@@ -1327,14 +1343,15 @@ def scan_prompt(
                 if capture is not None:
                     # Task 31.5 R0.1: the bundle that tripped the stop (already built and
                     # rendered) is stored with its text, then what the stop prevented.
-                    from refmatrix.telemetry import capture_block
-                    t_cut = time.perf_counter()
-                    cut_blocks.append(capture_block(
-                        kind, "dropped_tokens", text=_section_prefix(header) + rendered,
-                        names=_names_of(ritems), dedup_rows=removed))
-                    _mark_shown(b)
-                    _capture_cut(kind, names[idx + 1:], "")
-                    cap["build_ms"] += (time.perf_counter() - t_cut) * 1000.0
+                    def _trip(b=b, rendered=rendered, ritems=ritems, removed=removed,
+                              header=header, rest_names=names[idx + 1:]) -> None:
+                        from refmatrix.telemetry import capture_block
+                        cut_blocks.append(capture_block(
+                            kind, "dropped_tokens", text=_section_prefix(header) + rendered,
+                            names=_names_of(ritems), dedup_rows=removed))
+                        _mark_shown(b)
+                        _capture_cut(kind, rest_names, "")
+                    _capture_guarded(_trip)
                 cut_at.append(len(parts))
                 parts.append("# [truncated by --max-tokens]")
                 part_meta.append({"kind": "marker", "names": [], "dedup_rows": 0})
@@ -1350,21 +1367,21 @@ def scan_prompt(
             # R0.1 `#r0-1-content`: the content bundle was built before any section, so the
             # capture renders it at no build cost, in mode `full` and mode `names` alike; then
             # tier 3, which the stop never reached.
-            from refmatrix.telemetry import capture_block
-            t_cut = time.perf_counter()
-            if cbundle is not None:
-                ok, removed = _drop_shown(cbundle)
-                if ok:
-                    cbundle.helix_pending.clear()      # reached no output: no readership row
-                    rendered, ritems = render_text_spans(cbundle)
-                    cut_blocks.append(capture_block(
-                        "content", "dropped_tokens",
-                        text=_section_prefix(_content_header()) + rendered,
-                        names=_names_of(ritems), dedup_rows=removed))
-                    _mark_shown(cbundle)
-            if rest:
-                _capture_cut("symbol_other", rest, _tier_header(rest))
-            cap["build_ms"] += (time.perf_counter() - t_cut) * 1000.0
+            def _after_tier1_stop() -> None:
+                from refmatrix.telemetry import capture_block
+                if cbundle is not None:
+                    ok, removed = _drop_shown(cbundle)
+                    if ok:
+                        cbundle.helix_pending.clear()  # reached no output: no readership row
+                        rendered, ritems = render_text_spans(cbundle)
+                        cut_blocks.append(capture_block(
+                            "content", "dropped_tokens",
+                            text=_section_prefix(_content_header()) + rendered,
+                            names=_names_of(ritems), dedup_rows=removed))
+                        _mark_shown(cbundle)
+                if rest:
+                    _capture_cut("symbol_other", rest, _tier_header(rest))
+            _capture_guarded(_after_tier1_stop)
         return _finish()
     if cbundle is not None:
         header = _content_header()

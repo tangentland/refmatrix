@@ -141,8 +141,14 @@ def build_topic_composite_pending(
     import hashlib
     import json as _json
     from .stm import _safe, stm_dir
+    # bug-277 (L178 S2, 2026-11-15): the signature is over what each topic PRINTS (R2.0), not
+    # over every focus member. Hashing `t["members"]` re-sent an identical `Members:` line
+    # whenever a stopword or a typo joined a topic. The printed members are computed once here
+    # and handed to the render.
+    for t in topics:
+        t["printed"] = _printable_members(s, [m for m in t["members"] if not _is_junk(m)])
     sig = hashlib.sha256(_json.dumps(
-        sorted(sorted(t["members"]) for t in topics)).encode("utf-8")).hexdigest()
+        sorted(sorted(t["printed"]) for t in topics)).encode("utf-8")).hexdigest()
     mark = stm_dir(root) / f"{_safe(session)}.composite.last"
     try:
         if mark.read_text(encoding="utf-8").strip() == sig:
@@ -274,7 +280,7 @@ def _render_gmd(
         members = [m for m in t["members"] if not _is_junk(m)]
         if len(members) < 2:
             continue  # collapsed to noise after the junk gate
-        printed = _printable_members(s, members)
+        printed = t["printed"] if "printed" in t else _printable_members(s, members)
         if not printed:
             continue  # R2.0: a topic with no printable member is not emitted
         topic_no += 1
