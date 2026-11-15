@@ -1,0 +1,29 @@
+........................F......                                          [100%]
+=================================== FAILURES ===================================
+______ test_bug270_a_rerun_batch_does_not_overflow_the_median_bytes_hook _______
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2280/test_bug270_a_rerun_batch_does0')
+scratch = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2280/test_bug270_a_rerun_batch_does0/scratch')
+
+    def test_bug270_a_rerun_batch_does_not_overflow_the_median_bytes_hook(tmp_path, scratch):
+        """bug-270 (ruling L157; T0.3 base sweep, L3 trial 5 and L5 trial 4): under load the three
+        rehearsal timings are noisy, `run` reruns the batch (run indexes 3-5), and the median test's
+        bytes hook indexed past its three offsets. The IndexError made the store a failed row, and
+        the test then read bug-130's `KeyError: 'rewrite_bytes_all'`. The rerun is forced here
+        through `time_hook`, as `test_ac8_a_noisy_rehearsal_reruns_once_then_reports_noisy` does,
+        so the test decides which side of the noise gate the run falls on."""
+        root = _root(tmp_path, "r", rows=1_000)
+        noisy_first = lambda ix, s: (s + 1.0) * (4.0 if ix == 0 else 1.0)
+        rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep",
+                               time_hook=noisy_first, bytes_hook=_median_bytes_hook)
+        (row,) = rows
+>       assert "error" not in row, f"bug-270: step {row.get('step')}: {row.get('error')}"
+E       AssertionError: bug-270: step unexpected: IndexError: tuple index out of range
+E       assert 'error' not in {'error': 'IndexError: tuple index out of range', 'root': '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2280/test_bug270_a_rerun_batch_does0/r/.refmatrix', 'step': 'unexpected', 'store': 'r'}
+
+tests/test_catalog_measure.py:358: AssertionError
+----------------------------- Captured stdout call -----------------------------
+measured 0/1 stores; failed=1; verdict: INCOMPLETE
+=========================== short test summary info ============================
+FAILED tests/test_catalog_measure.py::test_bug270_a_rerun_batch_does_not_overflow_the_median_bytes_hook
+1 failed, 30 passed in 29.09s

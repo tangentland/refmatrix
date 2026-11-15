@@ -212,11 +212,11 @@ that the strict reading below has data at every level.
 
 | Row | Level 3 | Level 5 | Level 8 | Verdict (spec band) |
 |---|---|---|---|---|
-| bug-130 | 1/9 | 1/9 | 0/8 | not reproduced (fewer than 3 in 10 at every level) |
-| bug-190 | 0/9 | 0/9 | 0/8 | not reproduced |
-| bug-091 | 0/9 | 0/9 | 0/8 | not reproduced |
-| bug-228 | **5/9, reproducer at level 3** | not run (decided) | not run | reproducer, level 3 |
-| bug-231 | 6/9 (1 on the row's E line, 5 on a new E line) | 9/9 (all on the new E line) | 3/8 (all on the new E line; trials 4-8 passed, stop 5.7-6.0 s) | see the strict reading below |
+| bug-130 | 1/9 | 1/9 | 0/8 | not reproduced (fewer than 3 in 10 at every level); its captured error is bug-270, fixed below |
+| bug-190 | 0/9 | 0/9 | 0/8 | not reproduced (L157 (4)) |
+| bug-091 | 0/9 | 0/9 | 0/8 | not reproduced (L157 (4)) |
+| bug-228 | **5/9, reproducer at level 3** | not run (decided) | not run | reproducer, level 3 (L157 (1)); GREEN builds the readiness wait |
+| bug-231 | 6/9 (1 on the row's E line, 5 on a new E line) | 9/9 (all on the new E line) | 3/8 (all on the new E line; trials 4-8 passed, stop 5.7-6.0 s) | **reproducer, level 3** (L157 (2): any failure of the target node counts); the `graceful_stop` E line is bug-269, GREEN's to diagnose |
 {#base-sweep-table}
 
 E lines seen, by row:
@@ -247,8 +247,35 @@ E lines seen, by row:
     variant** as the same failure (a stop slower than its bound): 6/9 at level 3, a reproducer
     at level 3. 29.4 `#r3-bug231` foresaw the shape ("a daemon that dies at 10.0 s of a 10 s
     grace still gives True"), and here the daemon outlived the grace. Which reading holds is the
-    lead's ruling to make.
+    lead's ruling to make. **Ruled, L157 (2):** any failure of the target node counts, so
+    bug-231 reproduces at level 3; the grace-exhausted E line is bug-269.
 {#base-sweep-elines}
+
+### bug-270: the median test's bytes hook (ruling L157 (3)) {#base-sweep-bug270}
+
+bug-130's captured error was a test defect, now bug-270, and RED's to fix.
+`tests/test_catalog_measure.py` gains `_median_bytes_hook`, used by
+`test_rewrite_bytes_is_the_median_of_the_runs`, and the pin node
+`test_bug270_a_rerun_batch_does_not_overflow_the_median_bytes_hook`. The node forces the rerun
+through `time_hook` (run 0 four times the others, as `test_ac8_…` does), so the test decides
+which side of the noise gate the run falls on. It then asserts no error row, one rerun, six
+sizes and the unchanged median.
+
+- **RED** `5eb8850` (the hook moved into a function, offsets unchanged):
+  `red-bug270.log`, exit 1, 31 collected, 30 passed / 1 failed, E `AssertionError: bug-270:
+  step unexpected: IndexError: tuple index out of range` (the sweep's captured error, now on
+  demand).
+- **Fix** `350fdfd`: the offsets repeat per batch (`ix % 3`), and the median test's list
+  assertion allows a rerun (`[base, base+100, base+300] * (1 + rehearsal_reruns)`); the median is
+  unchanged. `fix-bug270.log`: exit 1, 32 collected, 31 passed / 1 failed. The one failure is the
+  R3.1 diagnostics node, still RED on its own E line (`R3.1/M3.1: the test indexed
+  rewrite_bytes_all before checking `failed``), which is GREEN's R3.1 work. This fix does not
+  touch it: a store that fails for any other reason still reads as bug-130's KeyError until R3.1
+  lands.
+- **Mutation** (the `% 3` removed, i.e. the overflow restored):
+  `mutation-bug270-overflow-restored.log`, exit 1, 30 passed / 1 failed, the pin node red on
+  the bug-270 E line; restored with `git checkout`, `__pycache__` cleared, tree clean.
+{#base-sweep-bug270-body}
 
 ### bug-228's leg breakdown (first failing trial: level 3, trial 5) {#base-sweep-bug228-legs}
 
@@ -261,6 +288,8 @@ From `harness/base-l3/trial-005/diag.jsonl` (spies plus the sandbox store's log 
 | embed worker cold load | spawned 05:14:34 at daemon start, `embedder warm in 9.1s` at 05:14:43 | `rmxd.log` |
 | the `memory_recall` op | in flight from the hook's arrival (about 05:14:35) through the budget's expiry, waiting on the embedder; it raised `WorkerError('embed worker retired …')` at 05:14:44, when the test had stopped the daemon | `rmxd.log` |
 {#base-sweep-bug228-table}
+
+**Ruled, L157 (1):** reproduced; the pre-op branch holds, so GREEN builds the readiness wait.
 
 So the 5 s budget was spent waiting for the embedder's cold load, which finished about 3 s after
 the budget ran out. The recall itself never ran. Trial 6 shows the same: embedder warm in 5.6 s,
@@ -289,6 +318,8 @@ from lock to release (`wall_clock_s`). Queue waits are not held time.
 | 8 | 8 | 77-121 | 77-121, except trial 4: 1,002 (asleep) | 1,674 s | 0 in every trial | 4 (trials 2, 3) |
 {#base-sweep-trial-table}
 
+- **Awake and held time per trial** are recorded in every `trial.json` (`wall_s`,
+  `wall_clock_s`) and are kept for every later run (L157 (5)).
 - **Held lane in all: 3,225 s (53.8 min); awake 2,304 s (38.4 min)**, of which about 15.5 min was asleep (below), plus the
   validation trial's 58 min earlier.
 - **`caffeinate -i` did not keep the host awake.** In L8 trial 4, `pmset -g log` shows `Sleep`
