@@ -26,7 +26,7 @@ The session handoff (`handoff.md` `#open`) points here instead of keeping its ow
 
 ## Session 070141d0 (2026-11-14/15) {#session-070141d0}
 
-Next id: **Q31**. Open: Q30. Proposal: [[workflow-practice-review-2026-11-15]].
+Next id: **Q31**. None open. Proposal: [[workflow-practice-review-2026-11-15]].
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -37,7 +37,7 @@ Next id: **Q31**. Open: Q30. Proposal: [[workflow-practice-review-2026-11-15]].
 | Q27 | 2026-11-15 | Write up the context-feeding view? | (a) design note for plan-24 only; (b) note + admit trimming the per-prompt keyword injection before the mod; (c) neither | "Q27 b" (user, 2026-11-15): note [[design-note-tool-keyed-context-2026-11-15]] + plan-31 31.5 (measure per block, cut and tighten, not remove) |
 | Q28 | 2026-11-15 | The freeze line omitted L106 queue steps 6-15: which stay before the mod? | (a) the triage in [[freeze-triage-2026-11-15]]; (b) all of L106 stays; (c) the freeze as written (6-15 post-mod) | "Q28 a" (user, 2026-11-15): applied to [[plan-of-plans#freeze]] |
 | Q29 | 2026-11-15 | Test coverage: adopt the process rules and pull 29.4's runner ahead of 29.1? | (a) both; (b) process only; (c) neither | "Q29 a" (user, 2026-11-15): applied, L118, [[orchestration#one-suite]] |
-| Q30 | 2026-11-15 | bug-251 (lint resolves `[[doc]]` by id, filename stem and case/dash-folded id; ingest binds the exact id only; 37 rel: lines lint clean and land nowhere): admit under the freeze? | (a) admit as plan-31 task 31.6: one resolver shared by lint and ingest (recommended: graph correctness, and the lint is the gate that hides it); (b) post-mod list; (c) fix the 37 links by hand now, defer the resolver | open |
+| Q30 | 2026-11-15 | bug-251 (lint resolves `[[doc]]` by id, filename stem and case/dash-folded id; ingest binds the exact id only; 37 rel: lines lint clean and land nowhere): admit under the freeze? | (a) admit as plan-31 task 31.6: one resolver shared by lint and ingest (recommended: graph correctness, and the lint is the gate that hides it); (b) post-mod list; (c) fix the 37 links by hand now, defer the resolver | "Q30 a" (user, 2026-11-15): admitted as [[plan-31-pre-mod-loose-ends#t6]] |
 
 ## Session 37b7498f (2026-11-13) {#session-37b7498f}
 

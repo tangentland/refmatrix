@@ -14,7 +14,7 @@ metadata:
 **Date:** 2026-11-15. **Status:** drafting — the five items are admitted and registered; each
 task spec is written (ch-architect on Fable) and reviewed (ch-bsd) when the plan reaches the head
 of the queue, per [[orchestration#planning]]. **Origin:** the user, 2026-11-15: "write the freeze
-line and register the five", after the lead's GMD assessment. The fifth item is plan-30's task 30.6.
+line and register the five", after the lead's GMD assessment. The fifth item is plan-30's task 30.6. 31.6 (bug-251) admitted by the user, Q30 = a, 2026-11-15.
 
 rel: part-of -> [[plan-of-plans#freeze]]
 rel: related-to -> [[plan-30-materialisation]]
@@ -119,10 +119,25 @@ value, it's worth considering taking action." {#t5-ask}
 
 Runs right after 0.83.1, ahead of plan-10's dedup; feeds 21.5 phase M and 30.6. {#t5-body}
 
+### 31.6 Lint and ingest resolve a wikilink target the same way (bug-251, Q30 = a) {#t6}
+
+After 0.84.0's forced reingest, 37 authored `rel:` lines lint clean and land nowhere
+([[bug_registry#registry]] bug-251): the lint (`tools/gmd/lint.py`, `_norm_id` and the stem
+binding in `resolve_refs`) resolves a `[[doc]]` target by frontmatter `id`, by filename stem, and
+by an id folded for case and `-` / `_`; the ingester binds the exact `id` only. `[[CLAUDE#…]]`
+(29 lines, id `claude`), `[[bug-registry#registry]]` (6, id `bug_registry`) and
+`[[system_design_review]]` (2, id `refmatrix/system_design_review`). One resolver, shared by lint
+and ingest, so a link the gate passes is a link the graph holds. The spec decides which forms are
+legal (the GMD spec names id or filename stem; whether case / dash folding stays, or the lint
+fails what it folds), and how an ambiguous stem is refused on both sides. RED: the three real
+shapes on a throwaway store, plus a lint-passes-ingest-misses parity census over the repo. AC: a
+recount with `scripts/check-rel-landing.py` after a reingest shows `target_unresolved` 0 for every
+target doc the lint accepts. {#t6-body}
+
 ## Order {#order}
 
 31.3 and 31.4 are small and may run at any point after 0.83.1. 31.1 after 0.83.1 (it changes
-0.83.1's S2 test input). 31.5 right after 0.83.1. 31.2 after 29.5. All before the mod transition. {#order-list}
+0.83.1's S2 test input). 31.5 right after 0.83.1. 31.2 after 29.5. 31.6 any time (it touches `tools/gmd/` and the GMD ingest's target resolution; not `store.py`). All before the mod transition. {#order-list}
 
 ## Out of scope {#out-of-scope}
 
