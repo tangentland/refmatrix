@@ -1,0 +1,33 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b212-revert/src/refmatrix as checked-hash (bug-037)
+F.........                                                               [100%]
+=================================== FAILURES ===================================
+__________ test_promote_digest_reports_busy_and_never_opens_the_store __________
+
+silent = <tests.test_plan2_remedy._SilentDaemon object at 0x10c259940>
+
+    def test_promote_digest_reports_busy_and_never_opens_the_store(silent):
+        """#b-1: under a busy daemon the promote reports busy and never opens the writer slot.
+    
+        `handoff._promote_digest` keeps its contract (best-effort: it RETURNS `{"error"}`). The
+        verb's half changed: this test first pinned that `verbs.save_state` RETURNED the result
+        with `promoted.error`. bug-212 r5, ruling L95 (2026-11-14), reversed that returned-error
+        contract -- a save-state that wrote its handoff but whose promote (or memory bridge)
+        failed RAISES `verbs.SaveStateIncompleteError`, carrying the full `result`, so the CLI
+        exits 1 and MCP replies `isError` on the same outcome (ch-bsd r4 m-3: MCP had replied
+        SUCCESS while the CLI exited 1). So the busy word is read from the raised error and its
+        attached result; the handoff is still written; the slot is still never opened."""
+        from refmatrix import handoff, stm as stm_mod
+        s = stm_mod.Stm(silent.root, "s1"); s.record("input", "hi")
+        out = handoff._promote_digest(silent.root, s)
+        assert "busy" in (out.get("error") or ""), out
+        assert not list(silent.root.glob("catalog*.duckdb")), "opened the writer slot under a busy daemon"
+>       with pytest.raises(verbs.SaveStateIncompleteError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.verbs.SaveStateIncompleteError'>
+
+tests/test_plan3_remedy_r3.py:55: Failed
+----------------------------- Captured stderr call -----------------------------
+MEMORY.md: 1 -> 1 lines, 114 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+=========================== short test summary info ============================
+FAILED tests/test_plan3_remedy_r3.py::test_promote_digest_reports_busy_and_never_opens_the_store
+1 failed, 9 passed in 36.20s

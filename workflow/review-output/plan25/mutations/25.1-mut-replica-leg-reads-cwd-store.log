@@ -1,0 +1,37 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+__________ test_ac4e_mcp_cross_project_reads_the_named_stores_replica __________
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x106c939d0>, 'b': <tests.task25_1_support.Fixture object at 0x10ec092...('/private/tmp/rmx-cc4_yzxb/p25o-9y5c4mok'), 'home': PosixPath('/private/tmp/rmx-cc4_yzxb/p25o-9y5c4mok/g/.refmatrix')}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10eaad810>
+
+    def test_ac4e_mcp_cross_project_reads_the_named_stores_replica(offline, monkeypatch):
+        """AC-4 (e): stores A and B, a real shared worker, no daemons; B registered. From A's cwd,
+        MCP `rmx_memory_recall` with project=B returns B's rows (none of A's) from B's replica.
+        HEAD: the MCP verb never consults a replica and answers an error."""
+        from refmatrix import mcp
+        a, b = offline["a"], offline["b"]
+        monkeypatch.setenv("RMX_HOME", str(offline["home"]))
+        monkeypatch.delenv("REFMATRIX_ROOT", raising=False)
+        monkeypatch.chdir(a.proj)
+        bname = b.partition()
+        assert mcp._resolve_root({"project": bname}).resolve() == b.root.resolve()
+        w = s.SharedWorker(offline["base"], home=offline["home"])
+        try:
+            with s.McpChild(cwd=a.proj, RMX_HOME=str(offline["home"]), REFMATRIX_ROOT=None,
+                            RMX_MODEL_SOCK=str(w.sock)) as m:
+                res = m.tool("rmx_memory_recall", {"query": QUESTION, "k": 8, "project": bname})
+        finally:
+            w.stop()
+        assert not res["isError"] and res["json"] and "error" not in res["json"], res["text"][:600]
+        names = {r["name"] for r in res["json"]["memories"]}
+>       assert names and names <= _named_b(offline), names
+E       AssertionError: set()
+E       assert (set())
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:569: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_mcp_cross_project_reads_the_named_stores_replica
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 25.83s

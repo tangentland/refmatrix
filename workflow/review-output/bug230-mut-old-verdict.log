@@ -1,0 +1,28 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug230/src/refmatrix as checked-hash (bug-037)
+F....................                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict _____
+
+gate_roots = [PosixPath('/tmp/b179c3u3d4o_')]
+
+    def test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict(gate_roots):
+        root = _gate_root(lint_src=None, doc=PLANTED_FIXED)
+        gate_roots.append(root)
+        (root / "scripts" / "check-gmd-parity.py").write_text(
+            "import os, sys\nsys.stderr.write('killed like the sandbox kills a child\\n')\n"
+            "os._exit(86)\n")
+        r = _run_gate(root)
+        out = r.stdout + r.stderr
+        assert r.returncode == 86, f"precondition: the gate exits 86 when its parity step does:\n{out}"
+        # The hole bug-230 is about: the pre-fix verdict (reject exit 2 and `: error` lines only)
+        # accepts this run.
+        old_verdict = r.returncode != 2 and not [l for l in out.splitlines() if ": error" in l]
+        assert old_verdict, "precondition: the old verdict passes a crashed gate"
+>       with pytest.raises(AssertionError) as ei:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'AssertionError'>
+
+tests/test_bug230_repo_scope_gate.py:87: Failed
+=========================== short test summary info ============================
+FAILED tests/test_bug230_repo_scope_gate.py::test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict
+1 failed, 20 passed in 1.32s

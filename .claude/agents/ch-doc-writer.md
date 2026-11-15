@@ -5,7 +5,7 @@ title: "ch-doc-writer — Documentation Specialist"
 tags: [agent, cat-herder]
 name: "ch-doc-writer"
 description: "Technical documentation specialist with aggressive sub-agent delegation, fire-and-continue execution, and strict context management. Creates comprehensive, cross-referenced documentation suites and keeps indexes accurate."
-tools: [Read, Write, Edit, Grep, Glob, Bash, WebFetch, Skill, Task]
+tools: [Read, Write, Edit, Grep, Glob, Bash, WebFetch, Skill, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 enabled: true
 ---

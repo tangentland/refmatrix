@@ -1,0 +1,45 @@
+pyc-guard: recompiled 12 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+..FF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_into] _
+
+site = 'replica_merge._merge_into'
+
+    @pytest.mark.parametrize("site", sorted(MERGE_SITES))
+    def test_ac2_replica_merge_matches_head_and_reference(site):
+        d, ref, _ = _run_merge(site)
+        ref(d)
+>       assert _digest(d) == _golden()[f"{site}/duckdb"], (
+            f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
+E       AssertionError: replica_merge._merge_into: merged catalog differs from HEAD 56e8d14's golden
+E       assert {'rows': 5001...04e45a56376b'} == {'rows': 5001...100f3691b499'}
+E         
+E         Differing items:
+E         {'rows': 50015} != {'rows': 50014}
+E         {'sha256': 'acb49fc475b5773dd83c78ffbc25dabc12db9e7538e81064f8f204e45a56376b'} != {'sha256': '1a4f5795928aa316b0590c8e46c9474b5a65a6189838dea69042100f3691b499'}
+E         Use -v to get more diff
+
+tests/test_zz_bug178_nopost_tmp.py:600: AssertionError
+_ test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_linkage_types] _
+
+site = 'replica_merge._merge_linkage_types'
+
+    @pytest.mark.parametrize("site", sorted(MERGE_SITES))
+    def test_ac2_replica_merge_matches_head_and_reference(site):
+        d, ref, _ = _run_merge(site)
+        ref(d)
+>       assert _digest(d) == _golden()[f"{site}/duckdb"], (
+            f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
+E       AssertionError: replica_merge._merge_linkage_types: merged catalog differs from HEAD 56e8d14's golden
+E       assert {'rows': 2752...0869de0238aa'} == {'rows': 2752...a75fff26e546'}
+E         
+E         Differing items:
+E         {'rows': 27524} != {'rows': 27523}
+E         {'sha256': 'bcc237a9f177dd8ef83714e269264571cce4b96dbd6791102fe30869de0238aa'} != {'sha256': '7eddf4a0f8b67cc7f3e7b62c06ec44b1fe03e0d9c6386e4f1565a75fff26e546'}
+E         Use -v to get more diff
+
+tests/test_zz_bug178_nopost_tmp.py:600: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_zz_bug178_nopost_tmp.py::test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_into]
+FAILED tests/test_zz_bug178_nopost_tmp.py::test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_linkage_types]
+2 failed, 2 passed, 27 deselected in 2.27s

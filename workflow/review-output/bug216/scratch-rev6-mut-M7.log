@@ -1,0 +1,55 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+............F............................F.............................. [ 38%]
+........................................................................ [ 77%]
+.........................................                                [100%]
+=================================== FAILURES ===================================
+________ test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing _________
+
+env = {'base': PosixPath('/private/tmp/b216susqtanbz'), 'proj': PosixPath('/private/tmp/b216susqtanbz/proj'), 'root': PosixPath('/private/tmp/b216susqtanbz/proj/.refmatrix')}
+
+    def test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing(env):
+        """No daemon for this throwaway store: non-zero exit, the reason on stderr, and no
+        in-process fallback (the store is untouched)."""
+        r = CliRunner().invoke(cli_mod.main, ["derive", "denotes"])
+>       assert r.exit_code != 0, f"exit 0 with no daemon:\n{r.output}"
+E       AssertionError: exit 0 with no daemon:
+E         added=3 concepts=3 targets=1 multi_target=0 partition=None
+E         
+E       assert 0 != 0
+E        +  where 0 = <Result okay>.exit_code
+
+tests/test_bug216_surfaces.py:146: AssertionError
+_______________ test_cli_twin_calls_its_verb[rmx_derive_denotes] _______________
+
+vname = 'rmx_derive_denotes'
+_cli_env = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1141/test_cli_twin_calls_its_verb_r14/proj/.refmatrix')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fd496a0>
+
+    @pytest.mark.parametrize("vname", sorted(CLI_INVOKE))
+    def test_cli_twin_calls_its_verb(vname, _cli_env, monkeypatch):
+        """Three properties per twin: the verb is CALLED (with a root), the argv's
+        options ARRIVE as the verb's own parameters (bound against the real
+        signature), and the CLI RENDERS the verb's result (canary)."""
+        import inspect
+        argv, canned, expect, canary = CLI_INVOKE[vname]
+        v = verbs.VERBS[vname]
+        sig = inspect.signature(v.fn)
+        seen = []
+    
+        def recorder(root, *a, **kw):
+            bound = sig.bind(root, *a, **kw)      # a wrong kwarg name fails here
+            bound.apply_defaults()
+            seen.append(bound.arguments)
+            return json.loads(json.dumps(canned))
+        monkeypatch.setattr(verbs, v.fn.__name__, recorder)
+        r = CliRunner().invoke(cli_main, argv, catch_exceptions=False)
+        assert r.exit_code == 0, r.output + (r.stderr or "")
+>       assert seen, f"{vname}: `rmx {' '.join(argv)}` never called verbs.{v.fn.__name__}"
+E       AssertionError: rmx_derive_denotes: `rmx derive denotes` never called verbs.derive_denotes
+E       assert []
+
+/private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/tests/test_verb_parity.py:471: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac15_daemon_down_the_cli_fails_loudly_and_writes_nothing
+FAILED tests/test_verb_parity.py::test_cli_twin_calls_its_verb[rmx_derive_denotes]
+2 failed, 183 passed in 17.10s

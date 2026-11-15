@@ -193,6 +193,28 @@ class _SlowReranker:
         return [1.0] * len(docs)
 
 
+class _QueryEmb:
+    """The query embedder stand-in: the moved leg (task 25.1 R5) embeds the query BEFORE it
+    takes the replica lock (`recall.PrecomputedQuery`), so a fake worker client must yield a
+    vector; `dense_recall` is canned below, so the vector's value is never read."""
+    dim = 4
+    model_name = "stub-embedder"
+
+    def embed_texts(self, texts):
+        import numpy as np
+        return np.zeros((len(texts), 4), dtype="float32")
+
+
+def _wire_replica(monkeypatch, root, s):
+    """Task 25.1 R5 (2026-11-13 contract update): the leg moved from `cli._replica_memory_recall`
+    (which read `cli._reader_store()` / `cli._resolve_partition()`) to
+    `recall.replica_memory_recall(root, *, partition, ...)` over `search.cached_replica(root)`.
+    The store seam moves with it: `cached_replica` hands back this test's store and a lock."""
+    from refmatrix import embedder, search
+    monkeypatch.setattr(search, "cached_replica", lambda r: (s, threading.Lock()))
+    monkeypatch.setattr(embedder, "RemoteEmbedder", lambda client: _QueryEmb())
+
+
 def _replica_store_with_rows(tmp_path):
     root = tmp_path / ".refmatrix"
     s = Store(root); s.init()
@@ -205,9 +227,7 @@ def _replica_store_with_rows(tmp_path):
 
 def test_rerank_is_skipped_and_said_when_the_budget_is_short(tmp_path, monkeypatch):
     root, s, ids = _replica_store_with_rows(tmp_path)
-    monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
-    monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: s.partition_name)
+    _wire_replica(monkeypatch, root, s)
     from refmatrix import modelsrv, recall, reranker
     monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
     monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
@@ -218,9 +238,11 @@ def test_rerank_is_skipped_and_said_when_the_budget_is_short(tmp_path, monkeypat
     monkeypatch.setattr(reranker, "rerank_enabled", lambda: True)
     ws: list[str] = []
     t0 = time.monotonic()
-    hits = cli_mod._replica_memory_recall("hello", k=3, kinds=["memory"], fuse=False, rerank=True,
-                                          left=lambda d: min(d, 0.8), warnings=ws)
+    out = recall.replica_memory_recall(root, partition=s.partition_name, query="hello", k=3,
+                                       kinds=["memory"], fuse=False, rerank=True,
+                                       left=lambda d: min(d, 0.8), warnings=ws)
     assert time.monotonic() - t0 < 1.0
+    hits = (out or {}).get("hits")
     assert hits and all(not h.get("reranked") for h in hits), hits
     assert rr.calls == 0, "the rerank ran with 0.8 s of budget left"
     assert any("rerank skipped" in w for w in ws), ws
@@ -229,9 +251,7 @@ def test_rerank_is_skipped_and_said_when_the_budget_is_short(tmp_path, monkeypat
 
 def test_rerank_timeout_is_said_not_swallowed(tmp_path, monkeypatch):
     root, s, ids = _replica_store_with_rows(tmp_path)
-    monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    monkeypatch.setattr(cli_mod, "_reader_store", lambda: s)
-    monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: s.partition_name)
+    _wire_replica(monkeypatch, root, s)
     from refmatrix import modelsrv, recall, reranker
     monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
     monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=0.5: True)
@@ -246,9 +266,11 @@ def test_rerank_timeout_is_said_not_swallowed(tmp_path, monkeypatch):
     monkeypatch.setattr(reranker, "shared_reranker", lambda log=None, **kw: _Timing())
     monkeypatch.setattr(reranker, "rerank_enabled", lambda: True)
     ws: list[str] = []
-    hits = cli_mod._replica_memory_recall("hello", k=3, kinds=["memory"], fuse=False, rerank=True,
-                                          left=lambda d: min(d, 30.0), warnings=ws)
-    assert hits and all(not h.get("reranked") for h in hits)
+    out = recall.replica_memory_recall(root, partition=s.partition_name, query="hello", k=3,
+                                       kinds=["memory"], fuse=False, rerank=True,
+                                       left=lambda d: min(d, 30.0), warnings=ws)
+    hits = (out or {}).get("hits")
+    assert hits and all(not h.get("reranked") for h in hits), (out, ws)
     assert any("rerank" in w and "timed out" in w for w in ws), ws
     s.close()
 

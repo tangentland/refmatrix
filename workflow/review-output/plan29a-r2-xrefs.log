@@ -1,0 +1,36 @@
+== (1) engine-called cli functions: module-level cli names each body reads, and which are test-patched
+   _subject_upsert (-> session_cmds): reads ['_memory_daemon_call', '_root', '_store']
+      patched among them: ['_memory_daemon_call', '_root', '_store']
+      patched names read one call down: ['_resolve_partition', '_root']
+   _subject_link (-> session_cmds): reads ['_memory_daemon_call', '_root', '_store']
+      patched among them: ['_memory_daemon_call', '_root', '_store']
+      patched names read one call down: ['_resolve_partition', '_root']
+   _sync_memory_dir (-> memory_cmds): reads ['_bridge_stats', '_bridge_wait_for_active_job', '_ingest_gmd_sync', '_memory_partition_default', '_partition_override', '_resolve_partition']
+      patched among them: ['_memory_partition_default', '_partition_override', '_resolve_partition']
+      patched names read one call down: ['_partition_override', '_resolve_partition', '_root']
+   _root_from_projects_slug (-> _core): reads []
+      patched among them: []
+      patched names read one call down: []
+
+== (2) references between proposed command modules (free names only; locals excluded)
+   defs in command modules that load a NAME equal to a cli def but bound locally (must NOT be rewritten): 48
+   cross-command-module references: 3 from 3 defs
+      ingest_cmds -> vectors_cmds: 1
+      ingest_cmds -> session_cmds: 1
+      daemon_cmds -> ingest_cmds: 1
+       ('_reingest_embed', 'ingest_cmds', 'embed_cmd', 'vectors_cmds')
+       ('queue_clear', 'daemon_cmds', 'sync', 'ingest_cmds')
+       ('reingest', 'ingest_cmds', 'session_ingest_cmd', 'session_cmds')
+   core defs that reference a def the map moves OUT of the core: 0 []
+
+== (3) `global` statements in cli.py, by AST
+   line 931 ['_partition_override']
+   line 8404 ['_partition_override']
+   line 11921 ['_partition_override']
+   line 8477 ['_partition_override']
+
+== (4) `-m refmatrix.cli` spawn sites in src (string constants in code, not comments/docstrings)
+    src/refmatrix/daemon.py 7059
+    src/refmatrix/scheduler.py 131
+    src/refmatrix/ui/server.py 578
+    src/refmatrix/ui/server.py 191

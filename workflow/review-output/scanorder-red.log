@@ -1,0 +1,182 @@
+pyc-guard: recompiled 34 timestamp pyc(s) under /Volumes/littlebig/refmatrix-scanorder/src/refmatrix as checked-hash (bug-037)
+FFF..FFF..FF                                                             [100%]
+=================================== FAILURES ===================================
+________________ test_command_budget_is_095_of_the_measured_cap ________________
+
+    def test_command_budget_is_095_of_the_measured_cap():
+        assert hb.HOOK_CAP_UNITS == 10_000
+>       assert hb.HOOK_COMMAND_BUDGET_BYTES == 9_500
+E       assert 9000 == 9500
+E        +  where 9000 = hb.HOOK_COMMAND_BUDGET_BYTES
+
+tests/test_scan_prompt_block_order.py:62: AssertionError
+______________________ test_scan_cmd_gets_the_whole_9500 _______________________
+
+    def test_scan_cmd_gets_the_whole_9500():
+        chans = hb.HOOK_COMMAND_CHANNELS["scan_cmd"]
+>       assert sum(hb.CHANNEL_BUDGET_BYTES[c] for c in chans) == 9_500
+E       assert 5000 == 9500
+E        +  where 5000 = sum(<generator object test_scan_cmd_gets_the_whole_9500.<locals>.<genexpr> at 0x10b963ed0>)
+
+tests/test_scan_prompt_block_order.py:67: AssertionError
+______ test_the_named_identifier_bundle_comes_before_the_content_matches _______
+
+store = <refmatrix.store.Store object at 0x10f827cb0>
+
+    def test_the_named_identifier_bundle_comes_before_the_content_matches(store):
+        out = scan_prompt(store, PROMPT, composite=False)
+        ident = out.find("=== context for `widget_registry` ===")
+        content = out.find("content matches for prompt")
+        assert ident != -1, out
+        assert content != -1, out
+>       assert ident < content, out
+E       AssertionError: # refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet
+E         
+E         === context for `how does widget_registry relate to the common closet` ===
+E         
+E         CONTENT MATCH (content):
+E           doc-2#root  [concept]  (w=2.253)
+E             The «common» closet holds common things, common common common.
+E           doc-3#root  [concept]  (w=2.00637)
+E             Another «common» note about the closet and common words.
+E           doc-0#root  [concept]  (w=0.373241)
+E             The «widget_registry» holds every widget; see widget_registry for the table.
+E           doc-1#root  [concept]  (w=0.366294)
+E             «widget_registry» is rebuilt nightly by the scheduler.
+E         
+E         [~120 tokens, 4 neighbors, degree=0]
+E         
+E         # refmatrix context for prompt-mentioned symbols: closet, common, widget_registry, doc-3#root, doc-2#root
+E         
+E         === context for `closet` ===
+E         anchor: closet  [concept]
+E         
+E         GREP (unindexed — floor) (grep):
+E           docs/doc-2.md  [doc]  (w=1)
+E             docs/doc-2.md:11
+E             The common «closet» holds common things, common common common.
+E           docs/doc-3.md  [doc]  (w=1)
+E             docs/doc-3.md:11
+E             Another common note about the «closet» and common words.
+E         
+E         [~300 tokens, 2 neighbors, degree=0]
+E         
+E         === context for `widget_registry` ===
+E         anchor: widget_registry  [concept]
+E         
+E         GREP (unindexed — floor) (grep):
+E           docs/doc-0.md  [doc]  (w=1)
+E             docs/doc-0.md:11
+E             The «widget_registry» holds every widget; see widget_registry for the table.
+E           docs/doc-1.md  [doc]  (w=1)
+E             docs/doc-1.md:11
+E             «widget_registry» is rebuilt nightly by the scheduler.
+E         
+E         [~307 tokens, 2 neighbors, degree=0]
+E       assert 1122 < 12
+
+tests/test_scan_prompt_block_order.py:80: AssertionError
+__________ test_the_budget_never_keeps_a_header_without_its_body[400] __________
+
+store = <refmatrix.store.Store object at 0x10bd51400>, cap = 400
+
+    @pytest.mark.parametrize("cap", [400, 700, 1000, 1400, 2000])
+    def test_the_budget_never_keeps_a_header_without_its_body(store, cap):
+        out = scan_prompt(store, PROMPT, composite=False, max_bytes=cap)
+        assert len(out.encode("utf-8")) <= cap
+>       assert _headers_have_bodies(out), out
+E       AssertionError: # refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet
+E         
+E         # [+7 block(s) omitted by --max-bytes 400]
+E       assert False
+E        +  where False = _headers_have_bodies('# refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet\n\n# [+7 block(s) omitted by --max-bytes 400]')
+
+tests/test_scan_prompt_block_order.py:122: AssertionError
+__________ test_the_budget_never_keeps_a_header_without_its_body[700] __________
+
+store = <refmatrix.store.Store object at 0x10bd512b0>, cap = 700
+
+    @pytest.mark.parametrize("cap", [400, 700, 1000, 1400, 2000])
+    def test_the_budget_never_keeps_a_header_without_its_body(store, cap):
+        out = scan_prompt(store, PROMPT, composite=False, max_bytes=cap)
+        assert len(out.encode("utf-8")) <= cap
+>       assert _headers_have_bodies(out), out
+E       AssertionError: # refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet
+E         
+E         # [+7 block(s) omitted by --max-bytes 700]
+E       assert False
+E        +  where False = _headers_have_bodies('# refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet\n\n# [+7 block(s) omitted by --max-bytes 700]')
+
+tests/test_scan_prompt_block_order.py:122: AssertionError
+_________ test_the_budget_never_keeps_a_header_without_its_body[1000] __________
+
+store = <refmatrix.store.Store object at 0x10f827cb0>, cap = 1000
+
+    @pytest.mark.parametrize("cap", [400, 700, 1000, 1400, 2000])
+    def test_the_budget_never_keeps_a_header_without_its_body(store, cap):
+        out = scan_prompt(store, PROMPT, composite=False, max_bytes=cap)
+        assert len(out.encode("utf-8")) <= cap
+>       assert _headers_have_bodies(out), out
+E       AssertionError: # refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet
+E         
+E         === context for `how does widget_registry relate to the common closet` ===
+E         
+E         CONTENT MATCH (content):
+E           doc-2#root  [concept]  (w=2.253)
+E             The «common» closet holds common things, common common common.
+E           doc-3#root  [concept]  (w=2.00637)
+E             Another «common» note about the closet and common words.
+E           doc-0#root  [concept]  (w=0.373241)
+E             The «widget_registry» holds every widget; see widget_registry for the table.
+E           doc-1#root  [concept]  (w=0.366294)
+E             «widget_registry» is rebuilt nightly by the scheduler.
+E         
+E         [~120 tokens, 4 neighbors, degree=0]
+E         
+E         # refmatrix context for prompt-mentioned symbols: closet, common, widget_registry, doc-3#root, doc-2#root
+E         
+E         # [+3 block(s) omitted by --max-bytes 1000]
+E       assert False
+E        +  where False = _headers_have_bodies('# refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet\n\n=== context fo...tioned symbols: closet, common, widget_registry, doc-3#root, doc-2#root\n\n# [+3 block(s) omitted by --max-bytes 1000]')
+
+tests/test_scan_prompt_block_order.py:122: AssertionError
+_____________ test_a_tight_budget_keeps_the_named_identifier_first _____________
+
+store = <refmatrix.store.Store object at 0x10ef0a510>
+
+    def test_a_tight_budget_keeps_the_named_identifier_first(store):
+        full = scan_prompt(store, PROMPT, composite=False)
+        cap = full.find("content matches for prompt") + 120   # room for the first section only
+        out = scan_prompt(store, PROMPT, composite=False, max_bytes=max(cap, 600))
+>       assert "=== context for `widget_registry` ===" in out, out
+E       AssertionError: # refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet
+E         
+E         # [+7 block(s) omitted by --max-bytes 600]
+E       assert '=== context for `widget_registry` ===' in '# refmatrix content matches for prompt: how, does, widget_registry, relate, to, the, common, closet\n\n# [+7 block(s) omitted by --max-bytes 600]'
+
+tests/test_scan_prompt_block_order.py:129: AssertionError
+__________________ test_the_content_header_lists_no_stopwords __________________
+
+store = <refmatrix.store.Store object at 0x10ef0a660>
+
+    def test_the_content_header_lists_no_stopwords(store):
+        out = scan_prompt(store, PROMPT, composite=False)
+        m = re.search(r"^# refmatrix content matches for prompt: (.*)$", out, re.M)
+        assert m, out
+        terms = [t.strip() for t in m.group(1).split(",")]
+        assert terms, out
+>       assert not [t for t in terms if t.lower() in _PROMPT_STOPWORDS], terms
+E       AssertionError: ['how', 'does', 'widget_registry', 'relate', 'to', 'the', ...]
+E       assert not ['how', 'does', 'to', 'the']
+
+tests/test_scan_prompt_block_order.py:140: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_scan_prompt_block_order.py::test_command_budget_is_095_of_the_measured_cap
+FAILED tests/test_scan_prompt_block_order.py::test_scan_cmd_gets_the_whole_9500
+FAILED tests/test_scan_prompt_block_order.py::test_the_named_identifier_bundle_comes_before_the_content_matches
+FAILED tests/test_scan_prompt_block_order.py::test_the_budget_never_keeps_a_header_without_its_body[400]
+FAILED tests/test_scan_prompt_block_order.py::test_the_budget_never_keeps_a_header_without_its_body[700]
+FAILED tests/test_scan_prompt_block_order.py::test_the_budget_never_keeps_a_header_without_its_body[1000]
+FAILED tests/test_scan_prompt_block_order.py::test_a_tight_budget_keeps_the_named_identifier_first
+FAILED tests/test_scan_prompt_block_order.py::test_the_content_header_lists_no_stopwords
+8 failed, 4 passed in 5.64s

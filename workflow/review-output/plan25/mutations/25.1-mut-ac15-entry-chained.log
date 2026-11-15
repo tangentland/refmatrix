@@ -1,0 +1,30 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+__ test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry ___
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-943/test_ac15a_generator_emits_one0')
+
+    def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tmp_path):
+        """AC-15 (a): exactly one SessionStart entry whose matcher covers compact AND clear, whose
+        command is `rmx recall-state --max-bytes N` (N = budget("recall_state") ≤ 9,000), alone
+        (not chained to another command); startup|resume keep their entries."""
+        root = tmp_path / "proj" / ".refmatrix"
+        root.mkdir(parents=True)
+        matcher, cmd = _rs_entry(root)
+        assert {"compact", "clear"} <= set((matcher or "").split("|")), matcher
+        tail = s.after_env(cmd)
+        n = s.budget_or_none("recall_state")
+        assert n is not None and n <= 9000, f"R1 recall_state budget: {n}"
+>       assert tail == f"rmx recall-state --max-bytes {n}", tail
+E       AssertionError: rmx focus hook --event session-start ; rmx recall-state --max-bytes 9000
+E       assert 'rmx focus ho...ax-bytes 9000' == 'rmx recall-s...ax-bytes 9000'
+E         
+E         - rmx recall-state --max-bytes 9000
+E         + rmx focus hook --event session-start ; rmx recall-state --max-bytes 9000
+
+tests/test_task25_1_recall_budget.py:1264: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.17s

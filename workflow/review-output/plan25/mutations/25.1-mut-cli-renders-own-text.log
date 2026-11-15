@@ -1,0 +1,29 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_______________ test_ac7_cli_prints_the_verbs_text_byte_for_byte _______________
+
+fx = <tests.task25_1_support.Fixture object at 0x116ab2a50>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1178b02b0>
+
+    def test_ac7_cli_prints_the_verbs_text_byte_for_byte(fx, monkeypatch):
+        """AC-7: the verb's `text` (query, k=12, scope=both, pack=True) equals the per-prompt argv's
+        stdout byte for byte (one trailing newline from click.echo tolerated). Replica leg OFF (no
+        worker); the ON leg is AC-4 (d)'s parity."""
+        from refmatrix import verbs
+        r = _q(fx)
+        _ok(r, "per-prompt argv")
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        res = verbs.memory_recall(fx.root, query=QUESTION, k=12, scope="both", pack=True)
+        assert "text" in res, f"AC-7: pack=True returned no `text`: keys {sorted(res)}"
+>       assert r.stdout.rstrip(b"\n") == res["text"].encode("utf-8").rstrip(b"\n")
+E       AssertionError: assert b'# rmx recal...scope global)' == b'# rmx recal...scope global)'
+E         
+E         At index 456 diff: b'F' != b'H'
+E         Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:975: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac7_cli_prints_the_verbs_text_byte_for_byte
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 17.11s

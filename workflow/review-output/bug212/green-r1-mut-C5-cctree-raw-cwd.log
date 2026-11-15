@@ -1,0 +1,77 @@
+............................F................................            [100%]
+=================================== FAILURES ===================================
+_____ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree] _____
+
+named_store = (PosixPath('/private/tmp/b212s-33r7sn7w'), PosixPath('/private/tmp/b212s-33r7sn7w/st/.refmatrix'))
+argv = ['cctree']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx cctree` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-33r7sn7w/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15096, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 118, in invoke
+E             return super().invoke(ctx)
+E                    ~~~~~~~~~~~~~~^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/decorators.py", line 34, in new_func
+E             return f(get_current_context(), *args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 14779, in cctree_cmd
+E             cctree.main()
+E             ~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1528, in main
+E             path = resolve_path(args)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1312, in resolve_path
+E             base = _project_base(args)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1301, in _project_base
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-33r7sn7w/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15096, in cli_entry...
+E         
+E         ...Full output truncated (33 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:376: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+1 failed, 60 passed in 52.48s

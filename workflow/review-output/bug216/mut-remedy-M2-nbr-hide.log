@@ -1,0 +1,26 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+..............F...................                                       [100%]
+=================================== FAILURES ===================================
+_________ test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216rf2vgqefx/proj/.refmatrix'), ...}
+
+    def test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link(walk):
+        """L81 M2: `neighbors` keeps listing raw `denotes` links — `rmx neighbors <concept>` names
+        the doc the concept denotes. At df092ac `QueryEngine.neighbors` drops `denotes` from its
+        linkage list (it only folds the hop through equivalents of the NEXT frontier), so a concept's
+        own denotes target is never listed."""
+        from refmatrix.graphread import neighbors_payload
+        s = _open(walk["root"])
+        try:
+            out = neighbors_payload(s, "b-doc", depth=1)
+        finally:
+            s.close()
+>       assert walk["b"] in {e["id"] for e in out["entities"]}, out
+E       AssertionError: {'cardinality': 1, 'concept': 'b-doc', 'entities': [{'id': 6, 'kind': 'doc', 'name': 'x-doc', 'path': '/private/tmp/b216rf2vgqefx/proj/docs/x.md'}], 'hint': None}
+E       assert 4 in {6}
+
+tests/test_bug216_remedy_r1.py:530: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link
+1 failed, 33 passed in 16.59s

@@ -1,4 +1,14 @@
-# contra-a: memory organisation (T2) — files read: 26
+---
+gmd: "0.1"
+id: pop-2026-11-13-contra-a
+title: "contra-a: memory organisation (T2) — files read: 26"
+tags: [plan-review, pop-2026-11-13, report]
+metadata:
+  node_type: report
+  created: 2026-11-13
+---
+
+# contra-a: memory organisation (T2) — files read: 26 {#root}
 
 Persisted by the lead from the agent's text (2026-11-13, dev master 0d2a270, read-only sweep).
 Brief: workflow/agents/contra-pop.md. 9 findings.

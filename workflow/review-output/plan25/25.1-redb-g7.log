@@ -1,0 +1,26 @@
+...........................................................F............ [ 22%]
+........................................................................ [ 44%]
+........................................................................ [ 66%]
+........................................................................ [ 88%]
+.......................................                                  [100%]
+=================================== FAILURES ===================================
+_________________ test_ac3_reach_at_least_8_distinct_memories __________________
+
+fx = <tests.task25_1_support.Fixture object at 0x1375467b0>
+
+    def test_ac3_reach_at_least_8_distinct_memories(fx):
+        """AC-3: distinct non-subject, non-session memories the MODEL receives (whole payload ≤ cap,
+        else the preview) ≥ 8 on the per-prompt argv. HEAD: 0 (18,880 B → a 2 KB JSON preview)."""
+        r = _q(fx)
+        _ok(r, "per-prompt argv")
+        got = s.distinct_memories_received(r.stdout)
+>       assert len(got) >= 8, (f"AC-3: the model receives {len(got)} distinct memories "
+                               f"({sorted(got)}) from a {len(r.stdout)} B payload")
+E       AssertionError: AC-3: the model receives 0 distinct memories ([]) from a 0 B payload
+E       assert 0 >= 8
+E        +  where 0 = len(set())
+
+tests/test_task25_1_recall_budget.py:476: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac3_reach_at_least_8_distinct_memories
+1 failed, 326 passed in 311.81s (0:05:11)

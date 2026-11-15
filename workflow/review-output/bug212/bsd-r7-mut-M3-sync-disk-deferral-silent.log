@@ -1,0 +1,42 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r7.ZU1B/mu/src/refmatrix as checked-hash (bug-037)
+..F                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_memory_sync_disk_deferred_behind_a_running_job_warns_on_stderr ______
+
+live = (PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-uv73haop'), PosixPath('/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-uv73haop/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108744cb0>
+
+    @pytest.mark.timeout(300)
+    def test_memory_sync_disk_deferred_behind_a_running_job_warns_on_stderr(live, monkeypatch):
+        """m-2, GUARD (passes at bcd861c; proven by bsd's M3, the warning replaced with `pass`):
+        `rmx memory sync-disk <dir>` while a REAL ingest job holds the daemon's single-active-ingest
+        slot, with the wait shortened through `RMX_BRIDGE_WAIT_S`. Exactly one stderr line
+        `warning: memory bridge deferred: ...` naming the job id, exit 0, no `Error:` line -- a
+        deferral is neither silent nor a failure (L98)."""
+        base, root = live
+        jid = _start_running_job(base, root)
+        monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+        memdir = base / "memory"
+        memdir.mkdir()
+        (memdir / "mine_r7.md").write_text(GMD.format(id="mine_r7", body="mine"), encoding="utf-8")
+        r = CliRunner().invoke(cli_mod.main, ["memory", "sync-disk", str(memdir)])
+        text = f"exit {r.exit_code}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        warn = [ln for ln in r.stderr.splitlines()
+                if ln.startswith("warning: memory bridge deferred:")]
+>       assert len(warn) == 1 and jid in warn[0], \
+            f"expected ONE stderr `warning: memory bridge deferred:` line naming job {jid}\n{text}"
+E       AssertionError: expected ONE stderr `warning: memory bridge deferred:` line naming job c437d027120e
+E         exit 0
+E         stdout:
+E         /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmxb-uv73haop/memory
+E         
+E         stderr:
+E         # rmx: `memory sync-disk` = `rmx ingest-gmd --as-memory <dir>`
+E         
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+tests/test_bug212_r7_red.py:152: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r7_red.py::test_memory_sync_disk_deferred_behind_a_running_job_warns_on_stderr
+1 failed, 2 passed in 19.02s

@@ -1,0 +1,78 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/r2/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_b2d_pin_merge_refused_past_the_headroom_leaves_no_target _________
+
+base = PosixPath('/private/tmp/b216q6v52w_7k')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ceb4770>
+
+    def test_b2d_pin_merge_refused_past_the_headroom_leaves_no_target(base, monkeypatch):
+        """PIN (green at 25ceacd — bsd r2: loud, but no test drove it). Two fresh-id collisions
+        against a headroom of 1: `MergeRefused`, and no target file."""
+        import refmatrix.replica_merge as rm
+        a_root = base / "A" / "proj" / ".refmatrix"
+        b_root = base / "B" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        b_root.mkdir(parents=True)
+        shutil.copy2(a_root / "catalog.duckdb", b_root / "catalog.duckdb")
+        for root, side in ((a_root, "a"), (b_root, "b")):
+            s = _open(root)
+            try:
+                for k in range(2):
+                    s.add_memory(f"mem-{side}{k}", f"body {side}{k}")
+            finally:
+                s.close()
+        monkeypatch.setattr(rm, "REMAP_HEADROOM", 1)
+        target = base / "T" / "catalog.duckdb"
+        target.parent.mkdir()
+>       with pytest.raises(rm.MergeRefused):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'refmatrix.replica_merge.MergeRefused'>
+
+tests/test_bug216_remedy_r2.py:303: Failed
+___ test_b2d_pin_the_replica_merge_op_refuses_loudly_and_unlinks_the_target ____
+
+base = PosixPath('/private/tmp/b216q6pr2kx24')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109d43e10>
+
+    def test_b2d_pin_the_replica_merge_op_refuses_loudly_and_unlinks_the_target(base, monkeypatch):
+        """PIN, the op half: `_op_replica_merge` (the `rmx replica merge` path) answers the refusal
+        with ok:False naming it, leaves no merge target, and reopens the writer on slot A."""
+        import refmatrix.replica_merge as rm
+        from refmatrix import daemon as dm
+        a_root = base / "A" / "proj" / ".refmatrix"
+        b_root = base / "B" / "proj" / ".refmatrix"
+        _new_store(a_root)
+        b_root.mkdir(parents=True)
+        shutil.copy2(a_root / "catalog.duckdb", b_root / "catalog.duckdb")
+        for root, side in ((a_root, "a"), (b_root, "b")):
+            s = _open(root)
+            try:
+                for k in range(2):
+                    s.add_memory(f"mem-{side}{k}", f"body {side}{k}")
+            finally:
+                s.close()
+        droot = base / "D" / "proj" / ".refmatrix"
+        droot.mkdir(parents=True)
+        shutil.copy2(a_root / "catalog.duckdb", droot / "catalog.A.duckdb")
+        shutil.copy2(b_root / "catalog.duckdb", droot / "catalog.B.duckdb")
+        (droot / "active").write_text("A")
+        monkeypatch.setattr(rm, "REMAP_HEADROOM", 1)
+        d = dm.Daemon(droot, partition="proj")
+        d._log = lambda msg: None
+        d.store = Store(droot, partition="proj")
+        d.store.init()
+        d.store._connect()
+        try:
+            r = dm._op_replica_merge(d, {"dry_run": False})
+>           assert r.get("ok") is False and "MergeRefused" in str(r.get("error")), r
+E           AssertionError: {'a_counts': {'bitmap_fragments': 0, 'concepts': 0, 'entities': 2, 'entity_links': 0, ...}, 'b_counts': {'bitmap_fragments': 0, 'concepts': 0, 'entities': 2, 'entity_links': 0, ...}, 'dry_run': False, 'elapsed_ms': 61, ...}
+E           assert (True is False)
+E            +  where True = <built-in method get of dict object at 0x11d1ab300>('ok')
+E            +    where <built-in method get of dict object at 0x11d1ab300> = {'a_counts': {'bitmap_fragments': 0, 'concepts': 0, 'entities': 2, 'entity_links': 0, ...}, 'b_counts': {'bitmap_fragments': 0, 'concepts': 0, 'entities': 2, 'entity_links': 0, ...}, 'dry_run': False, 'elapsed_ms': 61, ...}.get
+
+tests/test_bug216_remedy_r2.py:338: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r2.py::test_b2d_pin_merge_refused_past_the_headroom_leaves_no_target
+FAILED tests/test_bug216_remedy_r2.py::test_b2d_pin_the_replica_merge_op_refuses_loudly_and_unlinks_the_target
+2 failed, 9 deselected in 0.78s

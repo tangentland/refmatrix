@@ -1,0 +1,149 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut2/src/refmatrix as checked-hash (bug-037)
+.............FFF.....F....                                               [100%]
+=================================== FAILURES ===================================
+______ test_r2_s1a_dangling_origin_head_is_said_and_the_list_still_picks _______
+
+repos = (PosixPath('/private/tmp/b225-e3ty96s5'), PosixPath('/private/tmp/b225-e3ty96s5/work'))
+
+    def test_r2_s1a_dangling_origin_head_is_said_and_the_list_still_picks(repos):
+        """origin/HEAD names origin/gone (deleted and pruned on the remote). The list
+        decides (origin/master, 5 ahead) AND trunk_error says the declared trunk was
+        skipped. At d735ce5 trunk_error is "" (the case was pinned silent)."""
+        _, work = repos
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        facts = handoff._ss_git_facts(work, None)
+        assert facts["ahead_base"] == "origin/master", facts
+        assert _subjects(facts["ahead"]) == list(reversed(FEATURE)) + list(reversed(DEVELOP))
+>       assert re.search(DANGLING_NOTE.format(x="origin/gone", y="origin/master"),
+                         facts["trunk_error"]), facts
+E       AssertionError: {'ahead': '0c72cba feature commit 2
+E         9ce5880 feature commit 1
+E         95c1e05 develop commit 3
+E         950983d develop commit 2
+E         3f2c95b develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert None
+E        +  where None = <function search at 0x10075fe20>('origin/HEAD names `?origin/gone`?, which does not resolve; measured against `?origin/master`?', '')
+E        +    where <function search at 0x10075fe20> = re.search
+E        +    and   'origin/HEAD names `?origin/gone`?, which does not resolve; measured against `?origin/master`?' = <built-in method format of str object at 0x106300030>(x='origin/gone', y='origin/master')
+E        +      where <built-in method format of str object at 0x106300030> = 'origin/HEAD names `?{x}`?, which does not resolve; measured against `?{y}`?'.format
+
+tests/test_bug225_handoff_trunk.py:400: AssertionError
+______ test_r2_s1a_dangling_note_reaches_the_doc_and_the_recall_anomalies ______
+
+repos = (PosixPath('/private/tmp/b225-oqziu8m9'), PosixPath('/private/tmp/b225-oqziu8m9/work'))
+
+    def test_r2_s1a_dangling_note_reaches_the_doc_and_the_recall_anomalies(repos):
+        """The note is printed by both composers, not only stored."""
+        base, work = repos
+        _git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        note = DANGLING_NOTE.format(x="origin/gone", y="origin/master")
+        s, root = _stm(base, "sess-b225-r2-dangle")
+        doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)["doc"]
+>       assert re.search(note, _flat(doc)), doc
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225r2da
+E         title: "Save-state 2026-11-14: work @ 09f4cf3"
+E         tags: ["session:sess-b225-r2-dangle"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-r2-dangle
+E           created: 2026-11-14
+E           updated: 2026-11-14T02:33:46-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 09f4cf3 {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **feature** · HEAD `09f4cf3 feature commit 2`
+E         - **5** commit(s) ahead of `origin/master`
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         09f4cf3 feature commit 2
+E         89bb781 feature commit 1
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert None
+E        +  where None = <function search at 0x10075fe20>('origin/HEAD names `?origin/gone`?, which does not resolve; measured against `?origin/master`?', '--- gmd: "0.1" id: savestate_sessb225r2da title: "Save-state 2026-11-14: work @ 09f4cf3" tags: ["session:sess-b225-r2...=2.3) rel: realizes -> [[feedback_save_state_means_handoff]] rel: related-to -> [[feedback_recall_state_means_resume]]')
+E        +    where <function search at 0x10075fe20> = re.search
+E        +    and   '--- gmd: "0.1" id: savestate_sessb225r2da title: "Save-state 2026-11-14: work @ 09f4cf3" tags: ["session:sess-b225-r2...=2.3) rel: realizes -> [[feedback_save_state_means_handoff]] rel: related-to -> [[feedback_recall_state_means_resume]]' = _flat('---\ngmd: "0.1"\nid: savestate_sessb225r2da\ntitle: "Save-state 2026-11-14: work @ 09f4cf3"\ntags: ["session:sess-b22...n\nrel: realizes -> [[feedback_save_state_means_handoff]]\nrel: related-to -> [[feedback_recall_state_means_resume]]\n')
+
+tests/test_bug225_handoff_trunk.py:412: AssertionError
+______ test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said ______
+
+repos = (PosixPath('/private/tmp/b225-qdq2dl8g'), PosixPath('/private/tmp/b225-qdq2dl8g/work'))
+
+    def test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said(repos):
+        """origin/HEAD → origin/develop, and origin/develop holds a missing object id.
+        At d735ce5 it verifies, the ahead `git log` fails and is swallowed, and the
+        handoff says "0 commit(s) ahead of origin/develop — in sync"."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        _point_at_missing_object(work, "refs/remotes/origin/develop")
+        facts = handoff._ss_git_facts(work, None)
+        assert facts["ahead_base"] == "origin/master", facts
+        assert _subjects(facts["ahead"]) == list(reversed(FEATURE)) + list(reversed(DEVELOP))
+>       assert re.search(DANGLING_NOTE.format(x="origin/develop", y="origin/master"),
+                         facts["trunk_error"]), facts
+E       AssertionError: {'ahead': 'f68746b feature commit 2
+E         d6682ed feature commit 1
+E         96f68ba develop commit 3
+E         9fb890a develop commit 2
+E         92941be develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert None
+E        +  where None = <function search at 0x10075fe20>('origin/HEAD names `?origin/develop`?, which does not resolve; measured against `?origin/master`?', '')
+E        +    where <function search at 0x10075fe20> = re.search
+E        +    and   'origin/HEAD names `?origin/develop`?, which does not resolve; measured against `?origin/master`?' = <built-in method format of str object at 0x106300030>(x='origin/develop', y='origin/master')
+E        +      where <built-in method format of str object at 0x106300030> = 'origin/HEAD names `?{x}`?, which does not resolve; measured against `?{y}`?'.format
+
+tests/test_bug225_handoff_trunk.py:442: AssertionError
+_____________ test_r2_m1_cli_save_state_console_prints_trunk_error _____________
+
+repos = (PosixPath('/private/tmp/b225-xbbu0hln'), PosixPath('/private/tmp/b225-xbbu0hln/work'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x115ba71c0>
+
+    def test_r2_m1_cli_save_state_console_prints_trunk_error(repos, monkeypatch):
+        """`rmx save-state` (not --dry-run, which echoes the doc) prints the error on
+        the console. At d735ce5 it is only inside the written file."""
+        base, work = repos
+        _break_origin_head(work, UNREADABLE["outside-refs"])
+        from refmatrix import cli as cli_mod
+        monkeypatch.setenv("REFMATRIX_ROOT", str(work / ".refmatrix"))
+        r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "sess-b225-m1-cli",
+                                              "--memory-dir", str(base / "memory"),
+                                              "--no-lint", "--no-promote", "--no-sync"])
+        assert r.exit_code == 0, f"{r.output}\n{r.exception!r}"
+        out = _flat(r.output)
+>       assert "exited 128" in out and "No such ref: refs/remotes/origin/HEAD" in out, r.output
+E       AssertionError: save-state /private/tmp/b225-xbbu0hln/memory/savestate_sessb225m1cl.md  (0 
+E         events, session sess-b225-m1-cli, explicit)
+E         MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)
+E         
+E       assert ('exited 128' in 'save-state /private/tmp/b225-xbbu0hln/memory/savestate_sessb225m1cl.md (0 events, session sess-b225-m1-cli, explicit) MEMORY.md: 1 -> 1 lines, 134 chars (caps 200 lines / 24000 chars; 1 memories on disk)')
+
+tests/test_bug225_handoff_trunk.py:555: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1a_dangling_origin_head_is_said_and_the_list_still_picks
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1a_dangling_note_reaches_the_doc_and_the_recall_anomalies
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1b_origin_head_to_a_missing_object_falls_back_and_is_said
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_m1_cli_save_state_console_prints_trunk_error
+4 failed, 22 passed in 16.29s

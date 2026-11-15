@@ -1,0 +1,15 @@
+
+gmd lint: 2 files, 2 GMD docs, 0 errors, 13 warnings [phase 1 doc-level]
+workflow/implementation_summaries/task-bug216-rule-docs-in-graph.md:15: warn: [dangling-doc] [[bug_registry]] — no doc with id `bug_registry` in scanned set
+workflow/implementation_summaries/task-bug216-rule-docs-in-graph.md:16: warn: [dangling-doc] [[feedback_clean_corpus_hides_a_dead_gate]] — no doc with id `feedback_clean_corpus_hides_a_dead_gate` in scanned set
+workflow/implementation_summaries/task-bug216-rule-docs-in-graph.md:17: warn: [dangling-doc] [[feedback_red_test_must_fail_at_head]] — no doc with id `feedback_red_test_must_fail_at_head` in scanned set
+workflow/implementation_summaries/task-bug216-rule-docs-in-graph.md:289: warn: [dangling-doc] [[test_mock_registry]] — no doc with id `test_mock_registry` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:21: warn: [dangling-doc] [[bug_registry]] — no doc with id `bug_registry` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:22: warn: [dangling-doc] [[measurement-task-21.5-relation-gaps-2026-11-13#gmd-gap-correction]] — no doc with id `measurement-task-21.5-relation-gaps-2026-11-13` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:23: warn: [dangling-doc] [[task-bug179-lint-ingest-anchor-parity]] — no doc with id `task-bug179-lint-ingest-anchor-parity` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:24: warn: [dangling-doc] [[feedback_operational_content_not_in_graph]] — no doc with id `feedback_operational_content_not_in_graph` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:25: warn: [dangling-doc] [[feedback_clean_corpus_hides_a_dead_gate]] — no doc with id `feedback_clean_corpus_hides_a_dead_gate` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:48: warn: [dangling-doc] [[feedback_operational_content_not_in_graph]] — no doc with id `feedback_operational_content_not_in_graph` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:69: warn: [dangling-doc] [[feedback_clean_corpus_hides_a_dead_gate]] — no doc with id `feedback_clean_corpus_hides_a_dead_gate` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:89: warn: [dangling-doc] [[claude#no-silent-failures]] — no doc with id `claude` in scanned set
+workflow/plans/task-bug216-rule-docs-in-graph.md:139: warn: [dangling-doc] [[bsd-215m1-measurements-r1#b1]] — no doc with id `bsd-215m1-measurements-r1` in scanned set

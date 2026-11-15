@@ -1,4 +1,14 @@
-## contra-d: grep surface + graph integrity (T5, T6)   (files read: 19)
+---
+gmd: "0.1"
+id: pop-2026-11-13-contra-d
+title: "contra-d: grep surface + graph integrity (T5, T6)   (files read: 19)"
+tags: [plan-review, pop-2026-11-13, report]
+metadata:
+  node_type: report
+  created: 2026-11-13
+---
+
+## contra-d: grep surface + graph integrity (T5, T6)   (files read: 19) {#root}
 
 Files read: the brief, the lead's draft (re-read after it changed on disk), the bug-216 spec on dev master and on the clone branch (they are identical), plan-16 and tasks 16.1 and 16.5, tasks 25.4 and 25.5, plan-22 and its dependency section, ADR-0004, the `#t10`/`#t11` wave lists in plan-review-2026-10-14, the POP rows for plans 13, 16, 20, 22 and 25, the bug rows listed in the brief, the headers of plans 13 and 20, the bug-185 spec (its R2), and the grep rewrite hooks. The clone and the repo were not modified.
 

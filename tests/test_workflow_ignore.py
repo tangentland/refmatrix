@@ -24,7 +24,8 @@ def _write_ignore(root: Path, body: str) -> None:
 def test_builtin_defaults_minimal_no_workflow():
     # workflow is NOT hardcoded globally — it's a per-repo .refmatrix_ignore.
     assert "workflow" not in INGEST_IGNORE_DIRS
-    assert set(INGEST_IGNORE_DIRS) == {"node_modules", "venv"}
+    # bug-216 R12 (2026-11-13): watch.py's private additions moved here — one ignore list.
+    assert set(INGEST_IGNORE_DIRS) == {"node_modules", "venv", "__pycache__", "dist", "build"}
 
 
 def test_ignorespec_pattern_shapes():

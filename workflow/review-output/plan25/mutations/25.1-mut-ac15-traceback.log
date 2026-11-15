@@ -1,0 +1,52 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+____________ test_ac15e_unreadable_memdir_fails_with_one_error_line ____________
+
+rs = <tests.task25_1_support.Fixture object at 0x1099c4980>
+
+    def test_ac15e_unreadable_memdir_fails_with_one_error_line(rs):
+        """AC-15 (e): a forced failure (the memdir unreadable): exit != 0, ONE `Error:` line, no
+        Traceback (the user's 2026-11-10 rule)."""
+        _m, cmd = _rs_entry(rs.root)
+        mode = rs.memdir.stat().st_mode
+        os.chmod(rs.memdir, 0)
+        try:
+            r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
+        finally:
+            os.chmod(rs.memdir, mode)
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode != 0, f"exit 0 on an unreadable memdir: {r.stdout[:300]!r}"
+>       assert "Traceback" not in err, err[-1200:]
+E       AssertionError: al/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/cli.py", line 13976, in recall_state
+E             rep = _verbs.recall_state(root, session=session,
+E                                       memory_dir=str(memory_dir) if memory_dir else None,
+E                                       max_bytes=max_bytes)
+E           File "/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/verbs.py", line 1859, in recall_state
+E             raise VerbError(f"recall-state: the memory dir {memdir} is not readable")
+E         refmatrix.verbs.VerbError: recall-state: the memory dir /private/tmp/rmx-06ujfrv6/h/.claude/projects/-private-tmp-rmx-06ujfrv6-p25r-eoq9aspf-fxrs/memory is not readable
+E         
+E       assert 'Traceback' not in 'Traceback (...t readable\n'
+E         
+E         'Traceback' is contained here:
+E           Traceback (most recent call last):
+E         ? +++++++++
+E             File "/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx", line 6, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^...
+E         
+E         ...Full output truncated (23 lines hidden), use '-vv' to show
+
+tests/test_task25_1_recall_budget.py:1326: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac15e_unreadable_memdir_fails_with_one_error_line
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.85s

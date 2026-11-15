@@ -131,6 +131,14 @@ def test_bridge_runs_its_own_ingest_after_a_job_on_another_target(live, monkeypa
 
 
 def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
+    """plan-5 5.2 first pinned a wait that ran out (the other ingest job still running past
+    RMX_BRIDGE_WAIT_S) as a bridge FAILURE in `out["error"]`. bug-212 r6, ruling L98 m-2
+    (2026-11-14), reversed that: the wait running out is a DEFERRAL -- the other job holds the
+    single-active-ingest slot and is still working, nothing was refused, and the next
+    save-state / SessionStart bridges the dir, so it self-heals; it is printed on every run
+    (a stderr warning naming the job), so it stays visible without failing the save. Pinned
+    as a typed `out["deferred"] = {job, reason}` with `out["error"]` empty -- the save-state
+    failure rule reads `sync.error`, so a deferral that also set `error` would fail the save."""
     base, root = live
     memdir = _big_dir(base, "memory", 350)
     part = verbs.memory_partition(root)
@@ -140,7 +148,10 @@ def test_bridge_reports_a_wait_that_ran_out(live, monkeypatch):
     monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
     out = cli_mod._sync_memory_dir(memdir)
     assert out["waited"] is True
-    assert out["error"] and "still running" in out["error"] and resp["result"]["job_id"] in out["error"]
+    deferred = out.get("deferred") or {}
+    assert not out["error"], f"a wait that ran out is still reported as an error: {out}"
+    assert deferred.get("job") == resp["result"]["job_id"], out
+    assert "still running" in (deferred.get("reason") or ""), out
 
 
 # ---- 5.3 finalize on a real store --------------------------------------------
@@ -413,15 +424,51 @@ def test_ac2_prestage_through_the_daemon_walks_the_same_set(ac2_daemon):
     assert _considered(out) == 2, out
 
 
-def test_ac2_doc_ingest_keeps_its_own_walk():
-    """Without `as_memory` the walk is unchanged: a doc tree's dot-dirs are not the memory
-    rule's business (spec AC-2: "Doc ingest keeps its own walk")."""
+def test_ac2_doc_ingest_keeps_its_own_walk(capfd):
+    """Without `as_memory` the directory walk is the DOC walk, and the doc walk follows
+    `ingest.should_ignore` (bug-216 R2, 2026-11-13; spec
+    workflow/plans/task-bug216-rule-docs-in-graph.md #r2, which supersedes this test's original
+    26.1 assertion that doc ingest reads dot-dirs). So the two dot-dir files are excluded by the
+    hidden-dir rule -- and counted and named, never dropped silently (CLAUDE.md
+    #no-silent-failures): into `ignored=` when the caller passes it, else on stderr.
+
+    What 26.1 AC-2 actually protected ("Doc ingest keeps its own walk") still holds and is pinned
+    by the discriminating case below: files the MEMORY walk drops for memory-specific reasons
+    (`README.md`, a nested `MEMORY.md`, a `.gmd` file -- none a dot-dir or an ignore-spec match)
+    are kept by the doc walk. The memory rule does not leak into doc ingest.
+
+    The expected `{keep_top, keep_nested}` is what the doc WALK returns, not an endorsement of
+    ingesting a memdir as docs: that lands its memory files as kind=doc rows, a pre-existing
+    defect logged as bug-220. The store-level conditions — hidden-dir files never reach the
+    store by any route, the re-included profile lands once as a doc, the bridge still lands
+    memories under a `.claude` path — are pinned in tests/test_bug216_hidden_no_pollution.py."""
     from refmatrix.ingest_gmd import collect_gmd_files
-    base = Path(tempfile.mkdtemp(prefix="rmx261-"))
+    base = Path(tempfile.mkdtemp(prefix="rmx261-", dir="/tmp")).resolve()
     try:
         memdir = _ac2_memdir(base)
+        dot = {memdir / ".organise-rollback-1" / "x.md", memdir / ".hidden" / "y.md"}
+
+        ignored: list = []
+        got = {p.name for p in collect_gmd_files([memdir], ignored=ignored)}
+        assert got == {"keep_top.md", "keep_nested.md"}, got
+        assert {Path(p) for p in ignored} == dot, ignored
+
+        capfd.readouterr()
         got = {p.name for p in collect_gmd_files([memdir])}
-        assert got == {"keep_top.md", "keep_nested.md", "x.md", "y.md"}
+        err = capfd.readouterr().err
+        assert got == {"keep_top.md", "keep_nested.md"}, got
+        assert "ignored 2 path(s)" in err and all(str(p) in err for p in dot), err
+
+        # The discriminating case: memory-only exclusions the doc walk must keep.
+        (memdir / "README.md").write_text(GMD.format(id="readme", body="a readme"))
+        (memdir / "feedback" / "MEMORY.md").write_text(
+            GMD.format(id="nested_index", body="a nested index"))
+        (memdir / "notes.gmd").write_text(GMD.format(id="notes", body="a .gmd file"))
+        memory_only = {"README.md", "MEMORY.md", "notes.gmd"}
+        mem_walk = {p.name for p in collect_gmd_files([memdir], as_memory=True, skipped=[])}
+        assert not (mem_walk & memory_only), f"precondition: the memory walk drops them: {mem_walk}"
+        doc_walk = {p.name for p in collect_gmd_files([memdir], ignored=[])}
+        assert doc_walk == {"keep_top.md", "keep_nested.md"} | memory_only, doc_walk
     finally:
         shutil.rmtree(base, ignore_errors=True)
 

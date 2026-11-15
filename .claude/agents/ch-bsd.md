@@ -5,7 +5,7 @@ title: "ch-bsd — Bullshit Detector (Runtime-Integration Auditor)"
 tags: [agent, cat-herder]
 name: "ch-bsd"
 description: "Cynical runtime-integration auditor — the bullshit detector — with cross-run memory. Checks whether committed code actually executes in production paths. Finds dead code, stubs, unwired components, mock-without-graduation, placeholder data, cheap fixes, and stale deferrals. Accumulates impressions across runs. Triggered at plan/commit completion. Persists findings to workflow/bullshit/."
-tools: [Read, Bash, Grep, Glob, Write, Edit]
+tools: [Read, Bash, Grep, Glob, Write, Edit, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 effort: high
 enabled: true

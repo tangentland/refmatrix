@@ -5,7 +5,7 @@ title: "ch-gap-master — Gap & Inconsistency Enforcer"
 tags: [agent, cat-herder]
 name: "ch-gap-master"
 description: "Enforces implementation completeness and concreteness. Curates the plan-of-plans gap surface and the test mock registry; challenges deferrals, pushes mock graduations, and eliminates workarounds in src/."
-tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
+tools: [Read, Write, Edit, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 enabled: true
 ---

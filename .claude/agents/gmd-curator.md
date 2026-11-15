@@ -18,7 +18,7 @@ description: >
   routine maintenance passes ("lint the docs"), ingest of new sources,
   contradiction triage, or answering substantive doc questions worth
   preserving.
-tools: Read, Write, Edit, Grep, Glob, Bash
+tools: Read, Write, Edit, Grep, Glob, Bash, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where
 ---
 
 ## Project profile {#project-profile}

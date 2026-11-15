@@ -1,0 +1,1500 @@
+pyc-guard: recompiled 21 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b241/mut/src/refmatrix as checked-hash (bug-037)
+FFFFFF.FFFFFFF.FFFFFFF.FFFFFFF.FFFFFFF.FFFFFFF.F........................ [ 75%]
+........................                                                 [100%]
+=================================== FAILURES ===================================
+____ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x] ____
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'claude' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.4qgh9w_u/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.4qgh9w_u/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'project-profile' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.4qgh9w_u/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.4qgh9w_u/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+___ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-cite-cites] ___
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'cite' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.4qgh9w_u/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.4qgh9w_u/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+___ test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-claude-x] ___
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node claude#x
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node project-profile#y
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+__ test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-cite-cites] __
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node cite#cites
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-fresh] _
+
+case = {'base': PosixPath('/private/tmp/b241.4qgh9w_u'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4qgh9w_u/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4qgh9w_u/proj'), ...}
+
+    def test_check_rel_landing_shows_no_unresolved_rule_doc_citation(case):
+        r = subprocess.run([sys.executable, str(LANDING), str(_catalog(case["root"])),
+                            str(case["proj"]), "--json"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stdout + r.stderr
+        res = json.loads(r.stdout)
+        by_doc = res["unresolved_by_target_doc"]
+        bad = {k: v for k, v in by_doc.items() if k in ("claude", "project-profile")}
+>       assert not bad, (f"target_unresolved for the rule docs: {bad} (full: {res})"
+                         + _says(case))
+E       AssertionError: target_unresolved for the rule docs: {'claude': 1, 'project-profile': 1} (full: {'authored': 2, 'landed': 0, 'landed_other_line': 0, 'stale': 0, 'file_not_ingested': 0, 'target_unresolved': 2, 'unresolved_by_target_doc': {'claude': 1, 'project-profile': 1}, 'binding': {'doc_or_memory': 0, 'anchor_node': 0, 'misbound': 0, 'bound_via_denotes': 0, 'other_concept': 0}, 'files_not_ingested': [], 'parse_failures': []})
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.4qgh9w_u/proj
+E         » 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4qgh9w_u/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert not {'claude': 1, 'project-profile': 1}
+
+tests/test_bug241_rule_docs_reingest.py:236: AssertionError
+__ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x] __
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'claude' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.bb7a03ym/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.bb7a03ym/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'project-profile' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.bb7a03ym/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.bb7a03ym/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'cite' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.bb7a03ym/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.bb7a03ym/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node claude#x
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node project-profile#y
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node cite#cites
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-plain_row] _
+
+case = {'base': PosixPath('/private/tmp/b241.bb7a03ym'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.bb7a03ym/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.bb7a03ym/proj'), ...}
+
+    def test_check_rel_landing_shows_no_unresolved_rule_doc_citation(case):
+        r = subprocess.run([sys.executable, str(LANDING), str(_catalog(case["root"])),
+                            str(case["proj"]), "--json"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stdout + r.stderr
+        res = json.loads(r.stdout)
+        by_doc = res["unresolved_by_target_doc"]
+        bad = {k: v for k, v in by_doc.items() if k in ("claude", "project-profile")}
+>       assert not bad, (f"target_unresolved for the rule docs: {bad} (full: {res})"
+                         + _says(case))
+E       AssertionError: target_unresolved for the rule docs: {'claude': 1, 'project-profile': 1} (full: {'authored': 2, 'landed': 0, 'landed_other_line': 0, 'stale': 0, 'file_not_ingested': 0, 'target_unresolved': 2, 'unresolved_by_target_doc': {'claude': 1, 'project-profile': 1}, 'binding': {'doc_or_memory': 0, 'anchor_node': 0, 'misbound': 0, 'bound_via_denotes': 0, 'other_concept': 0}, 'files_not_ingested': [], 'parse_failures': []})
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 4 entities from /private/tmp/b241.bb7a03ym/proj
+E         » 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.bb7a03ym/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert not {'claude': 1, 'project-profile': 1}
+
+tests/test_bug241_rule_docs_reingest.py:236: AssertionError
+__ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x] __
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'claude' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.h6bbgkzf/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.h6bbgkzf/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'project-profile' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.h6bbgkzf/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.h6bbgkzf/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'cite' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.h6bbgkzf/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.h6bbgkzf/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node claude#x
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node project-profile#y
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node cite#cites
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-fresh] _
+
+case = {'base': PosixPath('/private/tmp/b241.h6bbgkzf'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.h6bbgkzf/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.h6bbgkzf/proj'), ...}
+
+    def test_check_rel_landing_shows_no_unresolved_rule_doc_citation(case):
+        r = subprocess.run([sys.executable, str(LANDING), str(_catalog(case["root"])),
+                            str(case["proj"]), "--json"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stdout + r.stderr
+        res = json.loads(r.stdout)
+        by_doc = res["unresolved_by_target_doc"]
+        bad = {k: v for k, v in by_doc.items() if k in ("claude", "project-profile")}
+>       assert not bad, (f"target_unresolved for the rule docs: {bad} (full: {res})"
+                         + _says(case))
+E       AssertionError: target_unresolved for the rule docs: {'claude': 1, 'project-profile': 1} (full: {'authored': 2, 'landed': 0, 'landed_other_line': 0, 'stale': 0, 'file_not_ingested': 0, 'target_unresolved': 2, 'unresolved_by_target_doc': {'claude': 1, 'project-profile': 1}, 'binding': {'doc_or_memory': 0, 'anchor_node': 0, 'misbound': 0, 'bound_via_denotes': 0, 'other_concept': 0}, 'files_not_ingested': [], 'parse_failures': []})
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.h6bbgkzf/proj
+E         » 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.h6bbgkzf/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert not {'claude': 1, 'project-profile': 1}
+
+tests/test_bug241_rule_docs_reingest.py:236: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'claude' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.4ldu6q5r/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.4ldu6q5r/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'project-profile' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.4ldu6q5r/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.4ldu6q5r/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'cite' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.4ldu6q5r/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.4ldu6q5r/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node claude#x
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node project-profile#y
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node cite#cites
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-plain_row] _
+
+case = {'base': PosixPath('/private/tmp/b241.4ldu6q5r'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.4ldu6q5r/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.4ldu6q5r/proj'), ...}
+
+    def test_check_rel_landing_shows_no_unresolved_rule_doc_citation(case):
+        r = subprocess.run([sys.executable, str(LANDING), str(_catalog(case["root"])),
+                            str(case["proj"]), "--json"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stdout + r.stderr
+        res = json.loads(r.stdout)
+        by_doc = res["unresolved_by_target_doc"]
+        bad = {k: v for k, v in by_doc.items() if k in ("claude", "project-profile")}
+>       assert not bad, (f"target_unresolved for the rule docs: {bad} (full: {res})"
+                         + _says(case))
+E       AssertionError: target_unresolved for the rule docs: {'claude': 1, 'project-profile': 1} (full: {'authored': 2, 'landed': 0, 'landed_other_line': 0, 'stale': 0, 'file_not_ingested': 0, 'target_unresolved': 2, 'unresolved_by_target_doc': {'claude': 1, 'project-profile': 1}, 'binding': {'doc_or_memory': 0, 'anchor_node': 0, 'misbound': 0, 'bound_via_denotes': 0, 'other_concept': 0}, 'files_not_ingested': [], 'parse_failures': []})
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 7 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 1 entities from /private/tmp/b241.4ldu6q5r/proj
+E         » 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.4ldu6q5r/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert not {'claude': 1, 'project-profile': 1}
+
+tests/test_bug241_rule_docs_reingest.py:236: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'claude' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.vc9pjaro/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.vc9pjaro/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'project-profile' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.vc9pjaro/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.vc9pjaro/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'cite' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.vc9pjaro/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.vc9pjaro/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node claude#x
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node project-profile#y
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node cite#cites
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-fresh] _
+
+case = {'base': PosixPath('/private/tmp/b241.vc9pjaro'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.vc9pjaro/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.vc9pjaro/proj'), ...}
+
+    def test_check_rel_landing_shows_no_unresolved_rule_doc_citation(case):
+        r = subprocess.run([sys.executable, str(LANDING), str(_catalog(case["root"])),
+                            str(case["proj"]), "--json"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stdout + r.stderr
+        res = json.loads(r.stdout)
+        by_doc = res["unresolved_by_target_doc"]
+        bad = {k: v for k, v in by_doc.items() if k in ("claude", "project-profile")}
+>       assert not bad, (f"target_unresolved for the rule docs: {bad} (full: {res})"
+                         + _says(case))
+E       AssertionError: target_unresolved for the rule docs: {'claude': 1, 'project-profile': 1} (full: {'authored': 2, 'landed': 0, 'landed_other_line': 0, 'stale': 0, 'file_not_ingested': 0, 'target_unresolved': 2, 'unresolved_by_target_doc': {'claude': 1, 'project-profile': 1}, 'binding': {'doc_or_memory': 0, 'anchor_node': 0, 'misbound': 0, 'bound_via_denotes': 0, 'other_concept': 0}, 'files_not_ingested': [], 'parse_failures': []})
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 3 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.vc9pjaro/proj
+E         » 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.vc9pjaro/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert not {'claude': 1, 'project-profile': 1}
+
+tests/test_bug241_rule_docs_reingest.py:236: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'claude' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.ysmr74p5/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.ysmr74p5/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'project-profile' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.ysmr74p5/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.ysmr74p5/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_a_gmd_doc_row(case, doc_id, anchor):
+        rows = [r for r in _rows(case["root"], doc_id) if r[0] == "doc"]
+>       assert rows and all(r[3] and "gmd_version" in json.loads(r[3]) for r in rows), (
+            f"no GMD doc row named {doc_id!r} (rows: {rows}); plain rows: "
+            f"{[_rows(case['root'], p) for p in PLAIN_ROWS]}" + _says(case))
+E       AssertionError: no GMD doc row named 'cite' (rows: []); plain rows: [[('doc', 'CLAUDE.md', '/private/tmp/b241.ysmr74p5/proj/CLAUDE.md', None)], [('doc', '.claude/PROJECT_PROFILE.md', '/private/tmp/b241.ysmr74p5/proj/.claude/PROJECT_PROFILE.md', None)]]
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert ([])
+
+tests/test_bug241_rule_docs_reingest.py:211: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-claude-x] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+doc_id = 'claude', anchor = 'x'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node claude#x
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-project-profile-y] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+doc_id = 'project-profile', anchor = 'y'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node project-profile#y
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-cite-cites] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+doc_id = 'cite', anchor = 'cites'
+
+    @pytest.mark.parametrize("doc_id,anchor", DOCS)
+    def test_the_rule_doc_has_its_anchor_node(case, doc_id, anchor):
+        rows = _rows(case["root"], f"{doc_id}#{anchor}")
+>       assert rows, f"no anchor node {doc_id}#{anchor}" + _says(case)
+E       AssertionError: no anchor node cite#cites
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert []
+
+tests/test_bug241_rule_docs_reingest.py:219: AssertionError
+_ test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-plain_row] _
+
+case = {'base': PosixPath('/private/tmp/b241.ysmr74p5'), 'env': {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users...ntities from /private/tmp/b241.ysmr74p5/proj\n', stderr=''), 'proj': PosixPath('/private/tmp/b241.ysmr74p5/proj'), ...}
+
+    def test_check_rel_landing_shows_no_unresolved_rule_doc_citation(case):
+        r = subprocess.run([sys.executable, str(LANDING), str(_catalog(case["root"])),
+                            str(case["proj"]), "--json"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stdout + r.stderr
+        res = json.loads(r.stdout)
+        by_doc = res["unresolved_by_target_doc"]
+        bad = {k: v for k, v in by_doc.items() if k in ("claude", "project-profile")}
+>       assert not bad, (f"target_unresolved for the rule docs: {bad} (full: {res})"
+                         + _says(case))
+E       AssertionError: target_unresolved for the rule docs: {'claude': 1, 'project-profile': 1} (full: {'authored': 2, 'landed': 0, 'landed_other_line': 0, 'stale': 0, 'file_not_ingested': 0, 'target_unresolved': 2, 'unresolved_by_target_doc': {'claude': 1, 'project-profile': 1}, 'binding': {'doc_or_memory': 0, 'anchor_node': 0, 'misbound': 0, 'bound_via_denotes': 0, 'other_concept': 0}, 'files_not_ingested': [], 'parse_failures': []})
+E         --- run stdout ---
+E         » 0/5 clear stamps (--force)
+E           proj: 5 mtime stamps + 0 GMD content hashes cleared
+E         » 1/5 code+docs
+E         ingested 3 entities from /private/tmp/b241.ysmr74p5/proj
+E         » 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E         no candidate files found
+E         » 3/5 sessions: skipped (--no-sessions)
+E         » 4/5 embed: skipped (--no-embed)
+E         » 5/5 pagerank 
+E         
+E         reingest done — 4/4 steps ok
+E           ✓ 0/5 clear stamps (--force)
+E           ✓ 1/5 code+docs
+E           ✓ 2/5 memory (/private/tmp/b241.ysmr74p5/mem)
+E           ✓ 5/5 pagerank 
+E           derive coverage[proj]: never stamped: gmd; skipped this run: embed
+E         
+E         --- run stderr ---
+E         
+E       assert not {'claude': 1, 'project-profile': 1}
+
+tests/test_bug241_rule_docs_reingest.py:236: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-fresh-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-fresh-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_none-plain_row-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_none-plain_row-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_none-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-fresh-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-fresh-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_metadata-plain_row-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_metadata-plain_row-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_metadata-plain_row]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-fresh-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-fresh-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-fresh]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_a_gmd_doc_row[reingest-tldr_call_graph-plain_row-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-claude-x]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-project-profile-y]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_the_rule_doc_has_its_anchor_node[reingest-tldr_call_graph-plain_row-cite-cites]
+FAILED tests/test_bug241_rule_docs_reingest.py::test_check_rel_landing_shows_no_unresolved_rule_doc_citation[reingest-tldr_call_graph-plain_row]
+42 failed, 54 passed in 76.22s (0:01:16)

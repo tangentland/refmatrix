@@ -1,0 +1,720 @@
+.......................FFFFFFFFFFF.......................FFF.            [100%]
+=================================== FAILURES ===================================
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since] __
+
+named_store = (PosixPath('/private/tmp/b212s-7_jxe4tr'), PosixPath('/private/tmp/b212s-7_jxe4tr/st/.refmatrix'))
+argv = ['sync', '--since', 'HEAD~1']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx sync --since HEAD~1` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-7_jxe4tr/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-7_jxe4tr/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+_____ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats] ______
+
+named_store = (PosixPath('/private/tmp/b212s-gto7gu_s'), PosixPath('/private/tmp/b212s-gto7gu_s/st/.refmatrix'))
+argv = ['stats']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx stats` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-gto7gu_s/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-gto7gu_s/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+____ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo] ____
+
+named_store = (PosixPath('/private/tmp/b212s-07pks5b4'), PosixPath('/private/tmp/b212s-07pks5b4/st/.refmatrix'))
+argv = ['grep', 'foo']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx grep foo` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-07pks5b4/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-07pks5b4/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo] ___
+
+named_store = (PosixPath('/private/tmp/b212s-z6rbkv37'), PosixPath('/private/tmp/b212s-z6rbkv37/st/.refmatrix'))
+argv = ['context', 'foo']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx context foo` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-z6rbkv37/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-z6rbkv37/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+_ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function] _
+
+named_store = (PosixPath('/private/tmp/b212s-u7lxuhj9'), PosixPath('/private/tmp/b212s-u7lxuhj9/st/.refmatrix'))
+argv = ['query', 'kind:function']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx query kind:function` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-u7lxuhj9/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-u7lxuhj9/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:357: AssertionError
+_____ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree] _____
+
+named_store = (PosixPath('/private/tmp/b212s-tnzvche3'), PosixPath('/private/tmp/b212s-tnzvche3/st/.refmatrix'))
+argv = ['cctree']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx cctree` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-tnzvche3/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-tnzvche3/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:376: AssertionError
+___ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause] ____
+
+named_store = (PosixPath('/private/tmp/b212s-67mppb3a'), PosixPath('/private/tmp/b212s-67mppb3a/st/.refmatrix'))
+argv = ['hub', 'pause', 'nosuch-bug212']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx hub pause nosuch-bug212` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-67mppb3a/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-67mppb3a/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:376: AssertionError
+_____ test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory ______
+
+named_store = (PosixPath('/private/tmp/b212s-9cud93qe'), PosixPath('/private/tmp/b212s-9cud93qe/st/.refmatrix'))
+
+    @pytest.mark.timeout(120)
+    def test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory(named_store):
+        """s-1: `mcp._resolve_root` reads the cwd when the call names no root/project and no
+        `REFMATRIX_ROOT` is set. The dispatcher turns any exception into `isError`, so this is not
+        a traceback -- but the text was `FileNotFoundError: [Errno 2] No such file or directory`,
+        which names nothing. It must say the working directory is gone, and the server keeps
+        serving."""
+        base, _root = named_store
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "rmx_query", "arguments": {"dsl": "kind:function"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"}]
+        stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+        r = _vanished([sys.executable, str(_entry(base)), "mcp"], _base_env(), stdin=stdin)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, f"`rmx mcp` in a vanished cwd crashed\n{text}"
+E       AssertionError: `rmx mcp` in a vanished cwd crashed
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-9cud93qe/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-9cud93qe/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:398: AssertionError
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since] _
+
+named_store = (PosixPath('/private/tmp/b212s-i0wsnecf'), PosixPath('/private/tmp/b212s-i0wsnecf/st/.refmatrix'))
+fn = 'sync_since'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_since in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:455: AssertionError
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files] _
+
+named_store = (PosixPath('/private/tmp/b212s-84kzu8n4'), PosixPath('/private/tmp/b212s-84kzu8n4/st/.refmatrix'))
+fn = 'sync_files'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_files in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:455: AssertionError
+_______ test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd _______
+
+    @pytest.mark.timeout(120)
+    def test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd():
+        """GUARD (passes at HEAD; proven by mutations A and B): `rmx version` in a vanished cwd,
+        no `REFMATRIX_ROOT`, a fresh `RMX_HOME`: exactly one `cli.log` row there, `cwd` null,
+        `cwd_error` naming the directory. Mutation A (the row filed through `_root()`, whose cwd
+        error the pre-existing `except Exception: pass` swallows) drops the row silently."""
+        from refmatrix.telemetry import CLI_LOG_NAME
+        base = Path(tempfile.mkdtemp(prefix="b212m-", dir="/tmp")).resolve()
+        try:
+            home = base / "rmxhome"
+            home.mkdir()
+            env = {k: v for k, v in _base_env().items() if k != "REFMATRIX_NO_TELEMETRY"}
+            env["RMX_HOME"] = str(home)
+            gone_parent = Path(tempfile.mkdtemp(prefix="b212g-", dir="/tmp")).resolve()
+            try:
+                gone = gone_parent / "gone"
+                gone.mkdir()
+                r = subprocess.run(["/bin/sh", "-c", 'cd "$1" && rmdir "$1" && shift && exec "$@"',
+                                    "sh", str(gone), sys.executable, str(_entry(base)), "version"],
+                                   cwd=str(gone_parent), env=env, capture_output=True, text=True,
+                                   timeout=110)
+            finally:
+                shutil.rmtree(gone_parent, ignore_errors=True)
+            text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>           assert r.returncode == 0, f"`rmx version` in a vanished cwd failed\n{text}"
+E           AssertionError: `rmx version` in a vanished cwd failed
+E             stdout:
+E             
+E             stderr:
+E             Traceback (most recent call last):
+E               File "/private/tmp/b212m-r45syks7/rmx_entry.py", line 3, in <module>
+E                 sys.exit(cli_entry())
+E                          ~~~~~~~~~^^
+E               File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E                 cwd = str(_cwd())
+E                           ~~~~^^
+E               File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E                 return _workdir.current_dir()
+E                        ~~~~~~~~~~~~~~~~~~~~^^
+E               File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E                 return Path.cwd()
+E                        ~~~~~~~~^^
+E               File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E                 cwd = os.getcwd()
+E             FileNotFoundError: [Errno 2] No such file or directory
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['/bin/sh', '-c', 'cd "$1" && rmdir "$1" && shift && exec "$@"', 'sh', '/private/tmp/b212g-jgvll...thlib/__init__.py", line 927, in cwd\n    cwd = os.getcwd()\nFileNotFoundError: [Errno 2] No such file or directory\n').returncode
+
+tests/test_bug212_r1_remedy.py:488: AssertionError
+_______ test_rmx_started_in_a_vanished_cwd_is_a_clean_error[sync-since] ________
+
+argv = ['sync', '--since', 'HEAD~1']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["sync", "--since", "HEAD~1"], ["stats"], ["version"]],
+                             ids=["sync-since", "stats", "version"])
+    def test_rmx_started_in_a_vanished_cwd_is_a_clean_error(argv):
+        """The shape of the backgrounded post-commit that outlives `git worktree remove`: the shell
+        `cd`s into the dir, the dir goes, then `rmx` starts. No `REFMATRIX_ROOT` (a hook has none).
+        A project command fails as a clean `Error:` naming the directory; `version` may also
+        succeed (it needs no project) -- either way, never a traceback."""
+        base = Path(tempfile.mkdtemp(prefix="b212v-", dir="/tmp")).resolve()
+        try:
+            gone = base / "gone"
+            gone.mkdir()
+            entry = _entry(base)
+            r = subprocess.run(["/bin/sh", "-c", 'cd "$1" && rmdir "$1" && shift && exec "$@"',
+                                "sh", str(gone), sys.executable, str(entry), *argv],
+                               cwd=str(base), env=_base_env(), capture_output=True, text=True,
+                               timeout=110)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx sync --since HEAD~1` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212v-yio_6e6a/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212v-yio_6e6a/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_hooks_in_worktrees.py:413: AssertionError
+__________ test_rmx_started_in_a_vanished_cwd_is_a_clean_error[stats] __________
+
+argv = ['stats']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["sync", "--since", "HEAD~1"], ["stats"], ["version"]],
+                             ids=["sync-since", "stats", "version"])
+    def test_rmx_started_in_a_vanished_cwd_is_a_clean_error(argv):
+        """The shape of the backgrounded post-commit that outlives `git worktree remove`: the shell
+        `cd`s into the dir, the dir goes, then `rmx` starts. No `REFMATRIX_ROOT` (a hook has none).
+        A project command fails as a clean `Error:` naming the directory; `version` may also
+        succeed (it needs no project) -- either way, never a traceback."""
+        base = Path(tempfile.mkdtemp(prefix="b212v-", dir="/tmp")).resolve()
+        try:
+            gone = base / "gone"
+            gone.mkdir()
+            entry = _entry(base)
+            r = subprocess.run(["/bin/sh", "-c", 'cd "$1" && rmdir "$1" && shift && exec "$@"',
+                                "sh", str(gone), sys.executable, str(entry), *argv],
+                               cwd=str(base), env=_base_env(), capture_output=True, text=True,
+                               timeout=110)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx stats` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212v-ex7rrdh7/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212v-ex7rrdh7/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_hooks_in_worktrees.py:413: AssertionError
+_________ test_rmx_started_in_a_vanished_cwd_is_a_clean_error[version] _________
+
+argv = ['version']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["sync", "--since", "HEAD~1"], ["stats"], ["version"]],
+                             ids=["sync-since", "stats", "version"])
+    def test_rmx_started_in_a_vanished_cwd_is_a_clean_error(argv):
+        """The shape of the backgrounded post-commit that outlives `git worktree remove`: the shell
+        `cd`s into the dir, the dir goes, then `rmx` starts. No `REFMATRIX_ROOT` (a hook has none).
+        A project command fails as a clean `Error:` naming the directory; `version` may also
+        succeed (it needs no project) -- either way, never a traceback."""
+        base = Path(tempfile.mkdtemp(prefix="b212v-", dir="/tmp")).resolve()
+        try:
+            gone = base / "gone"
+            gone.mkdir()
+            entry = _entry(base)
+            r = subprocess.run(["/bin/sh", "-c", 'cd "$1" && rmdir "$1" && shift && exec "$@"',
+                                "sh", str(gone), sys.executable, str(entry), *argv],
+                               cwd=str(base), env=_base_env(), capture_output=True, text=True,
+                               timeout=110)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx version` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212v-lklxoy86/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry
+E             cwd = str(_cwd())
+E                       ~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 103, in _cwd
+E             return _workdir.current_dir()
+E                    ~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/workdir.py", line 64, in current_dir
+E             return Path.cwd()
+E                    ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212v-lklxoy86/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15077, in cli_entry...
+E         
+E         ...Full output truncated (11 lines hidden), use '-vv' to show
+
+tests/test_bug212_hooks_in_worktrees.py:413: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since]
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files]
+FAILED tests/test_bug212_r1_remedy.py::test_a_cwd_less_run_writes_one_telemetry_row_naming_the_lost_cwd
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[sync-since]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[stats]
+FAILED tests/test_bug212_hooks_in_worktrees.py::test_rmx_started_in_a_vanished_cwd_is_a_clean_error[version]
+14 failed, 47 passed in 50.25s

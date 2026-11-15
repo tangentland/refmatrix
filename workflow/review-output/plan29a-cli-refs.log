@@ -1,0 +1,22 @@
+src: `-m refmatrix.cli` spawn sites: 7 in 6 files
+tests: `-m refmatrix.cli` spawn sites: 22 in 8 files
+eval+scripts+tools: `-m refmatrix.cli` spawn sites: 0 in 0 files
+src modules importing cli: 3
+    ('handoff.py', 669, 'from refmatrix.cli import _sync_memory_dir  # lazy: cli->handoff cycle')
+    ('handoff.py', 699, 'from refmatrix.cli import _subject_link, _subject_upsert')
+    ('telemetry.py', 1011, 'from refmatrix.cli import main as _main')
+test files importing cli: 140
+names imported `from refmatrix.cli import X` in tests: 26 [('main', 51), ('render_derive_warning', 4), ('cli_entry\\nsys.exitcli_entry\\n"', 3), ('render_memory_compile_warning', 2), ('_degraded_embed_line', 2), ('render_derive_coverage', 2), ('_ann_similarity', 2), ('cli_entry', 2), ('_bridge_stats', 1), ('_active_slot_path', 1), ('_store', 1), ('_is_ambient_prompt', 1), ('_embed_batch_verdict', 1), ('_merge_scope', 1), ('argv_count_rows', 1), ('argv_order_index', 1)]
+src/refmatrix modules whose stem is a stdlib module name: []
+proposed cli module stems vs stdlib: []
+sys.argv[0] readers in src: 10
+    ('launchctl.py', 179, '2. Else `sys.argv[0]` made absolute with `os.path.abspath` — symlinks')
+    ('launchctl.py', 182, '3. Else FileNotFoundError naming `sys.argv[0]` and `RMX_BIN`.')
+    ('launchctl.py', 186, 'hub resolved `sys.argv[0]`, so `rmx daemon launchctl install` refused')
+    ('launchctl.py', 193, 'argv0 = sys.argv[0] if sys.argv else ""')
+    ('launchctl.py', 194, 'if argv0:')
+    ('launchctl.py', 195, 'cand = os.path.abspath(argv0)')
+    ('launchctl.py', 201, 'f"as {argv0!r} (sys.argv[0]), which is not an `rmx`/`refmatrix` executable, "')
+    ('launchctl.py', 211, "`_rmx_path()` resolves `$RMX_BIN`, else `sys.argv[0]`. The hub UI's")
+    ('stm.py', 273, 'argv0 = dict(_ps_comm_chain() or [])')
+    ('stm.py', 275, 'if _is_claude(paths.get(cpid, "")) or argv0.get(cpid) == "claude":')

@@ -1,0 +1,84 @@
+......................................................FF......           [100%]
+=================================== FAILURES ===================================
+_ test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11d2f68d0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so(tracked_repo):
+        """m-4 (L95): the session already has an STM subject. `rmx focus change-subject <new>` is
+        refused (no daemon, tracked catalog): the STM subject is STILL the old one, and the one
+        `Error:` line carries the refusal and says the subject was not changed. At 03d7b27 the STM
+        subject switches to <new> before the store write is refused."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r5-subject"
+        stm.Stm(repo.store, session).set_subject("bug212 r5 prior subject")
+        before = _digests(repo.store)
+        r = _cli(repo, ["focus", "change-subject", "bug212 r5 new subject", "-s", session])
+        text = _text(r)
+        now = (stm.Stm(repo.store, session).get_subject() or {}).get("label")
+        assert TRACEBACK not in r.stderr, f"[{layout}] change-subject crashed\n{text}"
+        assert _changed(before, _digests(repo.store)) == [], f"[{layout}] the catalog changed\n{text}"
+>       assert now == "bug212 r5 prior subject", (
+            f"[{layout}] a refused change-subject switched the STM subject to {now!r}: the next "
+            f"promote would file under a subject the store does not hold\n{text}")
+E       AssertionError: [slots] a refused change-subject switched the STM subject to 'bug212 r5 new subject': the next promote would file under a subject the store does not hold
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing to open /private/tmp/b212t-q45ngpp8/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead; the session's subject is unchanged (still 'bug212 r5 prior subject')
+E         
+E       assert 'bug212 r5 new subject' == 'bug212 r5 prior subject'
+E         
+E         - bug212 r5 prior subject
+E         ?           ^^^^^
+E         + bug212 r5 new subject
+E         ?           ^^^
+
+tests/test_bug212_r5_red.py:302: AssertionError
+_ test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11d2e32d0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so(tracked_repo):
+        """m-4 (L95): the session already has an STM subject. `rmx focus change-subject <new>` is
+        refused (no daemon, tracked catalog): the STM subject is STILL the old one, and the one
+        `Error:` line carries the refusal and says the subject was not changed. At 03d7b27 the STM
+        subject switches to <new> before the store write is refused."""
+        from refmatrix import stm
+        repo, layout = tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        session = "bug212-r5-subject"
+        stm.Stm(repo.store, session).set_subject("bug212 r5 prior subject")
+        before = _digests(repo.store)
+        r = _cli(repo, ["focus", "change-subject", "bug212 r5 new subject", "-s", session])
+        text = _text(r)
+        now = (stm.Stm(repo.store, session).get_subject() or {}).get("label")
+        assert TRACEBACK not in r.stderr, f"[{layout}] change-subject crashed\n{text}"
+        assert _changed(before, _digests(repo.store)) == [], f"[{layout}] the catalog changed\n{text}"
+>       assert now == "bug212 r5 prior subject", (
+            f"[{layout}] a refused change-subject switched the STM subject to {now!r}: the next "
+            f"promote would file under a subject the store does not hold\n{text}")
+E       AssertionError: [legacy] a refused change-subject switched the STM subject to 'bug212 r5 new subject': the next promote would file under a subject the store does not hold
+E         exit 1
+E         stdout:
+E         
+E         stderr:
+E         Error: refusing to open /private/tmp/b212t-69fzom12/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead; the session's subject is unchanged (still 'bug212 r5 prior subject')
+E         
+E       assert 'bug212 r5 new subject' == 'bug212 r5 prior subject'
+E         
+E         - bug212 r5 prior subject
+E         ?           ^^^^^
+E         + bug212 r5 new subject
+E         ?           ^^^
+
+tests/test_bug212_r5_red.py:302: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r5_red.py::test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[slots]
+FAILED tests/test_bug212_r5_red.py::test_a_refused_change_subject_leaves_the_stm_subject_unchanged_and_says_so[legacy]
+2 failed, 60 passed in 132.66s (0:02:12)

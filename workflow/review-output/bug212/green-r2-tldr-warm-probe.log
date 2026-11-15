@@ -1,0 +1,42 @@
+Traceback (most recent call last):
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 518, in _store
+    _verbs.require_daemon(root)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/verbs.py", line 205, in require_daemon
+    raise VerbAbsentError(f"daemon not running for {root}")
+refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/b212t-i2d_8nid/proj/.refmatrix
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/testing.py", line 596, in invoke
+    return_value = cli.main(args=args or (), prog_name=prog_name, **extra)
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+    rv = self.invoke(ctx)
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 118, in invoke
+    return super().invoke(ctx)
+           ~~~~~~~~~~~~~~^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+    return callback(*args, **kwargs)
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8534, in tldr_warm
+    n = _ingest(_store(write=True), proj, source="tldr", semantic=semantic)
+                ~~~~~~^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 522, in _store
+    return _store_rw()
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 259, in _store_rw
+    _refuse_in_process_write_to_tracked_catalog(s.root, s.db_path)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8847, in _refuse_in_process_write_to_tracked_catalog
+    tracked = _store_mod.git_tracked_catalogs(root)
+  File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/store.py", line 96, in git_tracked_catalogs
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+                                 ^^^^^^^^^^^^^
+AttributeError: 'R' object has no attribute 'stdout'
+exit 1
+calls [['/bin/echo', 'warm', '/private/tmp/b212t-i2d_8nid/proj', '--lang', 'python'], ['git', '-C', '/private/tmp/b212t-i2d_8nid/proj/.refmatrix', 'rev-parse', '--is-inside-work-tree']]

@@ -1,0 +1,46 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+____________ test_ac10_delivered_events_slice_the_payload_by_bytes _____________
+
+fx = <tests.task25_1_support.Fixture object at 0x109b7aa50>
+
+    def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
+        """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit (none for a
+        trimmed hit), one query_id with the `retrieved` events; each span slices exactly its hook
+        line / body out of the payload BYTES; unbodied hits carry null body fields; a global hit's
+        event is in the tmp global root's file with scope=global. The fixed 7-of-12/3-bodied shape
+        of 19.1 AC-6 is not forced here (R0 sets the budget the shape depends on)."""
+        pe, ge = fx.root / "recall-events.jsonl", fx.home / "recall-events.jsonl"
+        n_p, n_g = len(h.jsonl(pe)), len(h.jsonl(ge))
+        r = _ss(fx)
+        p = _pack(r, "SessionStart argv")
+        # This module runs one hook at a time, so the lines appended since n_p/n_g are this call's
+        # (`--session-start` reads no envelope, so the event's session is not the test's to pick).
+        new_g = [e for e in h.jsonl(ge)[n_g:] if e.get("channel") == "session_start"]
+        evs = [e for e in h.jsonl(pe)[n_p:] if e.get("channel") == "session_start"] + new_g
+        qids = {e.get("query_id") for e in evs}
+        assert len(qids) == 1 and None not in qids, qids
+        deliv = [e for e in evs if e.get("stage") == "delivered"]
+        assert sorted(e["name"] for e in deliv) == sorted(p.named), (
+            [e["name"] for e in deliv], p.named)
+        raw = r.stdout
+        for e in deliv:
+            line = raw[e["offset_bytes"]:e["offset_bytes"] + e["bytes"]]
+            assert line == (p.hook_line_of(e["name"]) + "\n").encode("utf-8"), (e["name"], line)
+            if e["name"] in p.bodied:
+                body = raw[e["body_offset_bytes"]:e["body_offset_bytes"] + e["body_bytes"]]
+                assert f"BODYMARK {e['name']}".encode() in body
+                assert raw[:e["body_offset_bytes"]].decode().count("—") >= 3
+            else:
+>               assert e.get("body_offset_bytes") is None and e.get("body_bytes") is None, e
+E               AssertionError: {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': 126, ...}
+E               assert (6031 is None)
+E                +  where 6031 = <built-in method get of dict object at 0x10999bc40>('body_offset_bytes')
+E                +    where <built-in method get of dict object at 0x10999bc40> = {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': 126, ...}.get
+
+tests/test_task25_1_recall_budget.py:1080: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_delivered_events_slice_the_payload_by_bytes
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 14.57s

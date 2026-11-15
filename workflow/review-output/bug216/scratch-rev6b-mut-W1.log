@@ -1,0 +1,156 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+....FFF.FFF.FF                                                           [100%]
+=================================== FAILURES ===================================
+__ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-watcher] __
+
+route = 'watcher', proj = PosixPath('/private/tmp/b216weob7sekj/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x111ac2be0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+E       AssertionError: watcher: nothing synced for a project under `.hidden/`: set()
+E       assert 'docs/d.md' in set()
+
+tests/test_bug216_watch_base.py:66: AssertionError
+___ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-sync] ____
+
+route = 'sync', proj = PosixPath('/private/tmp/b216w2_mgdov4/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124e4c950>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+E       AssertionError: sync: nothing synced for a project under `.hidden/`: set()
+E       assert 'docs/d.md' in set()
+
+tests/test_bug216_watch_base.py:66: AssertionError
+_ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-ingest-path] _
+
+route = 'ingest-path'
+proj = PosixPath('/private/tmp/b216wcbutyh0l/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124e4cf50>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+E       AssertionError: ingest-path: nothing synced for a project under `.hidden/`: set()
+E       assert 'docs/d.md' in set()
+
+tests/test_bug216_watch_base.py:66: AssertionError
+___ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-watcher] ___
+
+route = 'watcher', proj = PosixPath('/private/tmp/b216wm0ocu9td/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124dbc320>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+E       AssertionError: watcher: nothing synced for a project under `build/`: set()
+E       assert 'docs/d.md' in set()
+
+tests/test_bug216_watch_base.py:66: AssertionError
+____ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-sync] _____
+
+route = 'sync', proj = PosixPath('/private/tmp/b216wo323vbz1/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1167b2c10>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+E       AssertionError: sync: nothing synced for a project under `build/`: set()
+E       assert 'docs/d.md' in set()
+
+tests/test_bug216_watch_base.py:66: AssertionError
+_ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-ingest-path] _
+
+route = 'ingest-path', proj = PosixPath('/private/tmp/b216wtv97_xx7/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1167b35b0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+E       AssertionError: ingest-path: nothing synced for a project under `build/`: set()
+E       assert 'docs/d.md' in set()
+
+tests/test_bug216_watch_base.py:66: AssertionError
+_______ test_ac17_watch_is_relevant_judges_paths_below_the_root[.hidden] _______
+
+proj = PosixPath('/private/tmp/b216wraxebzmn/.hidden/proj')
+
+    def test_ac17_watch_is_relevant_judges_paths_below_the_root(proj):
+        from refmatrix.watch import is_relevant
+>       assert is_relevant(proj / "docs" / "d.md", proj) is True
+E       AssertionError: assert False is True
+E        +  where False = <function is_relevant at 0x124dfd590>(((PosixPath('/private/tmp/b216wraxebzmn/.hidden/proj') / 'docs') / 'd.md'), PosixPath('/private/tmp/b216wraxebzmn/.hidden/proj'))
+
+tests/test_bug216_watch_base.py:73: AssertionError
+________ test_ac17_watch_is_relevant_judges_paths_below_the_root[build] ________
+
+proj = PosixPath('/private/tmp/b216wq847q3pk/build/proj')
+
+    def test_ac17_watch_is_relevant_judges_paths_below_the_root(proj):
+        from refmatrix.watch import is_relevant
+>       assert is_relevant(proj / "docs" / "d.md", proj) is True
+E       AssertionError: assert False is True
+E        +  where False = <function is_relevant at 0x124dfd590>(((PosixPath('/private/tmp/b216wq847q3pk/build/proj') / 'docs') / 'd.md'), PosixPath('/private/tmp/b216wq847q3pk/build/proj'))
+
+tests/test_bug216_watch_base.py:73: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-watcher]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-sync]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-ingest-path]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-watcher]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-sync]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-ingest-path]
+FAILED tests/test_bug216_watch_base.py::test_ac17_watch_is_relevant_judges_paths_below_the_root[.hidden]
+FAILED tests/test_bug216_watch_base.py::test_ac17_watch_is_relevant_judges_paths_below_the_root[build]
+8 failed, 6 passed in 4.87s

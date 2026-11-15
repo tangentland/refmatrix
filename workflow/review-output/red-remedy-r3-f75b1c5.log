@@ -1,0 +1,108 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+============================= test session starts ==============================
+platform darwin -- Python 3.14.5, pytest-9.0.3, pluggy-1.6.0 -- /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python
+rootdir: /Volumes/littlebig/refmatrix-bug216
+configfile: pyproject.toml
+plugins: timeout-2.4.0, anyio-4.13.0
+timeout: 900.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 3 items
+
+tests/test_bug216_remedy_r3.py::test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids FAILED [ 33%]
+tests/test_bug216_remedy_r3.py::test_m2_both_ids_of_every_move_are_requeued_for_embedding PASSED [ 66%]
+tests/test_bug216_remedy_r3.py::test_m1_the_merge_deletes_the_vectors_of_both_ids_of_every_move_in_one_batch FAILED [100%]
+
+=================================== FAILURES ===================================
+_______ test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids _______
+
+base = PosixPath('/private/tmp/b216svkee7_nj')
+
+    def test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids(base):
+        sl = _term_slots(base)
+        sa = _open(sl["a"])
+        try:
+            a_before = _term_state(sa)
+        finally:
+            sa.close()
+        res = _merge(sl["a"], sl["b"], base / "T" / "catalog.duckdb")
+        moved = {int(o): int(n) for o, n in (res.get("fresh_moved") or [])}
+        assert moved, f"precondition: the fixture must produce fresh moves: {res.get('remap')}"
+        s = _store_on(base / "T" / "catalog.duckdb", base, "probe")
+        try:
+            st = _term_state(s)
+        finally:
+            s.close()
+        nm = lambda ids: sorted(st["names"].get(i, f"<{i}>") for i in ids)  # noqa: E731
+        assert {"adoc#root", "bdoc#root", "d0#root"} <= set(nm(st["links"])), nm(st["links"])
+>       assert st["bits"] == st["links"], (
+            f"`mentions`[{TERM}] bitmap {nm(st['bits'])} != its entity_links {nm(st['links'])} — "
+            f"B's bits in a row A also holds were dropped")
+E       AssertionError: `mentions`[zebrafinch] bitmap ['adoc#root', 'd0#root'] != its entity_links ['adoc#root', 'bdoc#root', 'd0#root'] — B's bits in a row A also holds were dropped
+E       assert {2, 9} == {2, 9, 17}
+E         
+E         Extra items in the right set:
+E         17
+E         
+E         Full diff:
+E           {
+E               2,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+tests/test_bug216_remedy_r3.py:137: AssertionError
+_ test_m1_the_merge_deletes_the_vectors_of_both_ids_of_every_move_in_one_batch _
+
+base = PosixPath('/private/tmp/b216sk3vk8c69')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x119f34290>
+
+    def test_m1_the_merge_deletes_the_vectors_of_both_ids_of_every_move_in_one_batch(base,
+                                                                                   monkeypatch):
+        import lance
+    
+        from refmatrix import daemon as dm
+        from refmatrix.vectors import LanceVectorStore
+        m = _memory_slots(base, n_moves=2)
+        d, droot = _op_daemon(base, m)
+        fresh_guess = list(range(max(m["ids"]) + 1, max(m["ids"]) + 1 + len(m["ids"])))
+        seeded = sorted(set(m["ids"]) | {m["keep"]} | set(fresh_guess))
+        vs = LanceVectorStore(droot / "vectors", partition="proj", dim=DIM)
+        vs.upsert_vectors(seeded, np.ones((len(seeded), DIM), dtype="float32"), kind="memory")
+        calls: list = []
+        real = lance.LanceDataset.delete
+    
+        def counting(self, *a, **k):                       # pass-through spy on the library
+            calls.append((str(getattr(self, "uri", "")), a, k))
+            return real(self, *a, **k)
+        monkeypatch.setattr(lance.LanceDataset, "delete", counting)
+        try:
+            r = dm._op_replica_merge(d, {"dry_run": False})
+        finally:
+            if d.store is not None:
+                d.store.close()
+        assert r.get("ok") is True, r
+        moved = [(int(o), int(n)) for o, n in (r.get("fresh_moved") or [])]
+        assert sorted(o for o, _n in moved) == sorted(m["ids"]), f"precondition: {moved}"
+        both = sorted({i for pair in moved for i in pair})
+        got_ids, _mat = LanceVectorStore(droot / "vectors", partition="proj", dim=0).read_vectors(
+            kind="memory", ids=both)
+>       assert got_ids == [], (
+            f"Lance rows of moved ids survive the merge: {sorted(got_ids)} (a dense read returns "
+            f"A's entity for B's text until the re-embed)")
+E       AssertionError: Lance rows of moved ids survive the merge: [2, 3, 4, 5] (a dense read returns A's entity for B's text until the re-embed)
+E       assert [2, 3, 4, 5] == []
+E         
+E         Left contains 4 more items, first extra item: 2
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     2,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_bug216_remedy_r3.py:241: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r3.py::test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids
+FAILED tests/test_bug216_remedy_r3.py::test_m1_the_merge_deletes_the_vectors_of_both_ids_of_every_move_in_one_batch
+========================= 2 failed, 1 passed in 1.80s ==========================

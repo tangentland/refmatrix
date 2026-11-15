@@ -3227,8 +3227,14 @@ class Daemon:
 
         class _Handler(FileSystemEventHandler):
             def _maybe(self_inner, raw_path: str) -> None:
+                # Filtered against the watch root that OWNS the path (bug-216
+                # R2, 2026-11-13): `is_relevant(p)` with no root never read
+                # the spec, so its `!path` re-includes and the built-in
+                # include of the rule docs could not reach this first filter
+                # -- the hidden-dir rule dropped `.claude/PROJECT_PROFILE.md`
+                # before `sync_files` ever saw it.
                 p = Path(raw_path)
-                if is_relevant(p):
+                if is_relevant(p, _owning_root(p.resolve())):
                     debouncer.add(str(p))
 
             def on_created(self_inner, event) -> None:
@@ -3631,6 +3637,9 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
 
     part = args.get("partition")
     d._store_lock.acquire()
+    # The GMD pass's failure count rides back in the result (ch-bsd r1 #s2, ruling L112): its
+    # stderr line lands in daemon.stderr.log, which the caller never reads.
+    gmd_failed0 = getattr(d._st(), "gmd_pass_failures", 0)
     try:
         if part:
             with d._st().with_partition(part):
@@ -3648,7 +3657,11 @@ def _op_ingest_path(d: Daemon, args: dict) -> dict:
     finally:
         d._store_lock.release()
     d._request_snapshot()
-    return {"entities": n, "path": str(path)}
+    gmd_failed = getattr(d._st(), "gmd_pass_failures", 0) - gmd_failed0
+    out = {"entities": n, "path": str(path), "gmd_pass_failed": gmd_failed}
+    if gmd_failed:
+        out["gmd_pass_error"] = getattr(d._st(), "gmd_pass_last_error", None)
+    return out
 
 
 def _register_ingest_job(d: Daemon, *, files_total: int, args: dict) -> str:
@@ -3688,7 +3701,8 @@ def _register_ingest_job(d: Daemon, *, files_total: int, args: dict) -> str:
 
 
 def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
-                         skipped: "list | None" = None) -> dict:
+                         skipped: "list | None" = None,
+                         ignored: "list | None" = None) -> dict:
     """Execute one ingest against the daemon's Store. Mutates the job
     record in `d._ingest_jobs` as it goes — `files_done`, `current_file`,
     and an `events` deque every status query can stream from.
@@ -3698,9 +3712,10 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
     every `RMX_INGEST_SNAPSHOT_EVERY` yields so readers see partial
     progress instead of an end-of-ingest cliff.
     """
+    from refmatrix.ingest import gmd_doc_yield_every
     from refmatrix.ingest_gmd import ingest_gmd_paths
     job = d._ingest_jobs[job_id]
-    yield_every = int(os.environ.get("RMX_INGEST_YIELD_EVERY", "1") or "1")
+    yield_every = gmd_doc_yield_every()
     # Default sleep raised from 1ms to 5ms — paired with `_FairLock`,
     # 5ms gives the OS scheduler plenty of margin to wake a waiter
     # without measurably hurting ingest throughput on the bg side.
@@ -3804,8 +3819,15 @@ def _run_ingest_gmd_body(d: Daemon, job_id: str, files: list, args: dict, *,
         if line:
             d._log(f"ingest-gmd job={job_id} {line}")
             report = f"{report}\n{line}"
+    # What the doc walk excluded by the ignore rules (bug-216 R2), counted and
+    # named for the caller -- the daemon's stderr log reaches no one.
+    from refmatrix.ingest_gmd import render_ignored_line
+    ign_line = render_ignored_line(ignored or [])
+    if ign_line:
+        report = f"{report}\n{ign_line}"
     result = {
         "files": len(files), "report": report,
+        "ignored": len(ignored or []),
         "docs": stats.docs, "nodes": stats.nodes,
         "rels": stats.rels, "mentions": stats.mentions,
         "unresolved": len(stats.unresolved),
@@ -3847,12 +3869,21 @@ def _op_ingest_gmd(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
     skipped: list = []
+    ignored: list = []
     files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
-                              skipped=skipped)
+                              skipped=skipped, ignored=ignored)
     if not files:
-        return {"files": 0, "report": "no candidate files found", **_skip_fields(skipped)}
+        return _no_candidates(skipped, ignored)
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
-    return _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped)
+    return _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped, ignored=ignored)
+
+
+def _no_candidates(skipped: list, ignored: list) -> dict:
+    """The empty-walk reply, still naming what the walk excluded (bug-216 R2)."""
+    from refmatrix.ingest_gmd import render_ignored_line
+    line = render_ignored_line(ignored)
+    return {"files": 0, "report": "no candidate files found" + (f"\n{line}" if line else ""),
+            "ignored": len(ignored), **_skip_fields(skipped)}
 
 
 def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
@@ -3867,15 +3898,16 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # The memory path walks a memdir with THE memory walk (task 26.1 AC-2).
     skipped: list = []
+    ignored: list = []
     files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
-                              skipped=skipped)
+                              skipped=skipped, ignored=ignored)
     if not files:
-        return {"files": 0, "report": "no candidate files found", **_skip_fields(skipped)}
+        return _no_candidates(skipped, ignored)
     job_id = _register_ingest_job(d, files_total=len(files), args=args)
 
     def _runner() -> None:
         try:
-            _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped)
+            _run_ingest_gmd_body(d, job_id, files, args, skipped=skipped, ignored=ignored)
         except Exception as exc:
             d._log(f"detached ingest job {job_id} failed: {exc!r}")
 
@@ -3887,25 +3919,35 @@ def _op_ingest_gmd_start(d: Daemon, args: dict) -> dict:
         "job_id": job_id,
         "files_total": len(files),
         "status": "running",
+        "ignored": len(ignored),
         # the start reply carries the skips too, so `--detach` prints them
         # before it returns (ch-bsd 26.1 #s-3)
         **_skip_fields(skipped),
     }
 
 
-def _run_detached_job(d: Daemon, job_id: str, fn) -> None:
+def _run_detached_job(d: Daemon, job_id: str, fn, failure=None) -> None:
     """Run `fn()` on the bg pool under the ingest-job lifecycle: flip the job
     record to `done` (capturing the return as `result`) or `error`. The job
     record is otherwise progress-agnostic — `ingest_path`/`embed` emit their
     own `ingest-progress`/running-total log lines that the status op surfaces
-    via the daemon log; per-file event granularity is GMD-only."""
+    via the daemon log; per-file event granularity is GMD-only.
+
+    `failure(result) -> str | None`: a body that RETURNS but did not do what it
+    was asked (the ingest's failed GMD pass, ch-bsd r2 #m2) ends the job
+    `error` with that message, the `result` kept beside it."""
     job = d._ingest_jobs[job_id]
     try:
         result = fn()
+        why = failure(result) if failure is not None else None
         with d._ingest_jobs_lock:
-            job["status"] = "done"
+            job["status"] = "error" if why else "done"
             job["ended_at"] = time.time()
             job["result"] = result
+            if why:
+                job["error"] = why
+        if why:
+            d._log(f"detached job {job_id} failed: {why}")
     except Exception as exc:
         with d._ingest_jobs_lock:
             job["status"] = "error"
@@ -3919,10 +3961,21 @@ def _op_ingest_path_start(d: Daemon, args: dict) -> dict:
     body `_op_ingest_path` runs onto bg_pool, return the job_id immediately.
     Poll completion via `ingest_gmd_status` (generic over all ingest jobs).
     The single-active guard in `_register_ingest_job` rejects a second start
-    while one is running."""
+    while one is running.
+
+    A file target is refused HERE, before a job exists (bug-240): the job body's own check in
+    `ingest_path` would only flip the job to `error` after this op had already answered
+    `{job_id, status: running}` -- a success for a write that will never happen."""
+    from refmatrix.ingest import gmd_pass_failure_message, refuse_file_target
     _refuse_filesystem_ingest(d, "ingest")
+    refuse_file_target(args["path"])
     job_id = _register_ingest_job(d, files_total=0, args=args)
-    d._bg_pool.submit(lambda: _run_detached_job(d, job_id, lambda: _op_ingest_path(d, args)))
+    # A failed markdown GMD pass ends the job `error` (ch-bsd r2 #m2, ruling L114), not `done`
+    # with the count buried in `result`: the CLI exits 1 on the same condition, and an agent
+    # polling `rmx_ingest_status` must read the same verdict, in the same words.
+    d._bg_pool.submit(lambda: _run_detached_job(
+        d, job_id, lambda: _op_ingest_path(d, args),
+        failure=lambda r: gmd_pass_failure_message(r, r.get("path", args["path"]))))
     return {"job_id": job_id, "status": "running",
             "path": str(Path(args["path"]).resolve())}
 
@@ -3982,14 +4035,19 @@ def _op_prestage_hashes(d: Daemon, args: dict) -> dict:
     targets = [Path(p).resolve() for p in (args.get("targets") or [])]
     # Prestage walks the SAME set the bridge ingests, or it stamps hashes on
     # files the bridge then skips (task 26.1 AC-2, plan-26 r2 m1).
+    # What the doc walk's ignore rules excluded is RETURNED, not printed to
+    # this daemon's stderr log (bug-216 R6b, 2026-11-13): `ignored` /
+    # `ignored_paths`, the shape of `_skip_fields`.
     skipped: list = []
+    ignored: list = []
     files = collect_gmd_files(targets, as_memory=bool(args.get("as_memory")),
-                              skipped=skipped)
+                              skipped=skipped, ignored=ignored)
     partition = args.get("partition") or d._st()._partition_name
     with d._store_lock, d._st().with_partition(partition):
         report = prestage_hashes(d._st(), files)
     d._request_snapshot()
-    return {**report, "walk_skipped": _skip_fields(skipped)}
+    return {**report, "walk_skipped": _skip_fields(skipped),
+            "ignored": len(ignored), "ignored_paths": [str(p) for p in ignored]}
 
 
 def _op_sync_since(d: Daemon, args: dict) -> dict:
@@ -4769,6 +4827,29 @@ def _op_coref_link(d: Daemon, args: dict) -> dict:
             min_shared=int(args.get("min_shared", 2)))
     d._request_snapshot()
     return result
+
+
+def _op_denotes_link(d: Daemon, args: dict) -> dict:
+    """The one-time `denotes` derive (bug-216 R7(a), 2026-11-13): link every
+    PATH-LESS concept named after an ingested doc or memory id -- and its
+    spelling variants -- to that doc/memory, in the caller's partition
+    (`args['partition']`, default the daemon's). Idempotent: a second run
+    adds nothing. Returns `{added, concepts, targets, multi_target}` and logs
+    the same counts. GMD ingest maintains the links from then on; this op
+    repairs what was written before it (1,909+ misbound live rows), without
+    rewriting a single existing edge. Run it as `rmx derive denotes` (or the
+    MCP verb `rmx_derive_denotes`, bug-216 R14) -- announced and backed up
+    first on a live store."""
+    part = args.get("partition") or d._st()._partition_name
+    with d._store_lock, d._st().with_partition(part):
+        result = d._st().link_denotes(None)
+        if result["added"]:
+            d._st().flush_fragments()
+    d._log(f"denotes_link partition={part} added={result['added']} "
+           f"concepts={result['concepts']} targets={result['targets']} "
+           f"multi_target={result['multi_target']}")
+    d._request_snapshot()
+    return {**result, "partition": part}
 
 
 def _op_merge_verb_aliases(d: Daemon, args: dict) -> dict:
@@ -5867,6 +5948,31 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             # whole merge on disk. merge_slots closes every connection it
             # opened and removes a half-built target on any error.
             report = rm.merge_slots(a_path, b_path, tmp_target, dry_run=dry_run)
+            # Entities moved to a fresh id are named in the reply and the log,
+            # never silent (bug-216 remedy B2c, bug-227): their vectors stay on
+            # the old id until `rmx embed` re-embeds them (the merge marks both
+            # ids unembedded).
+            _moved = report.get("fresh_moved") or []
+            # Every other id `vector_rows` names is one a NAME-LOSER vacated --
+            # A's (r4) or B's (r5 S1, ruling L101): `vector_rows` holds exactly
+            # the moves' two ids and those, so the vacated set is the rows' ids
+            # minus the moved ones. (r4 intersected with `a_losers`, which never
+            # named a B loser's id.)
+            _moved_ids = {int(i) for pair in _moved for i in pair}
+            _vacated = sorted({int(i) for _p, _k, i in (report.get("vector_rows") or [])}
+                              - _moved_ids)
+            if _moved or _vacated:
+                parts = []
+                if _moved:
+                    parts.append(f"{len(_moved)} entity id(s) moved to a fresh id: "
+                                 + ", ".join(f"{o}->{n}" for o, n in _moved))
+                if _vacated:
+                    parts.append(f"{len(_vacated)} id(s) a name-loser vacated: "
+                                 + ", ".join(str(i) for i in _vacated))
+                report["re_embed"] = (
+                    "; ".join(parts) + " — their vectors were not moved (stale rows are "
+                    "deleted on a real merge); run `rmx embed` to re-embed them")
+                d._log(f"replica merge{' (dry run)' if dry_run else ''}: {report['re_embed']}")
         except Exception as exc:
             err = f"merge build: {exc!r}"
             rerr = _reopen_writer_after_merge(d, prev_writer, "merge build failed")
@@ -5977,6 +6083,28 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
             rerr = _reopen_writer_after_merge(d, "A", "post-merge")
             if rerr:
                 return {"enabled": True, "ok": False, "error": f"post-merge reopen: {rerr}"}
+            # 6. Vectors of both ids of every fresh-id move (bug-216 remedy r3
+            # M1, ruling L97). AFTER the swap -- the merged catalog is installed
+            # on both slots and the writer reopened on it -- and still under
+            # `_store_lock`, so no embed interleaves. A failure here does NOT
+            # undo the merge (the catalog merge is committed and installed): it
+            # is named in the reply (`vector_delete_error`, which the CLI turns
+            # into a non-zero exit) and logged; the ids stay marked unembedded,
+            # so `rmx embed` rewrites them.
+            _vrows = report.get("vector_rows") or []
+            if _vrows:
+                vres = d.store.drop_vector_rows(_vrows)
+                report["vectors_deleted"] = vres
+                d._log(f"replica merge: deleted {vres['deleted']} vector row(s) whose owner "
+                       f"changed ({len(_vrows)} (partition, kind, id) row(s) named) in "
+                       f"{vres['tables']} table(s)")
+                if vres["errors"]:
+                    report["vector_delete_error"] = (
+                        "the catalog merge IS committed and installed, but deleting the "
+                        "moved ids' vectors failed: " + "; ".join(vres["errors"])
+                        + " — a dense read may return the wrong entity for those ids "
+                        "until `rmx embed` re-embeds them")
+                    d._log(f"replica merge: {report['vector_delete_error']}")
 
     if swap_failed is not None:
         # ch-bsd r3 m-r3-1: once A holds the merge and the writer is open on it,
@@ -6657,6 +6785,7 @@ OPS: dict[str, Callable[[Daemon, dict], Any]] = {
     "derive_unstamp": _op_derive_unstamp,
     "compile_pairs": _op_compile_pairs,
     "coref_link": _op_coref_link,
+    "denotes_link": _op_denotes_link,
     "merge_verb_aliases": _op_merge_verb_aliases,
     "vacuum": _op_vacuum,
     "stats": _op_stats,

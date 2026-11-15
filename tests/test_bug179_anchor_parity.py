@@ -516,6 +516,12 @@ def _gate_root(*, lint_src: str | None, doc: str, venv: bool = True) -> Path:
     (root / "CLAUDE.md").write_text(_mini("claude-md"))
     (root / ".claude").mkdir()
     (root / ".claude" / "PROJECT_PROFILE.md").write_text(_mini("project-profile"))
+    # bug-216: the gate now also fails on a lint-scope GMD doc the ingest excludes. This root has
+    # NO `.refmatrix_ignore`, like every clone and CI checkout; rev 4's R11 built-in include keeps
+    # the GMD profile in scope, so the bug-179 cases still test only anchor parity. A `.git`
+    # marker, as every real checkout has: the scanned files' repo root is THIS root however the
+    # parity script derives it.
+    (root / ".git").mkdir()
     for d in ("docs", "workflow", "eval"):
         (root / d).mkdir()
         (root / d / f"{d}-index.md").write_text(_mini(f"{d}-index"))

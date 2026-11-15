@@ -1,0 +1,59 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+___________ test_ac4h_legacy_memory_partition_replica_and_rpc_agree ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11541e780>
+
+    def test_ac4h_legacy_memory_partition_replica_and_rpc_agree(monkeypatch):
+        """AC-4 (h): memories in a legacy `memory-<p>` partition: the replica leg (real worker) and
+        the daemon RPC leg (`RMX_RECALL_REPLICA_FIRST=0`) return the same named hits. HEAD: the
+        replica leg binds the PROJECT partition (cli.py `_resolve_partition`) and returns none."""
+        from refmatrix import daemon as dm
+        base = s.short_base("p25l")
+        home = base / "g" / ".refmatrix"
+        s.build_global(home)
+        proj = base / "fxleg"
+        fx = s.Fixture(base, proj, home)
+        s._init_store(fx.root)
+        s.copy_memdir(proj, include={f"fx_mem_{i:02d}" for i in range(20, 28)})
+        legacy = "memory-fxleg"
+        r = s.rmx(fx, "ingest-gmd", "--as-memory", str(fx.memdir), RMX_PARTITION=legacy,
+                  timeout=600)
+        assert r.returncode == 0, r.stderr[-1500:]
+        # RMX_RERANK=0 in the daemon AND the calling process: the two legs rerank in different
+        # processes over different pools (d7), so with rerank on a set difference would be the
+        # rerank's, not the partition's (measured at f7c0d39: 4 of 5 names shared, order differs).
+        d = h.SandboxDaemon(fx.root, RMX_HOME=str(home), RMX_RERANK="0")
+        w = None
+        try:
+            d.wait_models_warm()
+            assert dm.call(fx.root, "embed", {"kinds": ["memory"], "partition": legacy},
+                           timeout=900).get("ok")
+            assert dm.call(fx.root, "snapshot", {"force": True}, timeout=300).get("ok")
+            monkeypatch.setenv("RMX_HOME", str(home))
+            from refmatrix import verbs
+            assert verbs.memory_partition(fx.root, timeout=30) == legacy     # fixture pre-check
+            w = s.SharedWorker(base, home=home)
+            rep = s.run_cmd(fx, s.recall_cmd(fx.root, "UserPromptSubmit"),
+                            env_in=s.envelope(QUESTION), RMX_MODEL_SOCK=str(w.sock),
+                            RMX_RERANK="0")
+            rpc = s.run_cmd(fx, s.recall_cmd(fx.root, "UserPromptSubmit"),
+                            env_in=s.envelope(QUESTION), RMX_MODEL_SOCK=str(w.sock),
+                            RMX_RECALL_REPLICA_FIRST="0", RMX_RERANK="0")
+            _ok(rep, "replica leg")
+            _ok(rpc, "rpc leg")
+            n_rep, n_rpc = s.names_in_payload(rep.stdout), s.names_in_payload(rpc.stdout)
+            assert n_rpc, "fixture: the daemon RPC leg named nothing"
+>           assert n_rep == n_rpc, f"AC-4 (h): replica leg {n_rep} != rpc leg {n_rpc}"
+E           AssertionError: AC-4 (h): replica leg [] != rpc leg ['fx_mem_26', 'fx_mem_20', 'fx_mem_24', 'fx_mem_21', 'fx_mem_22', 'fx_mem_23', 'fx_mem_25', 'fx_mem_27']
+E           assert [] == ['fx_mem_26',..._mem_23', ...]
+E             
+E             Right contains 8 more items, first extra item: 'fx_mem_26'
+E             Use -v to get more diff
+
+tests/test_task25_1_recall_budget.py:883: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4h_legacy_memory_partition_replica_and_rpc_agree
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 12.36s

@@ -1,0 +1,48 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+..............F.F....................................................... [ 38%]
+........................................................................ [ 77%]
+.........................................                                [100%]
+=================================== FAILURES ===================================
+________ test_ac16_the_prestage_op_names_its_ignored_path_in_the_result ________
+
+env = {'base': PosixPath('/private/tmp/b216sm7wb0hcg'), 'proj': PosixPath('/private/tmp/b216sm7wb0hcg/proj'), 'root': PosixPath('/private/tmp/b216sm7wb0hcg/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216sm7wb0hcg/proj/notes/memory')
+
+    def test_ac16_the_prestage_op_names_its_ignored_path_in_the_result(env, memdir):
+        from refmatrix.daemon import Daemon, _op_prestage_hashes
+        d = Daemon(env["root"])
+        d.store = Store(env["root"])
+        d.store.init()
+        try:
+            res = _op_prestage_hashes(d, {"targets": [str(memdir)]})
+        finally:
+            d.store.close()
+        hidden = str(memdir / ".hidden" / "y.md")
+>       assert res.get("ignored") == 1, res
+E       AssertionError: {'considered': 1, 'missing': 1, 'skipped': 0, 'walk_skipped': {'skipped': 0, 'skipped_paths': []}, ...}
+E       assert None == 1
+E        +  where None = <built-in method get of dict object at 0x120d8e2c0>('ignored')
+E        +    where <built-in method get of dict object at 0x120d8e2c0> = {'considered': 1, 'missing': 1, 'skipped': 0, 'walk_skipped': {'skipped': 0, 'skipped_paths': []}, ...}.get
+
+tests/test_bug216_surfaces.py:183: AssertionError
+----------------------------- Captured stderr call -----------------------------
+ingest-gmd: ignored 1 path(s) excluded by the ignore rules (INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): /private/tmp/b216sm7wb0hcg/proj/notes/memory/.hidden/y.md
+_________ test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up __________
+
+env = {'base': PosixPath('/private/tmp/b216sex0v5hf3'), 'proj': PosixPath('/private/tmp/b216sex0v5hf3/proj'), 'root': PosixPath('/private/tmp/b216sex0v5hf3/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216sex0v5hf3/proj/notes/memory')
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x1141d3b60>
+
+    def test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up(env, memdir, in_process_daemon):
+        """The CLI's daemon branch prints what the OP returned."""
+        out = _prestage_cli(memdir)
+>       assert "ignored 1 path(s)" in out and str(memdir / ".hidden" / "y.md") in out, out
+E       AssertionError: prestaged: considered=1 written=0 skipped=0 missing=1
+E         
+E       assert ('ignored 1 path(s)' in 'prestaged: considered=1 written=0 skipped=0 missing=1\n')
+
+tests/test_bug216_surfaces.py:203: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_op_names_its_ignored_path_in_the_result
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up
+2 failed, 183 passed in 16.65s

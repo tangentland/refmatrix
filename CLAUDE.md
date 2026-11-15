@@ -49,6 +49,8 @@ There is no container. Two venvs, one rule each:
 - **NEVER open `Store()` directly on a live `.refmatrix/`** — go through daemon ops (`_store(write)`).
 - **All test runs capture output to a file** — `2>&1 | tee workflow/review-output/<name>.log`
   (the `enforce-test-to-file` hook blocks inline runs).
+- **Measuring a live store is read-only on a copy** — copy `.refmatrix/catalog.read.duckdb` to the
+  scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`.
 
 ```bash
 # Full suite (~13 min)
@@ -177,25 +179,32 @@ Agents: `@ch-architect`, `@ch-alignment`, `@ch-implementer` (TDD GREEN, writes n
 `@ch-performance-tuner`, `@ch-work-summary`, `@gmd-curator`. Definitions are project-neutral;
 overlays in `.claude/agents/<name>.local.md`.
 
+The default planning path is the one in `workflow/ORCHESTRATION.md` `#planning` (ch-architect on
+Fable → ch-bsd spec rounds → lead rulings → user decisions → merge). The SDD chain stays available.
+
 Commands: SDD chain `/ch-constitution → /ch-specify → /ch-clarify → /ch-crucible → /ch-plan →
-/ch-tasks → /ch-analyze → /ch-implement`; review `/ch-review`, `/ch-audit`, `/ch-bsd`,
+/ch-tasks → /ch-analyze → /ch-implement`; review `/ch-review` (optional), `/ch-audit`, `/ch-bsd`,
 `/ch-test-gen`, `/ch-handoff`; session state `/save-state`, `/recall-state`, `/commit-state`,
 `/detour`, `/return`, `/stash*`.
 
 ## Task Completion Workflow {#task-completion-workflow}
 
-Continuous Implementation Mode, TDD per `workflow/TDD_GOVERNANCE.md`:
+Continuous Implementation Mode. **The procedure is `workflow/ORCHESTRATION.md`** (roles, the
+planning / task / release paths, lead discipline); TDD per `workflow/TDD_GOVERNANCE.md`. In short:
 
-1. **Identify next task** — `workflow/plan-of-plans.md` → the task spec.
-2. **Gap check** — missing infrastructure is named, not worked around.
-3. **RED** — failing tests from the acceptance criteria; record the red run.
-4. **GREEN** — concrete `src/` code; no tests authored in this step.
-5. **Verify** — full relevant tests captured to a log; GMD lint clean.
-6. **Review** — `/ch-review`; then `@ch-bsd` over the commit range. Remedy, re-review, until clean.
-7. **Docs** — indexes, `docs/INDEX.md`, registries (mock / deferral / bug).
-8. **Implementation summary** → `workflow/implementation_summaries/<task>.md` (MANDATORY).
-9. **Handoff** — update `handoff.md`; `rmx save-state` at session end.
-10. **Commit** on the task branch, merge `--no-ff` to `master`; deploy when a release lands.
+1. **The lead orchestrates** — writes no `src/` or tests; agents work in their own
+   `/Volumes/littlebig/<project>-<worker>` clones, read-only against every live store.
+2. **Identify next task** — `workflow/plan-of-plans.md` → the task spec; gaps named, not worked around.
+3. **RED** (ch-test-engineer) — proven RED at base by its E lines.
+4. **GREEN** (ch-implementer) — concrete `src/`; no tests authored.
+5. **Mutations** — committed first, restored one at a time; each must FAIL a test.
+6. **Verify** — family + one branch full suite, failures compared by E line to the last release log.
+7. **Review** — `@ch-bsd` over the range → lead ruling `L<n>` → fold (RED → GREEN) → confirm-lite
+   to MEH-only GO. `/ch-review` is optional (large `src/` changes or on request).
+8. **Record** — implementation summary (MANDATORY), registries (lead allocates ids), docs/indexes.
+9. **Merge `--no-ff`; release** — version bump, gating full suite on merged `master`, deploy, live
+   verification with backups first.
+10. **Handoff** — `handoff.md` + in-flight agent briefs; `rmx save-state` at session end.
 
 ### Implementation Plans Must Be Pre-Written (CRITICAL) {#plans-pre-written}
 
@@ -214,9 +223,12 @@ After each plan: triage `docs/architecture/todo.md`, graduate mocks in
 
 - [ ] Implementation summary written
 - [ ] `src/` fully concrete; no new silent failure on a memory path
-- [ ] Tests pass (all), log captured; new tests proven RED first
+- [ ] Tests pass (all), log captured; new tests proven RED first by their E lines
+- [ ] Mutation table recorded; every mutation made a test fail
+- [ ] Failures compared by E line to the last release's full-suite log; a release's gating suite
+      runs on merged `master`
 - [ ] GMD lint zero errors (`./scripts/lint-gmd.sh`, memory files via `tools/gmd/lint.py`)
-- [ ] `/ch-review` Critical/High addressed; `@ch-bsd` no unaddressed BULLSHIT
+- [ ] `@ch-bsd` MEH-only GO (no unaddressed BULLSHIT or SKETCHY), ruling recorded as `L<n>`
 - [ ] `rmx install-hooks --check` clean (installed hooks == generated hooks)
 - [ ] Verb parity test green (every MCP tool is a verb)
 - [ ] Registries + indexes current; `handoff.md` updated

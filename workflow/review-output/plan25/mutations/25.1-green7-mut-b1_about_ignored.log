@@ -1,0 +1,59 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup _________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-3fta6ic5/r10-ffpyhjbk/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-3f...-3fta6ic5/r10-ffpyhjbk/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-3fta6ic5/r10-ffpyhjbk/home/.refmatrix')}
+
+    def test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup(bus):
+        """#r10-bus (user decision 2026-11-10; F1, rev 7): the message field is `about`. With no
+        store named Y, `about="Y"` publishes and the hub row's `project` is `Y` -- on the verb and
+        through MCP. Kills the spec's mutation "`about` ignored (row `project` empty)": MCP's
+        `Verb.call` drops an argument the verb does not name, which is HEAD's behaviour."""
+        from refmatrix import verbs
+        alpha = bus["alpha"]
+        try:
+            verbs.bus_pub(alpha, "global:t1", "b", about="Y")
+        except TypeError as e:
+            pytest.fail(f"#r10-bus: verbs.bus_pub has no `about` parameter ({e})")
+>       assert _last_on(alpha, "global:t1")["project"] == "Y"
+E       AssertionError: assert None == 'Y'
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1707: AssertionError
+______________________ test_r10_bus_pub_cli_about_option _______________________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-3fta6ic5/r10-ffpyhjbk/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-3f...-3fta6ic5/r10-ffpyhjbk/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-3fta6ic5/r10-ffpyhjbk/home/.refmatrix')}
+
+    def test_r10_bus_pub_cli_about_option(bus):
+        """#r10-bus: `rmx bus pub` gains `--about` (verb parity: the verb's `about` has its CLI
+        twin). HEAD: no such option (exit 2)."""
+        from click.testing import CliRunner
+        from refmatrix import cli
+        alpha = bus["alpha"]
+        r = CliRunner().invoke(cli.main, ["bus", "pub", "global:t6", "hello", "--about", "Y"])
+        assert r.exit_code == 0, (r.exit_code, r.output)
+>       assert _last_on(alpha, "global:t6")["project"] == "Y"
+E       AssertionError: assert None == 'Y'
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1757: AssertionError
+_____________ test_r10_bus_pub_proj_channel_still_tags_its_project _____________
+
+bus = {'alpha': PosixPath('/private/tmp/rmx-3fta6ic5/r10-ffpyhjbk/alpha/.refmatrix'), 'base': PosixPath('/private/tmp/rmx-3f...-3fta6ic5/r10-ffpyhjbk/bravo/.refmatrix'), 'home': PosixPath('/private/tmp/rmx-3fta6ic5/r10-ffpyhjbk/home/.refmatrix')}
+
+    def test_r10_bus_pub_proj_channel_still_tags_its_project(bus):
+        """#r10-bus: a `proj:X:t` channel with neither `about` nor `project` still tags `X` (the
+        default moves to `about`; a GUARD, true at HEAD)."""
+        from refmatrix import verbs
+        alpha = bus["alpha"]
+        verbs.bus_pub(alpha, "proj:X:t5", "b")
+        row = _last_on(alpha, "proj:X:t5")
+>       assert row["project"] == "X" and row["from"] == "alpha", row
+E       AssertionError: {'body': 'b', 'channel': 'proj:X:t5', 'from': 'alpha', 'id': '7825c94af717', ...}
+E       assert (None == 'X')
+
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1746: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_about_tags_the_message_and_is_never_a_lookup
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_cli_about_option
+FAILED tests/test_task25_1_recall_budget.py::test_r10_bus_pub_proj_channel_still_tags_its_project
+3 failed in 0.48s

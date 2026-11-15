@@ -1,0 +1,53 @@
+load at start: 3.90 4.21 4.63
+pre-split build fresh Store: med 240.40ms p90 251.49ms (min 233.10, max 251.49, n=5); fragments warm: med 166.62ms p90 174.56ms (min 156.03, max 174.56, n=5)
+rows 123448 across 34 linkages, bits 1177027 (== fragment bits); serialized rows 6615417 B vs fragments 7139742 B; traced Python alloc 14.6 MB (peak 41.5)
+seed in-degree spectrum: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 496, 736, 809, 864, 917, 2429]
+degree quantiles of partition concepts: p50 1 p90 13 p99 255 max 5445
+depth 1 indeg      1 |result|      1  today    120.55/   121.86 ms   proto    14.33/   14.73 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    121.50/   127.39 ms   proto    14.62/   14.89 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    122.51/   132.61 ms   proto    16.46/   16.77 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    134.08/   145.43 ms   proto    15.23/   16.20 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    118.32/   130.92 ms   proto    14.80/   21.33 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    120.97/   124.13 ms   proto    14.37/   14.88 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    117.25/   120.96 ms   proto    14.32/   14.86 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    118.26/   123.51 ms   proto    15.00/   15.44 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    123.98/   130.00 ms   proto    15.01/   15.14 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    126.38/   127.62 ms   proto    14.86/   14.99 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    121.63/   124.02 ms   proto    14.13/   14.65 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    123.37/   131.04 ms   proto    16.44/   17.71 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    132.04/   136.22 ms   proto    14.40/   14.50 ms  (med/p90) IDENTICAL
+depth 1 indeg      1 |result|      1  today    122.85/   133.87 ms   proto    14.76/   15.08 ms  (med/p90) IDENTICAL
+depth 1 indeg    496 |result|    388  today    165.58/   167.05 ms   proto    59.77/   60.01 ms  (med/p90) IDENTICAL
+depth 1 indeg    736 |result|    580  today    121.43/   123.09 ms   proto    16.02/   17.87 ms  (med/p90) IDENTICAL
+depth 1 indeg    809 |result|    605  today    129.16/   134.18 ms   proto    15.66/   15.73 ms  (med/p90) IDENTICAL
+depth 1 indeg    864 |result|    663  today    124.47/   130.84 ms   proto    15.01/   15.32 ms  (med/p90) IDENTICAL
+depth 1 indeg    917 |result|    697  today    120.30/   122.32 ms   proto    14.88/   16.83 ms  (med/p90) IDENTICAL
+depth 1 indeg   2429 |result|   1793  today    125.45/   132.84 ms   proto    16.41/   16.79 ms  (med/p90) IDENTICAL
+load: 4.22 4.27 4.65
+depth 2 indeg      1 |result|     27  today    233.48/   249.04 ms   proto    20.05/   21.90 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      4  today    222.30/   229.25 ms   proto    15.63/   16.38 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      1  today    223.58/   248.19 ms   proto    15.53/   17.67 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      5  today    238.15/   243.17 ms   proto    17.66/   18.75 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      5  today    235.87/   245.34 ms   proto    15.91/   16.75 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      1  today    219.68/   228.00 ms   proto    15.43/   16.51 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      5  today    226.53/   234.20 ms   proto    15.90/   16.28 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      9  today    229.11/   247.20 ms   proto    17.91/   18.60 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|     15  today    239.36/   243.80 ms   proto    17.68/   19.12 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      7  today    241.09/   257.75 ms   proto    16.41/   16.59 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      2  today    216.71/   230.46 ms   proto    15.18/   15.44 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      2  today    223.25/   224.83 ms   proto    14.97/   15.78 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      2  today    238.47/   241.65 ms   proto    15.82/   16.50 ms  (med/p90) IDENTICAL
+depth 2 indeg      1 |result|      3  today    233.25/   236.29 ms   proto    15.99/   16.70 ms  (med/p90) IDENTICAL
+depth 2 indeg    496 |result|    879  today  40619.81/ 40772.45 ms   proto   113.13/  120.88 ms  (med/p90) IDENTICAL
+depth 2 indeg    736 |result|   1232  today  59757.29/ 60066.65 ms   proto    16.49/   17.01 ms  (med/p90) IDENTICAL
+depth 2 indeg    809 |result|   1252  today  62284.15/ 63075.95 ms   proto    17.55/   18.80 ms  (med/p90) IDENTICAL
+depth 2 indeg    864 |result|   1429  today  68480.85/ 69044.02 ms   proto    17.34/   18.21 ms  (med/p90) IDENTICAL
+depth 2 indeg    917 |result|   1641  today  72427.96/ 72862.93 ms   proto    17.33/   17.90 ms  (med/p90) IDENTICAL
+depth 2 indeg   2429 |result|   3634  today 186521.78/186950.97 ms   proto    21.10/   21.84 ms  (med/p90) IDENTICAL
+load: 5.94 6.04 6.03
+load_bitmap x680: med 2111.29ms p90 2146.73ms (min 2068.17, max 2146.73, n=5) = 3104.8 us/call; row dict lookup: 0.044 us/call
+noise_concept_ids() per call: med 8.50ms p90 8.59ms (min 8.19, max 9.71, n=7) size 28285
+load at end of Q3: 6.05 6.05 6.03
+topn small (neighbors d1 of median seed) |bm|=1: today 461719 ms (1 run); pre-split med 35.48ms p90 39.79ms (min 35.10, max 39.79, n=5); pre-split + per-call concept-set SQL med 171.63ms p90 177.18ms (min 170.45, max 177.18, n=3)  IDENTICAL
+topn large (neighbors d1 of hub seed) |bm|=1793: today 464602 ms (1 run); pre-split med 94.83ms p90 95.72ms (min 90.23, max 95.72, n=5); pre-split + per-call concept-set SQL med 232.87ms p90 235.47ms (min 232.43, max 235.47, n=3)  IDENTICAL
+load at end: 3.38 4.28 5.05

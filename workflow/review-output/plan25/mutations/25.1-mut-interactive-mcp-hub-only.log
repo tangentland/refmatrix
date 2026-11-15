@@ -1,0 +1,26 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_________ test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder __________
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x1078c3750>, 'b': <tests.task25_1_support.Fixture object at 0x10a0792...('/private/tmp/rmx-l4aeb5st/p25o-pxznddbh'), 'home': PosixPath('/private/tmp/rmx-l4aeb5st/p25o-pxznddbh/g/.refmatrix')}
+
+    def test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder(offline):
+        """AC-4 (g): no daemon, no hub worker, INTERACTIVE: `rmx memory recall "q" --json` answers
+        from the replica with the query embedded by `recall.shared_embedder` (a private worker in
+        the sandbox), exit 0, and the warnings name the private worker. HEAD: exit 1 "needs the
+        daemon up …"."""
+        b = offline["b"]
+        r = s.rmx(b, "memory", "recall", QUESTION, "--json", "--k", "6",
+                  RMX_HOME=str(offline["home"]), RMX_MODEL_SOCK=str(offline["base"] / "none.sock"))
+>       assert r.returncode == 0, f"AC-4 (g): exit {r.returncode}: {r.stderr[-600:]}"
+E       AssertionError: AC-4 (g): exit 1: Error: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', 'how does the q..., stderr='Error: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers\n').returncode
+
+tests/test_task25_1_recall_budget.py:825: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 23.06s

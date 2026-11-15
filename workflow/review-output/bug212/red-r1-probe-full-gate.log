@@ -1,0 +1,674 @@
+......................FFFFFFFFFFF.....................                   [100%]
+=================================== FAILURES ===================================
+____________ test_a_root_commit_is_synced_not_reported_as_a_failure ____________
+
+fresh_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x125f47950>
+
+    @pytest.mark.timeout(300)
+    def test_a_root_commit_is_synced_not_reported_as_a_failure(fresh_repo):
+        repo = fresh_repo
+        path = repo.proj / "root_file.py"
+        path.write_text("def root_file():\n    return 0\n", encoding="utf-8")
+        _quiet(repo.proj, repo, "add", "-A")
+        r = _hooked(repo.proj, repo, "commit", "-q", "-m", "the root commit")
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the root commit itself failed\n{text}"
+        assert "hooks/post-commit" in _hooks_ran(repo), "fixture: git never ran post-commit"
+        assert TRACEBACK not in r.stderr, f"post-commit on a root commit crashed\n{text}"
+>       assert FAILED_LINE not in r.stderr and "Error:" not in r.stderr, \
+            f"post-commit on a root commit (no HEAD~1) reported a failure\n{text}\n" \
+            f"rmx calls: {_calls(repo)}"
+E       AssertionError: post-commit on a root commit (no HEAD~1) reported a failure
+E         stdout:
+E         
+E         stderr:
+E         Error: sync --since HEAD~1 failed: git diff exited 128: fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree. Use '--' to separate paths from revisions, like this: 'git <command> [<revision>...] -- [<file>...]'
+E         refmatrix: post-commit rmx sync FAILED (exit 1); its error is above
+E         
+E         rmx calls: [('/private/tmp/b212f-fd2gb9rj/proj', 'sync --since HEAD~1')]
+E       assert ('rmx sync FAILED' not in 'Error: sync...r is above\n'
+E         
+E         'rmx sync FAILED' is contained here:
+E           st-commit rmx sync FAILED (exit 1); its error is above
+E         ?           +++++++++++++++)
+
+tests/test_bug212_r1_remedy.py:290: AssertionError
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since] __
+
+named_store = (PosixPath('/private/tmp/b212s-tiz1nc68'), PosixPath('/private/tmp/b212s-tiz1nc68/st/.refmatrix'))
+argv = ['sync', '--since', 'HEAD~1']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx sync --since HEAD~1` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 503, in _store
+E             _verbs.require_daemon(root)
+E             ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/verbs.py", line 205, in require_daemon
+E             raise VerbAbsentError(f"daemon not running for {root}")
+E         refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/b212s-tiz1nc68/st/.refmatrix
+E         
+E         During handling of the above exception, another exception occurred:
+E         
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-tiz1nc68/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 8786, in sync
+E             s = _store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 507, in _store
+E             return _store_rw()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 237, in _store_rw
+E             s = Store(_root(), partition=_resolve_partition())
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 503, in _store
+E               _verbs.require_daemon(root)
+E               ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/verbs.py", line 205, in require_daemon...
+E         
+E         ...Full output truncated (44 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:352: AssertionError
+_____ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats] ______
+
+named_store = (PosixPath('/private/tmp/b212s-eohhre_n'), PosixPath('/private/tmp/b212s-eohhre_n/st/.refmatrix'))
+argv = ['stats']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx stats` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-eohhre_n/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 7770, in stats
+E             out = _graph_verb(action="stats", stale=stale)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 5264, in _graph_verb
+E             return _verbs.graph(_root(), partition=_resolve_partition(), **kw)
+E                                                    ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-eohhre_n/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (32 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:352: AssertionError
+____ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo] ____
+
+named_store = (PosixPath('/private/tmp/b212s-0xphwbvi'), PosixPath('/private/tmp/b212s-0xphwbvi/st/.refmatrix'))
+argv = ['grep', 'foo']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx grep foo` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-0xphwbvi/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/decorators.py", line 34, in new_func
+E             return f(get_current_context(), *args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 6587, in grep
+E             _replica_read(_run)
+E             ~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 861, in _replica_read
+E             s = _replica_store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 745, in _replica_store
+E             s = Store(_root(), partition=_resolve_partition(), read_only=True)
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-0xphwbvi/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (37 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:352: AssertionError
+__ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo] ___
+
+named_store = (PosixPath('/private/tmp/b212s-g92zbqii'), PosixPath('/private/tmp/b212s-g92zbqii/st/.refmatrix'))
+argv = ['context', 'foo']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx context foo` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-g92zbqii/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 5437, in context
+E             bundle, _out, _items, _qid = _replica_read(_run)
+E                                          ~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 861, in _replica_read
+E             s = _replica_store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 745, in _replica_store
+E             s = Store(_root(), partition=_resolve_partition(), read_only=True)
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-g92zbqii/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (35 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:352: AssertionError
+_ test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function] _
+
+named_store = (PosixPath('/private/tmp/b212s-hbejnl8t'), PosixPath('/private/tmp/b212s-hbejnl8t/st/.refmatrix'))
+argv = ['query', 'kind:function']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", CWD_ARGVS, ids=lambda a: "-".join(a[:2]).replace("~", ""))
+    def test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error(named_store, argv):
+        """s-1: the cwd error says "cd to a project, or set REFMATRIX_ROOT". Set it, and the
+        command must still not traceback: the partition is resolved from the cwd
+        (`discovery.partition_marker`), and that cwd is gone -- a clean `Error:` naming it."""
+        base, root = named_store
+        entry = _entry(base)
+        env = {**_base_env(), "REFMATRIX_ROOT": str(root)}
+        r = _vanished([sys.executable, str(entry), *argv], env)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw " \
+            f"traceback\n{text}"
+E       AssertionError: `rmx query kind:function` (REFMATRIX_ROOT set) in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-hbejnl8t/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 5145, in query
+E             _replica_read(_run)
+E             ~~~~~~~~~~~~~^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 861, in _replica_read
+E             s = _replica_store()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 745, in _replica_store
+E             s = Store(_root(), partition=_resolve_partition(), read_only=True)
+E                                          ~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 202, in _resolve_partition
+E             return _discovery.resolve_partition(_root(), override=_partition_override)
+E                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 296, in resolve_partition
+E             return partition_marker(cwd) or store_name(root)
+E                    ~~~~~~~~~~~~~~~~^^^^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 269, in partition_marker
+E             cur = Path(start or Path.cwd()).resolve()
+E                                 ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-hbejnl8t/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (35 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:352: AssertionError
+_____ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree] _____
+
+named_store = (PosixPath('/private/tmp/b212s-9r0bh2a8'), PosixPath('/private/tmp/b212s-9r0bh2a8/st/.refmatrix'))
+argv = ['cctree']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx cctree` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-9r0bh2a8/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/decorators.py", line 34, in new_func
+E             return f(get_current_context(), *args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 14731, in cctree_cmd
+E             cctree.main()
+E             ~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1513, in main
+E             path = resolve_path(args)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cctree.py", line 1297, in resolve_path
+E             base = Path(args.project).expanduser() if args.project else Path.cwd()
+E                                                                         ~~~~~~~~^^
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-9r0bh2a8/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (28 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:371: AssertionError
+___ test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause] ____
+
+named_store = (PosixPath('/private/tmp/b212s-czu5ryw1'), PosixPath('/private/tmp/b212s-czu5ryw1/st/.refmatrix'))
+argv = ['hub', 'pause', 'nosuch-bug212']
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("argv", [["cctree"], ["hub", "pause", "nosuch-bug212"]],
+                             ids=["cctree", "hub-pause"])
+    def test_a_vanished_cwd_is_a_clean_error_outside_root_resolution(named_store, argv):
+        """s-1: commands that read the cwd WITHOUT `cli._root()` -- `cctree.resolve_path` (no
+        `--project`) and `discovery._cwd_root` (via `discover_roots`, reached by
+        `hub pause <name>`). No `REFMATRIX_ROOT`. Never a traceback; one `Error:` line."""
+        base, _root = named_store
+        r = _vanished([sys.executable, str(_entry(base)), *argv], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert TRACEBACK not in r.stderr, \
+            f"`rmx {' '.join(argv)}` in a vanished cwd crashed with a raw traceback\n{text}"
+E       AssertionError: `rmx hub pause nosuch-bug212` in a vanished cwd crashed with a raw traceback
+E         stdout:
+E         
+E         stderr:
+E         Traceback (most recent call last):
+E           File "/private/tmp/b212s-czu5ryw1/rmx_entry.py", line 3, in <module>
+E             sys.exit(cli_entry())
+E                      ~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry
+E             main()
+E             ~~~~^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1514, in __call__
+E             return self.main(*args, **kwargs)
+E                    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1435, in main
+E             rv = self.invoke(ctx)
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1902, in invoke
+E             return _process_result(sub_ctx.command.invoke(sub_ctx))
+E                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 2788, in hub_pause
+E             root = _hub_resolve_root(target)
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 2767, in _hub_resolve_root
+E             for root in discovery.discover_roots():
+E                         ~~~~~~~~~~~~~~~~~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 121, in discover_roots
+E             cwd = _cwd_root()
+E           File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/discovery.py", line 100, in _cwd_root
+E             cur = Path.cwd()
+E           File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 927, in cwd
+E             cwd = os.getcwd()
+E         FileNotFoundError: [Errno 2] No such file or directory
+E         
+E       assert 'Traceback (...t call last)' not in 'Traceback (... directory\n'
+E         
+E         'Traceback (most recent call last)' is contained here:
+E           Traceback (most recent call last):
+E             File "/private/tmp/b212s-czu5ryw1/rmx_entry.py", line 3, in <module>
+E               sys.exit(cli_entry())
+E                        ~~~~~~~~~^^
+E             File "/Volumes/littlebig/refmatrix-bug212/src/refmatrix/cli.py", line 15048, in cli_entry...
+E         
+E         ...Full output truncated (30 lines hidden), use '-vv' to show
+
+tests/test_bug212_r1_remedy.py:371: AssertionError
+_____ test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory ______
+
+named_store = (PosixPath('/private/tmp/b212s-mufznvjq'), PosixPath('/private/tmp/b212s-mufznvjq/st/.refmatrix'))
+
+    @pytest.mark.timeout(120)
+    def test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory(named_store):
+        """s-1: `mcp._resolve_root` reads the cwd when the call names no root/project and no
+        `REFMATRIX_ROOT` is set. The dispatcher turns any exception into `isError`, so this is not
+        a traceback -- but the text was `FileNotFoundError: [Errno 2] No such file or directory`,
+        which names nothing. It must say the working directory is gone, and the server keeps
+        serving."""
+        base, _root = named_store
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "rmx_query", "arguments": {"dsl": "kind:function"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"}]
+        stdin = "".join(json.dumps(m) + "\n" for m in msgs)
+        r = _vanished([sys.executable, str(_entry(base)), "mcp"], _base_env(), stdin=stdin)
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert TRACEBACK not in r.stderr, f"`rmx mcp` in a vanished cwd crashed\n{text}"
+        replies = {}
+        for ln in r.stdout.splitlines():
+            try:
+                msg = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(msg, dict) and "id" in msg:
+                replies[msg["id"]] = msg
+        assert 2 in replies and 3 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        body = " ".join(c.get("text", "") for c in res.get("content", []))
+        assert res.get("isError") is True, f"rmx_query in a vanished cwd did not fail\n{text}"
+>       assert _says_cwd_gone(body) and not body.startswith("FileNotFoundError"), \
+            f"rmx_query in a vanished cwd failed without saying the working directory is gone: " \
+            f"{body!r}"
+E       AssertionError: rmx_query in a vanished cwd failed without saying the working directory is gone: 'FileNotFoundError: [Errno 2] No such file or directory'
+E       assert (True and not True)
+E        +  where True = _says_cwd_gone('FileNotFoundError: [Errno 2] No such file or directory')
+E        +  and   True = <built-in method startswith of str object at 0x125ccd3b0>('FileNotFoundError')
+E        +    where <built-in method startswith of str object at 0x125ccd3b0> = 'FileNotFoundError: [Errno 2] No such file or directory'.startswith
+
+tests/test_bug212_r1_remedy.py:406: AssertionError
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since] _
+
+named_store = (PosixPath('/private/tmp/b212s-zb6a_ymv'), PosixPath('/private/tmp/b212s-zb6a_ymv/st/.refmatrix'))
+fn = 'sync_since'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_since in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:450: AssertionError
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files] _
+
+named_store = (PosixPath('/private/tmp/b212s-swodeweb'), PosixPath('/private/tmp/b212s-swodeweb/st/.refmatrix'))
+fn = 'sync_files'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_files in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:450: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_a_root_commit_is_synced_not_reported_as_a_failure
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[sync---since]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[stats]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[grep-foo]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[context-foo]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_with_refmatrix_root_set_is_a_clean_error[query-kind:function]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[cctree]
+FAILED tests/test_bug212_r1_remedy.py::test_a_vanished_cwd_is_a_clean_error_outside_root_resolution[hub-pause]
+FAILED tests/test_bug212_r1_remedy.py::test_an_mcp_tool_call_in_a_vanished_cwd_names_the_working_directory
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since]
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_files]
+11 failed, 43 passed in 43.62s

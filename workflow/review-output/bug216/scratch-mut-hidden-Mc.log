@@ -1,0 +1,49 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/mut2/src/refmatrix as checked-hash (bug-037)
+..............................FF                                         [100%]
+=================================== FAILURES ===================================
+_________ test_c_the_bridge_op_lands_memories_under_a_dot_claude_path __________
+
+dot_claude_env = {'agent': PosixPath('/private/tmp/b216h1ea0ctov/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216h1ea0c...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216h1ea0ctov/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x114c3a120>
+
+    def test_c_the_bridge_op_lands_memories_under_a_dot_claude_path(dot_claude_env, monkeypatch):
+        """The memdir's absolute path contains `.claude` and the project ignore file lists `.claude`;
+        the --as-memory daemon op must still land both memories and exclude only the dot-dirs."""
+        env = dot_claude_env
+        assert ".claude" in env["mem"].parts
+        res = r_bridge_op(env, monkeypatch)
+>       assert {"keep_top", "keep_nested"} <= _memory_names(env), (
+            f"the bridge dropped memories under a .claude path: {res.get('report')}")
+E       AssertionError: the bridge dropped memories under a .claude path: no candidate files found
+E       assert {'keep_nested', 'keep_top'} <= set()
+E         
+E         Extra items in the left set:
+E         'keep_nested'
+E         'keep_top'
+
+tests/test_bug216_hidden_no_pollution.py:293: AssertionError
+_____ test_c_the_in_process_bridge_lands_memories_under_a_dot_claude_path ______
+
+dot_claude_env = {'agent': PosixPath('/private/tmp/b216h6pkazyqr/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216h6pkaz...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216h6pkazyqr/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x169c83bd0>
+
+    def test_c_the_in_process_bridge_lands_memories_under_a_dot_claude_path(dot_claude_env,
+                                                                           monkeypatch):
+        env = dot_claude_env
+        assert ".claude" in env["mem"].parts
+        out = r_bridge_cli(env, monkeypatch)["report"]
+>       assert {"keep_top", "keep_nested"} <= _memory_names(env), out
+E       AssertionError: no candidate files found
+E         ingest-gmd --as-memory: skipped 4 non-memory path(s) (dot-path, README.md, nested MEMORY.md, symlinked folder, dangling link, .gmd, or a top-level save-state shadowed by its savestates/ copy; ADR-0005 #one-walk): /private/tmp/b216h6pkazyqr/proj/.claude/projects/x/memory/keep_top.md, /private/tmp/b216h6pkazyqr/proj/.claude/projects/x/memory/.hidden/y.md, /private/tmp/b216h6pkazyqr/proj/.claude/projects/x/memory/.organise-rollback-1/x.md, /private/tmp/b216h6pkazyqr/proj/.claude/projects/x/memory/feedback/keep_nested.md
+E         
+E       assert {'keep_nested', 'keep_top'} <= set()
+E         
+E         Extra items in the left set:
+E         'keep_nested'
+E         'keep_top'
+
+tests/test_bug216_hidden_no_pollution.py:307: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_hidden_no_pollution.py::test_c_the_bridge_op_lands_memories_under_a_dot_claude_path
+FAILED tests/test_bug216_hidden_no_pollution.py::test_c_the_in_process_bridge_lands_memories_under_a_dot_claude_path
+2 failed, 30 passed in 37.36s

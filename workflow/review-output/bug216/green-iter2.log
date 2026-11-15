@@ -1,0 +1,29 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 33%]
+........................................................................ [ 67%]
+................................................F....................    [100%]
+=================================== FAILURES ===================================
+____________________ test_ac2_doc_ingest_keeps_its_own_walk ____________________
+
+    def test_ac2_doc_ingest_keeps_its_own_walk():
+        """Without `as_memory` the walk is unchanged: a doc tree's dot-dirs are not the memory
+        rule's business (spec AC-2: "Doc ingest keeps its own walk")."""
+        from refmatrix.ingest_gmd import collect_gmd_files
+        base = Path(tempfile.mkdtemp(prefix="rmx261-"))
+        try:
+            memdir = _ac2_memdir(base)
+            got = {p.name for p in collect_gmd_files([memdir])}
+>           assert got == {"keep_top.md", "keep_nested.md", "x.md", "y.md"}
+E           AssertionError: assert {'keep_nested...'keep_top.md'} == {'keep_nested...x.md', 'y.md'}
+E             
+E             Extra items in the right set:
+E             'y.md'
+E             'x.md'
+E             Use -v to get more diff
+
+tests/test_memory_bridge.py:424: AssertionError
+----------------------------- Captured stderr call -----------------------------
+ingest-gmd: ignored 2 path(s) excluded by the ignore rules (INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-9uo5qi6a/memory/.hidden/y.md, /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-9uo5qi6a/memory/.organise-rollback-1/x.md
+=========================== short test summary info ============================
+FAILED tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk - ...
+1 failed, 212 passed in 308.78s (0:05:08)

@@ -1,0 +1,87 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut6/refmatrix/src/refmatrix as checked-hash (bug-037)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[batch] _
+
+store_with_vectors = {'ids': [1, 2, 3], 'root': PosixPath('/private/tmp/b216vz5s6vca3/proj/.refmatrix')}
+mode = 'batch'
+
+    @pytest.mark.parametrize("mode", ["batch", "single"])
+    def test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said(
+            store_with_vectors, mode):
+        st = store_with_vectors
+        p = subprocess.run([sys.executable, "-c", _CHILD, str(st["root"]), mode,
+                            ",".join(str(i) for i in st["ids"])],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=600)
+        parts = p.stdout.split("@@RESULT@@")
+        assert len(parts) == 2, f"child failed (rc {p.returncode}):\n{p.stdout}\n{p.stderr}"
+        res = json.loads(parts[1])
+        assert _lance_ids(st["root"]) == sorted(st["ids"]), (
+            "precondition: with lance unavailable the purge cannot have deleted any vector row")
+        err = p.stderr
+        problems = []
+        if not res["failures"] >= len(st["ids"]):
+            problems.append(f"vector_delete_failures = {res['failures']} for {len(st['ids'])} rows "
+                            f"left behind (the purge returned {res['result']})")
+        if not (re.search(r"\blance\b", err)
+                and re.search(r"not installed|missing|unavailable", err, re.I)):
+            problems.append("stderr does not say lance is missing")
+        if not ("memory" in err and "proj" in err):
+            problems.append("stderr does not name the (partition, kind) table proj/memory")
+        if not re.search(r"orphan|left behind|not deleted", err, re.I):
+            problems.append("stderr does not say the rows were left behind")
+>       assert not problems, f"{mode} purge with lance missing:\n- " + "\n- ".join(problems) + (
+            f"\nstderr: {err!r}")
+E       AssertionError: batch purge with lance missing:
+E         - vector_delete_failures = 0 for 3 rows left behind (the purge returned {'forgotten': 3, 'dry_run': False, 'vector_delete_failed': 0})
+E         - stderr does not say lance is missing
+E         - stderr does not name the (partition, kind) table proj/memory
+E         - stderr does not say the rows were left behind
+E         stderr: ''
+E       assert not ["vector_delete_failures = 0 for 3 rows left behind (the purge returned {'forgotten': 3, 'dry_run': False, 'vector_del...sing', 'stderr does not name the (partition, kind) table proj/memory', 'stderr does not say the rows were left behind']
+
+tests/test_bug216_remedy_r6.py:112: AssertionError
+_ test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[single] _
+
+store_with_vectors = {'ids': [1, 2, 3], 'root': PosixPath('/private/tmp/b216v2d2j853o/proj/.refmatrix')}
+mode = 'single'
+
+    @pytest.mark.parametrize("mode", ["batch", "single"])
+    def test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said(
+            store_with_vectors, mode):
+        st = store_with_vectors
+        p = subprocess.run([sys.executable, "-c", _CHILD, str(st["root"]), mode,
+                            ",".join(str(i) for i in st["ids"])],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=600)
+        parts = p.stdout.split("@@RESULT@@")
+        assert len(parts) == 2, f"child failed (rc {p.returncode}):\n{p.stdout}\n{p.stderr}"
+        res = json.loads(parts[1])
+        assert _lance_ids(st["root"]) == sorted(st["ids"]), (
+            "precondition: with lance unavailable the purge cannot have deleted any vector row")
+        err = p.stderr
+        problems = []
+        if not res["failures"] >= len(st["ids"]):
+            problems.append(f"vector_delete_failures = {res['failures']} for {len(st['ids'])} rows "
+                            f"left behind (the purge returned {res['result']})")
+        if not (re.search(r"\blance\b", err)
+                and re.search(r"not installed|missing|unavailable", err, re.I)):
+            problems.append("stderr does not say lance is missing")
+        if not ("memory" in err and "proj" in err):
+            problems.append("stderr does not name the (partition, kind) table proj/memory")
+        if not re.search(r"orphan|left behind|not deleted", err, re.I):
+            problems.append("stderr does not say the rows were left behind")
+>       assert not problems, f"{mode} purge with lance missing:\n- " + "\n- ".join(problems) + (
+            f"\nstderr: {err!r}")
+E       AssertionError: single purge with lance missing:
+E         - vector_delete_failures = 0 for 3 rows left behind (the purge returned [0, 0, 0])
+E         - stderr does not say lance is missing
+E         - stderr does not name the (partition, kind) table proj/memory
+E         - stderr does not say the rows were left behind
+E         stderr: ''
+E       assert not ['vector_delete_failures = 0 for 3 rows left behind (the purge returned [0, 0, 0])', 'stderr does not say lance is missing', 'stderr does not name the (partition, kind) table proj/memory', 'stderr does not say the rows were left behind']
+
+tests/test_bug216_remedy_r6.py:112: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r6.py::test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[batch]
+FAILED tests/test_bug216_remedy_r6.py::test_m1_a_purge_with_lance_missing_but_the_table_present_is_counted_and_said[single]
+2 failed in 1.33s

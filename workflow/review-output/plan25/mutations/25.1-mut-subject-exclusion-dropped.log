@@ -1,0 +1,33 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_______________ test_ac6_no_subject_rows_on_the_per_prompt_argv ________________
+
+fx = <tests.task25_1_support.Fixture object at 0x10d176900>
+
+    def test_ac6_no_subject_rows_on_the_per_prompt_argv(fx):
+        """AC-6 (R2): 0 subject rows on the per-prompt argv, on BOTH legs: the replica leg (a real
+        shared worker, the live default whenever the hub is up) and the daemon RPC leg. HEAD record
+        (f7c0d39): the replica leg names subject_quasar_ledger_0 FIRST; the RPC leg's project half
+        of the `--scope both` merge (6 of 12 at GREEN, 3 of 5 at HEAD) held none."""
+        w = s.SharedWorker(fx.base, home=fx.home)
+        try:
+            legs = {"replica": _q(fx, RMX_MODEL_SOCK=str(w.sock))}
+        finally:
+            w.stop()
+        legs["rpc"] = _q(fx, RMX_MODEL_SOCK=str(fx.base / "none.sock"))
+        for leg, r in legs.items():
+            _ok(r, f"per-prompt argv ({leg} leg)")
+            named = s.names_in_payload(r.stdout)
+>           assert not set(named) & set(s.SUBJECTS), f"AC-6 ({leg} leg): subjects named: {named}"
+E           AssertionError: AC-6 (replica leg): subjects named: ['subject_quasar_ledger_0', 'fx_dup_x', 'subject_quasar_ledger_1', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', 'subject_quasar_ledger_3', 'gx_mem_7', 'savestate_fx01', 'gx_mem_6', 'fx_mem_06', 'gx_mem_5']
+E           assert not ({'fx_dup_x', 'fx_mem_06', 'gx_mem_5', 'gx_mem_6', 'gx_mem_7', 'gx_mem_8', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'})
+E            +  where {'fx_dup_x', 'fx_mem_06', 'gx_mem_5', 'gx_mem_6', 'gx_mem_7', 'gx_mem_8', ...} = set(['subject_quasar_ledger_0', 'fx_dup_x', 'subject_quasar_ledger_1', 'gx_mem_9', 'subject_quasar_ledger_2', 'gx_mem_8', ...])
+E            +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'])
+E            +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3', 'subject_quasar_ledger_4'] = s.SUBJECTS
+
+tests/test_task25_1_recall_budget.py:928: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_no_subject_rows_on_the_per_prompt_argv
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 23.33s

@@ -1,0 +1,43 @@
+== tests reading cli SOURCE or FILE:
+   path literal 'cli.py' joined to a src path: (18, 9)
+   source_of(<cli alias>, ...): (1, 1)
+   inspect.getsource[lines](<cli alias>...): (0, 0)
+   <cli alias>.__file__: (4, 3)
+== tests reading store SOURCE or FILE:
+   path literal 'store.py' joined to a src path: (27, 9)
+   source_of(<store alias>, ...): (0, 0)
+   inspect.getsource[lines](<store alias>...): (0, 0)
+   <store alias>.__file__: (4, 3)
+   non-recursive src glob (blind to a subpackage): [('test_task21_1_agent_usage_report.py', 1)]
+workflow/plans: cli.py:NNNN 234 sites in 45 files; store.py:NNNN 134 sites in 27 files; daemon.py:NNNN 145 sites in 32 files
+workflow (all, minus review-output): cli.py:NNNN 759 sites in 224 files; store.py:NNNN 394 sites in 114 files; daemon.py:NNNN 502 sites in 166 files
+docs: cli.py:NNNN 8 sites in 6 files; store.py:NNNN 13 sites in 4 files; daemon.py:NNNN 1 sites in 1 files
+src: cli.py:NNNN 1 sites in 1 files; store.py:NNNN 0 sites in 0 files; daemon.py:NNNN 0 sites in 0 files
+tests: cli.py:NNNN 4 sites in 3 files; store.py:NNNN 1 sites in 1 files; daemon.py:NNNN 3 sites in 3 files
+plan/spec files citing cli.py:N or store.py:N, by metadata.status: {'pending': 32, 'drafting': 1, 'approved': 7, 'completed': 7, 'in-progress': 3, 'blocked': 1, 'complete': 1}
+not-completed files: 44 sites: 271
+    ('plan-23-bounded-write-harness-tasks/task-23.1-queue-and-drain.md', 'pending', 35)
+    ('plan-19-adaptive-memory-budget-tasks/task-19.0-stm-cluster-hygiene.md', 'pending', 32)
+    ('plan-22-audited-removal-and-repair-tasks/task-22.6-removal-entry-points.md', 'pending', 27)
+    ('plan-25-cliquedb-field-report-tasks/task-25.1-recall-hook-byte-budget.md', 'pending', 19)
+    ('plan-17-nightly-store-maintenance-tasks/task-17.1-vectors-maintain-op.md', 'pending', 12)
+    ('plan-16-invisible-grep-shim-tasks/task-16.5-explicit-grep-hands-off.md', 'pending', 9)
+    ('plan-16-invisible-grep-shim-tasks/task-16.6-learned-row-validation.md', 'pending', 9)
+    ('plan-18-duckdb-store-maintenance-tasks/task-18.3-offline-reclaim.md', 'pending', 9)
+    ('task-bug178-bulk-write-helper.md', 'approved', 9)
+    ('plan-23-bounded-write-harness-tasks/task-23.3-sync-between-file-yield.md', 'pending', 8)
+    ('plan-25-cliquedb-field-report-tasks/task-25.5-substring-bre-metas.md', 'pending', 8)
+    ('plan-23-bounded-write-harness-tasks/task-23.5-read-path-and-holder-bounds.md', 'pending', 7)
+    ('plan-17-nightly-store-maintenance-tasks/task-17.4-factslog-backup-snapshot.md', 'pending', 6)
+    ('plan-22-audited-removal-and-repair-tasks/task-22.1a-provenance-free-classes.md', 'pending', 6)
+    ('plan-25-cliquedb-field-report-tasks/task-25.3-stm-ref-admission-and-helix-repeat.md', 'pending', 6)
+    ('plan-17-nightly-store-maintenance.md', 'approved', 5)
+    ('plan-19-adaptive-memory-budget-tasks/task-19.1-pack-recall-under-budget.md', 'pending', 5)
+    ('plan-22-audited-removal-and-repair-tasks/task-22.2-repair-then-remove.md', 'pending', 5)
+    ('plan-25-cliquedb-field-report-tasks/task-25.4-grep-bre-translation.md', 'pending', 5)
+    ('plan-13-cross-partition-sweep.md', 'drafting', 4)
+    ('plan-19-adaptive-memory-budget-tasks/task-19.4-keep-derived-layers-current.md', 'pending', 4)
+    ('plan-21-agent-context-usage-tasks/task-21.5-tool-used-signal.md', 'pending', 4)
+    ('plan-22-audited-removal-and-repair-tasks/task-22.1-audit-classes.md', 'pending', 3)
+    ('plan-22-audited-removal-and-repair-tasks/task-22.4-merge-writes.md', 'blocked', 3)
+    ('plan-25-cliquedb-field-report.md', 'approved', 3)

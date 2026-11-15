@@ -1,0 +1,116 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+.........F....FF..F................                                      [100%]
+=================================== FAILURES ===================================
+_ test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[ingest-gmd] _
+
+old_store = {'built_by': 'ingest-gmd', 'proj': PosixPath('/private/tmp/b216ry_3l5mb_/proj'), 'root': PosixPath('/private/tmp/b216ry_3l5mb_/proj/.refmatrix')}
+
+    def test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers(old_store):
+        """R4 at merge (L81 S1): the ignore edit THEN `rmx ingest .` (here `ingest_path(proj)`, the
+        op `rmx ingest .` runs): both citing lines bind on the rule docs' nodes — for a store whose
+        citers came in through the watcher / sync too, where the citer's GMD doc carries a matching
+        content hash and nothing else forces it to be re-processed."""
+        from refmatrix.ingest import ingest_path
+        _r4(old_store)
+        s = _open(old_store["root"])
+        try:
+            ingest_path(s, old_store["proj"])
+        finally:
+            s.close()
+        got = _bound(old_store["root"])
+>       assert all(v > 0 for v in got.values()), f"citers did not bind after `rmx ingest .`: {got}"
+E       AssertionError: citers did not bind after `rmx ingest .`: {'claude#no-silent-failures': 0, 'project-profile#constraints': 0}
+E       assert False
+E        +  where False = all(<generator object test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers.<locals>.<genexpr> at 0x12065b030>)
+
+tests/test_bug216_remedy_r1.py:318: AssertionError
+__________ test_m2_build_context_mention_chain_does_not_cross_denotes __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216r932jhvfp/proj/.refmatrix'), ...}
+
+    def test_m2_build_context_mention_chain_does_not_cross_denotes(walk):
+        """L81 M2: a doc that merely MENTIONS the term concept is not B's neighbour (PageRank folds
+        typed edges only; until G30 decides the fold, build_context does the same)."""
+        got = _context_ids(walk)
+>       assert walk["x"] not in got, (
+            f"a plain `mentions` of the denoting concept reached B's context via {got.get(walk['x'])}")
+E       AssertionError: a plain `mentions` of the denoting concept reached B's context via {'mentions'}
+E       assert 6 not in {1: {'mentions'}, 2: {'mentions'}, 3: {'derives-from'}, 5: {'mentions', 'part-of'}, ...}
+
+tests/test_bug216_remedy_r1.py:503: AssertionError
+_________ test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216r6x5omzfr/proj/.refmatrix'), ...}
+
+    def test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link(walk):
+        """L81 M2: `neighbors` keeps listing raw `denotes` links — `rmx neighbors <concept>` names
+        the doc the concept denotes. At df092ac `QueryEngine.neighbors` drops `denotes` from its
+        linkage list (it only folds the hop through equivalents of the NEXT frontier), so a concept's
+        own denotes target is never listed."""
+        from refmatrix.graphread import neighbors_payload
+        s = _open(walk["root"])
+        try:
+            out = neighbors_payload(s, "b-doc", depth=1)
+        finally:
+            s.close()
+>       assert walk["b"] in {e["id"] for e in out["entities"]}, out
+E       AssertionError: {'cardinality': 1, 'concept': 'b-doc', 'entities': [{'id': 6, 'kind': 'doc', 'name': 'x-doc', 'path': '/private/tmp/b216r6x5omzfr/proj/docs/x.md'}], 'hint': None}
+E       assert 4 in {6}
+
+tests/test_bug216_remedy_r1.py:518: AssertionError
+________ test_m3_the_watcher_purges_a_deleted_builtin_included_profile _________
+
+base = PosixPath('/private/tmp/b216re1658nhb')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x120fa3410>
+
+    def test_m3_the_watcher_purges_a_deleted_builtin_included_profile(base, monkeypatch):
+        """No ignore file: the GMD profile is in by the R11 built-in include. Delete it: the
+        watcher's delete event must reach `_sync_one`, which purges the doc. At df092ac the include
+        sniffs the (gone) file, the hidden-dir rule wins, and the event is dropped."""
+        import watchdog.observers as wo
+        from watchdog.events import FileDeletedEvent
+    
+        from refmatrix.sync import sync_files
+        from tests.test_bug216_rule_docs_e2e import _FakeObserver
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        s = _open(root)
+        try:
+            sync_files(s, [str(prof)], project_root=proj)
+            assert s.get_entity("doc", "project-profile") is not None, "precondition: profile in"
+        finally:
+            s.close()
+        prof.unlink()
+        _FakeObserver.instances = []
+        monkeypatch.setattr(wo, "Observer", _FakeObserver)
+        d = daemon_mod.Daemon(root, watch_root=proj, watch_debounce_ms=50)
+        d.store = _open(root)
+        try:
+            d._start_watcher()
+            (handler, _p), = _FakeObserver.instances[0].handlers
+            handler.on_deleted(FileDeletedEvent(str(prof)))
+            d._watch_stop.set()
+            d._watch_thread.join(timeout=30)
+            assert not d._watch_thread.is_alive()
+            assert d.sync_errors() == [], d.sync_errors()
+        finally:
+            d.store.close()
+        s = _open(root)
+        try:
+            left = s.get_entity("doc", "project-profile")
+            node = s.get_entity("concept", "project-profile#constraints")
+        finally:
+            s.close()
+>       assert left is None and node is None, "the deleted profile's doc / node survived the watcher"
+E       AssertionError: the deleted profile's doc / node survived the watcher
+E       assert (Entity(id=1, kind='doc', name='project-profile', path='/private/tmp/b216re1658nhb/proj/.claude/PROJECT_PROFILE.md', tl... 'gmd_content_hash': '255c5ee6a556495ae62c05c19890911c3a0400c8', 'gmd_pass2_done': True}, protected=False, noise=False) is None)
+
+tests/test_bug216_remedy_r1.py:621: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[ingest-gmd]
+FAILED tests/test_bug216_remedy_r1.py::test_m2_build_context_mention_chain_does_not_cross_denotes
+FAILED tests/test_bug216_remedy_r1.py::test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link
+FAILED tests/test_bug216_remedy_r1.py::test_m3_the_watcher_purges_a_deleted_builtin_included_profile
+4 failed, 31 passed in 14.90s

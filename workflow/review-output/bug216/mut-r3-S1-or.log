@@ -1,0 +1,38 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/mut3/refmatrix/src/refmatrix as checked-hash (bug-037)
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_______ test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids _______
+
+base = PosixPath('/private/tmp/b216szu516udb')
+
+    def test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids(base):
+        sl = _term_slots(base)
+        sa = _open(sl["a"])
+        try:
+            a_before = _term_state(sa)
+        finally:
+            sa.close()
+        res = _merge(sl["a"], sl["b"], base / "T" / "catalog.duckdb")
+        moved = {int(o): int(n) for o, n in (res.get("fresh_moved") or [])}
+        assert moved, f"precondition: the fixture must produce fresh moves: {res.get('remap')}"
+        s = _store_on(base / "T" / "catalog.duckdb", base, "probe")
+        try:
+            st = _term_state(s)
+        finally:
+            s.close()
+        nm = lambda ids: sorted(st["names"].get(i, f"<{i}>") for i in ids)  # noqa: E731
+        assert {"adoc#root", "bdoc#root", "d0#root"} <= set(nm(st["links"])), nm(st["links"])
+>       assert st["bits"] == st["links"], (
+            f"`mentions`[{TERM}] bitmap {nm(st['bits'])} != its entity_links {nm(st['links'])} — "
+            f"B's bits in a row A also holds were dropped")
+E       AssertionError: `mentions`[zebrafinch] bitmap ['adoc#root', 'd0#root'] != its entity_links ['adoc#root', 'bdoc#root', 'd0#root'] — B's bits in a row A also holds were dropped
+E       assert {2, 9} == {2, 9, 17}
+E         
+E         Extra items in the right set:
+E         17
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r3.py:137: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r3.py::test_s1_a_shared_fragment_row_keeps_b_bits_on_their_remapped_ids
+1 failed, 2 passed in 1.98s

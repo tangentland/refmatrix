@@ -5,7 +5,7 @@ title: "ch-test-engineer — Test Engineer"
 tags: [agent, cat-herder]
 name: "ch-test-engineer"
 description: "Designs test strategy and coverage across unit, integration, e2e, and contract tiers. Enforces mock governance, Docker-only execution, real-auth tests, and contract tests for UI-facing shapes."
-tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
+tools: [Read, Write, Edit, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 effort: high
 enabled: true

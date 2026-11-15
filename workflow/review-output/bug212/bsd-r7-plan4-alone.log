@@ -1,0 +1,7 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r7.ZU1B/mu/src/refmatrix as checked-hash (bug-037)
+................                                                         [100%]
+============================= slowest 3 durations ==============================
+5.66s call     tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+5.47s call     tests/test_plan4_remedy.py::test_plist_marks_the_daemon_supervised_and_adoption_is_gated
+5.36s call     tests/test_plan4_remedy.py::test_boot_repair_runs_on_a_spawned_daemon
+16 passed in 38.80s

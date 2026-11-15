@@ -1,0 +1,8 @@
+good origin/HEAD=develop: ahead_base='origin/develop' n_ahead=1 trunk_error=''
+r1-probe missing-sha develop: ahead_base='origin/main' n_ahead=1 trunk_error='origin/HEAD names `origin/develop`, which does not resolve; measured against `origin/main`'
+unset, origin/main ok: ahead_base='origin/main' n_ahead=1 trunk_error=''
+  verify origin/main rc 128 error: inflate: data stream error (incorrect header check)
+error: unable to unpack 5544952
+unset, origin/main corrupt: ahead_base='origin/master' n_ahead=2 trunk_error=''
+origin/HEAD=main corrupt: ahead_base='origin/master' n_ahead=2 trunk_error='origin/HEAD names `origin/main`, which does not resolve; measured against `origin/master`'
+local-only no remote: ahead_base='' n_ahead=0 trunk_error=''

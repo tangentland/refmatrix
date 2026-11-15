@@ -1,0 +1,90 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug230/src/refmatrix as checked-hash (bug-037)
+..............FFFFF..                                                    [100%]
+=================================== FAILURES ===================================
+_ test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[catalog.A.duckdb] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b2309xxbev4x/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b2309xxbev4x')}
+name = 'catalog.A.duckdb'
+
+    @pytest.mark.parametrize("name", ["catalog.A.duckdb", "catalog.read.duckdb", "rmxd.sock",
+                                      ".refmatrix_ignore.bak", "facts.log"])
+    def test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation(checkout,
+                                                                                     name):
+        p = str(checkout["root"] / ".refmatrix" / name)
+>       assert rmx_sandbox.violation("open", (p, "r", os.O_RDONLY), checkout["deny"]) is not None
+E       AssertionError: assert None is not None
+E        +  where None = <function violation at 0x102fcdd20>('open', ('/private/tmp/b2309xxbev4x/.refmatrix/catalog.A.duckdb', 'r', 0), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b2309xxbev4x/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x102fcdd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:146: AssertionError
+_ test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[catalog.read.duckdb] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b230wpcuntlq/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b230wpcuntlq')}
+name = 'catalog.read.duckdb'
+
+    @pytest.mark.parametrize("name", ["catalog.A.duckdb", "catalog.read.duckdb", "rmxd.sock",
+                                      ".refmatrix_ignore.bak", "facts.log"])
+    def test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation(checkout,
+                                                                                     name):
+        p = str(checkout["root"] / ".refmatrix" / name)
+>       assert rmx_sandbox.violation("open", (p, "r", os.O_RDONLY), checkout["deny"]) is not None
+E       AssertionError: assert None is not None
+E        +  where None = <function violation at 0x102fcdd20>('open', ('/private/tmp/b230wpcuntlq/.refmatrix/catalog.read.duckdb', 'r', 0), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b230wpcuntlq/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x102fcdd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:146: AssertionError
+_ test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[rmxd.sock] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b2304ddm89a8/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b2304ddm89a8')}
+name = 'rmxd.sock'
+
+    @pytest.mark.parametrize("name", ["catalog.A.duckdb", "catalog.read.duckdb", "rmxd.sock",
+                                      ".refmatrix_ignore.bak", "facts.log"])
+    def test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation(checkout,
+                                                                                     name):
+        p = str(checkout["root"] / ".refmatrix" / name)
+>       assert rmx_sandbox.violation("open", (p, "r", os.O_RDONLY), checkout["deny"]) is not None
+E       AssertionError: assert None is not None
+E        +  where None = <function violation at 0x102fcdd20>('open', ('/private/tmp/b2304ddm89a8/.refmatrix/rmxd.sock', 'r', 0), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b2304ddm89a8/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x102fcdd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:146: AssertionError
+_ test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[.refmatrix_ignore.bak] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b230njs1p4d5/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b230njs1p4d5')}
+name = '.refmatrix_ignore.bak'
+
+    @pytest.mark.parametrize("name", ["catalog.A.duckdb", "catalog.read.duckdb", "rmxd.sock",
+                                      ".refmatrix_ignore.bak", "facts.log"])
+    def test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation(checkout,
+                                                                                     name):
+        p = str(checkout["root"] / ".refmatrix" / name)
+>       assert rmx_sandbox.violation("open", (p, "r", os.O_RDONLY), checkout["deny"]) is not None
+E       AssertionError: assert None is not None
+E        +  where None = <function violation at 0x102fcdd20>('open', ('/private/tmp/b230njs1p4d5/.refmatrix/.refmatrix_ignore.bak', 'r', 0), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b230njs1p4d5/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x102fcdd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:146: AssertionError
+_ test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[facts.log] _
+
+checkout = {'deny': {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/g...low': ['/private/tmp/b230lq113ucg/.refmatrix/.refmatrix_ignore'], ...}, 'root': PosixPath('/private/tmp/b230lq113ucg')}
+name = 'facts.log'
+
+    @pytest.mark.parametrize("name", ["catalog.A.duckdb", "catalog.read.duckdb", "rmxd.sock",
+                                      ".refmatrix_ignore.bak", "facts.log"])
+    def test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation(checkout,
+                                                                                     name):
+        p = str(checkout["root"] / ".refmatrix" / name)
+>       assert rmx_sandbox.violation("open", (p, "r", os.O_RDONLY), checkout["deny"]) is not None
+E       AssertionError: assert None is not None
+E        +  where None = <function violation at 0x102fcdd20>('open', ('/private/tmp/b230lq113ucg/.refmatrix/facts.log', 'r', 0), {'paths': ['/Users/tholley/.refmatrix', '/Users/tholley/claude_tools/refmatrix/.refmatrix', '/Users/tholley/github/ato...92, 54302, 54340, ...], 'ports': [7777], 'read_allow': ['/private/tmp/b230lq113ucg/.refmatrix/.refmatrix_ignore'], ...})
+E        +    where <function violation at 0x102fcdd20> = rmx_sandbox.violation
+
+tests/test_bug230_repo_scope_gate.py:146: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[catalog.A.duckdb]
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[catalog.read.duckdb]
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[rmxd.sock]
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[.refmatrix_ignore.bak]
+FAILED tests/test_bug230_repo_scope_gate.py::test_2a_guard_a_read_of_any_other_file_under_the_store_is_still_a_violation[facts.log]
+5 failed, 16 passed in 1.36s

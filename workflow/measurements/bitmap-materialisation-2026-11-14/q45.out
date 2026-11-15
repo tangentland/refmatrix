@@ -1,0 +1,28 @@
+load at start: 4.80 4.72 4.66
+transposed build (all 34 linkages, fragments warm): med 124.25ms p90 126.07ms (min 120.66, max 126.07, n=5)
+serialized: transposed 5210300 B vs original fragments 7139742 B (ratio 0.73); serialize med 18.62ms p90 19.48ms (min 17.92, max 19.48, n=5); deserialize med 29.92ms p90 30.81ms (min 24.63, max 30.81, n=5)
+sample entity out-degrees: [1, 2, 3, 5, 8, 12, 20, 35, 50, 115, 310]
+  outdeg     1: SQL med 0.62ms p90 0.94ms (min 0.51, max 1.18, n=7) | transposed med 3.66ms p90 3.68ms (min 3.48, max 3.69, n=7)  sets IDENTICAL
+  outdeg     2: SQL med 0.65ms p90 0.75ms (min 0.59, max 1.05, n=7) | transposed med 3.46ms p90 3.50ms (min 3.38, max 3.55, n=7)  sets IDENTICAL
+  outdeg     3: SQL med 0.41ms p90 0.45ms (min 0.36, max 0.66, n=7) | transposed med 10.32ms p90 10.51ms (min 10.14, max 10.84, n=7)  sets IDENTICAL
+  outdeg     5: SQL med 0.42ms p90 0.48ms (min 0.33, max 0.74, n=7) | transposed med 13.98ms p90 14.60ms (min 13.37, max 14.64, n=7)  sets IDENTICAL
+  outdeg     8: SQL med 0.48ms p90 0.56ms (min 0.44, max 0.76, n=7) | transposed med 6.47ms p90 6.51ms (min 6.32, max 6.68, n=7)  sets IDENTICAL
+  outdeg    12: SQL med 0.49ms p90 0.51ms (min 0.42, max 0.71, n=7) | transposed med 6.38ms p90 6.54ms (min 6.37, max 6.65, n=7)  sets IDENTICAL
+  outdeg    20: SQL med 0.76ms p90 1.06ms (min 0.73, max 1.07, n=7) | transposed med 13.34ms p90 13.73ms (min 12.39, max 14.48, n=7)  sets IDENTICAL
+  outdeg    35: SQL med 0.46ms p90 0.59ms (min 0.44, max 0.83, n=7) | transposed med 12.39ms p90 12.77ms (min 12.28, max 13.39, n=7)  sets IDENTICAL
+  outdeg    50: SQL med 0.48ms p90 0.55ms (min 0.47, max 0.80, n=7) | transposed med 6.37ms p90 6.39ms (min 6.26, max 6.57, n=7)  sets IDENTICAL
+  outdeg   115: SQL med 0.54ms p90 0.74ms (min 0.46, max 0.84, n=7) | transposed med 6.28ms p90 6.41ms (min 6.21, max 6.47, n=7)  sets IDENTICAL
+  outdeg   310: SQL med 0.86ms p90 0.91ms (min 0.75, max 1.05, n=7) | transposed med 12.44ms p90 12.60ms (min 12.30, max 12.68, n=7)  sets IDENTICAL
+mismatching entities: 0 / 11
+load after Q4: 4.90 4.75 4.67
+  build noise (concept, partition): med 1.84ms p90 2.09ms (min 1.73, max 3.75, n=7) card 28285 serialized 11427 B
+  build protected (partition): med 1.17ms p90 1.21ms (min 1.11, max 3.56, n=7) card 2427 serialized 5701 B
+  build partition (all entities): med 18.11ms p90 18.70ms (min 17.62, max 21.23, n=7) card 127047 serialized 139935 B
+  build kind=concept (partition): med 9.90ms p90 10.08ms (min 9.36, max 10.67, n=7) card 114562 serialized 126908 B
+  build kind=code (partition): med 1.46ms p90 1.54ms (min 1.28, max 1.64, n=7) card 10140 serialized 12474 B
+  build kind=doc (partition): med 1.28ms p90 1.35ms (min 1.24, max 1.35, n=7) card 1779 serialized 4568 B
+  build kind=memory (partition): med 0.76ms p90 0.78ms (min 0.75, max 0.93, n=7) card 566 serialized 1601 B
+  all filter bitmaps built once: ~34.5 ms total (sum of medians)
+today noise_concept_ids() per QueryEngine: med 8.51ms p90 9.26ms (min 8.01, max 9.26, n=9); + BitMap(noise) as neighbors does: med 8.15ms p90 8.22ms (min 7.99, max 8.32, n=9) (|noise|=28285)
+today QueryEngine._universe() (python loop over SQL rows): med 49.64ms p90 51.59ms (min 48.63, max 51.59, n=5); identical to the partition bitmap
+load at end: 4.90 4.75 4.67

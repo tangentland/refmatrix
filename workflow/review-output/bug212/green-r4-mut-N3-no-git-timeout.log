@@ -1,0 +1,161 @@
+pyc-guard: recompiled 9 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug212-mut4/src/refmatrix as checked-hash (bug-037)
+......................FFFFFF............                                 [100%]
+=================================== FAILURES ===================================
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-rev-parse-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x111797ee0>, 'slots')
+mode = 'all'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [slots/all] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:462: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-ls-files-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x111788550>, 'slots')
+mode = 'ls-files'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [slots/ls-files] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:462: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-rev-parse-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x1117893b0>, 'legacy')
+mode = 'all'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [legacy/all] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:462: AssertionError
+_ test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-ls-files-hangs] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x110b9f6e0>, 'legacy')
+mode = 'ls-files'
+
+    @pytest.mark.timeout(180)
+    @pytest.mark.parametrize("mode", ["all", "ls-files"], ids=["rev-parse-hangs", "ls-files-hangs"])
+    def test_a_hanging_git_raises_the_check_error_within_the_timeout(tracked_repo, mode):
+        """m-3 (L72): with `git` hanging -- on the first call (`rev-parse`) or only on `ls-files` --
+        `git_tracked_catalogs` raises `TrackedCatalogCheckError` saying it timed out, within the
+        bound. At 67f55cb neither call has a timeout: it hangs past the bound."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", mode)
+        probe = repo.base / "tracked_probe.py"
+        probe.write_text(_TRACKED_PROBE, encoding="utf-8")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        t0 = time.monotonic()
+        r = _run_bounded([sys.executable, str(probe), str(repo.store)], cwd=repo.proj, env=env,
+                         bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}/{mode}] git_tracked_catalogs did not return within "
+                               f"{HANG_BOUND_S}s with git hanging: no timeout on the git call")
+E       AssertionError: [legacy/ls-files] git_tracked_catalogs did not return within 45s with git hanging: no timeout on the git call
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:462: AssertionError
+_______ test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots] _______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x116689e50>, 'slots')
+
+    @pytest.mark.timeout(180)
+    def test_an_in_process_writer_with_a_hanging_git_fails_loudly(tracked_repo):
+        """m-3, end to end: `rmx sync --files <f>`, no daemon, `git` hanging. One `Error:` line
+        `refusing to open <full target> read-write in-process: ...` naming the timeout, exit
+        non-zero, catalog bytes unchanged -- within the bound, never a silent hang."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", "all")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        f = repo.proj / "README.md"
+        before = _digests(repo.store)
+        r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--files", str(f)],
+                         cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}] `rmx sync --files` with git hanging did not finish "
+                               f"within {HANG_BOUND_S}s: a silent hang")
+E       AssertionError: [slots] `rmx sync --files` with git hanging did not finish within 45s: a silent hang
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:487: AssertionError
+______ test_an_in_process_writer_with_a_hanging_git_fails_loudly[legacy] _______
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x11177b2d0>, 'legacy')
+
+    @pytest.mark.timeout(180)
+    def test_an_in_process_writer_with_a_hanging_git_fails_loudly(tracked_repo):
+        """m-3, end to end: `rmx sync --files <f>`, no daemon, `git` hanging. One `Error:` line
+        `refusing to open <full target> read-write in-process: ...` naming the timeout, exit
+        non-zero, catalog bytes unchanged -- within the bound, never a silent hang."""
+        repo, layout = tracked_repo
+        _hanging_git(repo.base / "hangbin", "all")
+        env = _base_env()
+        env["PATH"] = f"{repo.base / 'hangbin'}{os.pathsep}{env.get('PATH', '')}"
+        f = repo.proj / "README.md"
+        before = _digests(repo.store)
+        r = _run_bounded([sys.executable, str(_entry(repo.base)), "sync", "--files", str(f)],
+                         cwd=repo.proj, env=env, bound=HANG_BOUND_S)
+>       assert r is not None, (f"[{layout}] `rmx sync --files` with git hanging did not finish "
+                               f"within {HANG_BOUND_S}s: a silent hang")
+E       AssertionError: [legacy] `rmx sync --files` with git hanging did not finish within 45s: a silent hang
+E       assert None is not None
+
+tests/test_bug212_r4_red.py:487: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-rev-parse-hangs]
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[slots-ls-files-hangs]
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-rev-parse-hangs]
+FAILED tests/test_bug212_r4_red.py::test_a_hanging_git_raises_the_check_error_within_the_timeout[legacy-ls-files-hangs]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[slots]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_with_a_hanging_git_fails_loudly[legacy]
+6 failed, 34 passed in 317.80s (0:05:17)

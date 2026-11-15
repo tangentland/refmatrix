@@ -5,7 +5,7 @@ title: "ch-security-auditor — Security Auditor"
 tags: [agent, cat-herder]
 name: "ch-security-auditor"
 description: "Security reviewer covering authn/authz, input validation, secrets, dependencies, transport security, access control, container hardening, and API protection. Reports vulnerabilities by severity."
-tools: [Read, Grep, Glob, Bash, Task]
+tools: [Read, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 enabled: true
 ---

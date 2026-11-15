@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# rmx-master: READ-ONLY refmatrix lookups against the dev tree's live store, for subagents working
+# in littlebig clones (Q15, 2026-11-14). A clone has no .refmatrix/ of its own, so a plain `rmx`
+# there degrades to grep. A symlinked .refmatrix/ in a clone was rejected: every cwd-walking
+# caller in the clone (pytest on dev code, Claude Code PostToolUse `rmx sync` hooks) would then
+# resolve to the LIVE store, which CLAUDE.md forbids (dev-venv rmx against the live store trips the
+# hub version handshake; tests reach live sockets). This wrapper instead:
+#   - always runs the DEPLOYED binary (~/bin/rmx), never a dev venv;
+#   - sets REFMATRIX_ROOT for this one process only (never exported to the caller's shell);
+#   - allows only read verbs, and refuses everything else loudly.
+# It answers about master as last synced, not about the clone's branch.
+set -euo pipefail
+STORE="/Users/tholley/claude_tools/refmatrix/.refmatrix"
+RMX="$HOME/bin/rmx"
+verb="${1:-}"
+case "$verb" in
+  context|query|neighbors|where|locate|search) ;;
+  memory)
+    case "${2:-}" in
+      recall|search|get|list) ;;
+      *) echo "rmx-master: refused: 'memory ${2:-}' is not a read verb (allowed: recall search get list)" >&2; exit 2 ;;
+    esac ;;
+  ""|-h|--help)
+    echo "usage: rmx-master {context|query|neighbors|where|locate|search|memory recall|memory search|memory get|memory list} ARGS" >&2
+    exit 2 ;;
+  *) echo "rmx-master: refused: '$verb' is not a read verb" >&2; exit 2 ;;
+esac
+if [[ ! -x "$RMX" ]]; then
+  echo "rmx-master: deployed rmx not found at $RMX" >&2
+  exit 1
+fi
+exec env REFMATRIX_ROOT="$STORE" "$RMX" "$@"

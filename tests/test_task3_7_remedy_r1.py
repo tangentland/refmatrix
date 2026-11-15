@@ -77,12 +77,21 @@ def test_no_generated_hook_drains_the_curator_spool(tmp_path):
 
 
 def test_cli_drain_that_printed_more_leaves_the_rest_in_the_spool(root):
-    """The ledger's probe: 15 paths, the line shows 10 and "+5 more" — the 5 were never
-    shown, so they must survive."""
+    """The ledger's probe: 15 paths, the line shows at most 10 (`--limit`) and "+N more" — the
+    N were never shown, so they must survive.
+
+    Task 25.1 R0b (2026-11-13 contract update): the line is also fitted to
+    `budget("curator_status")` (500 B), whole paths only, so it can show FEWER than 10; its
+    trailer reads `+N more path(s) not shown within 500 B`. N counts every unshown path (the
+    5 past `--limit` and any the byte cap cut), and the drain safety this test pins is
+    unchanged: what was not shown stays in the spool."""
     gmd_curator.write_spool(root, [str(root.parent / f"PLAN-{i}.md") for i in range(15)])
     r = CliRunner().invoke(cli_mod.main, ["curator", "status", "--drain"])
     assert r.exit_code == 0, r.output
-    assert "+5 more" in r.output, r.output
+    m = re.search(r"\+(\d+) more", r.output)
+    assert m and int(m.group(1)) >= 5, r.output
+    shown = [i for i in range(15) if f"PLAN-{i}.md" in r.output]
+    assert len(shown) + int(m.group(1)) == 15, (shown, r.output)
     assert gmd_curator.read_spool(root)["entries"], "the hook emptied what it only counted"
 
 

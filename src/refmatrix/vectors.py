@@ -43,6 +43,27 @@ def _arrow_schema(dim: int) -> pa.Schema:
     )
 
 
+def delete_vector_rows(lance_mod, path: Path, ids: Iterable[int]) -> int:
+    """THE batched IN-list delete of one Lance table: ONE `delete` call for all
+    of `ids`, never one per id (bug-085: one per entity held the store lock for
+    minutes). Returns the rows ACTUALLY removed -- Lance's `DeleteResult`
+    `num_deleted_rows`, else the table's row count before minus after -- not
+    the ids issued, which overstate whenever an id has no vector. A missing
+    table removes nothing; any failure raises to the caller, which names and
+    counts it (bug-216 remedy r4 M1, ruling L99: three copies of this body --
+    `LanceVectorStore.drop_for`, `Store._drop_lance_for_purge_batch`,
+    `Store.drop_vectors_for_ids` -- converged here)."""
+    ids = sorted({int(i) for i in ids})
+    path = Path(path)
+    if not ids or not path.exists():
+        return 0
+    ds = lance_mod.dataset(str(path))
+    before = ds.count_rows()
+    res = ds.delete("id IN (" + ",".join(str(i) for i in ids) + ")")
+    n = res.get("num_deleted_rows") if isinstance(res, dict) else None
+    return int(n) if n is not None else int(before - ds.count_rows())
+
+
 class LanceVectorStore:
     """Thin wrapper around per-(partition, kind) Lance datasets.
 
@@ -120,19 +141,10 @@ class LanceVectorStore:
             lance.write_dataset(batch, str(path), mode="create")
 
     def drop_for(self, entity_ids: Iterable[int], *, kind: str) -> int:
+        """Delete these entities' rows from the kind's table; returns the rows
+        actually removed (`delete_vector_rows`)."""
         import lance
-
-        ids = list(entity_ids)
-        if not ids:
-            return 0
-        path = self._dataset_path(kind)
-        if not path.exists():
-            return 0
-        ds = lance.dataset(str(path))
-        # Lance's delete takes a SQL WHERE clause.
-        in_list = ",".join(str(int(i)) for i in ids)
-        ds.delete(f"id IN ({in_list})")
-        return len(ids)
+        return delete_vector_rows(lance, self._dataset_path(kind), entity_ids)
 
     def list_ids(self, *, kind: str) -> list[int]:
         """Return every entity_id present in the lance dataset for `kind`.

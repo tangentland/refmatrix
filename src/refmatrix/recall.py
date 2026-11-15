@@ -923,3 +923,219 @@ def ann_search(store: "Store | Callable[[], Store]", emb, *, query: "str | None"
     if rr_warnings:
         out["warnings"] = rr_warnings
     return out
+
+
+# ---- the replica recall leg (task 25.1 R5) ------------------------------------------------
+#
+# Moved here from `cli._replica_memory_recall` (task 25.1 R5, orchestrator S1 (a), decisions
+# d5/d6/d10, 2026-11-11). It used to be the CLI's own which-rows computation, reading the CLI's
+# globals (`_reader_store()`, `_resolve_partition()`, i.e. the CWD's store and the PROJECT
+# partition), while `verbs.memory_recall` had a second, daemon-only dense leg: two answers to
+# one question (bug-164's sixth sighting of that shape), and an MCP call naming another
+# project could never read that project's replica. Now the VERB calls this for every caller,
+# root- and partition-explicit, over `search.cached_replica(root)`.
+
+import os as _os
+
+# A rerank on the shared worker is worth waiting for only with this much of the budget left;
+# below it the hits go out unreranked and the skip is said (bsd-plan2-r6 #b-1: `info` 6.3 s +
+# `rerank` 6.2 s at the worker's 300 s default were the 12.5 s of a 12.8 s hook).
+RERANK_MIN_S = float(_os.environ.get("RMX_RERANK_MIN_S", "2") or "2")
+# The `info` probe of the shared rerank worker gets at most this long: a worker that is
+# loading or broken (bug-014: `info` -> BrokenPipe, 6 s) must cost the hook one second.
+RERANK_PROBE_S = float(_os.environ.get("RMX_RERANK_PROBE_S", "1") or "1")
+# Rerank doc cap for the replica leg. Measured 2026-09-15 on the shared worker (10 memory
+# docs): 28.7k chars scored in 4.8 s and timed out the 5 s hook; 768 chars -> 3.4 s, 512 ->
+# 2-3 s. 700 keeps a memory's title + lead, which is what the cross-encoder ranks on.
+RERANK_DOC_CHARS = int(_os.environ.get("RMX_RERANK_DOC_CHARS", "700") or "700")
+
+EMBEDDER_POLICIES = ("hub_only", "shared")
+
+
+def replica_first_enabled() -> bool:
+    """The A/B switch `RMX_RECALL_REPLICA_FIRST=0` (read in the CALLING process -- the hook's
+    `rmx`, the `rmx mcp` server, the interactive CLI -- never forwarded to a daemon): off
+    means the verb goes straight to the daemon RPC (task 25.1 R5, AC-4 (d))."""
+    return _os.environ.get("RMX_RECALL_REPLICA_FIRST", "1") not in ("0", "false", "False")
+
+
+def _embedder_kind(e) -> str:
+    """Which embedder served, in the words `warnings` use (AC-4 (g): the private worker is
+    NAMED, not implied)."""
+    from refmatrix.embedder import RemoteEmbedder
+    if isinstance(e, RemoteEmbedder):
+        from refmatrix.modelsrv import SharedWorkerClient
+        return ("hub shared worker" if isinstance(getattr(e, "_client", None),
+                                                  SharedWorkerClient)
+                else "private worker")
+    return "in-process model"
+
+
+def replica_memory_recall(root, *, partition: str, query: str, k: int,
+                          kinds: "Sequence[str] | None", fuse: bool,
+                          rerank: "bool | None", left=None,
+                          warnings: "list[str] | None" = None,
+                          embedder_policy: str = "hub_only") -> "dict | None":
+    """Writer-independent recall: the store's replica slot + lock-free Lance + an embedder that
+    never waits on the writer. Returns `{"hits": [...], "fetch": fn, "embedder": str}` -- hits
+    in the daemon RPC's shape plus the catalog metadata of each (`Store.item_meta`, so a
+    replica-served hit has the name / kind / partition its retrieved event needs), and `fetch`,
+    which resolves a hit id to its row FROM THE SAME REPLICA (never the daemon: a per-hit RPC
+    would bring back the writer wait this leg removes) -- or None when a leg is missing (no
+    replica, no embedder), so the caller goes to the next step.
+
+    `embedder_policy` (d10):
+    - "hub_only": the hub's shared embed worker or nothing (`modelsrv.shared_available` ->
+      `RemoteEmbedder(SharedWorkerClient)`). The hook modes, and step 1 of every call: a
+      private-worker spawn or an in-process load (6-33 s) cannot fit the 5 s hook.
+    - "shared": `shared_embedder(root)` -- hub worker, else a private worker, else the cached
+      in-process model. ONLY the verb's no-daemon step for interactive / MCP callers.
+
+    `left(default)` is the caller's deadline (seconds remaining, capped); every worker socket is
+    bounded by it, and it raises `VerbBusyError` when spent -- re-raised here so the caller
+    degrades. A rerank that cannot fit `RERANK_MIN_S` is skipped and said in `warnings`.
+    Any other failure is said in `warnings` and returns None: this leg can only remove a wait,
+    never a result."""
+    from refmatrix import verbs as _verbs
+    if embedder_policy not in EMBEDDER_POLICIES:
+        raise ValueError(f"replica_memory_recall: embedder_policy must be one of "
+                         f"{EMBEDDER_POLICIES}, got {embedder_policy!r}")
+    # The A/B switch moved WITH the leg (task 25.1 R5): `RMX_RECALL_REPLICA_FIRST=0` in the
+    # calling process turns every replica step off, the no-daemon one included, as it turned
+    # off `cli._replica_memory_recall` before the move.
+    if not replica_first_enabled():
+        return None
+    ws = warnings if warnings is not None else []
+
+    def _l(default: float) -> float:
+        return left(default) if left is not None else default
+
+    try:
+        from refmatrix import modelsrv
+        if embedder_policy == "hub_only":
+            if not (modelsrv.shared_enabled()
+                    and modelsrv.shared_available(timeout=min(0.5, _l(0.5)))):
+                return None
+        from refmatrix import search as _search
+        try:
+            s, lock = _search.cached_replica(root)
+        except FileNotFoundError as e:
+            ws.append(f"replica recall unavailable ({e})")
+            return None
+        from refmatrix import reranker as _reranker
+        if embedder_policy == "hub_only":
+            from refmatrix.embedder import RemoteEmbedder
+            # the socket timeout on the shared worker is the remaining budget -- the
+            # worker's own default is 300 s
+            emb = RemoteEmbedder(modelsrv.SharedWorkerClient("embed", timeout=_l(30.0)))
+            kind = "hub shared worker"
+        else:
+            try:
+                emb = shared_embedder(root)
+            except ImportError as e:
+                raise _verbs.VerbError(f"dense extra not installed: {e}") from e
+            kind = _embedder_kind(emb)
+        want_rerank = _reranker.rerank_enabled() if rerank is None else bool(rerank)
+        retrieve_k = (min(max(k, k * _reranker.DEFAULT_POOL_MULT), _reranker.MAX_POOL)
+                      if want_rerank else k)
+        # The query vector BEFORE the replica lock (the model call never runs under a lock).
+        qvec_emb = PrecomputedQuery(emb, query, emb.embed_texts([query])) if query else emb
+        out_hits: "list[dict] | None" = None
+        with lock, s.with_partition(partition):
+            if fuse:
+                hits = hybrid_memory_recall(s, qvec_emb, query, k=retrieve_k, kinds=kinds)
+            else:
+                hits = dense_recall(s, qvec_emb, query, k=retrieve_k, kinds=kinds)
+            if want_rerank and hits:
+                rem = _l(30.0)
+                if rem < RERANK_MIN_S:
+                    ws.append(f"rerank skipped: {rem:.1f}s of the budget left "
+                              f"(< {RERANK_MIN_S:g}s); hits unreranked")
+                else:
+                    rr_why: list[str] = []
+                    rr = _reranker.shared_reranker(timeout=rem,
+                                                   probe_timeout=min(rem, RERANK_PROBE_S),
+                                                   why=rr_why)
+                    if rr is None:
+                        # The cause, when the worker was reached and failed (ch-bsd r7 #s-1).
+                        cause = "; ".join(rr_why) or "shared worker unavailable"
+                        ws.append(f"rerank skipped: {cause}; hits unreranked")
+                    else:
+                        try:
+                            docs = _reranker.collect_rerank_docs(
+                                s, hits, k=k, doc_chars=RERANK_DOC_CHARS, query=query)
+                            ranked = _reranker.apply_rerank(rr, query, *docs, k=k)
+                            out_hits = [{"id": eid, "score": sc, "fused": bool(fuse),
+                                         "reranked": True, "replica": True}
+                                        for eid, sc in ranked]
+                        except _reranker.RerankSkipped as e:
+                            # NOT a failure: the pool could not fit the budget (bug-025).
+                            ws.append(f"rerank skipped: {e.reason}; hits unreranked")
+                        except Exception as e:  # noqa: BLE001 -- said, never mute
+                            ws.append(f"rerank failed ({type(e).__name__}: {e}); "
+                                      f"hits unreranked")
+            if out_hits is None:
+                hits = hits[:k]
+                out_hits = ([{"id": eid, "score": sc, "fused": True, "replica": True}
+                             for eid, sc in hits] if fuse else
+                            [{"id": eid, "distance": dist, "replica": True}
+                             for eid, dist in hits])
+            # Task 21.1 R10: a replica-served hit carries its row's name / kind / partition /
+            # mtype from the reader that answered, merged by THE item-meta merge.
+            from refmatrix.context import apply_item_meta
+            ids = [int(h["id"]) for h in out_hits]
+            if ids:
+                apply_item_meta(out_hits, s.item_meta(ids))
+
+        def fetch(eid: int) -> "dict | None":
+            with lock, s.with_partition(partition):
+                return entity_row(s, int(eid), kinds)
+        return {"hits": out_hits, "fetch": fetch, "embedder": kind}
+    except _verbs.VerbBusyError:
+        raise                       # the deadline itself: the caller degrades
+    except _verbs.VerbError:
+        raise                       # a named refusal (no [dense] extra): never a None
+    except Exception as e:  # noqa: BLE001 -- a missing leg: the next step serves
+        ws.append(f"replica recall unavailable ({type(e).__name__}: {e})")
+        return None
+
+
+# A doc hit's body is read from its file, capped: a recall row is a pointer plus a lead, and
+# the CLI's `kind=doc` leg (task 25.1 R5 moves it into the verb) always cut it here.
+DOC_BODY_CHARS = 4000
+
+
+def entity_row(s: Store, eid: int, kinds: "Sequence[str] | None") -> "dict | None":
+    """A recall hit resolved to its row on store `s`: the memory row when it is one, else --
+    when `kinds` asks for docs -- a doc-shaped row (the entity, its file body capped at
+    `DOC_BODY_CHARS`, `kind` set) so `-K memory,doc` returns the curated `.md` files the CLI's
+    old doc leg returned (task 25.1 R5: one which-rows computation, the verb's)."""
+    m = s.get_memory(int(eid))           # None for any row that is not kind=memory
+    if m is not None or not kinds or "doc" not in kinds:
+        return m
+    ent = s._read().execute(
+        "SELECT id, kind, name, path, tldr FROM entities WHERE id=?", (int(eid),)).fetchone()
+    if ent is None:
+        return None
+    from pathlib import Path as _Path
+    row_path = ent["path"] if "path" in ent.keys() else None
+    body = ""
+    if row_path:
+        try:
+            body = _Path(row_path).read_text(encoding="utf-8", errors="replace")
+            if len(body) > DOC_BODY_CHARS:
+                body = body[:DOC_BODY_CHARS].rstrip() + " …"
+        except OSError as e:
+            # The body falls back to the tldr; the reason rides on the row, never dropped.
+            body = ent["tldr"] or ""
+            return {"id": ent["id"], "name": ent["name"], "kind": ent["kind"],
+                    "content": body, "mtype": ent["kind"], "tags": [],
+                    "metadata": {"source_path": row_path, "body_error": str(e)},
+                    "partition_id": None, "partition": None, "created_at": None,
+                    "updated_at": None}
+    meta = s.item_meta([int(ent["id"])]).get(int(ent["id"])) or {}
+    return {"id": ent["id"], "name": ent["name"], "kind": ent["kind"],
+            "content": body or ent["tldr"] or "", "mtype": ent["kind"], "tags": [],
+            "metadata": {"source_path": row_path or None},
+            "partition_id": None, "partition": meta.get("partition"),
+            "created_at": None, "updated_at": None}

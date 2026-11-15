@@ -1,0 +1,53 @@
+pyc-guard: recompiled 26 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 23%]
+........................................................................ [ 46%]
+........................................................................ [ 69%]
+.........................F...F.......................................... [ 92%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+_________ test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder __________
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x11e2dda90>, 'b': <tests.task25_1_support.Fixture object at 0x11e2dd9...('/private/tmp/rmx-33_l_1ws/p25o-sutvoszj'), 'home': PosixPath('/private/tmp/rmx-33_l_1ws/p25o-sutvoszj/g/.refmatrix')}
+
+    def test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder(offline):
+        """AC-4 (g): no daemon, no hub worker, INTERACTIVE: `rmx memory recall "q" --json` answers
+        from the replica with the query embedded by `recall.shared_embedder` (a private worker in
+        the sandbox), exit 0, and the warnings name the private worker. HEAD: exit 1 "needs the
+        daemon up …"."""
+        b = offline["b"]
+        r = s.rmx(b, "memory", "recall", QUESTION, "--json", "--k", "6",
+                  RMX_HOME=str(offline["home"]), RMX_MODEL_SOCK=str(offline["base"] / "none.sock"))
+        assert r.returncode == 0, f"AC-4 (g): exit {r.returncode}: {r.stderr[-600:]}"
+        names = {m["name"] for m in json.loads(r.stdout)}
+        assert names and names <= _named_b(offline), names
+>       assert "private" in r.stderr.lower(), f"AC-4 (g): no warning names the private worker: " \
+                                              f"{r.stderr[-600:]}"
+E       AssertionError: AC-4 (g): no warning names the private worker: # rmx: warning: rerank skipped: shared worker unavailable; hits unreranked
+E         
+E       assert 'private' in '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n'
+E        +  where '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n' = <built-in method lower of str object at 0x11e669230>()
+E        +    where <built-in method lower of str object at 0x11e669230> = '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n'.lower
+E        +      where '# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n' = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', 'how does the q...  "scope": "project"\n  }\n]\n', stderr='# rmx: warning: rerank skipped: shared worker unavailable; hits unreranked\n').stderr
+
+tests/test_task25_1_recall_budget.py:843: AssertionError
+___________ test_ac5_mistyped_savestate_not_named_on_the_packed_argv ___________
+
+fx = <tests.task25_1_support.Fixture object at 0x11e4ac440>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10957b2a0>
+
+    def test_ac5_mistyped_savestate_not_named_on_the_packed_argv(fx, monkeypatch):
+        """AC-5 (R2b): `savestate_fx01.md` (metadata.type: project, the best body for the question)
+        is not named by the packed per-prompt argv and the trailer does not count it. After 26.4
+        merges this is a regression guard (the bridge types it session/recall-state); at HEAD it is
+        RED twice over: no --pack, and HEAD's JSON names it first (bug-164's 7c4e19d2a8f3 shape)."""
+        p = _pack(_q(fx), "per-prompt argv")
+>       assert s.SAVESTATE not in p.named
+E       AssertionError: assert 'savestate_fx01' not in ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E        +  where 'savestate_fx01' = s.SAVESTATE
+E        +  and   ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x11e7c0470>.named
+
+tests/test_task25_1_recall_budget.py:1007: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4g_interactive_no_daemon_no_hub_uses_shared_embedder
+FAILED tests/test_task25_1_recall_budget.py::test_ac5_mistyped_savestate_not_named_on_the_packed_argv
+2 failed, 308 passed in 419.12s (0:06:59)

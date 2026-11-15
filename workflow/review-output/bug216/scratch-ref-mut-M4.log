@@ -1,0 +1,384 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+..............F...FF..FF..FFFF..FF...FF..............                    [100%]
+=================================== FAILURES ===================================
+_ test_r2_each_walker_goes_through_should_ignore[ingest_gmd.py:collect_gmd_files] _
+
+module = 'ingest_gmd.py', func = 'collect_gmd_files'
+
+    @pytest.mark.parametrize("module,func", WALKERS, ids=[f"{m}:{f}" for m, f in WALKERS])
+    def test_r2_each_walker_goes_through_should_ignore(module, func):
+        node = _func_src(SRC / module, func)
+        names = {_call_name(c) for c in _calls(node)}
+>       assert "should_ignore" in names, f"{module}:{func} does not call should_ignore"
+E       AssertionError: ingest_gmd.py:collect_gmd_files does not call should_ignore
+E       assert 'should_ignore' in {'add', 'append', 'extend', 'is_dir', 'is_file', 'iter_memory_files', ...}
+
+tests/test_bug216_ignore_reinclude.py:278: AssertionError
+_ test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[op-ingest-gmd] __
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b2169u3qyz6l/proj'), PosixPath('/private/tmp/b2169u3qyz6l/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1107b1a30>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_claude_node_and_its_edge(route, proj_new, monkeypatch):
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "claude#no-silent-failures", "finding#swallow", CLAUDE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x120017230>
+proj = PosixPath('/private/tmp/b2169u3qyz6l/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x120017230>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+_ test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216qmknjdse/proj'), PosixPath('/private/tmp/b216qmknjdse/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1200fddd0>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_claude_node_and_its_edge(route, proj_new, monkeypatch):
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "claude#no-silent-failures", "finding#swallow", CLAUDE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x1222bdbe0>
+proj = PosixPath('/private/tmp/b216qmknjdse/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x1222bdbe0>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+_ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b2163rzmegr6/proj'), PosixPath('/private/tmp/b2163rzmegr6/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12016dd30>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:427: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x1200178c0>
+proj = PosixPath('/private/tmp/b2163rzmegr6/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x1200178c0>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+_ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b2162tmuzgzg/proj'), PosixPath('/private/tmp/b2162tmuzgzg/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12016e510>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+>           _assert_rest_of_dot_claude_stays_out(s, proj)
+
+tests/test_bug216_rule_docs_e2e.py:427: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x1222bda90>
+proj = PosixPath('/private/tmp/b2162tmuzgzg/proj')
+
+    def _assert_rest_of_dot_claude_stays_out(s: Store, proj: Path) -> None:
+        """The re-include lets ONE file in; the rest of `.claude/` (agent templates) stays out
+        (spec #why-consistent). At HEAD ingest-gmd's walk takes it, as it takes every `*.md`."""
+>       assert _eid(s, "concept", "agent-x#duty") is None, "the agent template reached the store"
+E       AssertionError: the agent template reached the store
+E       assert 6 is None
+E        +  where 6 = _eid(<refmatrix.store.Store object at 0x1222bda90>, 'concept', 'agent-x#duty')
+
+tests/test_bug216_rule_docs_e2e.py:283: AssertionError
+___________ test_ac2_old_config_has_no_rule_doc_nodes[op-ingest-gmd] ___________
+
+route = 'op-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b21695z5sjf1/proj'), PosixPath('/private/tmp/b21695z5sjf1/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12016eac0>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_old_config_has_no_rule_doc_nodes(route, proj_old, monkeypatch):
+        """With the 2026-09-04 config neither rule doc reaches the store on ANY route, and the
+        citing lines land nothing. (At HEAD ingest-gmd's walk honours no ignore spec at all.)"""
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_no_node(s, "claude#no-silent-failures", "finding#swallow")
+
+tests/test_bug216_rule_docs_e2e.py:440: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x1222bde80>
+target = 'claude#no-silent-failures', src = 'finding#swallow'
+
+    def _assert_no_node(s: Store, target: str, src: str) -> None:
+>       assert _eid(s, "concept", target) is None, f"`{target}` node exists under the old config"
+E       AssertionError: `claude#no-silent-failures` node exists under the old config
+E       assert 9 is None
+E        +  where 9 = _eid(<refmatrix.store.Store object at 0x1222bde80>, 'concept', 'claude#no-silent-failures')
+
+tests/test_bug216_rule_docs_e2e.py:266: AssertionError
+__________ test_ac2_old_config_has_no_rule_doc_nodes[cli-ingest-gmd] ___________
+
+route = 'cli-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216qbffsg89/proj'), PosixPath('/private/tmp/b216qbffsg89/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122a1c050>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_old_config_has_no_rule_doc_nodes(route, proj_old, monkeypatch):
+        """With the 2026-09-04 config neither rule doc reaches the store on ANY route, and the
+        citing lines land nothing. (At HEAD ingest-gmd's walk honours no ignore spec at all.)"""
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_no_node(s, "claude#no-silent-failures", "finding#swallow")
+
+tests/test_bug216_rule_docs_e2e.py:440: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x1222be120>
+target = 'claude#no-silent-failures', src = 'finding#swallow'
+
+    def _assert_no_node(s: Store, target: str, src: str) -> None:
+>       assert _eid(s, "concept", target) is None, f"`{target}` node exists under the old config"
+E       AssertionError: `claude#no-silent-failures` node exists under the old config
+E       assert 9 is None
+E        +  where 9 = _eid(<refmatrix.store.Store object at 0x1222be120>, 'concept', 'claude#no-silent-failures')
+
+tests/test_bug216_rule_docs_e2e.py:266: AssertionError
+_______ test_ac2_old_config_counts_both_lines_unresolved[op-ingest-gmd] ________
+
+route = 'op-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216bly9zb2e/proj'), PosixPath('/private/tmp/b216bly9zb2e/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12016e6d0>
+
+    @pytest.mark.parametrize("route", ["op-ingest-gmd", "cli-ingest-gmd"])
+    def test_ac2_old_config_counts_both_lines_unresolved(route, proj_old, monkeypatch):
+        """ingest-gmd's report names unresolved refs (`IngestStats.report`), so the AC's 'the line
+        counted unresolved' is observable there. (The sync route discards the GMD stats; see the
+        RED summary.)"""
+        proj, root = proj_old
+        res = _run(route, proj, root, monkeypatch)
+        rep = str(res.get("report"))
+>       assert "claude#no-silent-failures" in rep, rep
+E       AssertionError: ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E       assert 'claude#no-silent-failures' in 'ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of'
+
+tests/test_bug216_rule_docs_e2e.py:454: AssertionError
+_______ test_ac2_old_config_counts_both_lines_unresolved[cli-ingest-gmd] _______
+
+route = 'cli-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216dx6q7dzq/proj'), PosixPath('/private/tmp/b216dx6q7dzq/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122a1c910>
+
+    @pytest.mark.parametrize("route", ["op-ingest-gmd", "cli-ingest-gmd"])
+    def test_ac2_old_config_counts_both_lines_unresolved(route, proj_old, monkeypatch):
+        """ingest-gmd's report names unresolved refs (`IngestStats.report`), so the AC's 'the line
+        counted unresolved' is observable there. (The sync route discards the GMD stats; see the
+        RED summary.)"""
+        proj, root = proj_old
+        res = _run(route, proj, root, monkeypatch)
+        rep = str(res.get("report"))
+>       assert "claude#no-silent-failures" in rep, rep
+E       AssertionError: ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)
+E         skipped_non_gmd: 0
+E         skipped_unparseable: 0
+E         new linkage types: lead, part-of
+E         
+E       assert 'claude#no-silent-failures' in 'ingested 7 doc(s), 12 node(s), 2 rel: edge(s), 62 mention(s)\nskipped_non_gmd: 0\nskipped_unparseable: 0\nnew linkage types: lead, part-of\n'
+
+tests/test_bug216_rule_docs_e2e.py:454: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216sjhc_4_b/proj'), PosixPath('/private/tmp/b216sjhc_4_b/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122a1e7b0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: op-ingest-gmd: missing [], extra ['.claude/agents/x.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'src/refmatrix/templates/t.md'
+E         '.claude/agents/x.md'
+E         'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_new = (PosixPath('/private/tmp/b216fhwwebp0/proj'), PosixPath('/private/tmp/b216fhwwebp0/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12016d7f0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: cli-ingest-gmd: missing [], extra ['.claude/agents/x.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'src/refmatrix/templates/t.md'
+E         '.claude/agents/x.md'
+E         'node_modules/n.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_old_config[op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216_uvt11rd/proj'), PosixPath('/private/tmp/b216_uvt11rd/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122a1cd70>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_old_config(route, proj_old,
+                                                                         monkeypatch):
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_OLD, (
+            f"{route}: missing {sorted(EXPECTED_OLD - got)}, extra {sorted(got - EXPECTED_OLD)}")
+E       AssertionError: op-ingest-gmd: missing [], extra ['.claude/PROJECT_PROFILE.md', '.claude/agents/x.md', 'CLAUDE.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'docs/findin...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'src/refmatrix/templates/t.md'
+E         'CLAUDE.md'
+E         '.claude/PROJECT_PROFILE.md'
+E         'node_modules/n.md'
+E         '.claude/agents/x.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:491: AssertionError
+_ test_r2_every_walker_ingests_the_same_files_under_the_old_config[cli-ingest-gmd] _
+
+route = 'cli-ingest-gmd'
+proj_old = (PosixPath('/private/tmp/b216uk36ztno/proj'), PosixPath('/private/tmp/b216uk36ztno/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12016e120>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_old_config(route, proj_old,
+                                                                         monkeypatch):
+        proj, root = proj_old
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_OLD, (
+            f"{route}: missing {sorted(EXPECTED_OLD - got)}, extra {sorted(got - EXPECTED_OLD)}")
+E       AssertionError: cli-ingest-gmd: missing [], extra ['.claude/PROJECT_PROFILE.md', '.claude/agents/x.md', 'CLAUDE.md', 'node_modules/n.md', 'src/refmatrix/templates/t.md']
+E       assert {'.claude/PRO...es/n.md', ...} == {'docs/findin...ocs/other.md'}
+E         
+E         Extra items in the left set:
+E         'src/refmatrix/templates/t.md'
+E         'CLAUDE.md'
+E         '.claude/PROJECT_PROFILE.md'
+E         'node_modules/n.md'
+E         '.claude/agents/x.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:491: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_ignore_reinclude.py::test_r2_each_walker_goes_through_should_ignore[ingest_gmd.py:collect_gmd_files]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_claude_node_and_its_edge[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_has_no_rule_doc_nodes[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_counts_both_lines_unresolved[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_old_config_counts_both_lines_unresolved[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[cli-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[op-ingest-gmd]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_old_config[cli-ingest-gmd]
+13 failed, 40 passed in 15.65s

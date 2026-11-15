@@ -1,5 +1,11 @@
 # .gmd/config.yml — project-local GMD config (optional, all keys defaulted)
 
+# The id namespace for every doc in this repo. Without it tools/gmd/lint.py's project_name falls
+# back to the checkout's DIRECTORY name, so a clone at /Volumes/littlebig/refmatrix-<worker> became
+# project `refmatrix-<worker>` and every unprefixed [[id]] to a `refmatrix/...` doc dangled
+# (bug-155: test_the_repo_scope_is_clean_under_the_stricter_gate red in every clone, 2026-10-20 on).
+project: refmatrix
+
 # Extra recommended verbs for this project. Added to lint's vocab without
 # triggering unknown-verb warnings.
 extra_verbs: []

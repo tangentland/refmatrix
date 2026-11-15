@@ -1,0 +1,6 @@
+DOCONLY True None [('quasar_design_1.md', 'doc', 0.523), ('quasar_design_0.md', 'doc', 0.525), ('quasar_design_4.md', 'doc', 0.534), ('quasar_design_7.md', 'doc', 0.535), ('quasar_design_5.md', 'doc', 0.548), ('quasar_design_3.md', 'doc', 0.549), ('quasar_design_2.md', 'doc', 0.55), ('quasar_design_9.md', 'doc', 0.55), ('quasar_design_6.md', 'doc', 0.569), ('quasar_design_8.md', 'doc', 0.57)]
+BOTH60 [('fx_mem_08', 'memory', 0.333), ('fx_mem_15', 'memory', 0.336), ('fx_mem_05', 'memory', 0.338), ('fx_mem_27', 'memory', 0.346), ('fx_mem_02', 'memory', 0.346), ('fx_mem_17', 'memory', 0.354), ('quasar_design_1.md', 'doc', 0.523), ('quasar_design_0.md', 'doc', 0.525), ('quasar_design_4.md', 'doc', 0.534), ('quasar_design_7.md', 'doc', 0.535), ('quasar_design_5.md', 'doc', 0.548), ('quasar_design_3.md', 'doc', 0.549), ('quasar_design_2.md', 'doc', 0.55), ('quasar_design_9.md', 'doc', 0.55), ('quasar_design_6.md', 'doc', 0.569), ('quasar_design_8.md', 'doc', 0.57), ('fx_dup_x', 'memory', 0.613)]
+FUSED [('fx_mem_00', 'memory'), ('fx_mem_10', 'memory'), ('fx_mem_20', 'memory'), ('fx_mem_03', 'memory'), ('fx_mem_23', 'memory'), ('fx_mem_13', 'memory'), ('fx_mem_06', 'memory'), ('fx_mem_16', 'memory')]
+STATUS {"ok": false, "error": "unknown op: 'status'"}
+.
+1 passed in 15.15s

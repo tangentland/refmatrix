@@ -269,7 +269,9 @@ def test_ac8_prompt_recall_retrieves_10_delivers_3_in_intuition(store):
                           "AC-8 prompt recall")
     retrieved, delivered = _check_common(evs, root=root, stdout=r.stdout,
                                          channel="prompt_recall", block_id="prompt-recall")
-    payload = json.loads(r.stdout)
+    # Task 25.1 R7 (2026-11-13 contract update): the generated hook prints a `--pack` text
+    # payload, not a `--json` list; the hits it carries are the ones its hook lines NAME.
+    payload = h.pack_rows(r.stdout)
     assert len(payload) == N_DELIVERABLE, payload               # fixture: 3 of 10 carried
     assert len(retrieved) == N_MEMORIES, len(retrieved)
     assert len(delivered) == N_DELIVERABLE, len(delivered)
@@ -962,7 +964,9 @@ def test_ac10_global_hit_goes_to_the_global_file_project_hit_to_the_project_file
     before_p = h.line_count(_ev_path(root))
     before_g = h.line_count(_ev_path(groot))
     r = _run_prompt_recall(root, "quasar ledger reconcile")
-    payload = json.loads(r.stdout or b"[]")
+    # Task 25.1 R7 (2026-11-13 contract update): a `--pack` payload, not `--json`; a named
+    # hit's scope is its fetch pointer's (R6: a global hit reads `--scope global`).
+    payload = h.pack_rows(r.stdout)
     assert any(p.get("scope") == "global" for p in payload), \
         f"fixture: the recall must return a global hit: {payload} {r.stderr[-400:]!r}"
     gev = _new_events(_ev_path(groot), before_g)

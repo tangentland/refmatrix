@@ -1,0 +1,88 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+...............F.....F.........F.....................                    [100%]
+=================================== FAILURES ===================================
+__________ test_r2_the_daemon_watcher_filters_against_its_owning_root __________
+
+    def test_r2_the_daemon_watcher_filters_against_its_owning_root():
+        """The daemon's watcher handler (`_start_watcher` -> `_Handler._maybe`) called
+        `is_relevant(p)` with NO root, so the spec — and with it any re-include — never reached
+        the watcher's first filter. Whatever it calls (`is_relevant` or `should_ignore`), it must
+        pass a root."""
+        maybe = _func_src(SRC / "daemon.py", "_start_watcher._maybe")
+        filt = [c for c in _calls(maybe) if _call_name(c) in ("is_relevant", "should_ignore")]
+        assert filt, "the daemon watcher handler no longer filters at all"
+        for c in filt:
+            n = len(c.args) + len([k for k in c.keywords if k.arg == "root"])
+>           assert n >= 2, f"daemon watcher filter called without a root: {ast.unparse(c)}"
+E           AssertionError: daemon watcher filter called without a root: is_relevant(p)
+E           assert 1 >= 2
+
+tests/test_bug216_ignore_reinclude.py:293: AssertionError
+____ test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[watcher] ____
+
+route = 'watcher'
+proj_new = (PosixPath('/private/tmp/b216wdqb8e6t/proj'), PosixPath('/private/tmp/b216wdqb8e6t/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ac8bf50>
+
+    @pytest.mark.parametrize("route", AC2_ROUTES)
+    def test_ac2_reinclude_config_lands_the_profile_node_and_its_edge(route, proj_new, monkeypatch):
+        """The profile sits under a hidden dir: only the re-include's hidden-dir override lets it
+        in, on every route (R1 + R2)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+>           _assert_edge_landed(s, proj, "project-profile#constraints", "finding#profile-cite",
+                                PROFILE_LINE)
+
+tests/test_bug216_rule_docs_e2e.py:425: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <refmatrix.store.Store object at 0x10aeb2660>
+proj = PosixPath('/private/tmp/b216wdqb8e6t/proj')
+target = 'project-profile#constraints', src = 'finding#profile-cite', line = 22
+
+    def _assert_edge_landed(s: Store, proj: Path, target: str, src: str, line: int) -> None:
+        """The node exists, ONE `contradicts` edge lands on it in the store's direction, and its
+        evidence row names the citing file and line."""
+        tgt = _eid(s, "concept", target)
+>       assert tgt is not None, f"no `{target}` node in the store"
+E       AssertionError: no `project-profile#constraints` node in the store
+E       assert None is not None
+
+tests/test_bug216_rule_docs_e2e.py:247: AssertionError
+__ test_r2_every_walker_ingests_the_same_files_under_the_new_config[watcher] ___
+
+route = 'watcher'
+proj_new = (PosixPath('/private/tmp/b216cm_0617a/proj'), PosixPath('/private/tmp/b216cm_0617a/proj/.refmatrix'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b0b7850>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_r2_every_walker_ingests_the_same_files_under_the_new_config(route, proj_new,
+                                                                         monkeypatch):
+        """One fixture tree, one spec, the SAME included set on every walk. The tree has a spec
+        re-include under a hidden dir (the profile), a hidden-dir file the spec also ignores (the
+        agent template), an anchored spec exclusion (templates) and a re-include that must lose to
+        INGEST_IGNORE_DIRS (`!node_modules/n.md`)."""
+        proj, root = proj_new
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+>       assert got == EXPECTED_NEW, (
+            f"{route}: missing {sorted(EXPECTED_NEW - got)}, extra {sorted(got - EXPECTED_NEW)}")
+E       AssertionError: watcher: missing ['.claude/PROJECT_PROFILE.md'], extra []
+E       assert {'CLAUDE.md',...ocs/other.md'} == {'.claude/PRO...ocs/other.md'}
+E         
+E         Extra items in the right set:
+E         '.claude/PROJECT_PROFILE.md'
+E         Use -v to get more diff
+
+tests/test_bug216_rule_docs_e2e.py:477: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_ignore_reinclude.py::test_r2_the_daemon_watcher_filters_against_its_owning_root
+FAILED tests/test_bug216_rule_docs_e2e.py::test_ac2_reinclude_config_lands_the_profile_node_and_its_edge[watcher]
+FAILED tests/test_bug216_rule_docs_e2e.py::test_r2_every_walker_ingests_the_same_files_under_the_new_config[watcher]
+3 failed, 50 passed in 13.18s

@@ -1,0 +1,16 @@
+Q1-migrate-aimed-at-the-source-store: 2 failed, 23 passed in 76.87s (0:01:16) | 2 failed
+    FAILED tests/test_bug212_r6_red.py::test_migrate_out_into_another_repos_tracked_catalog_is_refused
+    FAILED tests/test_bug212_r6_red.py::test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed
+Q2-mcp-error-reply-without-the-result: 1 failed, 24 passed in 75.64s (0:01:15) | 1 failed
+    FAILED tests/test_bug212_r6_red.py::test_mcp_save_state_error_reply_carries_the_result
+Q3-every-bridge-error-read-as-deferred: 4 failed, 21 passed in 78.67s (0:01:18) | 4 failed
+    FAILED tests/test_bug212_r5_red.py::test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[slots]
+    FAILED tests/test_bug212_r5_red.py::test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero[legacy]
+    FAILED tests/test_bug212_r6_red.py::test_a_refused_bridge_still_fails_the_save_verb_and_mcp[slots]
+    FAILED tests/test_bug212_r6_red.py::test_a_refused_bridge_still_fails_the_save_verb_and_mcp[legacy]
+Q4-a-deferral-raises-again: 3 failed, 22 passed in 79.91s (0:01:19) | 3 failed
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_a_failed_save_state_verb
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_a_stderr_warning_and_exit_0
+    FAILED tests/test_bug212_r6_red.py::test_a_deferred_bridge_is_not_an_mcp_error
+batch-exit=0
+pycache cleared in copy; copy src == ebe9fc2

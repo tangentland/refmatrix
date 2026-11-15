@@ -1,0 +1,34 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/r3/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_m2_both_ids_of_every_move_are_requeued_for_embedding ___________
+
+base = PosixPath('/private/tmp/b216snc4b87pb')
+
+    def test_m2_both_ids_of_every_move_are_requeued_for_embedding(base):
+        m = _memory_slots(base)
+        res = _merge(m["a"], m["b"], base / "T" / "catalog.duckdb")
+        moved = [(int(o), int(n)) for o, n in (res.get("fresh_moved") or [])]
+        assert sorted(o for o, _n in moved) == sorted(m["ids"]), f"precondition: {moved}"
+        s = _store_on(base / "T" / "catalog.duckdb", base, "probe")
+        try:
+            with s.with_partition("proj"):
+                pending = {int(r[0]) for r in s.pending_embeddings()}
+        finally:
+            s.close()
+        want = {i for pair in moved for i in pair}
+>       assert want <= pending, (
+            f"moved ids not re-queued for embedding: missing {sorted(want - pending)}")
+E       AssertionError: moved ids not re-queued for embedding: missing [2, 3, 4, 5]
+E       assert {2, 3, 4, 5} <= set()
+E         
+E         Extra items in the left set:
+E         2
+E         3
+E         4
+E         5
+
+tests/test_bug216_remedy_r3.py:188: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r3.py::test_m2_both_ids_of_every_move_are_requeued_for_embedding
+1 failed, 2 deselected in 0.58s

@@ -1,0 +1,4 @@
+good: {'ahead_base': 'origin/develop', 'trunk_error': ''}
+symbolic-ref: 0 origin/develop 
+verify: 0 '1111111111111111111111111111111111111111' 
+broken: {'ahead_base': 'origin/develop', 'trunk_error': ''}

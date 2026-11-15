@@ -192,15 +192,17 @@ def test_scan_prompt_shows_the_cause(store, monkeypatch):
 
 # R8: the replica recall leg names the CAUSE of a reached-but-failing worker
 def test_replica_recall_names_the_cause(mem_store, monkeypatch):
-    from refmatrix import cli as cli_mod
-    from refmatrix import embedder, modelsrv, reranker
+    from refmatrix import embedder, modelsrv, recall, reranker
 
     monkeypatch.setattr(modelsrv, "shared_enabled", lambda: True)
     monkeypatch.setattr(modelsrv, "shared_available", lambda timeout=None: True)
     monkeypatch.setattr(modelsrv, "SharedWorkerClient", lambda *a, **k: object())
     monkeypatch.setattr(embedder, "RemoteEmbedder", lambda client: _Emb())
-    monkeypatch.setattr(cli_mod, "_reader_store", lambda: mem_store)
-    monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: mem_store._partition_name)
+    # Task 25.1 R5 (2026-11-13 contract update): the leg is `recall.replica_memory_recall(root,
+    # *, partition, ...)` over `search.cached_replica(root)` (was `cli._reader_store()` /
+    # `cli._resolve_partition()`). The store seam moves with it; the partition is explicit.
+    from refmatrix import search
+    monkeypatch.setattr(search, "cached_replica", lambda r: (mem_store, threading.Lock()))
 
     def failing_shared(log=None, timeout=None, probe_timeout=None, why=None):
         if why is not None:
@@ -209,9 +211,11 @@ def test_replica_recall_names_the_cause(mem_store, monkeypatch):
 
     monkeypatch.setattr(reranker, "shared_reranker", failing_shared)
     ws: list[str] = []
-    hits = cli_mod._replica_memory_recall("daemon jetsam", k=2, kinds=["memory"],
-                                          fuse=False, rerank=True, warnings=ws)
-    assert hits, hits
+    out = recall.replica_memory_recall(mem_store.root, partition=mem_store._partition_name,
+                                       query="daemon jetsam", k=2, kinds=["memory"],
+                                       fuse=False, rerank=True, warnings=ws)
+    hits = (out or {}).get("hits")
+    assert hits, (out, ws)
     assert any("ModelNotCached" in w for w in ws), ws
     assert not any("shared worker unavailable" in w for w in ws), ws
 
@@ -225,12 +229,24 @@ def test_cli_recall_daemon_branch_prints_the_warnings(mem_store, monkeypatch):
 
     monkeypatch.setenv("RMX_RECALL_REPLICA_FIRST", "0")
     monkeypatch.setattr(cli_mod, "_root", lambda: mem_store.root)
+    # Task 25.1 R5 (2026-11-13 contract update): the CLI "computes no rows of its own"; the
+    # daemon RPC is dialled by the VERB (`verbs._call`), no longer by `cli._memory_daemon_call`.
+    # The partition is pinned (RMX_PARTITION) so the CLI does not probe a daemon for it; the
+    # behaviour under test -- the op's own warnings reach stderr -- is unchanged.
+    monkeypatch.setenv("RMX_PARTITION", mem_store._partition_name)
     monkeypatch.setattr(cli_mod, "_resolve_partition", lambda: mem_store._partition_name)
     monkeypatch.setattr(verbs, "require_daemon", lambda *a, **k: {"running": True})
-    monkeypatch.setattr(cli_mod, "_memory_daemon_call", lambda op, args, **k: {
-        "ok": True, "result": {"hits": [], "warnings": ["rerank skipped (X); hits unreranked"]}})
+    sent: list = []
+
+    def _call(root, op, args, **k):
+        sent.append(op)
+        assert op == "memory_recall", op
+        return {"hits": [], "warnings": ["rerank skipped (X); hits unreranked"]}
+    monkeypatch.setattr(verbs, "_call", _call)
 
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "daemon jetsam"])
+    assert sent == ["memory_recall"], (sent, r.output, r.stderr)
+    assert r.exit_code == 0, (r.exit_code, r.output, r.stderr)
     assert "rerank skipped (X); hits unreranked" in r.stderr, (r.exit_code, r.output, r.stderr)
 
 

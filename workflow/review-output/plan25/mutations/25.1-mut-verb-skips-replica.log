@@ -1,0 +1,177 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_____ test_ac4b_verb_reads_the_replica_with_a_shared_worker_and_no_daemon ______
+
+root = PosixPath('/private/tmp/rmx-ermsq9zu/p25b-ukpzq5g2/fxb/.refmatrix')
+
+    def _dense_legs(root: Path, *, query: str, k: int, kinds: "list[str] | None", fuse: bool,
+                    rerank: "bool | None", partition: str, left: Callable[[float], float],
+                    retries: int, warnings: "list[str]", embedder_policy: str
+                    ) -> "tuple[list[dict], Callable[[int], dict | None]]":
+        """The dense recall's three legs, in THE order (task 25.1 R5, r4 #n1, d10):
+    
+        1. the replica leg with the HUB's shared worker only (skipped under
+           `RMX_RECALL_REPLICA_FIRST=0`, read in this process): lock-free, never waits on the writer;
+        2. otherwise the daemon RPC (its warm embedder, its rerank default);
+        3. only when step 2 raises `VerbAbsentError` (no daemon), and only under
+           `embedder_policy="shared"`: the replica leg again, embedding through
+           `recall.shared_embedder(root)` (private worker, else the cached in-process model).
+           Under "hub_only" (the hook modes: a spawn or a model load is 6-33 s against a 5 s
+           budget) the absent daemon raises `VerbAbsentError(RECALL_ABSENT_MSG)`.
+    
+        So a live daemon always answers before any caller spawns a worker or loads a model.
+        Returns `(hits, fetch)`: hits best-first in the RPC shape, and the row resolver of the leg
+        that served (a replica hit is fetched from the same replica, a daemon hit from the
+        daemon). `warnings` gains the leg (and embedder) that served."""
+        from refmatrix import recall as recall_mod
+        if embedder_policy not in recall_mod.EMBEDDER_POLICIES:
+            raise VerbArgsError(f"embedder_policy must be one of {recall_mod.EMBEDDER_POLICIES}, "
+                                f"got {embedder_policy!r}")
+        if recall_mod.replica_first_enabled():
+            r = recall_mod.replica_memory_recall(
+                root, partition=partition, query=query, k=k, kinds=kinds, fuse=fuse,
+                rerank=rerank, left=left, warnings=warnings, embedder_policy="hub_only")
+            if r is not None:
+                warnings.append(f"recall leg: replica snapshot (embedder: {r['embedder']}; "
+                                f"rerank default resolved in this process)")
+                return r["hits"], r["fetch"]
+        try:
+>           res = _call(root, "memory_recall",
+                        payload_memory_recall(query, k=k, kinds=kinds, fuse=fuse, rerank=rerank,
+                                              partition=partition),
+                        timeout=left(180.0), retries=retries)
+
+src/refmatrix/verbs.py:1240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/verbs.py:283: in _call
+    require_daemon(root, retries=0 if retries == 0 else 2)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/rmx-ermsq9zu/p25b-ukpzq5g2/fxb/.refmatrix')
+
+    def require_daemon(root: Path, *, retries: int = 2) -> dict:
+        """Classify the store's daemon: up → the status dict; busy → VerbBusyError
+        (typed, so no caller string-matches a message); absent → VerbAbsentError."""
+        from refmatrix import discovery
+        st = discovery.daemon_status(root, retries=retries)
+        if st.get("up"):
+            return st
+        if st.get("busy"):
+            raise VerbBusyError(
+                f"daemon busy pid={st.get('pid')} for {root} (alive, not answering — "
+                f"starting, rebuilding an index, or holding the store lock); retry shortly")
+>       raise VerbAbsentError(f"daemon not running for {root}")
+E       refmatrix.verbs.VerbAbsentError: daemon not running for /private/tmp/rmx-ermsq9zu/p25b-ukpzq5g2/fxb/.refmatrix
+
+src/refmatrix/verbs.py:219: VerbAbsentError
+
+The above exception was the direct cause of the following exception:
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x1039f79d0>, 'b': <tests.task25_1_support.Fixture object at 0x105b792...('/private/tmp/rmx-ermsq9zu/p25o-t5zw_96y'), 'home': PosixPath('/private/tmp/rmx-ermsq9zu/p25o-t5zw_96y/g/.refmatrix')}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1059ad810>
+
+    def test_ac4b_verb_reads_the_replica_with_a_shared_worker_and_no_daemon(offline, monkeypatch):
+        """AC-4 (b): no daemon, replica + a REAL sandbox shared worker: `verbs.memory_recall(query,
+        pack=True)` returns B's rows from the replica within the budget. HEAD: the verb never
+        consults the replica and raises VerbAbsentError."""
+        from refmatrix import verbs
+        b = offline["b"]
+        w = s.SharedWorker(offline["base"], home=offline["home"])
+        try:
+            monkeypatch.setenv("RMX_HOME", str(offline["home"]))
+            monkeypatch.setenv("RMX_MODEL_SOCK", str(w.sock))
+            cap = s.budget_or_none("prompt_recall") or 4000
+            try:
+>               res = verbs.memory_recall(b.root, query=QUESTION, k=12, pack=True, max_bytes=cap)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task25_1_recall_budget.py:498: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/verbs.py:1187: in memory_recall
+    res = _memory_recall_rows(root, trace=trace, embedder_policy=policy,
+src/refmatrix/verbs.py:1372: in _memory_recall_rows
+    hits, fetch = _dense_legs(root, query=query, k=ann_k, kinds=kinds, fuse=fuse,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/rmx-ermsq9zu/p25b-ukpzq5g2/fxb/.refmatrix')
+
+    def _dense_legs(root: Path, *, query: str, k: int, kinds: "list[str] | None", fuse: bool,
+                    rerank: "bool | None", partition: str, left: Callable[[float], float],
+                    retries: int, warnings: "list[str]", embedder_policy: str
+                    ) -> "tuple[list[dict], Callable[[int], dict | None]]":
+        """The dense recall's three legs, in THE order (task 25.1 R5, r4 #n1, d10):
+    
+        1. the replica leg with the HUB's shared worker only (skipped under
+           `RMX_RECALL_REPLICA_FIRST=0`, read in this process): lock-free, never waits on the writer;
+        2. otherwise the daemon RPC (its warm embedder, its rerank default);
+        3. only when step 2 raises `VerbAbsentError` (no daemon), and only under
+           `embedder_policy="shared"`: the replica leg again, embedding through
+           `recall.shared_embedder(root)` (private worker, else the cached in-process model).
+           Under "hub_only" (the hook modes: a spawn or a model load is 6-33 s against a 5 s
+           budget) the absent daemon raises `VerbAbsentError(RECALL_ABSENT_MSG)`.
+    
+        So a live daemon always answers before any caller spawns a worker or loads a model.
+        Returns `(hits, fetch)`: hits best-first in the RPC shape, and the row resolver of the leg
+        that served (a replica hit is fetched from the same replica, a daemon hit from the
+        daemon). `warnings` gains the leg (and embedder) that served."""
+        from refmatrix import recall as recall_mod
+        if embedder_policy not in recall_mod.EMBEDDER_POLICIES:
+            raise VerbArgsError(f"embedder_policy must be one of {recall_mod.EMBEDDER_POLICIES}, "
+                                f"got {embedder_policy!r}")
+        if recall_mod.replica_first_enabled():
+            r = recall_mod.replica_memory_recall(
+                root, partition=partition, query=query, k=k, kinds=kinds, fuse=fuse,
+                rerank=rerank, left=left, warnings=warnings, embedder_policy="hub_only")
+            if r is not None:
+                warnings.append(f"recall leg: replica snapshot (embedder: {r['embedder']}; "
+                                f"rerank default resolved in this process)")
+                return r["hits"], r["fetch"]
+        try:
+            res = _call(root, "memory_recall",
+                        payload_memory_recall(query, k=k, kinds=kinds, fuse=fuse, rerank=rerank,
+                                              partition=partition),
+                        timeout=left(180.0), retries=retries)
+        except VerbAbsentError as e:
+            # `from e`, never `from None` (2026-11-13): a refused connect AFTER a good ping is a
+            # transport fact (ConnectionRefusedError under the classifier's VerbAbsentError), and
+            # the hook's recorder types its row by that raw cause (task 21.1 R4), not by these words.
+            if embedder_policy != "shared":
+                raise VerbAbsentError(RECALL_ABSENT_MSG) from e
+            r = recall_mod.replica_memory_recall(
+                root, partition=partition, query=query, k=k, kinds=kinds, fuse=fuse,
+                rerank=rerank, left=left, warnings=warnings, embedder_policy="shared")
+            if r is None:
+>               raise VerbAbsentError(RECALL_ABSENT_MSG) from e
+E               refmatrix.verbs.VerbAbsentError: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+
+src/refmatrix/verbs.py:1254: VerbAbsentError
+
+During handling of the above exception, another exception occurred:
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x1039f79d0>, 'b': <tests.task25_1_support.Fixture object at 0x105b792...('/private/tmp/rmx-ermsq9zu/p25o-t5zw_96y'), 'home': PosixPath('/private/tmp/rmx-ermsq9zu/p25o-t5zw_96y/g/.refmatrix')}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1059ad810>
+
+    def test_ac4b_verb_reads_the_replica_with_a_shared_worker_and_no_daemon(offline, monkeypatch):
+        """AC-4 (b): no daemon, replica + a REAL sandbox shared worker: `verbs.memory_recall(query,
+        pack=True)` returns B's rows from the replica within the budget. HEAD: the verb never
+        consults the replica and raises VerbAbsentError."""
+        from refmatrix import verbs
+        b = offline["b"]
+        w = s.SharedWorker(offline["base"], home=offline["home"])
+        try:
+            monkeypatch.setenv("RMX_HOME", str(offline["home"]))
+            monkeypatch.setenv("RMX_MODEL_SOCK", str(w.sock))
+            cap = s.budget_or_none("prompt_recall") or 4000
+            try:
+                res = verbs.memory_recall(b.root, query=QUESTION, k=12, pack=True, max_bytes=cap)
+            except verbs.VerbError as e:
+>               pytest.fail(f"AC-4 (b): the verb raised {type(e).__name__}: {e} with a replica "
+                            f"and a live shared worker at {w.sock}")
+E                           Failed: AC-4 (b): the verb raised VerbAbsentError: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers with a replica and a live shared worker at /private/tmp/rmx-ermsq9zu/p25o-t5zw_96y/m.sock
+
+tests/test_task25_1_recall_budget.py:500: Failed
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4b_verb_reads_the_replica_with_a_shared_worker_and_no_daemon
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 24.63s

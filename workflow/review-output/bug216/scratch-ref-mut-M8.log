@@ -1,0 +1,166 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/ref216/src/refmatrix as checked-hash (bug-037)
+FF....F.F..........................................                      [100%]
+=================================== FAILURES ===================================
+_____ test_ac7_target_ingested_earlier_concept_minted_after_binds_the_doc ______
+
+env = (PosixPath('/private/tmp/b216bu4d70o7c/proj'), PosixPath('/private/tmp/b216bu4d70o7c/proj/.refmatrix'))
+
+    def test_ac7_target_ingested_earlier_concept_minted_after_binds_the_doc(env):
+        """B ingested; then a plain mention mints the `b-doc` concept; then A. HEAD binds the
+        concept: it was created after the doc, and the lookup is concept-first."""
+        proj, root = env
+        b = _write(proj, "docs/b.md", B_MD)
+        _ingest(root, [b])
+        s = _open(root)
+        try:
+            assert s.get_entity("concept", "b-doc") is None, (
+                "precondition: ingesting B alone mints no `b-doc` concept (the mention must)")
+        finally:
+            s.close()
+        _ingest(root, [_write(proj, "docs/m.md", M_MD)])
+        _assert_concept_exists(root)
+        _ingest(root, [_write(proj, "docs/a.md", A_MD)])
+>       _assert_binds_doc(root, b)
+
+tests/test_bug216_binding.py:163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216bu4d70o7c/proj/.refmatrix')
+b = PosixPath('/private/tmp/b216bu4d70o7c/proj/docs/b.md')
+
+    def _assert_binds_doc(root: Path, b: Path, *, src: str = "a#cite") -> None:
+        s = _open(root)
+        try:
+            got = _targets(s, "derives-from", _src(s, src))
+        finally:
+            s.close()
+>       assert got == [("doc", "b-doc", str(b.resolve()))], (
+            f"bare [[b-doc]] must bind B's doc entity, never a path-less concept; got {got}")
+E       AssertionError: bare [[b-doc]] must bind B's doc entity, never a path-less concept; got [('concept', 'b-doc', None)]
+E       assert [('concept', 'b-doc', None)] == [('doc', 'b-d...j/docs/b.md')]
+E         
+E         At index 0 diff: ('concept', 'b-doc', None) != ('doc', 'b-doc', '/private/tmp/b216bu4d70o7c/proj/docs/b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_binding.py:131: AssertionError
+________ test_ac7_citing_doc_ingested_first_then_resynced_binds_the_doc ________
+
+env = (PosixPath('/private/tmp/b216balxmjhwp/proj'), PosixPath('/private/tmp/b216balxmjhwp/proj/.refmatrix'))
+
+    def test_ac7_citing_doc_ingested_first_then_resynced_binds_the_doc(env):
+        """A first (its link is unresolved), then B, then the mention; A is edited and re-synced
+        file by file — the watcher's per-file `sync_files` route."""
+        from refmatrix.sync import sync_files
+        proj, root = env
+        a = _write(proj, "docs/a.md", A_MD)
+        b = _write(proj, "docs/b.md", B_MD)
+        m = _write(proj, "docs/m.md", M_MD)
+        for p in (a, b, m):
+            s = _open(root)
+            try:
+                sync_files(s, [str(p)], project_root=proj)
+            finally:
+                s.close()
+        _assert_concept_exists(root)
+        a.write_text(A_MD + "\nEdited.\n")
+        t = os.stat(a).st_mtime + 10
+        os.utime(a, (t, t))
+        s = _open(root)
+        try:
+            sync_files(s, [str(a)], project_root=proj)
+        finally:
+            s.close()
+>       _assert_binds_doc(root, b)
+
+tests/test_bug216_binding.py:189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216balxmjhwp/proj/.refmatrix')
+b = PosixPath('/private/tmp/b216balxmjhwp/proj/docs/b.md')
+
+    def _assert_binds_doc(root: Path, b: Path, *, src: str = "a#cite") -> None:
+        s = _open(root)
+        try:
+            got = _targets(s, "derives-from", _src(s, src))
+        finally:
+            s.close()
+>       assert got == [("doc", "b-doc", str(b.resolve()))], (
+            f"bare [[b-doc]] must bind B's doc entity, never a path-less concept; got {got}")
+E       AssertionError: bare [[b-doc]] must bind B's doc entity, never a path-less concept; got [('concept', 'b-doc', None)]
+E       assert [('concept', 'b-doc', None)] == [('doc', 'b-d...j/docs/b.md')]
+E         
+E         At index 0 diff: ('concept', 'b-doc', None) != ('doc', 'b-doc', '/private/tmp/b216balxmjhwp/proj/docs/b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_binding.py:131: AssertionError
+___________ test_ac7_two_citing_docs_in_one_batch_both_bind_the_doc ____________
+
+env = (PosixPath('/private/tmp/b216bj_8m1lwe/proj'), PosixPath('/private/tmp/b216bj_8m1lwe/proj/.refmatrix'))
+
+    def test_ac7_two_citing_docs_in_one_batch_both_bind_the_doc(env):
+        """The batch dict must not hand a later citation a concept id under the bare name: B and
+        the concept pre-exist, then ONE batch holds two citing docs (each also carrying the plain
+        mention that calls `add_concept`). Kills 'let the batch dict cache the concept'."""
+        proj, root = env
+        b = _write(proj, "docs/b.md", B_MD)
+        _ingest(root, [b, _write(proj, "docs/m.md", M_MD)])
+        a1 = _write(proj, "docs/a1.md", A_MD.replace("id: a\n", "id: a1\n").replace(
+            "Intro.", "Intro, see [[b-doc]]."))
+        a2 = _write(proj, "docs/a2.md", A_MD.replace("id: a\n", "id: a2\n"))
+        _ingest(root, [a1, a2])
+>       _assert_binds_doc(root, b, src="a1#cite")
+
+tests/test_bug216_binding.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216bj_8m1lwe/proj/.refmatrix')
+b = PosixPath('/private/tmp/b216bj_8m1lwe/proj/docs/b.md')
+
+    def _assert_binds_doc(root: Path, b: Path, *, src: str = "a#cite") -> None:
+        s = _open(root)
+        try:
+            got = _targets(s, "derives-from", _src(s, src))
+        finally:
+            s.close()
+>       assert got == [("doc", "b-doc", str(b.resolve()))], (
+            f"bare [[b-doc]] must bind B's doc entity, never a path-less concept; got {got}")
+E       AssertionError: bare [[b-doc]] must bind B's doc entity, never a path-less concept; got [('concept', 'b-doc', None)]
+E       assert [('concept', 'b-doc', None)] == [('doc', 'b-d...j/docs/b.md')]
+E         
+E         At index 0 diff: ('concept', 'b-doc', None) != ('doc', 'b-doc', '/private/tmp/b216bj_8m1lwe/proj/docs/b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_binding.py:131: AssertionError
+___________________ test_ac7_memory_target_binds_the_memory ____________________
+
+env = (PosixPath('/private/tmp/b216bz1lluogn/proj'), PosixPath('/private/tmp/b216bz1lluogn/proj/.refmatrix'))
+
+    def test_ac7_memory_target_binds_the_memory(env):
+        """A memory (`--as-memory`, kind `memory`) cited by bare id binds the memory row, not the
+        concept a plain mention of it minted."""
+        proj, root = env
+        mem = _write(proj, "mem/b-mem.md", _gmd("b-mem", "A memory.\n"))
+        _ingest(root, [mem], as_memory=True)
+        _ingest(root, [_write(proj, "docs/m.md", _gmd("mention-doc", "See [[b-mem]].\n"))])
+        _assert_concept_exists(root, "b-mem")
+        _ingest(root, [_write(proj, "docs/a.md", _gmd(
+            "a", "Intro.\n\n## Cite {#cite}\n\nText.\n\nrel: derives-from -> [[b-mem]]\n"))])
+        s = _open(root)
+        try:
+            got = _targets(s, "derives-from", _src(s, "a#cite"))
+        finally:
+            s.close()
+>       assert [(k, n) for k, n, _p in got] == [("memory", "b-mem")], got
+E       AssertionError: [('concept', 'b-mem', None)]
+E       assert [('concept', 'b-mem')] == [('memory', 'b-mem')]
+E         
+E         At index 0 diff: ('concept', 'b-mem') != ('memory', 'b-mem')
+E         Use -v to get more diff
+
+tests/test_bug216_binding.py:261: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_binding.py::test_ac7_target_ingested_earlier_concept_minted_after_binds_the_doc
+FAILED tests/test_bug216_binding.py::test_ac7_citing_doc_ingested_first_then_resynced_binds_the_doc
+FAILED tests/test_bug216_binding.py::test_ac7_two_citing_docs_in_one_batch_both_bind_the_doc
+FAILED tests/test_bug216_binding.py::test_ac7_memory_target_binds_the_memory
+4 failed, 47 passed in 17.76s

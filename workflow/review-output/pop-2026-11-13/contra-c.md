@@ -1,4 +1,14 @@
-## contra-c: write path + store maintenance (T4)   (files read: 31)
+---
+gmd: "0.1"
+id: pop-2026-11-13-contra-c
+title: "contra-c: write path + store maintenance (T4)   (files read: 31)"
+tags: [plan-review, pop-2026-11-13, report]
+metadata:
+  node_type: report
+  created: 2026-11-13
+---
+
+## contra-c: write path + store maintenance (T4)   (files read: 31) {#root}
 
 Files read: brief; draft; POP; plan-23 and tasks 23.0-23.5; task-bug185; task-bug216 (only the parts that touch `ingest_gmd`); bug_registry rows 093/097/099/112/136/177/182/185/186/207; plan-17 and its 17.1-17.4 headers; plan-18 and its 18.1-18.3 headers; plan-22 and task-22.4; plan-4 frontmatter; task-26.6 R3 residual; the 26.5/26.7/26.8/26.9 headers; deferral_registry; the d9b* rows in plan-review-2026-10-14; the 25.1 grep. I checked every prerequisite sha with `git merge-base --is-ancestor` on master `0d2a270`. 91ddbe0, 76ec748, 9b2c4ac, 05164ce, 078c951, 8a867bc, 0c74872, d4bf001 and 74f8f98 are all ancestors.
 
@@ -32,7 +42,7 @@ Files read: brief; draft; POP; plan-23 and tasks 23.0-23.5; task-bug185; task-bu
   Either way, plan-23 `#merge-order` and the POP should say "after 26.6 R3 residual (after 26.7)", not "after 26.6 merged".
 
 ### Cc-3 [K6] bug-186 is fixed inside bug-185, but the draft also schedules it on its own in T6
-- side A: `workflow/plans/task-bug185-bulk-gmd-ingest.md:24` "Also fixes: bug-186 (facts.log replay drops link weights), [[#r6]]." `workflow/bug_registry.md:237` (bug-186 row): "planned, owner [[task-bug185-bulk-gmd-ingest#r6]], decided in its revision round 1: fixed IN bug-185".
+- side A: `workflow/plans/task-bug185-bulk-gmd-ingest.md:24` "Also fixes: bug-186 (facts.log replay drops link weights), `#r6`." `workflow/bug_registry.md:237` (bug-186 row): "planned, owner [[task-bug185-bulk-gmd-ingest#r6]], decided in its revision round 1: fixed IN bug-185".
 - side B: `workflow/plan-review-2026-11-13.md:112` "T6 Graph integrity | bug-218, bug-219, bug-186, bug-119-121, bug-124; plan-22 …". At `:152`: "7. T6 — bug-218, bug-219, bug-186, then plan-22." `:86-87` (F7) also lists bug-186.
 - why it matters: two tracks each own the fix to `Store.bulk_link` logging and the `rebuild_index_from_log` fold. T4 lands it at step 3. T6 at step 7 would either rebuild it or find it already done and waste a slot.
 - proposed resolution: bug-185 wins (decided in its r1, with AC-8 RED/GREEN). Remove bug-186 from T6 and F7, and list it under T4 as "fixed by bug-185 R6".

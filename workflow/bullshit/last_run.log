@@ -47,3 +47,72 @@
 2026-11-13T14:20:43-0800 commit=d99f41c verdict=DIRTY findings=21 (1B/9S/11M) report=2026-11-13-2225-pop-review-r2-d99f41c.md
 2026-11-13T14:26:45-0800 commit=b19f583 verdict=DIRTY findings=12 (1B/3S/8M) report=2026-11-13-2235-pop-review-r3-b19f583.md
 2026-11-13T14:30:55-0800 commit=d1614a8 verdict=DIRTY findings=7 (0B/3S/4M) report=2026-11-13-2245-pop-review-r4-d1614a8.md
+2026-11-13T14:34:10-0800 commit=1cf3b9f verdict=DIRTY findings=3 (0B/1S/2M) report=2026-11-13-2255-pop-review-r5-1cf3b9f.md
+2026-11-13T14:59:19-0800 commit=b5fe2d3 verdict=DIRTY findings=11 (0B/4S/7M) report=2026-11-13-2300-spec-t2-r1-b5fe2d3.md
+2026-11-13T15:01:18-0800 commit=7e67551 verdict=DIRTY findings=16 (1B/6S/9M) report=2026-11-13-2305-spec-t0-r1-7e67551.md
+2026-11-13T15:06:08-0800 commit=fecda59 verdict=DIRTY findings=14 (1B/5S/8M) report=2026-11-13-2310-spec-t56-r1-fecda59.md
+2026-11-13T15:10:09-0800 commit=ff1d453+369e0b5 verdict=DIRTY findings=21 (1B/10S/10M) report=2026-11-13-2315-spec-t3ab-r1.md
+2026-11-13T15:10:47-0800 commit=091dec9 verdict=DIRTY findings=8 (0B/2S/6M) report=2026-11-13-2320-spec-t2-r2-091dec9.md
+2026-11-13T15:12:22-0800 commit=5ac42e5 verdict=DIRTY findings=21 (1B/9S/11M) report=2026-11-13-2325-spec-t3c-r1-5ac42e5.md
+2026-11-13T15:13:58-0800 commit=db701e8 verdict=DIRTY findings=13 (1B/5S/7M) report=2026-11-13-2330-spec-t4-r1-db701e8.md
+2026-11-13T15:14:47-0800 commit=772803a verdict=DIRTY findings=6 (0B/2S/4M) report=2026-11-13-2335-spec-t0-r2-772803a.md
+2026-11-13T15:17:35-0800 commit=efe618c verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-13-2340-spec-t0-r3-efe618c.md
+2026-11-13T15:19:54-0800 commit=abbe45f verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-13-2345-spec-t2-r3-abbe45f.md
+2026-11-13T15:22:13-0800 commit=f197b8c+1f42dff verdict=DIRTY findings=10 (0B/2S/8M) report=2026-11-13-2350-spec-t3ab-r2.md
+2026-11-13T15:24:59-0800 commit=02eab43 verdict=DIRTY findings=8 (0B/2S/6M) report=2026-11-13-2355-spec-t56-r2-02eab43.md
+2026-11-13T15:26:47-0800 commit=15b2f25 verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-14-0000-spec-t2-r4-15b2f25.md
+2026-11-13T15:27:29-0800 commit=22e4623+479a742 verdict=DIRTY findings=6 (0B/3S/3M) report=2026-11-14-0005-spec-t3ab-r3.md
+2026-11-13T15:29:01-0800 commit=503fcba verdict=DIRTY findings=10 (0B/3S/7M) report=2026-11-14-0010-spec-t3c-r2-503fcba.md
+2026-11-13T15:31:50-0800 commit=97dc7fa+5a2e6e2 verdict=CLEAN findings=0 report=2026-11-14-0015-spec-t3ab-r4.md
+2026-11-13T15:32:28-0800 verdict=DIRTY findings=10 (0B/3S/7M) report=2026-11-14-0020-spec-t4-r2-4133f35.md
+2026-11-13T15:32:28-0800 verdict=CLEAN findings=0 report=2026-11-14-0025-spec-t3ab-r5.md
+2026-11-13T15:33:05-0800 commit=e05f3a1 verdict=DIRTY findings=4 (0B/2S/2M) report=2026-11-14-0030-spec-t2-r5-e05f3a1.md
+2026-11-13T15:33:34-0800 commit=c5d1b79 verdict=MEH-only findings=2 report=2026-11-14-0035-spec-t3c-r3-c5d1b79.md
+2026-11-13T15:37:56-0800 commit=e4dc31b verdict=DIRTY findings=13 (0B/6S/7M) report=2026-11-14-0040-spec-t56-r3-e4dc31b.md
+2026-11-13T15:39:15-0800 commit=e591c60 verdict=MEH-only findings=4 (0B/0S/4M) report=2026-11-14-0045-spec-t4-r3-e591c60.md
+2026-11-13T15:39:15-0800 commit=9589fa3 verdict=DIRTY findings=5 (0B/2S/3M) report=2026-11-14-0050-spec-t2-r6-9589fa3.md
+2026-11-13T15:40:00-0800 commit=ff44120 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0055-spec-t4-r4-lite-ff44120.md
+2026-11-13T15:43:31-0800 commit=41ebe1e verdict=DIRTY findings=3 (0B/1S/2M) report=2026-11-14-0100-spec-t2-r7-41ebe1e.md
+2026-11-13T15:47:28-0800 commit=e3cd4c7 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0105-spec-t2-r8-e3cd4c7.md
+2026-11-13T15:48:57-0800 commit=5aef7f2 verdict=DIRTY findings=7 (1B/1S/5M) report=2026-11-14-0110-spec-t56-r4-5aef7f2.md
+2026-11-13T15:49:56-0800 commit=f656f78 verdict=DIRTY findings=8 (1B/2S/5M) report=2026-11-14-0115-task25.1-r8-f656f78.md
+2026-11-13T15:54:40-0800 commit=7b2aaf7 verdict=DIRTY findings=3 (0B/1S/2M) report=2026-11-14-0120-spec-t56-r5-7b2aaf7.md
+2026-11-13T15:55:22-0800 commit=8337acb verdict=DIRTY findings=4 (1B/1S/2M) report=2026-11-14-0125-spec-t3a-25.1b-r18-8337acb.md
+2026-11-13T15:57:15-0800 commit=89b0207 verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0130-spec-t56-r6-89b0207.md
+2026-11-13T15:56:36-0800 commit=67f55cb verdict=DIRTY findings=6 (1B/1S/4M) report=2026-11-13-1556-bug212-r2-r3-67f55cb.md
+2026-11-13T15:59:27-0800 commit=eafd733 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0135-spec-t56-r7-eafd733.md
+2026-11-13T15:59:53-0800 commit=f88b650 verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0140-spec-t3a-25.1b-r18-r2-f88b650.md
+2026-11-13T16:02:32-0800 commit=808ef00 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0145-spec-t3a-25.1b-r18-r3-808ef00.md
+2026-11-13T16:18:25-0800 commit=7758d2a verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-14-0150-spec-t3c-r4-l79-7758d2a.md
+2026-11-13T16:19:04-0800 commit=ca4b9a7 verdict=CLEAN findings=0 report=2026-11-14-0155-spec-t3b-l79-ca4b9a7.md
+2026-11-13T16:19:08-0800 commit=df092ac verdict=DIRTY findings=7 (1B/2S/4M) report=2026-11-13-1619-bug216-r1-df092ac.md
+2026-11-13T16:23:09-0800 commit=d42c72b verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0200-spec-t3c-r5-l80-d42c72b.md
+2026-11-13T16:33:15-0800 commit=dad35ca verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0210-spec-t3b-l83-dad35ca.md
+2026-11-13T16:39:24-0800 commit=15bc71a verdict=DIRTY findings=6 (0B/3S/3M) report=2026-11-14-0215-spec-t3c-r6-l83-15bc71a.md
+2026-11-13T16:41:16-0800 commit=30633d5 verdict=DIRTY findings=6 (0B/2S/4M) report=2026-11-14-0220-spec-t3c-r7-l86-30633d5.md
+2026-11-13T16:46:57-0800 commit=1a219cb verdict=MEH-only findings=3 (0B/0S/3M) report=2026-11-14-0225-spec-t3c-r8-l87-1a219cb.md
+2026-11-13T16:48:32-0800 commit=1a219cb verdict=MEH-only findings=4 (0B/0S/4M) report=2026-11-14-0230-spec-t3c-r9-l83-l87-1a219cb.md
+2026-11-14T00:03:00-0800 commit=8b134c6 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0003-task25.1-r9-confirm-8b134c6.md
+2026-11-14T00:41:42-0800 commit=25ceacd verdict=DIRTY findings=4 (2B/0S/2M) report=2026-11-14-0041-bug216-r2-25ceacd.md
+2026-11-14T00:40:37-0800 commit=03d7b27 verdict=DIRTY findings=7 (1B/1S/5M) report=2026-11-14-0040-bug212-r4-03d7b27.md
+2026-11-14T02:14:43-0800 commit=574c64e verdict=CLEAN findings=0 report=2026-11-14-0214-task25.1-r10-confirm-574c64e.md
+2026-11-14T02:10:19-0800 commit=db411ad verdict=DIRTY findings=5 (0B/1S/4M) report=2026-11-14-0210-bug225-r1-db411ad.md
+2026-11-14T03:34:27-0800 commit=9c952eb verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0334-bug225-r2-9c952eb.md
+2026-11-14T04:34:59-0800 commit=6004d36 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0434-bug225-r3-6004d36.md
+2026-11-14T02:10:20-0800 commit=bff34c1 verdict=DIRTY findings=4 (0B/1S/3M) report=2026-11-14-0210-bug216-r3-bff34c1.md
+2026-11-14T03:18:44-0800 commit=355eb1f verdict=DIRTY findings=4 (0B/1S/3M) report=2026-11-14-0318-bug212-r5-355eb1f.md
+2026-11-14T03:33:20-0800 commit=dfbaa2d verdict=DIRTY findings=3 (1B/0S/2M) report=2026-11-14-0333-bug216-r4-dfbaa2d.md
+2026-11-14T04:56:50-0800 commit=aaa1ba5 verdict=DIRTY findings=2 (0B/1S/1M) report=2026-11-14-0456-bug216-r5-aaa1ba5.md
+2026-11-14T05:33:03-0800 commit=282589b verdict=DIRTY findings=2 (0B/0S/2M) report=2026-11-14-0533-bug212-r6-282589b.md
+2026-11-14T07:14:59-0800 commit=f8db8f6 verdict=MEH-only findings=1 (0B/0S/1M) report=2026-11-14-0714-bug216-r6-f8db8f6.md
+2026-11-14T08:54:56-0800 commit=79b0ac3 verdict=CLEAN findings=0 report=2026-11-14-0714-bug216-r6-f8db8f6.md#addendum-79b0ac3
+2026-11-14T09:20:20-0800 commit=8670daf verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-14-0920-bug230-r1-8670daf.md
+2026-11-14T10:02:54-0800 commit=323304d verdict=DIRTY findings=1 (0B/0S/1M) report=2026-11-14-1002-bug212-r7-323304d.md
+2026-11-14T20:48:54Z commit=bdd9cd8+11e9f9f verdict=DIRTY findings=23 (3B/8S/12M) report=2026-11-14-1248-plan29-spec-r1-bdd9cd8.md
+2026-11-14T21:21:09Z commit=786d5e7+cbb4ff8 verdict=DIRTY findings=17 (2B/5S/10M) report=2026-11-14-2120-plan29-spec-r2.md
+2026-11-14T21:50:00Z commit=70f4cd3+37c0719 verdict=DIRTY findings=8 (0B/3S/5M) report=2026-11-14-2150-plan29-spec-r3.md
+2026-11-14T22:00:00Z commit=8ce8aba+73848e2 verdict=MEH-only findings=4 (0B/0S/4M) GO report=2026-11-14-2200-plan29-spec-r4.md
+2026-11-14T23:24:29Z commit=13ffd77 verdict=DIRTY findings=4 (0B/2S/2M) report=2026-11-14-2324-bug241-bug240-r1-13ffd77.md
+2026-11-15T01:52:45Z commit=bba7313 verdict=MEH-only findings=2 (0B/0S/2M) report=2026-11-15-0152-bug241-bug240-r2-bba7313.md
+2026-11-15T02:02:20Z commit=a169c17 verdict=DIRTY findings=8 (0B/3S/5M) report=2026-11-15-0202-plan30-spec-r1.md
+2026-11-15T03:40:13Z commit=ca22b79 verdict=DIRTY findings=5 (0B/3S/2M) report=2026-11-15-0340-scanorder-r1-ca22b79.md

@@ -1,0 +1,205 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/mut2/src/refmatrix as checked-hash (bug-037)
+....................FFFFFFFFFF..                                         [100%]
+=================================== FAILURES ===================================
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-sync] _
+
+route = 'project-sync'
+env = {'agent': PosixPath('/private/tmp/b216hou79baw9/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hou79b...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hou79baw9/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1294ef2d0>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-sync
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-watcher] _
+
+route = 'project-watcher'
+env = {'agent': PosixPath('/private/tmp/b216hvug70fle/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hvug70...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hvug70fle/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11789ca60>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-watcher
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-ingest-gmd] _
+
+route = 'project-ingest-gmd'
+env = {'agent': PosixPath('/private/tmp/b216hsiqsqv9_/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hsiqsq...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hsiqsqv9_/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1295c44b0>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-ingest-gmd
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-ingest-path] _
+
+route = 'project-ingest-path'
+env = {'agent': PosixPath('/private/tmp/b216hr13_d7ik/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hr13_d...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hr13_d7ik/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1295c7070>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-ingest-path
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-sync] _
+
+route = 'project-sync'
+env = {'agent': PosixPath('/private/tmp/b216haygdc49k/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216haygdc.../tmp/b216haygdc49k/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216haygdc49k/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1295c6c10>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-sync
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-watcher] _
+
+route = 'project-watcher'
+env = {'agent': PosixPath('/private/tmp/b216hxkg3rgmc/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hxkg3r.../tmp/b216hxkg3rgmc/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hxkg3rgmc/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1164d1630>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-watcher
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-ingest-gmd] _
+
+route = 'project-ingest-gmd'
+env = {'agent': PosixPath('/private/tmp/b216hq1hb9n9t/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hq1hb9.../tmp/b216hq1hb9n9t/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hq1hb9n9t/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113f92430>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-ingest-gmd
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-ingest-path] _
+
+route = 'project-ingest-path'
+env = {'agent': PosixPath('/private/tmp/b216hy4gpzh7x/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hy4gpz.../tmp/b216hy4gpzh7x/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hy4gpzh7x/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113f93540>
+
+    @pytest.mark.parametrize("route", PROJECT_ROUTES)
+    def test_b_the_reincluded_profile_lands_once_as_a_project_doc(route, env, monkeypatch):
+        ROUTES[route](env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE, route
+E       AssertionError: project-ingest-path
+E       assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:264: AssertionError
+_ test_b_every_route_in_turn_still_leaves_one_profile_doc_and_no_agent[dot-claude] _
+
+env = {'agent': PosixPath('/private/tmp/b216h2ckteb91/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216h2ckte...laude/projects/x/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216h2ckteb91/proj/.claude/projects/x/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1164d0050>
+
+    def test_b_every_route_in_turn_still_leaves_one_profile_doc_and_no_agent(env, monkeypatch):
+        """Every route, one after another, on one store: the bridge routes must not pick the
+        profile up as a memory, and the project routes must not land it twice."""
+        for name, fn in ROUTES.items():
+            fn(env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE
+E       AssertionError: assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:272: AssertionError
+_ test_b_every_route_in_turn_still_leaves_one_profile_doc_and_no_agent[visible] _
+
+env = {'agent': PosixPath('/private/tmp/b216hqptmquln/proj/.claude/agents/x.md'), 'base': PosixPath('/private/tmp/b216hqptmq.../tmp/b216hqptmquln/proj/notes/memory/.hidden')], 'mem': PosixPath('/private/tmp/b216hqptmquln/proj/notes/memory'), ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113f92ba0>
+
+    def test_b_every_route_in_turn_still_leaves_one_profile_doc_and_no_agent(env, monkeypatch):
+        """Every route, one after another, on one store: the bridge routes must not pick the
+        profile up as a memory, and the project routes must not land it twice."""
+        for name, fn in ROUTES.items():
+            fn(env, monkeypatch)
+>       assert _profile_rows(env) == PROFILE_ONCE
+E       AssertionError: assert {'agent': [],...ry', 'proj')]} == {'agent': [],...oc', 'proj')]}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'profile': [('memory', 'proj')]} != {'profile': [('doc', 'proj')]}
+E         Use -v to get more diff
+
+tests/test_bug216_hidden_no_pollution.py:272: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-sync]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-watcher]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-ingest-gmd]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[dot-claude-project-ingest-path]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-sync]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-watcher]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-ingest-gmd]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_the_reincluded_profile_lands_once_as_a_project_doc[visible-project-ingest-path]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_every_route_in_turn_still_leaves_one_profile_doc_and_no_agent[dot-claude]
+FAILED tests/test_bug216_hidden_no_pollution.py::test_b_every_route_in_turn_still_leaves_one_profile_doc_and_no_agent[visible]
+10 failed, 22 passed in 66.33s (0:01:06)

@@ -1,0 +1,10 @@
+tables read from store.py: union ['ingest.py', 'ingest_gmd.py', 'store.py']; 8 passes; 8 files
+  consolidate.py       union=no  passes=MEMORY_COMPILE_PASS,MEMORY_COMPILE_PATTERN_PASS broad=  2 silent=  1
+  embedder.py          union=no  passes=embed                                        broad=  2 silent=  0
+  ingest.py            union=yes passes=ingest,semantic                              broad=  9 silent=  8
+  ingest_gmd.py        union=yes passes=gmd,sessions                                 broad= 12 silent=  5
+  pagerank.py          union=no  passes=pagerank                                     broad= 13 silent= 12
+  session_ingest.py    union=no  passes=sessions                                     broad=  0 silent=  0
+  store.py             union=yes passes=-                                            broad= 34 silent= 25
+  vectors.py           union=no  passes=embed                                        broad=  0 silent=  0
+silent handlers in files that feed a pass hash: 26; in all derive files: 51

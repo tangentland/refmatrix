@@ -1,0 +1,9 @@
+load at start: 3.78 4.26 4.68
+  phase op_ids_sql: med 8.40ms p90 11.61ms (min 8.34, max 11.61, n=5)
+  phase iterate_mentions_bits_only: med 30.79ms p90 59.48ms (min 30.58, max 59.48, n=5)
+  phase typed_rows_sql_fetchall: med 138.67ms p90 146.01ms (min 132.42, max 146.01, n=5)
+  typed rows: 333027 mention bits: 834472
+vectorised CSR build (fragment already loaded): med 505.61ms p90 548.69ms (min 500.39, max 557.29, n=7)
+vectorised CSR build (fresh Store): med 528.37ms p90 545.68ms (min 526.90, max 545.68, n=5)
+IDENTICAL edge set: nodes 116552 directed edges 1888764; max |dw| 0
+load at end: 3.73 4.23 4.67

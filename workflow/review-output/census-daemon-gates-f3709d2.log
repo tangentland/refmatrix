@@ -1,0 +1,20 @@
+ping gates (ping in a condition): 56 in 7 modules; other ping calls (assigned / returned): 7; typed classifier calls (require_daemon / daemon_status): 25
+  cli.py                 gate= 39 other=  5 typed= 10
+  daemon.py              gate= 10 other=  0 typed=  1
+  hub.py                 gate=  2 other=  1 typed=  2
+  ui/server.py           gate=  2 other=  1 typed=  0
+  discovery.py           gate=  1 other=  0 typed=  1
+  fingerprint.py         gate=  1 other=  0 typed=  0
+  scheduler.py           gate=  1 other=  0 typed=  0
+  handoff.py             gate=  0 other=  0 typed=  2
+  search.py              gate=  0 other=  0 typed=  1
+  verbs.py               gate=  0 other=  0 typed=  8
+daemon RPC calls with a constant op: 66  NO-timeout/DEFAULT-retries=6  timeout/DEFAULT-retries=29  timeout/retries=31
+  cli.py                NO-timeout/DEFAULT-retries=2  timeout/DEFAULT-retries=26  timeout/retries=16
+  verbs.py              NO-timeout/DEFAULT-retries=1  timeout/retries=5
+  daemon.py             timeout/DEFAULT-retries=1  timeout/retries=3
+  fingerprint.py        timeout/retries=3
+  hub.py                NO-timeout/DEFAULT-retries=1  timeout/DEFAULT-retries=1  timeout/retries=1
+  search.py             timeout/retries=3
+  bus.py                NO-timeout/DEFAULT-retries=2
+  ui/server.py          timeout/DEFAULT-retries=1

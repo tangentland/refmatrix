@@ -43,6 +43,8 @@ from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Iterator
 
+from refmatrix.workdir import WorkingDirectoryGone, current_dir
+
 PROJECTS = Path.home() / ".claude" / "projects"
 
 # attachment kinds that make up the "decorated" prompt actually sent to the model
@@ -1286,6 +1288,19 @@ def summary_json(rows: list[SessionStats]) -> str:
     )
 
 
+def _project_base(args) -> Path:
+    """The project dir whose transcripts to read: `--project`, else the cwd.
+
+    The cwd goes through `workdir.current_dir()` (bug-212 r1, ch-bsd s-1, 2026-11-11): from a
+    deleted directory every cctree mode crashed with a raw `FileNotFoundError` traceback
+    (`resolve_path`); now it raises `WorkingDirectoryGone`, which `rmx cctree` prints as one
+    `Error:` line and the standalone entry (`python -m refmatrix.cctree`) as one `cctree:` line.
+    One reader for the five sites that each spelled the fallback out."""
+    if args.project:
+        return Path(args.project).expanduser()
+    return current_dir(remedy="cd to a project, or pass --project <dir>")
+
+
 def resolve_path(args) -> Path:
     if args.file:
         return Path(args.file).expanduser()
@@ -1294,7 +1309,7 @@ def resolve_path(args) -> Path:
         if not p:
             sys.exit(f"cctree: no session matching {args.session!r} under {PROJECTS}")
         return p
-    base = Path(args.project).expanduser() if args.project else Path.cwd()
+    base = _project_base(args)
     d = project_dir(base)
     if not d:
         sys.exit(f"cctree: no transcripts for {base} (looked for {PROJECTS / slug_for(base)})")
@@ -1403,7 +1418,7 @@ def main() -> None:
     def scoped_sessions() -> list[Path]:
         if args.all_projects:
             return [p for d in all_projects() for p in sessions_in(d)]
-        base = Path(args.project).expanduser() if args.project else Path.cwd()
+        base = _project_base(args)
         d = project_dir(base)
         if not d:
             sys.exit(f"cctree: no transcripts for {base}")
@@ -1467,7 +1482,7 @@ def main() -> None:
     if args.list:
         dirs = all_projects() if args.all_projects else None
         if dirs is None:
-            base = Path(args.project).expanduser() if args.project else Path.cwd()
+            base = _project_base(args)
             d = project_dir(base)
             if not d:
                 sys.exit(f"cctree: no transcripts for {base}")
@@ -1484,7 +1499,7 @@ def main() -> None:
         if args.all_projects:
             paths = [p for d in all_projects() for p in sessions_in(d)]
         else:
-            base = Path(args.project).expanduser() if args.project else Path.cwd()
+            base = _project_base(args)
             d = project_dir(base)
             if not d:
                 sys.exit(f"cctree: no transcripts for {base}")
@@ -1497,7 +1512,7 @@ def main() -> None:
         if args.all_projects:
             paths = [p for d in all_projects() for p in sessions_in(d)]
         else:
-            base = Path(args.project).expanduser() if args.project else Path.cwd()
+            base = _project_base(args)
             d = project_dir(base)
             if not d:
                 sys.exit(f"cctree: no transcripts for {base}")
@@ -1552,4 +1567,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except WorkingDirectoryGone as exc:
+        # The standalone entry's clean failure (bug-212 r1): `rmx cctree` gets the same text
+        # as an `Error:` line from the CLI group.
+        sys.exit(f"cctree: {exc}")

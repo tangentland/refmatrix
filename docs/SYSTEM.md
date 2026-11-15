@@ -76,7 +76,8 @@ tldr does not perform.
 filesystem tree walk                 (file-level entities, no call graph)
 ```
 
-Override with `rmx ingest . --source metadata|tldr|tree`.
+Override with `rmx ingest . --source metadata|tldr|tree`. The source picks where code
+structure comes from; markdown always goes to the GMD pass (bug-241).
 
 ### What tldr does NOT do (refmatrix adds) {#what-tldr-does-not-do-refmatrix-adds}
 

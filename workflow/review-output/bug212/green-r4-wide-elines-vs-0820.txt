@@ -1,0 +1,34 @@
+only in A: ['test_env_assignments_survive_in_place', 'test_installed_hooks_match_generated', 'test_rewriter_catches_dodges[/usr/bin/grep', 'test_rewriter_catches_dodges[command', 'test_rewriter_catches_dodges[env', 'test_rewriter_catches_dodges[grep', 'test_rewriter_catches_dodges[lint']
+only in B: ['test_ac2b_live_daemon_recall_writes_one_ok_recall_row']
+test_ac6_cli_log_recalls_are_split_per_channel: SAME E lines (16/16)
+test_ac6_frozen_fixture_prints_the_exact_counts: SAME E lines (29/29)
+test_an_unknown_class_fails_loudly_through_the_daemon: SAME E lines (1/1)
+test_the_repo_scope_is_clean_under_the_stricter_gate: E LINES DIFFER (5/22)
+    --- 
+    +++ 
+    @@ -2,4 +2,21 @@
+    -E         workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:95: error: [dangling-doc] [[refmatrix-claude-md#plans-pre-written]] — no doc with id `refmatrix-claude-md` in scanned set
+    -E         workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:139: error: [dangling-doc] [[refmatrix-claude-md#no-silent-failures]] — no doc with id `refmatrix-claude-md` in scanned set
+    -E         workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:207: error: [dangling-doc] [[refmatrix-claude-md#plans-pre-written]] — no doc with id `refmatrix-claude-md` in scanned set
+    -E       assert not ['workflow/bullshit/2026-11-10-1021-task26.6-r1-compile-hygiene-290348a.md:95: error: [dangling-doc] [[refmatrix-claud...error: [dangling-doc] [[refmatrix-claude-md#plans-pre-written]] — no doc with id `refmatrix-claude-md` in scanned set']
+    +E         docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+    +E         docs/INDEX.md:33: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+    +E         docs/INDEX.md:34: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+    +E         docs/INDEX.md:35: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+    +E         docs/INDEX.md:40: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+    +E         docs/INDEX.md:42: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+    +E         docs/INDEX.md:43: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+    +E         docs/INDEX.md:44: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+    +E         docs/INDEX.md:97: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+    +E         docs/INDEX.md:99: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+    +E         docs/INDEX.md:104: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+    +E         docs/INDEX.md:106: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+    +E         docs/adr/0000-adr-overview.md:20: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+    +E         docs/adr/0000-adr-overview.md:21: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+    +E         docs/adr/0000-adr-overview.md:22: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+    +E         docs/adr/0000-adr-overview.md:57: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+    +E         docs/adr/0000-adr-overview.md:58: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+    +E         docs/adr/0000-adr-overview.md:59: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+    +E         docs/adr/0001-intuition-lance-integration.md:10: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+    +E         docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-queued-work]] — no doc with id `project-queued-work` in scanned set
+    +E       assert not ['docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanne...g-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set', ...]

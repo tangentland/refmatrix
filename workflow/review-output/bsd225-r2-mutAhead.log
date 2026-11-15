@@ -1,0 +1,25 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225r2mut.XRqN/src/refmatrix as checked-hash (bug-037)
+..................F.......                                               [100%]
+=================================== FAILURES ===================================
+__________ test_r2_s1c_failing_ahead_log_is_surfaced_not_read_as_zero __________
+
+repos = (PosixPath('/private/tmp/b225-jcmyp3l0'), PosixPath('/private/tmp/b225-jcmyp3l0/work'))
+git_shim = <function git_shim.<locals>.arm at 0x104653d70>
+
+    def test_r2_s1c_failing_ahead_log_is_surfaced_not_read_as_zero(repos, git_shim):
+        """origin/HEAD → origin/develop verifies; the `git log origin/develop..HEAD`
+        exits 2. At d735ce5 that reads as "**0** commit(s) ahead of `origin/develop` —
+        in sync" with trunk_error "". Both surfaces must say the measurement failed."""
+        base, work = repos
+        _git(work, "remote", "set-head", "origin", "develop")
+        git_shim("ahead")
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert SHIM_MARK in err or "exited 2" in err, facts
+E       AssertionError: {'ahead': '', 'ahead_base': 'origin/develop', 'branch': 'feature', 'dirty': '', ...}
+E       assert ('b225-shim: forced failure' in '' or 'exited 2' in '')
+
+tests/test_bug225_handoff_trunk.py:494: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r2_s1c_failing_ahead_log_is_surfaced_not_read_as_zero
+1 failed, 25 passed in 13.98s

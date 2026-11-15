@@ -1,0 +1,155 @@
+...........F............................................................ [ 57%]
+..............F...F.F.F.......FF......................                   [100%]
+=================================== FAILURES ===================================
+________________ test_ac9_pack_trailer_quotes_a_multiline_query ________________
+
+    def test_ac9_pack_trailer_quotes_a_multiline_query():
+        """R3(d): `+N more: rmx memory recall <q> --k M`, the query collapsed to one line, ≤ 120
+        chars, shlex-quoted (a shell metacharacter cannot escape the pointer)."""
+        q = "line one of the question\nline two; rm -rf $HOME `x` " + "pad " * 40
+        rows = [_urow(i, body=2000) for i in range(12)]
+        p = _pack_unit(rows, max_bytes=2000, channel="prompt_recall", query=q, mode="dense",
+                       k_more=24)
+        pk = s.Pack(p.text.encode())
+>       assert pk.trailer is not None and pk.more == 12 - len(pk.named) > 0
+E       assert (None is not None)
+E        +  where None = <tests.task25_1_support.Pack object at 0x107240770>.trailer
+
+tests/test_task25_1_recall_budget.py:290: AssertionError
+______ test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc _______
+
+fx = <tests.task25_1_support.Fixture object at 0x10bda2660>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1165fbf50>
+
+    def test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc(fx, monkeypatch):
+        """AC-4 (f): `rmx memory recall "q"` (table) and `--json` name the same hits as the verb
+        for the same query, including a `kind=doc` row (the CLI-only doc leg moves into the verb)."""
+        from refmatrix import verbs
+        r = s.rmx(fx, "memory", "recall", QUESTION, "--json", "-K", "memory,doc", "--k", "8")
+        assert r.returncode == 0, r.stderr[-800:]
+        cli_rows = json.loads(r.stdout)
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        vres = verbs.memory_recall(fx.root, query=QUESTION, k=8, kinds=["memory", "doc"])
+        vnames = [m["name"] for m in vres["memories"]]
+        assert [m["name"] for m in cli_rows] == vnames, ([m["name"] for m in cli_rows], vnames)
+>       assert any((m.get("kind") == "doc") for m in vres["memories"]), (
+            f"AC-4 (f): the verb returns no kind=doc row for -K memory,doc: {vnames}")
+E       AssertionError: AC-4 (f): the verb returns no kind=doc row for -K memory,doc: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', 'fx_mem_13', 'fx_mem_06']
+E       assert False
+E        +  where False = any(<generator object test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc.<locals>.<genexpr> at 0x1165cf680>)
+
+tests/test_task25_1_recall_budget.py:808: AssertionError
+___________ test_ac5_mistyped_savestate_not_named_on_the_packed_argv ___________
+
+fx = <tests.task25_1_support.Fixture object at 0x10bda2660>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109435fd0>
+
+    def test_ac5_mistyped_savestate_not_named_on_the_packed_argv(fx, monkeypatch):
+        """AC-5 (R2b): `savestate_fx01.md` (metadata.type: project, the best body for the question)
+        is not named by the packed per-prompt argv and the trailer does not count it. After 26.4
+        merges this is a regression guard (the bridge types it session/recall-state); at HEAD it is
+        RED twice over: no --pack, and HEAD's JSON names it first (bug-164's 7c4e19d2a8f3 shape)."""
+        p = _pack(_q(fx), "per-prompt argv")
+>       assert s.SAVESTATE not in p.named
+E       AssertionError: assert 'savestate_fx01' not in ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E        +  where 'savestate_fx01' = s.SAVESTATE
+E        +  and   ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x1166522b0>.named
+
+tests/test_task25_1_recall_budget.py:901: AssertionError
+___ test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one ____
+
+fx = <tests.task25_1_support.Fixture object at 0x10bda2660>
+
+    def test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one(fx):
+        r = _q(fx, append=" --include-subjects")
+        p = _pack(r, "per-prompt argv --include-subjects")
+>       assert set(p.named) & set(s.LIVE_SUBJECTS), p.named
+E       AssertionError: ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...]
+E       assert ({'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_dup_x', 'fx_mem_00', 'fx_mem_03', 'fx_mem_10', 'fx_mem_20', 'fx_mem_23', ...} = set(['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...])
+E        +    where ['savestate_fx01', 'fx_dup_x', 'fx_mem_00', 'gx_mem_9', 'fx_mem_10', 'gx_mem_8', ...] = <tests.task25_1_support.Pack object at 0x116693c50>.named
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:935: AssertionError
+_____ test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in ______
+
+fx = <tests.task25_1_support.Fixture object at 0x10bda2660>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109435ef0>
+
+    def test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in(fx, monkeypatch):
+        from refmatrix import verbs
+        monkeypatch.setenv("RMX_HOME", str(fx.home))
+        names = [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12)["memories"]]
+        assert not set(names) & set(s.SUBJECTS), names
+        names = [m["name"] for m in verbs.memory_recall(fx.root, query=QUESTION, k=12,
+                                                         include_subjects=True)["memories"]]
+>       assert set(names) & set(s.LIVE_SUBJECTS), names
+E       AssertionError: ['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...]
+E       assert ({'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} & {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'})
+E        +  where {'fx_mem_00', 'fx_mem_01', 'fx_mem_03', 'fx_mem_06', 'fx_mem_10', 'fx_mem_13', ...} = set(['savestate_fx01', 'fx_mem_00', 'fx_mem_10', 'fx_mem_20', 'fx_mem_03', 'fx_mem_23', ...])
+E        +  and   {'subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'} = set(['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'])
+E        +    where ['subject_quasar_ledger_0', 'subject_quasar_ledger_1', 'subject_quasar_ledger_2', 'subject_quasar_ledger_3'] = s.LIVE_SUBJECTS
+
+tests/test_task25_1_recall_budget.py:958: AssertionError
+__________ test_ac9_session_start_carries_bodies_after_all_hook_lines __________
+
+fx = <tests.task25_1_support.Fixture object at 0x10bda2660>
+
+    def test_ac9_session_start_carries_bodies_after_all_hook_lines(fx):
+        p = _pack(_ss(fx), "SessionStart argv")
+>       assert len(p.bodied) >= 2, f"AC-9: {len(p.bodied)} bodied hits on session_start"
+E       AssertionError: AC-9: 0 bodied hits on session_start
+E       assert 0 >= 2
+E        +  where 0 = len([])
+E        +    where [] = <tests.task25_1_support.Pack object at 0x1166b1db0>.bodied
+
+tests/test_task25_1_recall_budget.py:1041: AssertionError
+____________ test_ac10_delivered_events_slice_the_payload_by_bytes _____________
+
+fx = <tests.task25_1_support.Fixture object at 0x10bda2660>
+
+    def test_ac10_delivered_events_slice_the_payload_by_bytes(fx):
+        """AC-10 (R9): on the SessionStart argv, one `delivered` event per NAMED hit (none for a
+        trimmed hit), one query_id with the `retrieved` events; each span slices exactly its hook
+        line / body out of the payload BYTES; unbodied hits carry null body fields; a global hit's
+        event is in the tmp global root's file with scope=global. The fixed 7-of-12/3-bodied shape
+        of 19.1 AC-6 is not forced here (R0 sets the budget the shape depends on)."""
+        pe, ge = fx.root / "recall-events.jsonl", fx.home / "recall-events.jsonl"
+        n_p, n_g = len(h.jsonl(pe)), len(h.jsonl(ge))
+        r = _ss(fx)
+        p = _pack(r, "SessionStart argv")
+        # This module runs one hook at a time, so the lines appended since n_p/n_g are this call's
+        # (`--session-start` reads no envelope, so the event's session is not the test's to pick).
+        new_g = [e for e in h.jsonl(ge)[n_g:] if e.get("channel") == "session_start"]
+        evs = [e for e in h.jsonl(pe)[n_p:] if e.get("channel") == "session_start"] + new_g
+        qids = {e.get("query_id") for e in evs}
+        assert len(qids) == 1 and None not in qids, qids
+        deliv = [e for e in evs if e.get("stage") == "delivered"]
+        assert sorted(e["name"] for e in deliv) == sorted(p.named), (
+            [e["name"] for e in deliv], p.named)
+        raw = r.stdout
+        for e in deliv:
+            line = raw[e["offset_bytes"]:e["offset_bytes"] + e["bytes"]]
+            assert line == (p.hook_line_of(e["name"]) + "\n").encode("utf-8"), (e["name"], line)
+            if e["name"] in p.bodied:
+                body = raw[e["body_offset_bytes"]:e["body_offset_bytes"] + e["body_bytes"]]
+                assert f"BODYMARK {e['name']}".encode() in body
+                assert raw[:e["body_offset_bytes"]].decode().count("—") >= 3
+            else:
+>               assert e.get("body_offset_bytes") is None and e.get("body_bytes") is None, e
+E               AssertionError: {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': 126, ...}
+E               assert (6031 is None)
+E                +  where 6031 = <built-in method get of dict object at 0x11729ccc0>('body_offset_bytes')
+E                +    where <built-in method get of dict object at 0x11729ccc0> = {'arm': 'fixed', 'block_id': 'session-start', 'block_sha': 'f45d4d9ef85ff35a63e5e941f238169da3f39fe700d519ac016cadcc8a4c7ca3', 'body_bytes': 126, ...}.get
+
+tests/test_task25_1_recall_budget.py:1080: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_pack_trailer_quotes_a_multiline_query
+FAILED tests/test_task25_1_recall_budget.py::test_ac4f_interactive_recall_names_the_verbs_hits_including_a_doc
+FAILED tests/test_task25_1_recall_budget.py::test_ac5_mistyped_savestate_not_named_on_the_packed_argv
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_include_subjects_brings_live_subjects_back_never_the_stale_one
+FAILED tests/test_task25_1_recall_budget.py::test_ac6_verb_hides_subjects_and_the_stale_one_even_with_the_opt_in
+FAILED tests/test_task25_1_recall_budget.py::test_ac9_session_start_carries_bodies_after_all_hook_lines
+FAILED tests/test_task25_1_recall_budget.py::test_ac10_delivered_events_slice_the_payload_by_bytes
+7 failed, 119 passed in 128.67s (0:02:08)

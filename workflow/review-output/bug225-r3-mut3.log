@@ -1,0 +1,66 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225mut3r/src/refmatrix as checked-hash (bug-037)
+.................................F...                                    [100%]
+=================================== FAILURES ===================================
+_______________ test_r3_m1_no_trunk_is_one_info_line_in_the_doc ________________
+
+trunkless = (PosixPath('/private/tmp/b225t-zne5fl51'), PosixPath('/private/tmp/b225t-zne5fl51/work'))
+
+    def test_r3_m1_no_trunk_is_one_info_line_in_the_doc(trunkless):
+        """At e2505f3 the doc says nothing, so "no trunk exists" reads the same as
+        "the measurement is missing"."""
+        base, work = trunkless
+        facts = handoff._ss_git_facts(work, None)
+        assert facts["trunk_error"] == "" and facts["ahead_base"] == "", facts
+        s, root = _stm(base, "sess-b225-r3-none")
+        doc = handoff.compose_save_state(s, root, repo=work, memdir=base / "memory",
+                                         today="2026-11-14", promote=False, dry_run=True)["doc"]
+>       assert doc.splitlines().count(NO_TRUNK_LINE) == 1, doc
+E       AssertionError: ---
+E         gmd: "0.1"
+E         id: savestate_sessb225r3no
+E         title: "Save-state 2026-11-14: work @ 40b5d63"
+E         tags: ["session:sess-b225-r3-none"]
+E         metadata:
+E           node_type: memory
+E           type: session/recall-state
+E           originSessionId: sess-b225-r3-none
+E           created: 2026-11-14
+E           updated: 2026-11-14T03:45:38-08:00
+E         ---
+E         
+E         # Save-state 2026-11-14: work @ 40b5d63 {#root}
+E         
+E         ## Session {#session}
+E         
+E         - branch **trunkless** · HEAD `40b5d63 only commit`
+E         - working tree: clean
+E         
+E         ## Git activity {#git}
+E         
+E         Commits (this session):
+E         
+E         ```
+E         40b5d63 only commit
+E         ```
+E         
+E         ## Focus {#focus}
+E         
+E         Top of the working-memory graph (1 events):
+E         
+E         - `bug` [concept] ×1 (w=2.3)
+E         - `handoff` [concept] ×1 (w=2.3)
+E         - `trunk` [concept] ×1 (w=2.3)
+E         
+E         rel: realizes -> [[feedback_save_state_means_handoff]]
+E         rel: related-to -> [[feedback_recall_state_means_resume]]
+E         
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of list object at 0x1181faa00>('- trunk: none (origin/HEAD unset; no origin/main, origin/master, main or master)')
+E        +    where <built-in method count of list object at 0x1181faa00> = ['---', 'gmd: "0.1"', 'id: savestate_sessb225r3no', 'title: "Save-state 2026-11-14: work @ 40b5d63"', 'tags: ["session:sess-b225-r3-none"]', 'metadata:', ...].count
+E        +      where ['---', 'gmd: "0.1"', 'id: savestate_sessb225r3no', 'title: "Save-state 2026-11-14: work @ 40b5d63"', 'tags: ["session:sess-b225-r3-none"]', 'metadata:', ...] = <built-in method splitlines of str object at 0x12df18cc0>()
+E        +        where <built-in method splitlines of str object at 0x12df18cc0> = '---\ngmd: "0.1"\nid: savestate_sessb225r3no\ntitle: "Save-state 2026-11-14: work @ 40b5d63"\ntags: ["session:sess-b22...n\nrel: realizes -> [[feedback_save_state_means_handoff]]\nrel: related-to -> [[feedback_recall_state_means_resume]]\n'.splitlines
+
+tests/test_bug225_handoff_trunk.py:810: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_m1_no_trunk_is_one_info_line_in_the_doc
+1 failed, 36 passed in 26.82s

@@ -78,21 +78,150 @@ def _ss_sh(args: list[str], cwd: Path) -> str:
         return ""
 
 
+_SS_TRUNK_FALLBACK = ("origin/main", "origin/master", "main", "master")
+
+
+def _ss_git_run(repo: Path, *args: str) -> tuple[int | None, str, str]:
+    """(exit code, stdout, stderr) of one git call; exit None when git could not run
+    (OSError, or the 20 s timeout). Unlike `_ss_sh` it lets the caller tell "not
+    found" from "failed" -- the trunk reads need that (bug-225 r2, ruling L96)."""
+    try:
+        r = subprocess.run(["git", *args], cwd=str(repo), capture_output=True,
+                           text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, "", f"{type(e).__name__}: {e}"
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+def _ss_git_failure(args: tuple[str, ...], rc: int | None, out: str, err: str) -> str:
+    """One way to say a git call failed: the command, then how, in git's own words
+    (bug-225 r3: "is corrupt" / "expected commit type" name the cause; a paraphrase
+    would not). Multi-line stderr is joined with " / " so it stays one doc line."""
+    cmd = f"`git {' '.join(args)}`"
+    text = " / ".join(ln.strip() for ln in (err or out).splitlines() if ln.strip())
+    if rc is None:
+        return f"{cmd} could not run: {text}"
+    return f"{cmd} exited {rc}: {text or '(no output)'}"
+
+
+def _ss_origin_head(repo: Path) -> tuple[str, str]:
+    """(short ref origin/HEAD names, error) -- `("", "")` when origin/HEAD is unset.
+
+    Why (bug-225, 2026-11-14): the trunk was guessed from a fixed name list, so in
+    atlftpd, whose trunk is `develop`, the handoff reported 24 commits ahead of
+    `origin/master` instead of 12 ahead of `origin/develop`. `refs/remotes/origin/HEAD`
+    (set by `git clone`, changed per repo with `git remote set-head`) is the repo's own
+    answer. `--quiet` makes "not a symbolic ref" exit 1 with no output: that is the
+    unset case, and the list decides without a word. Any other result -- another
+    exit, exit 1 WITH stderr, git failing to run -- is NOT unset: it is returned as
+    an error the composers print (same rule as the candidate verify, bug-225 r3).
+    The name is not verified here; `_ss_trunk` verifies it like every candidate.
+    """
+    args = ("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    rc, out, err = _ss_git_run(repo, *args)
+    if rc == 0:
+        return out, ""
+    if rc == 1 and not err:
+        return "", ""
+    return "", _ss_git_failure(args, rc, out, err)
+
+
+def _ss_trunk(repo: Path, facts: dict) -> None:
+    """Pick the trunk and measure commits ahead of it, into `facts`.
+
+    Candidates: the ref origin/HEAD names, then `_SS_TRUNK_FALLBACK`. Each is
+    verified as `<name>^{commit}`, so a ref whose object is missing does not pass
+    (bsd-225 r1 S1: plain `--verify` passed it, the ahead `git log` then failed
+    inside `_ss_sh`, and the handoff said "0 commit(s) ahead -- in sync").
+
+    "Does not resolve" is ONLY exit 1 with an empty stderr: under `--quiet`, git
+    2.50.1 exits that way for a missing name or a ref to a missing sha, and the
+    walk tries the next name. Everything else stops the walk and is said in git's
+    own words: a corrupt object exits 128, an unreadable object, a broken ref or a
+    ref to a tree exit 1 WITH stderr, and any other exit, an unrunnable git or a
+    timeout is a failure too (bsd-225 r2 S1, ruling L100, 2026-11-14: reading 128
+    as "not found" measured origin/master past a corrupt origin/main, silently).
+    The ahead `git log` is read the same way: a failure is said and leaves
+    `ahead_base` empty, so no surface can print a measured zero. When origin/HEAD
+    names a ref that does not resolve, that is said too, with the trunk actually
+    used (ruling L96).
+
+    Problems land in `facts["trunk_errors"]` as (headline, detail) pairs; the
+    composers render them (save-state doc line, recall-state anomaly). When
+    nothing resolves and nothing failed (origin/HEAD unset, none of the list
+    exists), `facts["trunk_info"]` says so: an info line in the save-state doc so
+    "no trunk" reads differently from "measurement missing", but not a fault, so
+    not a recall-state anomaly and not `trunk_error` (L100 M1)."""
+    problems: list[tuple[str, str]] = facts["trunk_errors"]
+    origin_head, oh_err = _ss_origin_head(repo)
+    candidates = ([origin_head] if origin_head else []) + \
+        [b for b in _SS_TRUNK_FALLBACK if b != origin_head]
+    base, stopped_at = "", ""
+    for cand in candidates:
+        args = ("rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}")
+        rc, out, err = _ss_git_run(repo, *args)
+        if rc == 0:
+            base = cand
+            break
+        if rc == 1 and not err:
+            continue
+        stopped_at = cand
+        what = ("origin/HEAD names `{0}`, which git could not verify" if cand == origin_head
+                else "could not verify trunk candidate `{0}`").format(cand)
+        problems.append((f"{what}; nothing measured", _ss_git_failure(args, rc, out, err)))
+        break
+    fallback = (f"measured against `{base}`" if base
+                else "the fallback list was not verified" if stopped_at
+                else "no fallback trunk resolves")
+    if oh_err:
+        problems.insert(0, ("origin/HEAD unreadable, " + (
+            "measured by the fallback list" if base else fallback), oh_err))
+    elif origin_head and base != origin_head and stopped_at != origin_head:
+        problems.insert(0, (f"origin/HEAD names `{origin_head}`, which does not "
+                            f"resolve; {fallback}", ""))
+    if not base:
+        if not (origin_head or oh_err or stopped_at):
+            facts["trunk_info"] = ("none (origin/HEAD unset; no "
+                                   + ", ".join(_SS_TRUNK_FALLBACK[:-1]) + " or "
+                                   + _SS_TRUNK_FALLBACK[-1] + ")")
+        return
+    args = ("log", "--oneline", f"{base}..HEAD")
+    rc, out, err = _ss_git_run(repo, *args)
+    if rc == 0:
+        facts["ahead_base"], facts["ahead"] = base, out
+    else:
+        problems.append((f"commits ahead of `{base}` not measured",
+                         _ss_git_failure(args, rc, out, err)))
+
+
+def _ss_trunk_lines(git: dict, *, sep: str, close: str) -> list[str]:
+    """The trunk problems as `trunk: <headline><sep><detail><close>` lines."""
+    return [f"trunk: {h}" + (f"{sep}{d}{close}" if d else "")
+            for h, d in (git.get("trunk_errors") or [])]
+
+
 def _ss_git_facts(repo: Path, since: str | None) -> dict:
     """Branch, HEAD, dirty tree, commits-ahead-of-trunk, and this-session
-    commits (since the first STM event, if known)."""
+    commits (since the first STM event, if known).
+
+    The trunk comes from `_ss_trunk` (origin/HEAD, then the fallback list, each
+    verified as a commit; bug-225). `trunk_error` is every trunk problem in one
+    string, the form the save-state verb result carries to CLI and MCP callers."""
     g = lambda *a: _ss_sh(["git", *a], repo)
     facts = {
         "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
         "head": g("log", "-1", "--format=%h %s"),
         "dirty": g("status", "--short"),
-        "ahead_base": "", "ahead": "", "session_commits": "",
+        "ahead_base": "", "ahead": "", "session_commits": "", "trunk_error": "",
+        "trunk_errors": [], "trunk_info": "",
     }
-    for base in ("origin/main", "origin/master", "main", "master"):
-        if g("rev-parse", "--verify", "--quiet", base):
-            facts["ahead_base"] = base
-            facts["ahead"] = g("log", "--oneline", f"{base}..HEAD")
-            break
+    # No branch = not a work tree (or no commit yet): there is no trunk to measure
+    # against, every git read above already came back empty, and no trunk git call
+    # runs at all -- in a non-git dir each would fail "not a git repository".
+    if facts["branch"]:
+        _ss_trunk(repo, facts)
+        facts["trunk_error"] = "; ".join(h + (f" — {d}" if d else "")
+                                         for h, d in facts["trunk_errors"])
     if since:
         facts["session_commits"] = g("log", "--oneline", f"--since={since}")
     return facts
@@ -188,6 +317,9 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
         n = len([x for x in git["ahead"].splitlines() if x.strip()])
         L.append(f"- **{n}** commit(s) ahead of `{git['ahead_base']}`"
                  + ("" if n else " — in sync"))
+    L.extend(f"- {ln}" for ln in _ss_trunk_lines(git, sep=" — ", close=""))
+    if git.get("trunk_info"):
+        L.append(f"- trunk: {git['trunk_info']}")
     L.append(f"- working tree: {'**dirty**' if git['dirty'] else 'clean'}")
     L.append("")
 
@@ -377,14 +509,17 @@ def _promote_digest(root: Path, s) -> dict:
             # for a held writer; a busy daemon is now named as busy.
             r = _call(root, "memory_add", args, timeout=30.0, retries=0)
             return {"name": name, "id": r.get("id")}
-        from refmatrix.store import Store
-        st = Store(root)
-        with st.with_partition(part):
-            eid = st.add_memory(name=name, content=digest,
-                                mtype="session/digest",
-                                tags=[f"session:{s.session}", "summary"],
-                                protected=False)
-        return {"name": name, "id": eid}
+        # No daemon: through `verbs.local_write`, the checked opener (bug-212 r4, ruling
+        # L72, 2026-11-13) -- a hand-rolled `Store(root)` here wrote a catalog git tracks.
+        # Its refusal is a VerbError, returned below as {"error"}; `rmx save-state` prints
+        # that on stderr and exits non-zero (L82).
+        from refmatrix.verbs import local_write
+        out = local_write(
+            root, lambda st: {"id": st.add_memory(
+                name=name, content=digest, mtype="session/digest",
+                tags=[f"session:{s.session}", "summary"], protected=False)},
+            partition=part, create=True)
+        return {"name": name, "id": out["id"]}
     except Exception as e:  # noqa: BLE001 — promote is best-effort
         return {"error": f"{type(e).__name__}: {e}", "name": name}
 
@@ -448,6 +583,8 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         "events": len(events), "doc": doc, "dry_run": dry_run,
         "branch": git["branch"], "head": git["head"],
         "dirty": bool(git["dirty"]), "promoted": None,
+        # bug-225 r2 M1: the trunk problem rides back to every caller (CLI, MCP).
+        "trunk_error": git.get("trunk_error") or "",
         "memdir": str(memdir),
         "moved_legacy": None,
         # #rm-newer-copy: the top-level copy of a pair this save removed, the
@@ -699,6 +836,7 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path,
         if n:
             anomalies.append(f"{n} commit(s) ahead of {git['ahead_base']} "
                              f"(unmerged/undeployed?)")
+    anomalies.extend(_ss_trunk_lines(git, sep=" (", close=")"))
     # A caller that resolved its own session AFTER reading the pointer-error log passes the
     # clauses it read first (task 21.1 D6): the report is about the rows that were there,
     # not about the miss this very call recorded while choosing which ring to show.
@@ -721,3 +859,70 @@ def compose_recall_state(s, root: Path, *, repo: Path, memdir: Path,
         "daemon": daemon_info,
         "anomalies": anomalies,
     }
+
+
+# ---- the recall-state text (task 25.1 R11) -------------------------------------------------
+
+NEWEST_RING_LABEL = "(newest ring; not resolved)"
+
+
+def recall_state_blocks(rep: dict, *, handoff_lines: int = 24,
+                        recent_limit: int = 8) -> "list[str]":
+    """`rmx recall-state`'s report as WHOLE text blocks, in the order a byte budget keeps them
+    (task 25.1 R11, user 2026-11-11): the handoff head (the session line and which save-state
+    is the handoff), the handoff's body head, anomalies, git, daemon, recent memories, the STM
+    digest. Each block ends with a newline.
+
+    ONE renderer for the CLI and the `recall_state` verb's `text` (`max_bytes`), so a hook's
+    fitted output and an interactive run start with the same lines. Plain text: a hook's
+    stdout is not a terminal, and rich markup in a payload is bytes the model pays for."""
+    sess = rep.get("session") or "?"
+    if rep.get("session_source") == "latest":
+        sess = f"{sess} {NEWEST_RING_LABEL}"
+    ss = rep.get("savestate")
+    head = [f"recall-state · session {sess} ({rep.get('events', 0)} STM events)"]
+    if ss:
+        head.append(f"handoff {ss['id']} {ss['path']}")
+    else:
+        head.append("no prior save-state handoff found")
+    blocks = ["\n".join(head) + "\n"]
+    if ss and ss.get("body"):
+        excerpt = "\n".join(str(ss["body"]).splitlines()[:handoff_lines])
+        blocks.append(excerpt.rstrip("\n") + "\n")
+    anomalies = rep.get("anomalies") or []
+    if anomalies:
+        blocks.append("anomalies\n" + "".join(f"  ! {a}\n" for a in anomalies))
+    git = rep.get("git") or {}
+    gl = [f"git branch {git.get('branch') or '?'} · HEAD {git.get('head') or '?'}"]
+    if git.get("ahead_base"):
+        n = len([x for x in str(git.get("ahead") or "").splitlines() if x.strip()])
+        gl.append(f"     {n} commit(s) ahead of {git['ahead_base']}" + ("" if n else " — in sync"))
+    gl.append("     working tree: " + ("dirty" if git.get("dirty") else "clean"))
+    blocks.append("\n".join(gl) + "\n")
+    d = rep.get("daemon") or {}
+    state = (f"running pid={d.get('pid')}" if d.get("running")
+             else (f"busy pid {d.get('pid')}" if d.get("busy")
+                   else (f"stale pid {d.get('pid')}" if d.get("pid") else "not running")))
+    blocks.append(f"daemon {state}\n")
+    recents = rep.get("recent_memories") or []
+    if recents:
+        blocks.append("recent memories\n" + "".join(
+            f"  {mid} — {title}\n" for mid, title in recents[:recent_limit]))
+    if rep.get("stm_digest"):
+        blocks.append("STM digest (live session)\n" + str(rep["stm_digest"]).rstrip("\n") + "\n")
+    return blocks
+
+
+def fit_recall_state(rep: dict, max_bytes: "int | None") -> "tuple[str, int]":
+    """The report fitted to `max_bytes` UTF-8 bytes (None = everything): whole blocks in
+    `recall_state_blocks` order, and a trailer naming `rmx recall-state` for the full output
+    when any block was cut. Returns (text, dropped)."""
+    from refmatrix import hook_budget
+    blocks = recall_state_blocks(rep)
+    if max_bytes is None:
+        return "".join(blocks), 0
+    f = hook_budget.fit_blocks(
+        blocks, int(max_bytes),
+        trailer=lambda n: f"+{n} block(s) omitted to fit {int(max_bytes)} B; "
+                          f"full: rmx recall-state")
+    return f.text, f.dropped

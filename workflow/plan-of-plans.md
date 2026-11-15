@@ -48,6 +48,73 @@ plan's remaining work is scheduled in the folded wave list [[plan-review-2026-10
 | 25 | plan-25-cliquedb-field-report | approved 2026-11-09 (bug-181 folded into 25.1 R10 by the user, revision round 5; not started) (plan + task specs 25.1-25.4 written 2026-11-08, session 8d9a255f: bug-164 recall byte budget (builds 19.1 + 19.5 R1), bug-165 thin-prompt gate, bug-166 STM ref admission (builds 19.0 R1) + helix once-per-session, bug-167 BRE translation; task 25.5 added 2026-11-09 in revision round 2 (`cba1745`): bug-174 substring-mode `a.b` read as BRE via 25.4's translator, follows 25.4; spec reviews r1+r2+r3 folded (r3 DIRTY 0B/4S/9M: bug-id collision renumbered bug-173 → bug-180 in `9bcf464`, MCP silent cwd fallback logged as bug-181); r4-lite confirm (DIRTY 0B/1S/5M) folded in revision round 4; bug-181 folded into 25.1 per [[#goal-2026-11-09-scope]] in revision round 5, then `approved` ([[plan-25-cliquedb-field-report#approval]]); bug-174 re-measure queued at M ≥ 30 or 2026-12-31; after plan-26/27 and before plan-24 per [[#override-2026-11-08b]]) | yes (5) | `workflow/plans/plan-25-cliquedb-field-report.md` | 3.7 merged; plan-26 (26.4, 26.7); plan-27; 23.0; 21.1 |
 | 26 | plan-26-memory-organisation | approved 2026-11-09 (ch-bsd r1-r5 folded; r6-lite confirm at `d396317` MEH-only 0B/0S/2M, n1/n2 folded into 26.2; earlier: r1 `8af766a`, r2 `696c3cb`; 10 task specs 26.0-26.9; 26.6/26.7 BUILD approved 19.4/19.3; 19.4 AC-4 recall leg → 25.1) | yes (10) | `workflow/plans/plan-26-memory-organisation.md` | 3.7 |
 | 27 | plan-27-memory-fleet-rollout | approved 2026-11-09 (ch-bsd r1-r5 folded; r6-lite confirm at `d396317` MEH-only; r1 `8af766a`, r2 `696c3cb`; 8 task specs 27.0-27.6 + 27.2a) | yes (8) | `workflow/plans/plan-27-memory-fleet-rollout.md` | plan-26 deployed |
+| 29 | plan-29-code-quality | approved 2026-11-14 (ch-bsd spec r1-r3 folded; r4 confirm-lite MEH-only 0B/0S/4M GO, MEHs folded before merge per L111; spec branches merged `33d85bb` + `d227cc6`; 6 task specs 29.1-29.6 on Fable 5.2; rulings L104-L111; plan-29 D23 open for the user at 29.5's store event; runs FIRST after 0.83.1, L104) | yes (6) | `workflow/plans/plan-29-code-quality.md` | 0.83.1 deployed (bug-241 + bug-240); `.venv-eval` duckdb 1.5.3 before any 29.4/29.5 baseline (L106) |
+| 30 | plan-30-materialisation | approved 2026-11-15 (L117; D1-D3 user-decided) 2026-11-14 (plan + 6 task specs 30.0-30.5 written by ch-architect on Fable 5.2 from the bitmap-materialisation measurement report; ch-bsd spec r1 at `a169c17` DIRTY 0B/3S/5M NO-GO, all eight folded in revision round 2 per ruling L116; confirm-lite r2 at `5914997` MEH-only 0B/0S/4M GO, its four folded; plan-30 D12 accepted; fixes bug-243; plan-30 D1-D3 open for the user; three releases, release B re-derives the `pagerank` pass fleet-wide) | yes (6), in review | `workflow/plans/plan-30-materialisation.md` | plan-29 released (module split, census kit, derive digest); 30.4 also 23.0's sandbox |
+| 31 | plan-31-pre-mod-loose-ends | drafting 2026-11-15 (admitted under the pre-mod freeze, [[#freeze]]; five items — 31.1 bug-244, 31.2 bug-107 + bug-247, 31.3 bug-242 guard, 31.4 retire standing lint warnings, 31.5 scan-prompt per-block measure + cut (Q27 = b); specs written when it reaches the head of the queue) |
+
+## Pre-mod freeze (user, 2026-11-15) {#freeze}
+
+**The freeze line.** Before the mod transition (plan-24) begins, only this work is admitted:
+
+1. **0.83.1** (bug-241 + bug-240 + L112/L114) — ship, deploy, live AC-6 recount.
+2. **Plan-29** code quality (29.1 → 29.4 → 29.5 → 29.2 ∥ 29.3 → 29.6), then `.venv-eval` duckdb 1.5.3.
+3. **Plan-30** adjacency + bitmap materialisation (30.0-30.5), plus **30.6** edge-type value
+   measurement ([[plan-30-materialisation#t6]]).
+4. **Plan-31** pre-mod loose ends ([[plan-31-pre-mod-loose-ends]]): 31.1 bug-244, 31.2 bug-107 +
+   bug-247, 31.3 the bug-242 ledger-anchor guard, 31.4 retire the standing lint warnings, 31.5 the
+   scan-prompt injection measured per block, then cut and tightened (Q27 = b).
+5. **From the L106 queue** (the user, Q28 = a, 2026-11-15; [[freeze-triage-2026-11-15]]):
+   T2 memory organisation (26.5 → 26.7 → 26.6 R3 → 26.8 → 26.9 ∥ plan-27); bug-218; 25.2, 25.3,
+   10.3; T4 bounded writes (bug-185 → 23.2 → 23.1 → 23.3 ∥ 23.5); T3 injection dedup (10.5 → 10.6
+   → 10.4 → 10.2; 21.2 → 21.4), after 31.5; 21.5 phase M; 22.6 R4 folded into 31.2.
+
+**The rule.** Nothing else is admitted before the mod except a bug that breaks something live
+(a crash, data loss, a wrong answer on the production path, a wedge). Everything else — new ideas,
+the lead's included — goes to the post-mod list below, with one line saying why it waits. A bug
+found during the frozen work is logged in the registry as always; it joins the queue only if it
+breaks something live, else it is marked `post-mod`. The goal the freeze serves (the user,
+2026-11-15): the core concept/graph representation more useful, context succinct and relevant,
+performance improved, busywork removed, loose ends tied up — "at some point I need to stop adding
+things and let the work finish."
+
+rel: depends-on -> [[plan-29-code-quality]]
+rel: depends-on -> [[plan-30-materialisation]]
+rel: depends-on -> [[plan-31-pre-mod-loose-ends]]
+rel: depends-on -> [[orchestration]]
+
+## Post-mod list {#post-mod}
+
+Admitted after the mod transition, not before (each with why it waits):
+
+- **Branch-aware GMD lint** (resolve links against the target branch ∪ `master`; bug-249's shape) —
+  the code-span-then-wikilink workaround is cheap and rare.
+- **Generated frontmatter / heading anchors** — new tooling; reduces ceremony but adds a feature.
+- **A before/after node check on GMD edits** (an edit is a graph mutation) — new machinery.
+- **Injection presentation work beyond plan-31 31.5** — the mod changes how context is delivered;
+  tool-keyed rules are its design input ([[design-note-tool-keyed-context-2026-11-15]]).
+- **bug-248** (transaction rollback leaves log events and bitmap bits) — a design change; nothing
+  live is known to roll back mid-write today.
+- **bug-250** (a missing path is not refused on the verb/op ingest routes) — validation; the
+  daemon's ingest errors on a missing path anyway.
+- **Pre-split rows / filter bitmaps** — already deferred with a trigger ([[plan-30-materialisation#deferred]]).
+- **Inline term introspection (`term...`)** (the user, 2026-11-15: "the ability to inline access
+  the metadata of a word/term/concept using something like adding an ellipsis… making every
+  word/term introspectable (descend into its associative network)"): an ellipsis-marked prompt
+  term gets the top scan-prompt tier and a fuller associative bundle (neighbours, defining docs,
+  memories, depth 2 for that term only); interactive descent in the hub graph view / the mod. An
+  explicit pull that replaces scan-prompt's guess at which words matter. A UX feature: the mod.
+  **Extension (the user, 2026-11-15):** `w1...w2` / `w1...w2...w3` name seeds whose connecting
+  subgraph to explore (a steered multi-seed walk: paths / connector set between the named terms,
+  the opposite of the unconstrained degree-2 walk that retrieved ~5x worse); three terms read as
+  waypoints. `..` (two dots) walks the type/instance axis instead (`is_a` / kind / instance-of:
+  `function..` = instances, `Store..parse` = the instance's type or siblings). Open: telling it
+  apart from prose ellipsis, Rust/Swift ranges and dotted paths (operators only when glued to
+  tokens, ignored inside code spans); the gestures compile to the `rmx query` DSL, not a second
+  engine.
+- **From the L106 queue (Q28 = a):** compaction-as-handoff, agent-start context, 25.1b (new hook
+  features; the mod replaces the hook surface); plan-28 (paired series); 23.4, the 16.6 slice and
+  plan-17 (nightly maintenance); plan-22 except 22.6 R4; plan-16 (grep shim; learning stays off
+  until 31.2); plan-18 (duckdb maintenance).
 
 ## Sequence rationale {#sequence}
 

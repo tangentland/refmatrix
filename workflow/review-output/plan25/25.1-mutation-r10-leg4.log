@@ -1,0 +1,12 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/alpha/.refmatrix') == PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/bravo/.refmatrix')
+     +  where PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/alpha/.refmatrix') = resolve()
+     +    where resolve = PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/alpha/.refmatrix').resolve
+     +      where PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/alpha/.refmatrix') = <function _resolve_root at 0x10bccca90>({'project': 'charlie', 'root': '/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/bravo/.refmatrix'})
+     +        where <function _resolve_root at 0x10bccca90> = <module 'refmatrix.mcp' from '/Volumes/littlebig/refmatrix-plan25-1/src/refmatrix/mcp.py'>._resolve_root
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:753: AssertionError: assert PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/alpha/.refmatrix') == PosixPath('/private/tmp/rmx-3sxqm97e/r10-0f73r0dm/bravo/.refmatrix')
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4e_r10_no_project_and_explicit_root_are_unchanged
+1 failed in 0.32s

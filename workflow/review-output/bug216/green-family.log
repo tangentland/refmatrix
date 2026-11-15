@@ -1,0 +1,232 @@
+..............................................................F......... [  4%]
+........................................................................ [  9%]
+........................................................................ [ 14%]
+........................................................................ [ 18%]
+........................................................................ [ 23%]
+........................................................................ [ 28%]
+........................................................................ [ 33%]
+...F.................................................................... [ 37%]
+........................................................F............... [ 42%]
+........................................................................ [ 47%]
+........................................................................ [ 52%]
+..........................F............................................. [ 56%]
+................................................s....................... [ 61%]
+........................................................................ [ 66%]
+........................................................................ [ 71%]
+........................................................................ [ 75%]
+........................................................................ [ 80%]
+........................................................................ [ 85%]
+........................................................................ [ 90%]
+........................................................................ [ 94%]
+........................................................................ [ 99%]
+....                                                                     [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+____________ test_an_unknown_class_fails_loudly_through_the_daemon _____________
+
+daemon_root = (PosixPath('/tmp/bd.fe8y9ob2/.refmatrix'), {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...})
+
+    def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
+        """#m-17: the MCP schema has no enum, so this path is reachable."""
+        root, env = daemon_root
+        # click.Choice already rejects this, so exit!=0 proved nothing about the
+        # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+        from refmatrix import brief as brief_mod
+        from refmatrix.store import Store
+        s = Store(root)
+>       with s.with_partition(root.parent.name):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_brief_real_daemon.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/refmatrix/store.py:2129: in _scope
+    self._connect()
+src/refmatrix/store.py:1403: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/bd.fe8y9ob2/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/bd.fe8y9ob2/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/bd.fe8y9ob2/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 78147) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+_______________ test_the_sessions_pass_stamps_its_own_partition ________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1060/test_the_sessions_pass_stamps_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x38a7739a0>
+
+    def test_the_sessions_pass_stamps_its_own_partition(tmp_path, monkeypatch):
+        """A real `rmx session ingest`, no daemon. The stamp has to land in
+        `sessions-<project>` — the partition the cards went into — not in the
+        project partition the CLI happens to be bound to."""
+        from click.testing import CliRunner
+    
+        from refmatrix.cli import main
+    
+        monkeypatch.setenv("REFMATRIX_ROOT", str(tmp_path / ".refmatrix"))
+        src = tmp_path / "sess01.jsonl"
+        _session_jsonl(src)
+        runner = CliRunner()
+        r0 = runner.invoke(main, ["init", "--path", str(tmp_path),
+                                 "--no-hooks", "--no-agents"])
+        assert r0.exit_code == 0, r0.output
+        r = runner.invoke(main, ["session", "ingest", str(src)])
+        assert r.exit_code == 0, r.output
+    
+        s = Store(tmp_path / ".refmatrix")
+        try:
+            part = f"sessions-{tmp_path.name}"
+            with s.with_partition(part):
+                st = s.derive_status()
+            names = {row["pass_name"] for row in st["passes"]}
+>           assert "sessions" in names, (
+                f"the sessions pass indexed cards into {part} and recorded "
+                f"nothing; stamped: {sorted(names)}")
+E               AssertionError: the sessions pass indexed cards into sessions-test_the_sessions_pass_stamps_0 and recorded nothing; stamped: []
+E               assert 'sessions' in set()
+
+tests/test_derive_coverage.py:529: AssertionError
+_____________ test_the_repo_scope_is_clean_under_the_stricter_gate _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1060/test_the_repo_scope_is_clean_u0')
+
+    def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
+        """The gate is only worth having if the tree it guards passes it. Runs the
+        real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
+        root = Path(__file__).resolve().parents[1]
+        # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
+        # cites memory ids). The child gets a DECOY home holding a COPY of exactly that one memory
+        # dir -- never the real `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home
+        # was a documented way out of the sandbox). No memory dir for this checkout's slug (a
+        # clone) -> none is copied, and the refs surface as dangling-doc, as the script intends.
+        import shutil
+        slug = str(root).replace("/", "-").replace("_", "-")
+        real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
+                    / "memory")
+        home = tmp_path / "home"
+        home.mkdir()
+        if real_mem.is_dir():
+            shutil.copytree(real_mem, home / ".claude" / "projects" / slug / "memory")
+        env = dict(os.environ, HOME=str(home))
+        assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
+        r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
+                           capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+        # bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
+        # parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
+        # line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
+        # Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so
+        # it means the gate did not run. Assert that FIRST: a gate that did not run is a failure with
+        # its own message, never a clean tree.
+        missing = [l for l in out.splitlines() if "not found at" in l]
+        assert r.returncode != 2 and not missing, (
+            f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+            "precondition is a failure, not a clean tree:\n" + out[-2000:])
+        errors = [l for l in out.splitlines() if ": error" in l]
+>       assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])
+E       AssertionError: in-scope GMD errors:
+E         docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/INDEX.md:33: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/INDEX.md:34: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/INDEX.md:35: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/INDEX.md:40: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/INDEX.md:42: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/INDEX.md:43: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/INDEX.md:44: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/INDEX.md:97: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+E         docs/INDEX.md:99: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+E         docs/INDEX.md:104: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+E         docs/INDEX.md:106: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+E         docs/adr/0000-adr-overview.md:20: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/adr/0000-adr-overview.md:21: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/adr/0000-adr-overview.md:22: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/adr/0000-adr-overview.md:57: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/adr/0000-adr-overview.md:58: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/adr/0000-adr-overview.md:59: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/adr/0001-intuition-lance-integration.md:10: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-queued-work]] — no doc with id `project-queued-work` in scanned set
+E       assert not ['docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanne...g-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set', ...]
+
+tests/test_gmd_lint_requires_version.py:148: AssertionError
+____________________ test_ac2_doc_ingest_keeps_its_own_walk ____________________
+
+    def test_ac2_doc_ingest_keeps_its_own_walk():
+        """Without `as_memory` the walk is unchanged: a doc tree's dot-dirs are not the memory
+        rule's business (spec AC-2: "Doc ingest keeps its own walk")."""
+        from refmatrix.ingest_gmd import collect_gmd_files
+        base = Path(tempfile.mkdtemp(prefix="rmx261-"))
+        try:
+            memdir = _ac2_memdir(base)
+            got = {p.name for p in collect_gmd_files([memdir])}
+>           assert got == {"keep_top.md", "keep_nested.md", "x.md", "y.md"}
+E           AssertionError: assert {'keep_nested...'keep_top.md'} == {'keep_nested...x.md', 'y.md'}
+E             
+E             Extra items in the right set:
+E             'x.md'
+E             'y.md'
+E             Use -v to get more diff
+
+tests/test_memory_bridge.py:424: AssertionError
+----------------------------- Captured stderr call -----------------------------
+ingest-gmd: ignored 2 path(s) excluded by the ignore rules (INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-q1crqu37/memory/.hidden/y.md, /var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/rmx261-q1crqu37/memory/.organise-rollback-1/x.md
+=============================== warnings summary ===============================
+tests/test_graph_landing.py:9
+  /Volumes/littlebig/refmatrix-bug216/tests/test_graph_landing.py:9: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-47 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug216/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug216/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon
+FAILED tests/test_derive_coverage.py::test_the_sessions_pass_stamps_its_own_partition
+FAILED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+FAILED tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk - ...
+4 failed, 1511 passed, 1 skipped, 2 warnings in 985.39s (0:16:25)

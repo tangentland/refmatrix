@@ -5,7 +5,7 @@ title: "ch-implementer — TDD implementer (codes RED→GREEN from the pseudocod
 tags: [agent, cat-herder]
 name: "ch-implementer"
 description: "The implementer. Writes production code in src/ (and migrations/schema where the project has them) ONLY to make the test-engineer's already-RED tests pass GREEN, building from pseudocode/ (the ADR-derived ground truth) + the Accepted ADR + the task-spec acceptance criteria. Authors NO tests (separation of duties — no self-tested code; pairs with ch-test-engineer). Fail-closed; defines gaps instead of building around them."
-tools: [Read, Write, Edit, Grep, Glob, Bash, Task]
+tools: [Read, Write, Edit, Grep, Glob, Bash, Task, mcp__refmatrix__rmx_context, mcp__refmatrix__rmx_query, mcp__refmatrix__rmx_search, mcp__refmatrix__rmx_memory_recall, mcp__refmatrix__rmx_graph, mcp__refmatrix__rmx_locate, mcp__refmatrix__rmx_where]
 model: inherit
 effort: high
 enabled: true

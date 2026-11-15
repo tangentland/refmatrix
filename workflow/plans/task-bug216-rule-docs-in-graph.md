@@ -8,7 +8,7 @@ metadata:
   status: approved
   created: 2026-11-13
   updated: 2026-11-13
-  revision: 4
+  revision: 6
 ---
 
 # Task bug-216: the rule docs reach the graph {#root}
@@ -62,6 +62,11 @@ stays out. {#why-consistent}
    watcher, `_sync_paths` (including its purge of a path that became ignored), and `ingest-gmd`'s
    walk — goes through `should_ignore(p, root)`; no walk keeps a private copy of `_is_ignored`. A
    test enumerates the walkers. {#r2}
+
+   R2 supersedes task 26.1 AC-2's assertion that the doc walk reads dot-dirs
+   (`tests/test_memory_bridge.py::test_ac2_doc_ingest_keeps_its_own_walk`, lead ruling
+   2026-11-13): that test now expects the `should_ignore` set with the exclusions counted and
+   named, and keeps 26.1's intent — the memory rule never leaks into doc ingest. {#r2-supersedes-261}
 3. **R3 Scope parity in the gate.** `scripts/check-gmd-parity.py` (run by `lint-gmd.sh`) fails,
    naming each file and the rule that excluded it, when a GMD doc in the lint scope (outside the
    memory dir, which reaches the store through the bridge) is excluded by `should_ignore` for this
@@ -69,8 +74,11 @@ stays out. {#why-consistent}
    ([[feedback_clean_corpus_hides_a_dead_gate]]). {#r3}
 4. **R4 This store's configuration.** In this repo's `.refmatrix/.refmatrix_ignore` (runtime state,
    not committed): remove the `CLAUDE.md` line; keep `.claude`; add `!.claude/PROJECT_PROFILE.md`.
-   Applied by the lead after merge + deploy, announced first, with a backup of the file; the
-   daemon's normal sync ingests the two docs. {#r4}
+   Applied by the lead after merge + deploy, announced first, with a backup of the file, THEN
+   `rmx reingest --force --no-sessions` through the daemon (ruling L81 S1 / L86): the edit makes no
+   file event, and the citers old code ingested carry no pending rows and a matching GMD content
+   hash, so only a forced pass (mtime stamps AND GMD content hashes cleared) re-processes them and
+   binds their lines; `rmx ingest .` hash-skips a citer that only a GMD doc holds. {#r4}
 5. **R5 A committed recount.** `scripts/check-rel-landing.py <catalog> <roots…>` prints the
    evidence-based recount (authored wikilink `rel:` lines vs `linkage_evidence` rows at the same
    file and line; categories: landed, landed at another line, file not ingested, target
@@ -97,7 +105,7 @@ stays out. {#why-consistent}
    this repo after R4's config is mirrored into the fixture. {#ac-4}
 5. **AC-5 (R5).** The recount script on a fixture catalog reproduces hand-computed categories
    exactly. {#ac-5}
-6. **AC-6 (live, after deploy + R4).** `check-rel-landing.py` on a fresh read-only copy of this
+6. **AC-6 (live, after deploy + R4 + the forced reingest of #r4).** `check-rel-landing.py` on a fresh read-only copy of this
    store: the `claude` and `project-profile` unresolved groups fall from 209 / 38 to 0 (anchors that
    no longer exist in the docs are listed, not counted as fixed). Recorded in the implementation
    summary. {#ac-6}
@@ -260,3 +268,85 @@ unresolved_by_target_doc`, plus R8's binding classes); "counted unresolved" is o
   is ingested like any root `.md` (no new exclusion — lead, 2026-11-13); an explicit `CLAUDE.md` ignore line excludes it; `!` beats an
   explicit ignore. R3's gate exits 0 on a fixture with no ignore file. {#ac-12}
 - **AC-13 (R12).** A `dist/x.md` is ignored by every walker; `watch.py` defines no ignore list. {#ac-13}
+
+## Revision 5 (2026-11-13, spec-t4 finding; lead decision: replay fidelity) {#rev-5}
+
+The GREEN (`2fc5554`) added GMD-path writes that facts.log never records: `clear_rel_evidence`
+deletes `rel:` evidence with no event, and `pending_refs` rows are never logged. Both replay paths
+append every `evidence` event, so after a changed doc is re-ingested the catalog holds one evidence
+row per `rel:` line and a replay holds the old ones too; and a replay loses every pending row.
+Declaring pending refs "outside replay" was rejected: a rebuild would silently lose dangling refs
+that should bind later (no silent loss on memory paths; decay never loses knowledge). {#rev-5-why}
+
+rel: reinforces -> [[feedback_decay_never_loses_knowledge]]
+
+13. **R13 Replay fidelity for bug-216's writes.** Every GMD-path write bug-216 adds is a facts.log
+    event that `rebuild_index_from_log` — the ONE replay path — applies (amended 2026-11-13: the
+    incremental `apply_log_delta` / `_apply_one_event` / `_apply_event_body` is RETIRED by d9bu,
+    `workflow/plan-review-2026-10-14.md` row d9bu, CONFIRMED under d9ck: no caller in `src/`, 16.6
+    owns its deletion, so R13 adds NO branch to it): a per-file `rel:`-evidence-clear event, and
+    pending-ref add / delete / per-file clear events, named by entity kind and name (never ids),
+    partition-qualified, applied in log order relative to `evidence` events. Old logs without
+    these events still replay as before. The `pending_refs` schema comment ("not replayed from
+    facts.log") is corrected with it. {#r13}
+
+- **AC-14 (R13).** Throwaway store, facts.log on: ingest v1 of a doc with two `rel:` lines (one to
+  an existing target, one to a missing target), then v2 with changed `rel:` lines (a verb change,
+  a moved line, a second missing target). A FRESH catalog rebuilt from a copy of the log by
+  `rebuild_index_from_log` (only; d9bu, see #r13) holds the same `linkage_evidence`
+  rows (by names, as a multiset: no duplicates) and the same `pending_refs` rows as the source
+  catalog. Then the missing target is ingested: the pending ref binds (edge + evidence, row gone)
+  identically in the catalog and the rebuild. Guard: a log holding only the pre-R13 ops still
+  replays one evidence row per `evidence` event. Mutations, each failing: drop the clear event;
+  drop the pending events; the rebuild ignores them.
+  Test: `tests/test_bug216_replay_fidelity.py`. {#ac-14}
+
+## Revision 6 (2026-11-13, green-216 #green-flags 5 and 6 + an R13 gap; lead decisions) {#rev-6}
+
+Three items before merge, one revision. {#rev-6-lead}
+
+- **R13 covers `purge_entity` too.** It deletes the source's `pending_refs` rows without an event
+  of its own; its `tombstone` event exists, and the rebuild must honour it for the source's
+  pending rows (rebuild only, d9bu — see #r13). R13's full list of writes: `clear_rel_evidence`,
+  `add_pending_ref`, `delete_pending_ref`, `clear_pending_refs_for_file`, and `purge_entity`'s
+  pending delete. AC-14 adds: two citers with pending refs, one purged; the rebuild holds the
+  survivor's row and none of the purged citer's, with no row left on a dead source. The rebuild
+  never materializes a citer that did not survive its tombstone, so no mutation of the replay
+  itself can leave the purged citer's rows; the test pins the outcome (and fails while pending
+  rows are not logged at all). {#r13-purge}
+14. **R14 The `denotes` derive is a verb** (flag 5; ".claude/PROJECT_PROFILE.md" #constraints:
+    every capability an agent can call is a verb first, CLI and MCP expose it). Verb
+    `rmx_derive_denotes` (`verbs.derive_denotes(root, *, partition=None, timeout=None)`), CLI
+    twin `rmx derive denotes` (partition via `rmx -p`, as `memory compile`), MCP tool generated
+    from the verb; all return the op's counts `{added, concepts, targets, multi_target}`, the CLI
+    printing each as `key=value`. Daemon down: the CLI exits non-zero with the reason on stderr
+    and writes nothing; the MCP tool returns an `error`. {#r14}
+15. **R6b Prestage names its exclusions in the result** (flag 6, #no-silent-failures). The
+    `prestage_hashes` op and the CLI's `ingest-gmd --prestage` (both branches) pass `ignored=` to
+    the walk as ingest does; the op's result carries `ignored` (count) and `ignored_paths`
+    (names), and the CLI prints `render_ignored_line` on stdout. {#r6b}
+
+rel: amends -> [[#r13]]
+rel: amends -> [[#r2]]
+
+- **AC-15 (R14).** `rmx_derive_denotes` is a verb with CLI twin `("derive", "denotes")`, wiring
+  `calls`, and an MCP tool; `tests/test_verb_parity.py` covers it (PAIRING + CLI_INVOKE rows). On
+  a store with one doc `b-doc` and the concept `b-doc` (3 spellings) the verb, the CLI and the
+  MCP tool return / print added 3, concepts 3, targets 1, multi_target 0; a second run adds 0.
+  Daemon down: CLI non-zero, stderr names the daemon, no link written; MCP returns an error.
+  Mutations: the CLI swallows the error; the CLI bypasses the verb; the verb drops counts.
+  Test: `tests/test_bug216_surfaces.py`. {#ac-15}
+- **AC-16 (R6b).** A memdir with `.hidden/y.md`, prestaged (doc walk) through the op and through
+  the CLI (daemon down and daemon up): the result / stdout counts 1 and names the path. Guard:
+  `--as-memory` prestage still names it in `walk_skipped`. Mutations: the op leaves it on
+  stderr; the CLI does not print it. Test: `tests/test_bug216_surfaces.py`. {#ac-16}
+- **R2 base (spec-t56).** The segment rules (hidden-dir, `INGEST_IGNORE_DIRS`) apply only BELOW
+  the project root: `watch.is_relevant` and `sync._sync_one` called `should_ignore(p, root)` on
+  absolute paths with no `base`, so a project under `<x>/.hidden/` or `<x>/build/` (R12 put
+  `build`, `dist`, `__pycache__` in the list) synced nothing — the class `ingest-gmd <dir>`'s
+  `base=` fixed. A `build/` dir INSIDE the project is still ignored. {#r2-base}
+- **AC-17 (R2 base).** Projects at `<mkdtemp>/.hidden/proj` and `<mkdtemp>/build/proj`, each with
+  `docs/d.md` and in-project `build/x.md` / `dist/y.md`: the watcher, sync, `ingest_path` and
+  `ingest-gmd` routes land `docs/d.md` and not the in-project ignore dirs; `watch.is_relevant`
+  agrees. Mutations: drop `base=` (absolute parts); skip the segment rules under a root.
+  Test: `tests/test_bug216_watch_base.py`. {#ac-17}

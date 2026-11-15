@@ -1,0 +1,33 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_f6_recall_leg_line_only_under_verbose_never_a_warning __________
+
+fx = <tests.task25_1_support.Fixture object at 0x11213acf0>
+
+    def test_f6_recall_leg_line_only_under_verbose_never_a_warning(fx):
+        """Rev 7 F6 (2026-11-13, spec #f6-leg-line): the `recall leg: …` line stays in the verb's
+        `warnings` (R5; AC-4 (i) reads it there), but the CLI prints leg-served lines only with
+        `--verbose`, and never under the `warning:` prefix; real warnings are unchanged
+        (tests/test_rerank_warning_routes.py::test_cli_recall_daemon_branch_prints_the_warnings).
+    
+        HEAD (measured 2026-11-13): every recall -- interactive and the per-prompt hook -- prints
+        `# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)` on
+        stderr, and `memory recall` has no `--verbose`."""
+        none_sock = str(fx.base / "none.sock")
+        plain = s.rmx(fx, "memory", "recall", QUESTION, "--json", "--k", "4",
+                      RMX_MODEL_SOCK=none_sock)
+        assert plain.returncode == 0, plain.stderr[-800:]
+>       assert "recall leg" not in plain.stderr, (
+            f"F6: a normal interactive recall printed the leg line: {plain.stderr[-600:]!r}")
+E       AssertionError: F6: a normal interactive recall printed the leg line: "# rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)\n"
+E       assert 'recall leg' not in '# rmx: warn...k default)\n'
+E         
+E         'recall leg' is contained here:
+E           # rmx: warning: recall leg: daemon RPC (the daemon's embedder and rerank default)
+E         ?                 ++++++++++
+
+tests/test_task25_1_recall_budget.py:1167: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_f6_recall_leg_line_only_under_verbose_never_a_warning
+1 failed in 16.70s

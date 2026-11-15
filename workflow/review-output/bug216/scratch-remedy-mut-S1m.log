@@ -1,0 +1,352 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/rem/src/refmatrix as checked-hash (bug-037)
+FFF....FFFFFF.FF..F.                                                     [100%]
+=================================== FAILURES ===================================
+_____ test_b1_cli_ingest_of_a_memdir_under_the_project_stores_no_doc_rows ______
+
+b1 = {'claude': PosixPath('/private/tmp/b216r1tv7aqo7/proj/.claude'), 'mem': PosixPath('/private/tmp/b216r1tv7aqo7/proj/.cl... 'proj': PosixPath('/private/tmp/b216r1tv7aqo7/proj'), 'root': PosixPath('/private/tmp/b216r1tv7aqo7/proj/.refmatrix')}
+
+    def test_b1_cli_ingest_of_a_memdir_under_the_project_stores_no_doc_rows(b1):
+        """`rmx ingest <proj>/.claude/projects/x/memory` (daemon down: the CLI's in-process branch).
+        Judged against the project root, every path carries `.claude`."""
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(b1["mem"])], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+>       _assert_no_rows_under(b1["root"], b1["claude"], "rmx ingest <memdir>")
+
+tests/test_bug216_remedy_r1.py:141: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216r1tv7aqo7/proj/.refmatrix')
+under = PosixPath('/private/tmp/b216r1tv7aqo7/proj/.claude')
+what = 'rmx ingest <memdir>'
+
+    def _assert_no_rows_under(root: Path, under: Path, what: str) -> None:
+        rows = _rows_under(root, under)
+        docs = [r for r in rows if r[0] == "doc"]
+>       assert docs == [], f"{what}: kind=doc rows from under {under.name}/: {docs}"
+E       AssertionError: rmx ingest <memdir>: kind=doc rows from under .claude/: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:132: AssertionError
+_____________ test_b1_cli_ingest_of_dot_claude_stores_no_doc_rows ______________
+
+b1 = {'claude': PosixPath('/private/tmp/b216rbxq6y71_/proj/.claude'), 'mem': PosixPath('/private/tmp/b216rbxq6y71_/proj/.cl... 'proj': PosixPath('/private/tmp/b216rbxq6y71_/proj'), 'root': PosixPath('/private/tmp/b216rbxq6y71_/proj/.refmatrix')}
+
+    def test_b1_cli_ingest_of_dot_claude_stores_no_doc_rows(b1):
+        r = CliRunner().invoke(cli_mod.main, ["ingest", str(b1["claude"])], catch_exceptions=False)
+        assert r.exit_code == 0, r.output
+>       _assert_no_rows_under(b1["root"], b1["claude"], "rmx ingest <proj>/.claude")
+
+tests/test_bug216_remedy_r1.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216rbxq6y71_/proj/.refmatrix')
+under = PosixPath('/private/tmp/b216rbxq6y71_/proj/.claude')
+what = 'rmx ingest <proj>/.claude'
+
+    def _assert_no_rows_under(root: Path, under: Path, what: str) -> None:
+        rows = _rows_under(root, under)
+        docs = [r for r in rows if r[0] == "doc"]
+>       assert docs == [], f"{what}: kind=doc rows from under {under.name}/: {docs}"
+E       AssertionError: rmx ingest <proj>/.claude: kind=doc rows from under .claude/: [('doc', 'agent-x'), ('doc', 'agents/x.md'), ('doc', 'feedback_a'), ('doc', 'feedback_b'), ('doc', 'projects/x/memory/feedback/feedback_b.md'), ('doc', 'projects/x/memory/feedback_a.md')]
+E       assert [('doc', 'age...edback_a.md')] == []
+E         
+E         Left contains 6 more items, first extra item: ('doc', 'agent-x')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:132: AssertionError
+____________ test_b1_mcp_rmx_ingest_of_a_memdir_stores_no_doc_rows _____________
+
+b1 = {'claude': PosixPath('/private/tmp/b216rmbh_id2u/proj/.claude'), 'mem': PosixPath('/private/tmp/b216rmbh_id2u/proj/.cl... 'proj': PosixPath('/private/tmp/b216rmbh_id2u/proj'), 'root': PosixPath('/private/tmp/b216rmbh_id2u/proj/.refmatrix')}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x133ce1910>
+
+    def test_b1_mcp_rmx_ingest_of_a_memdir_stores_no_doc_rows(b1, monkeypatch):
+        """MCP `rmx_ingest(path=<memdir>)`, the REAL `_op_ingest_path` on an in-process daemon. The
+        transport fake answers `ingest_path_start` by running the op body synchronously (the
+        detached job runs the same `_op_ingest_path`)."""
+        import refmatrix.mcp as mcp
+        d = daemon_mod.Daemon(b1["root"])
+        d.store = _open(b1["root"])
+    
+        def _call(root, op, args, **kw):
+            if op == "ingest_path_start":
+                daemon_mod._op_ingest_path(d, dict(args))
+                return {"ok": True, "result": {"job_id": "sync", "status": "done"}}
+            return {"ok": True, "result": daemon_mod.OPS[op](d, dict(args))}
+        monkeypatch.setattr(verbs, "require_daemon", lambda *a, **k: None)
+        monkeypatch.setattr(daemon_mod, "call", _call)
+        try:
+            res = mcp.TOOLS["rmx_ingest"]["fn"]({"root": str(b1["root"]), "path": str(b1["mem"])})
+            assert "error" not in res, res
+        finally:
+            d.store.close()
+>       _assert_no_rows_under(b1["root"], b1["claude"], "MCP rmx_ingest(<memdir>)")
+
+tests/test_bug216_remedy_r1.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/b216rmbh_id2u/proj/.refmatrix')
+under = PosixPath('/private/tmp/b216rmbh_id2u/proj/.claude')
+what = 'MCP rmx_ingest(<memdir>)'
+
+    def _assert_no_rows_under(root: Path, under: Path, what: str) -> None:
+        rows = _rows_under(root, under)
+        docs = [r for r in rows if r[0] == "doc"]
+>       assert docs == [], f"{what}: kind=doc rows from under {under.name}/: {docs}"
+E       AssertionError: MCP rmx_ingest(<memdir>): kind=doc rows from under .claude/: [('doc', 'feedback/feedback_b.md'), ('doc', 'feedback_a'), ('doc', 'feedback_a.md'), ('doc', 'feedback_b')]
+E       assert [('doc', 'fee...'feedback_b')] == []
+E         
+E         Left contains 4 more items, first extra item: ('doc', 'feedback/feedback_b.md')
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:132: AssertionError
+_ test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[ingest] _
+
+old_store = {'built_by': 'ingest', 'proj': PosixPath('/private/tmp/b216rfg5b48z5/proj'), 'root': PosixPath('/private/tmp/b216rfg5b48z5/proj/.refmatrix')}
+
+    def test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers(old_store):
+        """R4 at merge (L81 S1): the ignore edit THEN `rmx ingest .` (here `ingest_path(proj)`, the
+        op `rmx ingest .` runs): both citing lines bind on the rule docs' nodes — for a store whose
+        citers came in through the watcher / sync too, where the citer's GMD doc carries a matching
+        content hash and nothing else forces it to be re-processed."""
+        from refmatrix.ingest import ingest_path
+        _r4(old_store)
+        s = _open(old_store["root"])
+        try:
+            ingest_path(s, old_store["proj"])
+        finally:
+            s.close()
+        got = _bound(old_store["root"])
+>       assert all(v > 0 for v in got.values()), f"citers did not bind after `rmx ingest .`: {got}"
+E       AssertionError: citers did not bind after `rmx ingest .`: {'claude#no-silent-failures': 0, 'project-profile#constraints': 0}
+E       assert False
+E        +  where False = all(<generator object test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers.<locals>.<genexpr> at 0x1332ffac0>)
+
+tests/test_bug216_remedy_r1.py:318: AssertionError
+_ test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[sync] _
+
+old_store = {'built_by': 'sync', 'proj': PosixPath('/private/tmp/b216rat8ce83y/proj'), 'root': PosixPath('/private/tmp/b216rat8ce83y/proj/.refmatrix')}
+
+    def test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers(old_store):
+        """R4 at merge (L81 S1): the ignore edit THEN `rmx ingest .` (here `ingest_path(proj)`, the
+        op `rmx ingest .` runs): both citing lines bind on the rule docs' nodes — for a store whose
+        citers came in through the watcher / sync too, where the citer's GMD doc carries a matching
+        content hash and nothing else forces it to be re-processed."""
+        from refmatrix.ingest import ingest_path
+        _r4(old_store)
+        s = _open(old_store["root"])
+        try:
+            ingest_path(s, old_store["proj"])
+        finally:
+            s.close()
+        got = _bound(old_store["root"])
+>       assert all(v > 0 for v in got.values()), f"citers did not bind after `rmx ingest .`: {got}"
+E       AssertionError: citers did not bind after `rmx ingest .`: {'claude#no-silent-failures': 0, 'project-profile#constraints': 0}
+E       assert False
+E        +  where False = all(<generator object test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers.<locals>.<genexpr> at 0x1355f8ad0>)
+
+tests/test_bug216_remedy_r1.py:318: AssertionError
+_ test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[ingest-gmd] _
+
+old_store = {'built_by': 'ingest-gmd', 'proj': PosixPath('/private/tmp/b216r__kdjnri/proj'), 'root': PosixPath('/private/tmp/b216r__kdjnri/proj/.refmatrix')}
+
+    def test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers(old_store):
+        """R4 at merge (L81 S1): the ignore edit THEN `rmx ingest .` (here `ingest_path(proj)`, the
+        op `rmx ingest .` runs): both citing lines bind on the rule docs' nodes — for a store whose
+        citers came in through the watcher / sync too, where the citer's GMD doc carries a matching
+        content hash and nothing else forces it to be re-processed."""
+        from refmatrix.ingest import ingest_path
+        _r4(old_store)
+        s = _open(old_store["root"])
+        try:
+            ingest_path(s, old_store["proj"])
+        finally:
+            s.close()
+        got = _bound(old_store["root"])
+>       assert all(v > 0 for v in got.values()), f"citers did not bind after `rmx ingest .`: {got}"
+E       AssertionError: citers did not bind after `rmx ingest .`: {'claude#no-silent-failures': 0, 'project-profile#constraints': 0}
+E       assert False
+E        +  where False = all(<generator object test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers.<locals>.<genexpr> at 0x1332fec20>)
+
+tests/test_bug216_remedy_r1.py:318: AssertionError
+_________ test_s2_a_slot_merge_keeps_every_pending_row_with_its_source _________
+
+slots = {'a': PosixPath('/private/tmp/b216rbw4bfkij/A/proj/.refmatrix/catalog.duckdb'), 'b': PosixPath('/private/tmp/b216rbw4bfkij/B/proj/.refmatrix/catalog.duckdb'), 'target': PosixPath('/private/tmp/b216rbw4bfkij/T/catalog.duckdb')}
+
+    def test_s2_a_slot_merge_keeps_every_pending_row_with_its_source(slots):
+        import duckdb
+    
+        from refmatrix.replica_merge import merge_slots
+        want = Counter()
+        for k in ("a", "b"):
+            con = duckdb.connect(str(slots[k]), read_only=True)
+            try:
+                want |= _pending(con)
+            finally:
+                con.close()
+        assert {r[4] for r in want} == {"missing-1", "missing-a", "missing-b"}, want
+        slots["target"].parent.mkdir()
+        res = merge_slots(slots["a"], slots["b"], slots["target"])
+>       assert res["merged_counts"].get("pending_refs") == 3, res["merged_counts"]
+E       AssertionError: {'bitmap_fragments': 3, 'concepts': 10, 'entities': 12, 'entity_links': 24, ...}
+E       assert None == 3
+E        +  where None = <built-in method get of dict object at 0x1356a48c0>('pending_refs')
+E        +    where <built-in method get of dict object at 0x1356a48c0> = {'bitmap_fragments': 3, 'concepts': 10, 'entities': 12, 'entity_links': 24, ...}.get
+
+tests/test_bug216_remedy_r1.py:380: AssertionError
+_________________ test_s2_both_slot_audits_count_pending_refs __________________
+
+slots = {'a': PosixPath('/private/tmp/b216r5095k7s1/A/proj/.refmatrix/catalog.duckdb'), 'b': PosixPath('/private/tmp/b216r5095k7s1/B/proj/.refmatrix/catalog.duckdb'), 'target': PosixPath('/private/tmp/b216r5095k7s1/T/catalog.duckdb')}
+
+    def test_s2_both_slot_audits_count_pending_refs(slots):
+        """The other two `replica_merge` table lists: `audit_slots` and `audit_via_writer`."""
+        import duckdb
+    
+        from refmatrix.replica_merge import audit_slots, audit_via_writer
+        a = audit_slots(slots["a"], slots["b"])
+>       assert "pending_refs" in a["a_counts"] and "pending_refs" in a["b_counts"], a["a_counts"]
+E       AssertionError: {'bitmap_fragments': 3, 'concepts': 10, 'entities': 12, 'entity_links': 24, ...}
+E       assert ('pending_refs' in {'bitmap_fragments': 3, 'concepts': 10, 'entities': 12, 'entity_links': 24, ...})
+
+tests/test_bug216_remedy_r1.py:397: AssertionError
+__ test_s2_merge_partition_repoints_pending_rows_and_drops_dead_ones_counted ___
+
+base = PosixPath('/private/tmp/b216rp6fac587')
+
+    def test_s2_merge_partition_repoints_pending_rows_and_drops_dead_ones_counted(base):
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        shared = _write(proj, "docs/shared.md", _citer("shared", "missing-s"))
+        s = _open(root)
+        try:
+            with s.with_partition("src"):
+                ingest_gmd_paths(s, [shared, _write(proj, "docs/src-only.md",
+                                                    _citer("src-only", "missing-x"))])
+                src_pid = s._partition_id
+            with s.with_partition("dst"):
+                ingest_gmd_paths(s, [shared])            # collides with src's `shared` entities
+            con = s._connect()
+            con.execute(
+                "INSERT INTO pending_refs(partition_id, source_id, linkage, target_name, ref, file, "
+                "line, weight, detail, created_at) VALUES (?, 987654321, 'depends-on', 'missing-z', "
+                "'missing-z', ?, 9, NULL, 'rel: depends-on -> missing-z', 0)",
+                (src_pid, str(proj / "docs" / "gone.md")))
+            s._maybe_commit(con)
+            res = s.merge_partition("src", "dst")
+            got = _pending_in(s, "dst")
+            orphans = _orphans(s._connect())
+        finally:
+            s.close()
+>       assert got == Counter({("shared#cite", "depends-on", "missing-s"): 1,
+                               ("src-only#cite", "depends-on", "missing-x"): 1}), (
+            f"dst pending rows after the merge (repointed, deduped on the collided source): {got}")
+E       AssertionError: dst pending rows after the merge (repointed, deduped on the collided source): Counter({('shared#cite', 'depends-on', 'missing-s'): 1})
+E       assert Counter({('sh...ssing-s'): 1}) == Counter({('sh...ssing-x'): 1})
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {('src-only#cite', 'depends-on', 'missing-x'): 1}
+E         Use -v to get more diff
+
+tests/test_bug216_remedy_r1.py:438: AssertionError
+__________ test_m2_build_context_mention_chain_does_not_cross_denotes __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216rqanekeda/proj/.refmatrix'), ...}
+
+    def test_m2_build_context_mention_chain_does_not_cross_denotes(walk):
+        """L81 M2: a doc that merely MENTIONS the term concept is not B's neighbour (PageRank folds
+        typed edges only; until G30 decides the fold, build_context does the same)."""
+        got = _context_ids(walk)
+>       assert walk["x"] not in got, (
+            f"a plain `mentions` of the denoting concept reached B's context via {got.get(walk['x'])}")
+E       AssertionError: a plain `mentions` of the denoting concept reached B's context via {'mentions'}
+E       assert 6 not in {1: {'mentions'}, 2: {'mentions'}, 3: {'derives-from'}, 5: {'mentions', 'part-of'}, ...}
+
+tests/test_bug216_remedy_r1.py:503: AssertionError
+_________ test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link __________
+
+walk = {'b': 4, 'c': 23, 'cite': 3, 'root': PosixPath('/private/tmp/b216ropsc2kwr/proj/.refmatrix'), ...}
+
+    def test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link(walk):
+        """L81 M2: `neighbors` keeps listing raw `denotes` links — `rmx neighbors <concept>` names
+        the doc the concept denotes. At df092ac `QueryEngine.neighbors` drops `denotes` from its
+        linkage list (it only folds the hop through equivalents of the NEXT frontier), so a concept's
+        own denotes target is never listed."""
+        from refmatrix.graphread import neighbors_payload
+        s = _open(walk["root"])
+        try:
+            out = neighbors_payload(s, "b-doc", depth=1)
+        finally:
+            s.close()
+>       assert walk["b"] in {e["id"] for e in out["entities"]}, out
+E       AssertionError: {'cardinality': 1, 'concept': 'b-doc', 'entities': [{'id': 6, 'kind': 'doc', 'name': 'x-doc', 'path': '/private/tmp/b216ropsc2kwr/proj/docs/x.md'}], 'hint': None}
+E       assert 4 in {6}
+
+tests/test_bug216_remedy_r1.py:518: AssertionError
+________ test_m3_the_watcher_purges_a_deleted_builtin_included_profile _________
+
+base = PosixPath('/private/tmp/b216rxgltnknp')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1355c39b0>
+
+    def test_m3_the_watcher_purges_a_deleted_builtin_included_profile(base, monkeypatch):
+        """No ignore file: the GMD profile is in by the R11 built-in include. Delete it: the
+        watcher's delete event must reach `_sync_one`, which purges the doc. At df092ac the include
+        sniffs the (gone) file, the hidden-dir rule wins, and the event is dropped."""
+        import watchdog.observers as wo
+        from watchdog.events import FileDeletedEvent
+    
+        from refmatrix.sync import sync_files
+        from tests.test_bug216_rule_docs_e2e import _FakeObserver
+        proj = base / "proj"
+        root = proj / ".refmatrix"
+        _new_store(root)
+        prof = _write(proj, ".claude/PROJECT_PROFILE.md", PROFILE_MD)
+        s = _open(root)
+        try:
+            sync_files(s, [str(prof)], project_root=proj)
+            assert s.get_entity("doc", "project-profile") is not None, "precondition: profile in"
+        finally:
+            s.close()
+        prof.unlink()
+        _FakeObserver.instances = []
+        monkeypatch.setattr(wo, "Observer", _FakeObserver)
+        d = daemon_mod.Daemon(root, watch_root=proj, watch_debounce_ms=50)
+        d.store = _open(root)
+        try:
+            d._start_watcher()
+            (handler, _p), = _FakeObserver.instances[0].handlers
+            handler.on_deleted(FileDeletedEvent(str(prof)))
+            d._watch_stop.set()
+            d._watch_thread.join(timeout=30)
+            assert not d._watch_thread.is_alive()
+            assert d.sync_errors() == [], d.sync_errors()
+        finally:
+            d.store.close()
+        s = _open(root)
+        try:
+            left = s.get_entity("doc", "project-profile")
+            node = s.get_entity("concept", "project-profile#constraints")
+        finally:
+            s.close()
+>       assert left is None and node is None, "the deleted profile's doc / node survived the watcher"
+E       AssertionError: the deleted profile's doc / node survived the watcher
+E       assert (Entity(id=1, kind='doc', name='project-profile', path='/private/tmp/b216rxgltnknp/proj/.claude/PROJECT_PROFILE.md', tl... 'gmd_content_hash': '255c5ee6a556495ae62c05c19890911c3a0400c8', 'gmd_pass2_done': True}, protected=False, noise=False) is None)
+
+tests/test_bug216_remedy_r1.py:621: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_b1_cli_ingest_of_a_memdir_under_the_project_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r1.py::test_b1_cli_ingest_of_dot_claude_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r1.py::test_b1_mcp_rmx_ingest_of_a_memdir_stores_no_doc_rows
+FAILED tests/test_bug216_remedy_r1.py::test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[ingest]
+FAILED tests/test_bug216_remedy_r1.py::test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[sync]
+FAILED tests/test_bug216_remedy_r1.py::test_s1_on_an_old_code_store_the_r4_edit_then_ingest_dot_binds_the_citers[ingest-gmd]
+FAILED tests/test_bug216_remedy_r1.py::test_s2_a_slot_merge_keeps_every_pending_row_with_its_source
+FAILED tests/test_bug216_remedy_r1.py::test_s2_both_slot_audits_count_pending_refs
+FAILED tests/test_bug216_remedy_r1.py::test_s2_merge_partition_repoints_pending_rows_and_drops_dead_ones_counted
+FAILED tests/test_bug216_remedy_r1.py::test_m2_build_context_mention_chain_does_not_cross_denotes
+FAILED tests/test_bug216_remedy_r1.py::test_m2_neighbors_of_the_concept_lists_its_raw_denotes_link
+FAILED tests/test_bug216_remedy_r1.py::test_m3_the_watcher_purges_a_deleted_builtin_included_profile
+12 failed, 8 passed in 9.13s

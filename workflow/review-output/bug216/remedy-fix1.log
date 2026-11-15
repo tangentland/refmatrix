@@ -1,0 +1,71 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+............................F.............................FF......       [100%]
+=================================== FAILURES ===================================
+____________ test_ac2b_live_daemon_recall_writes_one_ok_recall_row _____________
+
+root = PosixPath('/private/tmp/rmx-1chhfhu6/r/29/.refmatrix')
+
+    def test_ac2b_live_daemon_recall_writes_one_ok_recall_row(root):
+        """AC-2b, "the same run against a live sandbox daemon logs outcome=ok": the same generated
+        command, served by a real `rmx daemon` on the sandbox root, writes exactly one kind=recall
+        row with outcome=ok (`ok`: an answer was rendered, however many items), budget_s=5 and the
+        envelope's session."""
+        _seed_memories(root)
+        before = len(_recall_rows(root))
+        with h.SandboxDaemon(root):
+            r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=240)
+        rows = _recall_rows(root)[before:]
+        assert len(rows) == 1, (
+            f"R3: one kind=recall row per recall call; got {len(rows)}: {rows}\n"
+            f"stderr={r.stderr[-800:]}")
+>       assert rows[0]["outcome"] == "ok", rows[0]
+E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-1chhfhu6/r/29', ...}
+E       assert 'skipped_budget' == 'ok'
+E         
+E         - ok
+E         + skipped_budget
+
+tests/test_task21_1_recall_skip.py:204: AssertionError
+_ test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_into] _
+
+site = 'replica_merge._merge_into'
+
+    @pytest.mark.parametrize("site", sorted(MERGE_SITES))
+    def test_ac2_replica_merge_matches_head_and_reference(site):
+        d, ref, _ = _run_merge(site)
+        ref(d)
+>       assert _digest(d) == _golden()[f"{site}/duckdb"], (
+            f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
+E       AssertionError: replica_merge._merge_into: merged catalog differs from HEAD 56e8d14's golden
+E       assert {'rows': 5001...04e45a56376b'} == {'rows': 5001...100f3691b499'}
+E         
+E         Differing items:
+E         {'rows': 50015} != {'rows': 50014}
+E         {'sha256': 'acb49fc475b5773dd83c78ffbc25dabc12db9e7538e81064f8f204e45a56376b'} != {'sha256': '1a4f5795928aa316b0590c8e46c9474b5a65a6189838dea69042100f3691b499'}
+E         Use -v to get more diff
+
+tests/test_bug178_bulk_write.py:589: AssertionError
+_ test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_linkage_types] _
+
+site = 'replica_merge._merge_linkage_types'
+
+    @pytest.mark.parametrize("site", sorted(MERGE_SITES))
+    def test_ac2_replica_merge_matches_head_and_reference(site):
+        d, ref, _ = _run_merge(site)
+        ref(d)
+>       assert _digest(d) == _golden()[f"{site}/duckdb"], (
+            f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
+E       AssertionError: replica_merge._merge_linkage_types: merged catalog differs from HEAD 56e8d14's golden
+E       assert {'rows': 2752...0869de0238aa'} == {'rows': 2752...a75fff26e546'}
+E         
+E         Differing items:
+E         {'rows': 27524} != {'rows': 27523}
+E         {'sha256': 'bcc237a9f177dd8ef83714e269264571cce4b96dbd6791102fe30869de0238aa'} != {'sha256': '7eddf4a0f8b67cc7f3e7b62c06ec44b1fe03e0d9c6386e4f1565a75fff26e546'}
+E         Use -v to get more diff
+
+tests/test_bug178_bulk_write.py:589: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row
+FAILED tests/test_bug178_bulk_write.py::test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_into]
+FAILED tests/test_bug178_bulk_write.py::test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_linkage_types]
+3 failed, 63 passed in 49.67s

@@ -1,0 +1,311 @@
+"""bug-212 r6 RED: ch-bsd r5 (`workflow/bullshit/2026-11-14-0318-bug212-r5-355eb1f.md`, DIRTY
+0B/1S/3M, GO) and the lead's ruling L98 (`workflow/plan-review-2026-11-13.md`, 2026-11-14).
+
+WHY each group exists:
+
+s-1 (SKETCHY). `rmx migrate-to-duckdb` asked git about the SOURCE store
+    (`_refuse_tracked_catalog_open(root, dst)`), but the file `migrate_catalog` unlinks and
+    rebuilds is `dst`. So `--out` into ANOTHER repo's tracked catalog, from an ignored store,
+    exited 0 with ` M .refmatrix/catalog.duckdb` in that repo -- the one write the check exists
+    to stop -- while `--out` to a harmless path from a tracked store was refused. L98: aim the
+    check at the destination (`dst.parent`, `dst`); the default dst (`<root>/catalog.duckdb`)
+    keeps today's refusal (pinned by the r5 test
+    `test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog`).
+m-1 (MEH). MCP `rmx_save_state`'s isError reply on `SaveStateIncompleteError` was only the
+    message: `target`, `remove_failed`, `lint`, ... -- the fields the /save-state template tells
+    an agent to act on -- were dropped. L98: `{**e.result, "error": str(e)}`, still isError.
+m-2 (MEH, ruled). A bridge that is only DEFERRED behind a running ingest job ("ingest job <id>
+    still running after <n>s ...; will be bridged by the next save-state / SessionStart")
+    self-heals, yet r5 made it fail the save (exit 1 / isError). L98: a stderr warning naming
+    the job, exit 0, `sync.deferred = {job, reason}` in the result; MCP not isError with the
+    field present. Every OTHER bridge failure still raises.
+
+Everything is real: git, the CLI, the MCP stdio server, a throwaway daemon with a real running
+`ingest_gmd_start` job (the wait is shortened through the existing `RMX_BRIDGE_WAIT_S`, never by
+patching the function under test), the store. Stand-in: the registered rmx-lookalike process
+as the busy daemon (`busy_store`, r5).
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+from click.testing import CliRunner
+
+from refmatrix import cli as cli_mod
+from refmatrix import daemon as dm
+from refmatrix import mcp as mcp_mod
+from refmatrix import store as store_mod
+from refmatrix import verbs
+from refmatrix.store import Store
+from tests.test_bug212_hooks_in_worktrees import TRACEBACK, Repo, _base_env, _quiet
+from tests.test_bug212_r1_remedy import (  # noqa: F401 -- `tracked_repo` is used by name
+    _refusal_head, _refusal_lines, _status_refmatrix_catalogs, _target_catalog, tracked_repo,
+)
+from tests.test_bug212_r4_red import (  # noqa: F401 -- fixtures are used by name
+    _changed, _cli, _digests, _errors, ignored_store_repo,
+)
+from tests.test_bug212_r5_red import (  # noqa: F401 -- fixtures are used by name
+    _mcp, _text, busy_store, sqlite_tracked_repo,
+)
+from tests.test_memory_bridge import GMD, _big_dir, live  # noqa: F401 -- `live` by name
+
+
+# =============================================================================================
+# s-1: migrate-to-duckdb aims the check at the file it replaces
+# =============================================================================================
+
+@pytest.fixture
+def ignored_sqlite_repo():
+    """Repo A: a store holding a SQLite `catalog.db`, IGNORED by git (`.refmatrix/`), so the
+    source store is not tracked. Repo B: a store whose `catalog.duckdb` is COMMITTED. No
+    daemon. Short resolved `/tmp` root."""
+    base = Path(tempfile.mkdtemp(prefix="b212m-", dir="/tmp")).resolve()
+    a = Repo(base)
+    try:
+        a.proj.mkdir()
+        _quiet(a.proj, a, "init", "-q", "--template=", "-b", "main")
+        (a.proj / ".gitignore").write_text(".refmatrix/\n", encoding="utf-8")
+        _quiet(a.proj, a, "add", "-A")
+        _quiet(a.proj, a, "commit", "-q", "-m", "A c0 (store ignored)")
+        s = Store(a.store, backend="sqlite")
+        s.init()
+        s.add_concept("bug212_r6_source")
+        s.close()
+        assert (a.store / "catalog.db").is_file()
+        assert store_mod.git_tracked_catalogs(a.store) == [], "fixture: A's catalog tracked"
+        b = base / "repob"
+        b.mkdir()
+        _quiet(b, a, "init", "-q", "--template=", "-b", "main")
+        d = Store(b / ".refmatrix", backend="duckdb")
+        d.init()
+        d.close()
+        _quiet(b, a, "add", "-A")
+        _quiet(b, a, "commit", "-q", "-m", "B c0 (catalog.duckdb committed)")
+        assert "catalog.duckdb" in store_mod.git_tracked_catalogs(b / ".refmatrix")
+        yield a, b
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.mark.timeout(300)
+def test_migrate_out_into_another_repos_tracked_catalog_is_refused(ignored_sqlite_repo):
+    """s-1 (a): from an IGNORED store, `rmx migrate-to-duckdb --out <repo B>/.refmatrix/
+    catalog.duckdb --overwrite`, where repo B tracks that file: one `Error:` line `refusing to
+    open <that file> read-write in-process: ...`, exit non-zero, repo B's file byte-identical
+    and its `git status` clean. At c854bad the check asks about repo A, passes, and the
+    migration rewrites repo B's committed catalog."""
+    a, b = ignored_sqlite_repo
+    dst = (b / ".refmatrix" / "catalog.duckdb").resolve()
+    before = _digests(b / ".refmatrix")
+    r = _cli(a, ["migrate-to-duckdb", "--out", str(dst), "--overwrite"])
+    text = _text(r)
+    changed = _changed(before, _digests(b / ".refmatrix"))
+    status = _status_refmatrix_catalogs(b)
+    assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
+    assert not changed and status == "", (
+        f"`--out` into repo B's tracked catalog rewrote it {changed} (exit {r.returncode})\n"
+        f"repo B git status:\n{status}\n{text}")
+    assert r.returncode != 0, f"`migrate-to-duckdb --out <tracked>` exited 0\n{text}"
+    errs = _errors(r.stderr)
+    assert len(errs) == 1 and _refusal_lines(r.stderr, dst) == errs, \
+        f"expected ONE `Error:` line `{_refusal_head(dst)} ...`; got {errs}\n{text}"
+
+
+@pytest.mark.timeout(300)
+def test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed(sqlite_tracked_repo):
+    """s-1 (b): from a store whose catalogs git TRACKS, `rmx migrate-to-duckdb --out <an
+    untracked path outside any repo>` touches nothing committed, so it runs: exit 0, the
+    destination is written, and the tracked store's catalogs are byte-identical. At c854bad it
+    is refused, because the check asks about the source store."""
+    repo = sqlite_tracked_repo
+    out_dir = Path(tempfile.mkdtemp(prefix="b212o-", dir="/tmp")).resolve()
+    try:
+        probe = subprocess.run(["git", "-C", str(out_dir), "rev-parse", "--git-dir"],
+                               env=_base_env(), capture_output=True, text=True)
+        assert probe.returncode != 0, f"fixture: {out_dir} is inside a git repo"
+        dst = out_dir / "x.duckdb"
+        before = _digests(repo.store)
+        r = _cli(repo, ["migrate-to-duckdb", "--out", str(dst)])
+        text = _text(r)
+        assert _changed(before, _digests(repo.store)) == [], \
+            f"the tracked source store's catalogs changed\n{text}"
+        assert r.returncode == 0 and TRACEBACK not in r.stderr and not _errors(r.stderr), \
+            f"`migrate-to-duckdb --out <untracked path>` from a tracked store was refused or " \
+            f"failed\n{text}"
+        assert dst.is_file(), f"the destination {dst} was not written\n{text}"
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+# =============================================================================================
+# m-1: MCP rmx_save_state's isError reply carries the result
+# =============================================================================================
+
+@pytest.mark.timeout(300)
+def test_mcp_save_state_error_reply_carries_the_result(busy_store):
+    """m-1 (L98): a busy daemon makes the promote fail. MCP `rmx_save_state` replies `isError`,
+    and its body is the RESULT with the error added -- `target` (the handoff file, which
+    exists), `remove_failed`, `lint`, `promoted`, and `error` naming the failure -- not the bare
+    message. At c854bad the body is `{"error": "<message>"}` only."""
+    from refmatrix import stm
+    repo = busy_store
+    session = "bug212-r6-mcp"
+    stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r6 MCP probe")
+    memdir = repo.base / "memdir"
+    memdir.mkdir()
+    replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+        "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
+        "message": "bug-212 r6 MCP probe"})])
+    assert 2 in replies and 99 in replies, f"the MCP server stopped answering\n{text}"
+    res = replies[2].get("result") or {}
+    raw = " ".join(c.get("text", "") for c in res.get("content", []))
+    assert res.get("isError") is True, f"not an isError reply: {raw[:600]!r}"
+    try:
+        body = json.loads(raw)
+    except json.JSONDecodeError:
+        pytest.fail(f"the isError reply body is not the JSON result: {raw[:600]!r}")
+    missing = sorted(k for k in ("target", "remove_failed", "lint", "promoted", "error")
+                     if k not in body)
+    assert not missing, f"the isError reply dropped {missing} of the result: {raw[:600]!r}"
+    assert Path(body["target"]).is_file(), f"the reply's target does not exist: {body['target']}"
+    assert "busy" in body["error"] and "save-state wrote" in body["error"], body["error"]
+
+
+# =============================================================================================
+# m-2: a bridge only deferred behind a running ingest job is a warning, not a failure
+# =============================================================================================
+
+DEFER_DOCS = 1500
+
+
+def _start_running_job(base: Path, root: Path) -> str:
+    """A REAL ingest job on the daemon (a big as-memory dir), so the bridge's own ingest is
+    refused with "ingest already active" and waits on it."""
+    other = _big_dir(base, "other", DEFER_DOCS)
+    resp = dm.call(root, "ingest_gmd_start", {"targets": [str(other)], "as_memory": True,
+                                              "memory_mtype": "curated",
+                                              "partition": verbs.memory_partition(root)},
+                   timeout=30)
+    assert resp.get("ok"), resp
+    return resp["result"]["job_id"]
+
+
+def _session_and_memdir(base: Path, root: Path, session: str) -> Path:
+    from refmatrix import stm
+    stm.Stm(root, session).record("note", "a focus event for the bug-212 r6 deferral probe")
+    memdir = base / "memory"
+    memdir.mkdir()
+    (memdir / "mine_r6.md").write_text(GMD.format(id="mine_r6", body="mine"), encoding="utf-8")
+    return memdir
+
+
+def _job_status(root: Path, jid: str) -> str:
+    r = dm.call(root, "ingest_gmd_status", {"job_id": jid}, timeout=10)
+    return ((r.get("result") or {}).get("job") or {}).get("status")
+
+
+@pytest.mark.timeout(300)
+def test_a_deferred_bridge_is_not_a_failed_save_state_verb(live, monkeypatch):
+    """m-2 (L98), the verb: `verbs.save_state` (promote off, the bridge ON) while a real ingest
+    job runs, with the bridge wait shortened through `RMX_BRIDGE_WAIT_S`. It RETURNS; the
+    result's `sync.deferred` is `{job: <id>, reason: ...}` naming the still-running job, and
+    `sync.error` is empty. At c854bad it raises `SaveStateIncompleteError`."""
+    base, root = live
+    jid = _start_running_job(base, root)
+    monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+    memdir = _session_and_memdir(base, root, "bug212-r6-defer-verb")
+    try:
+        res = verbs.save_state(root, session="bug212-r6-defer-verb", memory_dir=str(memdir),
+                               promote=False, lint=False, sync=True)
+    except verbs.SaveStateIncompleteError as e:
+        pytest.fail(f"a bridge only deferred behind running job {jid} failed the save: {e}")
+    sync = res.get("sync") or {}
+    deferred = sync.get("deferred") or {}
+    assert deferred.get("job") == jid and "running" in str(deferred.get("reason", "")), \
+        f"sync.deferred does not name the running job {jid}: {sync}"
+    assert not sync.get("error"), f"a deferral is still reported as sync.error: {sync}"
+    assert Path(res["target"]).is_file()
+
+
+@pytest.mark.timeout(300)
+def test_a_deferred_bridge_is_a_stderr_warning_and_exit_0(live, monkeypatch):
+    """m-2 (L98), the CLI: `rmx save-state --no-promote --no-lint` while a real ingest job runs.
+    Exit 0, a stderr line naming the job id, no `Error:` line. At c854bad: exit 1."""
+    base, root = live
+    jid = _start_running_job(base, root)
+    monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+    memdir = _session_and_memdir(base, root, "bug212-r6-defer-cli")
+    r = CliRunner().invoke(cli_mod.main, ["save-state", "-s", "bug212-r6-defer-cli",
+                                          "--memory-dir", str(memdir), "--no-promote",
+                                          "--no-lint"])
+    text = f"exit {r.exit_code}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert r.exit_code == 0, f"a bridge deferred behind running job {jid} failed the save\n{text}"
+    assert jid in r.stderr, f"no stderr warning naming the running job {jid}\n{text}"
+    assert not _errors(r.stderr), f"a deferral printed an `Error:` line\n{text}"
+
+
+@pytest.mark.timeout(300)
+def test_a_deferred_bridge_is_not_an_mcp_error(live, monkeypatch):
+    """m-2 (L98), MCP: `rmx_save_state` (promote off, bridge on) while a real ingest job runs
+    replies NOT isError, and the reply carries `sync.deferred` naming the job."""
+    base, root = live
+    jid = _start_running_job(base, root)
+    monkeypatch.setenv("RMX_BRIDGE_WAIT_S", "0.2")
+    memdir = _session_and_memdir(base, root, "bug212-r6-defer-mcp")
+    rep = mcp_mod.handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
+        "name": "rmx_save_state", "arguments": {
+            "root": str(root), "session": "bug212-r6-defer-mcp", "memory_dir": str(memdir),
+            "promote": False, "lint": False}}})
+    res = rep.get("result") or {}
+    raw = " ".join(c.get("text", "") for c in res.get("content", []))
+    assert res.get("isError") is not True, \
+        f"a bridge deferred behind running job {jid} replied isError: {raw[:600]!r}"
+    body = json.loads(raw)
+    deferred = (body.get("sync") or {}).get("deferred") or {}
+    assert deferred.get("job") == jid, f"the reply carries no sync.deferred for {jid}: {raw[:600]!r}"
+
+
+# ---- GUARD: any OTHER bridge failure still fails the save -----------------------------------
+
+@pytest.mark.timeout(300)
+def test_a_refused_bridge_still_fails_the_save_verb_and_mcp(tracked_repo):
+    """GUARD (passes at c854bad; against a fix that reads every bridge error as a deferral): a
+    bridge REFUSED on a tracked catalog is a failure -- `verbs.save_state` raises
+    `SaveStateIncompleteError` naming the memory bridge, and MCP `rmx_save_state` replies
+    isError. (The CLI's exit 1 for the same case is the r5 test
+    `test_save_state_whose_memory_bridge_is_refused_says_so_on_stderr_and_exits_non_zero`.)"""
+    from refmatrix import stm
+    repo, layout = tracked_repo
+    assert not dm.ping(repo.store), "fixture: a daemon answers"
+    stm.Stm(repo.store, "bug212-r6-guard").record("note", "guard probe")
+    memdir = repo.base / "memdir"
+    memdir.mkdir()
+    probe = repo.base / "verb_probe.py"
+    probe.write_text(
+        "import json, sys\nfrom refmatrix import verbs\n"
+        "try:\n"
+        "    verbs.save_state(__import__('pathlib').Path(sys.argv[1]), session='bug212-r6-guard',"
+        " memory_dir=sys.argv[2], promote=False, lint=False, sync=True)\n"
+        "except verbs.SaveStateIncompleteError as e:\n"
+        "    print(json.dumps({'raised': True, 'msg': str(e), 'deferred': "
+        "(e.result.get('sync') or {}).get('deferred')}))\n"
+        "else:\n"
+        "    print(json.dumps({'raised': False}))\n", encoding="utf-8")
+    r = subprocess.run([sys.executable, str(probe), str(repo.store), str(memdir)],
+                       cwd=str(repo.proj), env=_base_env(), capture_output=True, text=True,
+                       timeout=240)
+    assert r.returncode == 0, _text(r)
+    out = json.loads(r.stdout.strip().splitlines()[-1])
+    assert out["raised"] and "memory bridge failed" in out["msg"] and not out.get("deferred"), \
+        f"[{layout}] a refused bridge did not fail the save verb: {out}"
+    replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+        "session": "bug212-r6-guard", "memory_dir": str(memdir), "promote": False,
+        "lint": False})])
+    res = (replies.get(2) or {}).get("result") or {}
+    assert res.get("isError") is True, f"[{layout}] MCP replied success on a refused bridge\n{text}"

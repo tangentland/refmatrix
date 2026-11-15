@@ -1,0 +1,35 @@
+src modules: 73 | test files: 357 | test files importing no refmatrix module (direct or via a tests/ helper): 24
+test files that run the CLI/hooks in a child process (no import edge to what the child loads): 85
+module            lines  direct  depth1  closure  rev-importers(src)
+store              9246     220     315      324  30
+daemon             7355     156     228      324  14
+cli               15212     136     147      324  2
+verbs              3653      59     170      324  7
+hub                1474      52     184      324  8
+discovery           353      43     214      324  8
+hooks              1331      36     150      324  1
+stm                2033      31     286      324  10
+ingest_gmd         2299      28     229      324  4
+ingest             3144      26     291      324  8
+mcp                 389      20     142      324  1
+telemetry          2007      19     177      324  5
+context            1863      18     225      324  8
+launchctl          1048      18     218      324  6
+modelsrv            639      17     174      324  5
+embedder            363      15     176      324  5
+handoff             928      15     175      324  4
+search              489      15     157      324  3
+recall             1141      14     207      324  3
+subproc             540      14     164      324  5
+sync                472      13     208      324  3
+reranker            650      12     187      324  6
+median direct family: 4 | median closure family: 324 | modules with 0 direct test importers: ['__init__', 'assoc', 'edge_records', 'enrich', 'envknob', 'promote']
+modules whose closure family is >= 300 of 357 files: 71 of 73
+  handoff direct 15 depth1 175 closure 324
+  query direct 9 depth1 289 closure 324
+  stm direct 31 depth1 286 closure 324
+  hooks direct 36 depth1 150 closure 324
+  sync direct 13 depth1 208 closure 324
+  search_hooks direct 5 depth1 40 closure 324
+  vectors direct 6 depth1 222 closure 326
+  memory_index direct 9 depth1 89 closure 330

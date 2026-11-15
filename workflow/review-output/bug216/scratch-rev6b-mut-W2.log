@@ -1,0 +1,210 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/37b7498f-6952-4eff-ab35-60802a8f6c5f/scratchpad/r13/src/refmatrix as checked-hash (bug-037)
+....FFFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+__ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-watcher] __
+
+route = 'watcher', proj = PosixPath('/private/tmp/b216w1xnic991/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1074c2be0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: watcher: an in-project ignore dir leaked: {'build/x.md', 'dist/y.md', 'docs/d.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+___ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-sync] ____
+
+route = 'sync', proj = PosixPath('/private/tmp/b216wivynlo33/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122425d50>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: sync: an in-project ignore dir leaked: {'build/x.md', 'dist/y.md', 'docs/d.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+_ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-ingest-path] _
+
+route = 'ingest-path'
+proj = PosixPath('/private/tmp/b216wwz57242i/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122426450>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: ingest-path: an in-project ignore dir leaked: {'build/x.md', 'docs/d.md', 'dist/y.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+_ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj = PosixPath('/private/tmp/b216w3htlm4qd/.hidden/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12243e6c0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: op-ingest-gmd: an in-project ignore dir leaked: {'build/x.md', 'docs/d.md', 'dist/y.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+___ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-watcher] ___
+
+route = 'watcher', proj = PosixPath('/private/tmp/b216w0h3ofa1c/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12243f5c0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: watcher: an in-project ignore dir leaked: {'build/x.md', 'docs/d.md', 'dist/y.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+____ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-sync] _____
+
+route = 'sync', proj = PosixPath('/private/tmp/b216wpd_pghd2/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1223e91d0>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: sync: an in-project ignore dir leaked: {'build/x.md', 'docs/d.md', 'dist/y.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+_ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-ingest-path] _
+
+route = 'ingest-path', proj = PosixPath('/private/tmp/b216w89fsn5n6/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1223e9010>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: ingest-path: an in-project ignore dir leaked: {'build/x.md', 'docs/d.md', 'dist/y.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+_ test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-op-ingest-gmd] _
+
+route = 'op-ingest-gmd'
+proj = PosixPath('/private/tmp/b216wm_9b0stz/build/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122446750>
+
+    @pytest.mark.parametrize("route", ROUTES)
+    def test_ac17_a_project_below_an_ignored_ancestor_still_syncs(route, proj, monkeypatch):
+        root = proj / ".refmatrix"
+        _run(route, proj, root, monkeypatch)
+        s = _open(root)
+        try:
+            got = _ingested(s, proj)
+        finally:
+            s.close()
+        assert "docs/d.md" in got, (
+            f"{route}: nothing synced for a project under `{proj.parent.name}/`: {got}")
+>       assert not {"build/x.md", "dist/y.md"} & got, f"{route}: an in-project ignore dir leaked: {got}"
+E       AssertionError: op-ingest-gmd: an in-project ignore dir leaked: {'build/x.md', 'dist/y.md', 'docs/d.md'}
+E       assert not ({'build/x.md', 'dist/y.md'} & {'build/x.md', 'dist/y.md', 'docs/d.md'})
+
+tests/test_bug216_watch_base.py:68: AssertionError
+_______ test_ac17_watch_is_relevant_judges_paths_below_the_root[.hidden] _______
+
+proj = PosixPath('/private/tmp/b216wqiq_6w7u/.hidden/proj')
+
+    def test_ac17_watch_is_relevant_judges_paths_below_the_root(proj):
+        from refmatrix.watch import is_relevant
+        assert is_relevant(proj / "docs" / "d.md", proj) is True
+>       assert is_relevant(proj / "build" / "x.md", proj) is False
+E       AssertionError: assert True is False
+E        +  where True = <function is_relevant at 0x1223d5590>(((PosixPath('/private/tmp/b216wqiq_6w7u/.hidden/proj') / 'build') / 'x.md'), PosixPath('/private/tmp/b216wqiq_6w7u/.hidden/proj'))
+
+tests/test_bug216_watch_base.py:74: AssertionError
+________ test_ac17_watch_is_relevant_judges_paths_below_the_root[build] ________
+
+proj = PosixPath('/private/tmp/b216whpax5dut/build/proj')
+
+    def test_ac17_watch_is_relevant_judges_paths_below_the_root(proj):
+        from refmatrix.watch import is_relevant
+        assert is_relevant(proj / "docs" / "d.md", proj) is True
+>       assert is_relevant(proj / "build" / "x.md", proj) is False
+E       AssertionError: assert True is False
+E        +  where True = <function is_relevant at 0x1223d5590>(((PosixPath('/private/tmp/b216whpax5dut/build/proj') / 'build') / 'x.md'), PosixPath('/private/tmp/b216whpax5dut/build/proj'))
+
+tests/test_bug216_watch_base.py:74: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-watcher]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-sync]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-ingest-path]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[.hidden-op-ingest-gmd]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-watcher]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-sync]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-ingest-path]
+FAILED tests/test_bug216_watch_base.py::test_ac17_a_project_below_an_ignored_ancestor_still_syncs[build-op-ingest-gmd]
+FAILED tests/test_bug216_watch_base.py::test_ac17_watch_is_relevant_judges_paths_below_the_root[.hidden]
+FAILED tests/test_bug216_watch_base.py::test_ac17_watch_is_relevant_judges_paths_below_the_root[build]
+10 failed, 4 passed in 5.40s

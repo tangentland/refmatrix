@@ -1,0 +1,94 @@
+.....................FF........                                          [100%]
+=================================== FAILURES ===================================
+_ test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show] _
+
+slot_only_tracked_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x11208bad0>
+argv = ['pairs', 'show', 'foo_bar']
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("argv", READ_ARGVS, ids=["pairs-show", "memory-get"])
+    def test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open(
+            slot_only_tracked_repo, argv):
+        """GREEN r2 flag 5, lead ruling: no reader file of any kind, no daemon, a tracked catalog.
+        The read falls to the writer catalog through `_store_rw()`; it is refused with ONE
+        `Error:` line `refusing to open <full target path> read-write in-process: ...` (both
+        remedies), exit non-zero, catalog bytes unchanged -- and the line does not say "write"."""
+        repo = slot_only_tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_read(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"`rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, f"`rmx {' '.join(argv)}` (a read) changed the tracked catalog " \
+                            f"{changed}\n{text}"
+        assert r.returncode != 0, f"`rmx {' '.join(argv)}` exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = repo.store / "catalog.A.duckdb"
+        assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"`rmx {' '.join(argv)}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
+            f"with both remedies; got {errs}\n{text}"
+        # m-1 (ch-bsd r2, L72, 2026-11-13): the TAIL must not claim a write either -- 67f55cb's
+        # line said "the write would modify a committed file ... so the write goes through it".
+        low = errs[0].lower()
+>       assert "in-process write" not in low and "the write" not in low, \
+            f"a READ's refusal claims a write: {errs[0]!r}"
+E       AssertionError: a READ's refusal claims a write: "Error: refusing to open /private/tmp/b212r-jmsqwy0i/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead"
+E       assert ('in-process write' not in 'error: refu...s it instead'
+E         
+E         'in-process write' is contained here:
+E            it instead and 'the write' not in 'error: refu...s it instead'
+E         
+E         'the write' is contained here:
+E           kdb), and the write would modify a committed file. untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         ?           +++  ++++++)
+
+tests/test_bug212_r2_red.py:589: AssertionError
+_ test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get] _
+
+slot_only_tracked_repo = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x11213b280>
+argv = ['memory', 'get', 'bug212_r2_absent']
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize("argv", READ_ARGVS, ids=["pairs-show", "memory-get"])
+    def test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open(
+            slot_only_tracked_repo, argv):
+        """GREEN r2 flag 5, lead ruling: no reader file of any kind, no daemon, a tracked catalog.
+        The read falls to the writer catalog through `_store_rw()`; it is refused with ONE
+        `Error:` line `refusing to open <full target path> read-write in-process: ...` (both
+        remedies), exit non-zero, catalog bytes unchanged -- and the line does not say "write"."""
+        repo = slot_only_tracked_repo
+        assert not dm.ping(repo.store), "fixture: a daemon answers"
+        before = _digests(repo.store)
+        r = _run_read(repo, argv)
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        changed = _changed(before, _digests(repo.store))
+        assert TRACEBACK not in r.stderr, f"`rmx {' '.join(argv)}` crashed\n{text}"
+        assert not changed, f"`rmx {' '.join(argv)}` (a read) changed the tracked catalog " \
+                            f"{changed}\n{text}"
+        assert r.returncode != 0, f"`rmx {' '.join(argv)}` exited 0\n{text}"
+        errs = _errors(r.stderr)
+        target = repo.store / "catalog.A.duckdb"
+        assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
+            f"`rmx {' '.join(argv)}`: expected ONE `Error:` line `{_refusal_head(target)} ...` " \
+            f"with both remedies; got {errs}\n{text}"
+        # m-1 (ch-bsd r2, L72, 2026-11-13): the TAIL must not claim a write either -- 67f55cb's
+        # line said "the write would modify a committed file ... so the write goes through it".
+        low = errs[0].lower()
+>       assert "in-process write" not in low and "the write" not in low, \
+            f"a READ's refusal claims a write: {errs[0]!r}"
+E       AssertionError: a READ's refusal claims a write: "Error: refusing to open /private/tmp/b212r-3l_ky657/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb), and the write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead"
+E       assert ('in-process write' not in 'error: refu...s it instead'
+E         
+E         'in-process write' is contained here:
+E            it instead and 'the write' not in 'error: refu...s it instead'
+E         
+E         'the write' is contained here:
+E           kdb), and the write would modify a committed file. untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+E         ?           +++  ++++++)
+
+tests/test_bug212_r2_red.py:589: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[pairs-show]
+FAILED tests/test_bug212_r2_red.py::test_a_read_with_no_replica_on_a_tracked_catalog_is_refused_as_an_open[memory-get]
+2 failed, 29 passed in 20.40s

@@ -1,0 +1,15 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /private/tmp/claude-501/b2r7.ZU1B/mu/src/refmatrix as checked-hash (bug-037)
+
+PROBE migrate --out elsewhere (tracked src): exit=0 wrote=True :: 
+.
+PROBE migrate --out into OTHER repo's tracked catalog: exit=1 changed=[] status='' :: read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+.
+PROBE mcp save_state [slots] isError=True handoff=['savestate_s5.md'] body={"mem_id": "savestate_s5", "target": "/private/tmp/b212t-oi97u3sl/memdir/savestate_s5.md", "session": "s5", "events": 1, "dry_run": false, "branch": "main", "head": "2d65a0c c0 (the store committed)", "dirty": true, "promoted": {"error": "VerbError: refusing to open /private/tmp/b212t-oi97u3sl/proj/.refmatrix/catalog.A.duckdb read-write in-process: git tracks this store's catalog (catalog.A.duckdb, catalog.B.duckdb, catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daem
+.
+PROBE mcp save_state [legacy] isError=True handoff=['savestate_s5.md'] body={"mem_id": "savestate_s5", "target": "/private/tmp/b212t-zvys142i/memdir/savestate_s5.md", "session": "s5", "events": 1, "dry_run": false, "branch": "main", "head": "1760e4e c0 (the store committed)", "dirty": true, "promoted": {"error": "VerbError: refusing to open /private/tmp/b212t-zvys142i/proj/.refmatrix/catalog.duckdb read-write in-process: git tracks this store's catalog (catalog.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon op
+.
+PROBE name-edge x.duckdb: exit=1 status_B='' wrote=True :: Error: refusing to open /private/tmp/b212n-yf___4hs/b/proj/x.duckdb read-write in-process: git tracks this store's catalog (x.duckdb), and opening it read-write would modify a committed file. Untrack it (git rm --cached .refmatrix/catalog*, then ignore .refmatrix/ catalog files), or start the daemon (rmx daemon start) so the daemon opens it instead
+.
+PROBE name-edge foo.duckdb-beside-tracked-catalog: exit=0 status_B='?? .refmatrix/foo.duckdb\n' wrote=True :: 
+..
+7 passed in 6.25s

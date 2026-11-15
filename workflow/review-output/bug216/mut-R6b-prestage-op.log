@@ -1,0 +1,46 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+......F.F.                                                               [100%]
+=================================== FAILURES ===================================
+________ test_ac16_the_prestage_op_names_its_ignored_path_in_the_result ________
+
+env = {'base': PosixPath('/private/tmp/b216suhs98xmp'), 'proj': PosixPath('/private/tmp/b216suhs98xmp/proj'), 'root': PosixPath('/private/tmp/b216suhs98xmp/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216suhs98xmp/proj/notes/memory')
+
+    def test_ac16_the_prestage_op_names_its_ignored_path_in_the_result(env, memdir):
+        from refmatrix.daemon import Daemon, _op_prestage_hashes
+        d = Daemon(env["root"])
+        d.store = Store(env["root"])
+        d.store.init()
+        try:
+            res = _op_prestage_hashes(d, {"targets": [str(memdir)]})
+        finally:
+            d.store.close()
+        hidden = str(memdir / ".hidden" / "y.md")
+>       assert res.get("ignored") == 1, res
+E       AssertionError: {'considered': 1, 'ignored': 0, 'ignored_paths': [], 'missing': 1, ...}
+E       assert 0 == 1
+E        +  where 0 = <built-in method get of dict object at 0x131356600>('ignored')
+E        +    where <built-in method get of dict object at 0x131356600> = {'considered': 1, 'ignored': 0, 'ignored_paths': [], 'missing': 1, ...}.get
+
+tests/test_bug216_surfaces.py:183: AssertionError
+----------------------------- Captured stderr call -----------------------------
+ingest-gmd: ignored 1 path(s) excluded by the ignore rules (INGEST_IGNORE_DIRS, .refmatrix_ignore, hidden directories): /private/tmp/b216suhs98xmp/proj/notes/memory/.hidden/y.md
+_________ test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up __________
+
+env = {'base': PosixPath('/private/tmp/b216sz58ag7qa'), 'proj': PosixPath('/private/tmp/b216sz58ag7qa/proj'), 'root': PosixPath('/private/tmp/b216sz58ag7qa/proj/.refmatrix')}
+memdir = PosixPath('/private/tmp/b216sz58ag7qa/proj/notes/memory')
+in_process_daemon = <refmatrix.daemon.Daemon object at 0x1301cfa10>
+
+    def test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up(env, memdir, in_process_daemon):
+        """The CLI's daemon branch prints what the OP returned."""
+        out = _prestage_cli(memdir)
+>       assert "ignored 1 path(s)" in out and str(memdir / ".hidden" / "y.md") in out, out
+E       AssertionError: prestaged: considered=1 written=0 skipped=0 missing=1
+E         
+E       assert ('ignored 1 path(s)' in 'prestaged: considered=1 written=0 skipped=0 missing=1\n')
+
+tests/test_bug216_surfaces.py:203: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_op_names_its_ignored_path_in_the_result
+FAILED tests/test_bug216_surfaces.py::test_ac16_the_prestage_cli_names_its_ignored_path_daemon_up
+2 failed, 8 passed in 2.32s

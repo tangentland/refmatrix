@@ -1,0 +1,31 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/a9b75923-7e2c-4a38-9b5a-ab90660eb2d2/scratchpad/b225pin/src/refmatrix as checked-hash (bug-037)
+.....................................F                                   [100%]
+=================================== FAILURES ===================================
+_________ test_r3_pin_origin_head_read_exit1_with_stderr_is_a_failure __________
+
+repos = (PosixPath('/private/tmp/b225-k650q878'), PosixPath('/private/tmp/b225-k650q878/work'))
+git_shim = <function git_shim.<locals>.arm at 0x112a49a60>
+
+    def test_r3_pin_origin_head_read_exit1_with_stderr_is_a_failure(repos, git_shim):
+        """`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exits 1 WITH
+        stderr. Under `--quiet` an unset origin/HEAD is exit 1 with an EMPTY stderr
+        (the guard: `test_origin_head_unset_falls_back_to_the_list`), so this is a
+        failure: trunk_error says it with git's text, and the list still decides --
+        out loud, not as a silent "unset". The mutant `if rc == 1:` in
+        `_ss_origin_head` reads it as unset and leaves trunk_error empty."""
+        base, work = repos
+        git_shim("origin-head", rc=1)
+        facts = handoff._ss_git_facts(work, None)
+        err = facts["trunk_error"]
+>       assert "`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 1" in err, facts
+E       AssertionError: {'ahead': '99ec976 feature commit 2
+E         14ac449 feature commit 1
+E         2db07cb develop commit 3
+E         b52f04a develop commit 2
+E         424af59 develop commit 1', 'ahead_base': 'origin/master', 'branch': 'feature', 'dirty': '', ...}
+E       assert '`git symbolic-ref --quiet --short refs/remotes/origin/HEAD` exited 1' in ''
+
+tests/test_bug225_handoff_trunk.py:866: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug225_handoff_trunk.py::test_r3_pin_origin_head_read_exit1_with_stderr_is_a_failure
+1 failed, 37 passed in 23.15s

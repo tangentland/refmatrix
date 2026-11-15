@@ -1,0 +1,629 @@
+pyc-guard: recompiled 40 timestamp pyc(s) under /Volumes/littlebig/refmatrix-bug216/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  1%]
+....................................................................F... [  3%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+.....................................FF................................. [  8%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 27%]
+......................F................................................. [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+.........................................FFFF........................... [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+.................s...................................................... [ 64%]
+........................................................................ [ 66%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+...................................FF................................... [ 79%]
+........................................................................ [ 80%]
+.........................F.............................................. [ 82%]
+........................................................................ [ 83%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+.....................................................................    [100%]SkipGate: 1 skip(s) not in the pinned list (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_repo_hooks_in_sync.py::test_installed_hooks_match_generated: Skipped: hooks belong to another checkout of this commit
+
+=================================== FAILURES ===================================
+____________ test_an_unknown_class_fails_loudly_through_the_daemon _____________
+
+daemon_root = (PosixPath('/tmp/bd.bitul8zx/.refmatrix'), {'AI_AGENT': 'claude-code_2-1-323_agent', 'BASH_ENV': '/Users/tholley/.claude/agent-bashrc.sh', 'BASH_SILENCE_DEPRECATION_WARNING': '1', 'CLAUDECODE': '1', ...})
+
+    def test_an_unknown_class_fails_loudly_through_the_daemon(daemon_root):
+        """#m-17: the MCP schema has no enum, so this path is reachable."""
+        root, env = daemon_root
+        # click.Choice already rejects this, so exit!=0 proved nothing about the
+        # ValueError (ch-bsd r2). Assert the LIBRARY raises, where MCP reaches it.
+        from refmatrix import brief as brief_mod
+        from refmatrix.store import Store
+        s = Store(root)
+>       with s.with_partition(root.parent.name):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_brief_real_daemon.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/refmatrix/store.py:2187: in _scope
+    self._connect()
+src/refmatrix/store.py:1414: in _connect
+    con = self._backend.connect(self.db_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:788: in connect
+    return DuckDBConnection(open_duckdb(db_path, read_only=read_only))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/refmatrix/backend.py:371: in open_duckdb
+    return _open_write(p, key)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = '/private/tmp/bd.bitul8zx/.refmatrix/catalog.A.duckdb'
+key = '/private/tmp/bd.bitul8zx/.refmatrix/catalog.A.duckdb'
+
+    def _open_write(p: str, key: str):
+        import time as _time
+        for _ in range(_OPEN_RETRIES):
+            closed = _close_stale_holders(key, p)
+            before = _file_id(key)
+            deadline = _time.monotonic() + (_CONFLICT_WAIT_S if closed else 0.0)
+            while True:
+                try:
+>                   con = duckdb.connect(p)
+                          ^^^^^^^^^^^^^^^^^
+E                   _duckdb.IOException: IO Error: Could not set lock on file "/private/tmp/bd.bitul8zx/.refmatrix/catalog.A.duckdb": Conflicting lock is held in /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python (PID 28198) by user tholley. See also https://duckdb.org/docs/stable/connect/concurrency
+
+src/refmatrix/backend.py:337: IOException
+_ test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_into] _
+
+site = 'replica_merge._merge_into'
+
+    @pytest.mark.parametrize("site", sorted(MERGE_SITES))
+    def test_ac2_replica_merge_matches_head_and_reference(site):
+        d, ref, _ = _run_merge(site)
+        ref(d)
+>       assert _digest(d) == _golden()[f"{site}/duckdb"], (
+            f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
+E       AssertionError: replica_merge._merge_into: merged catalog differs from HEAD 56e8d14's golden
+E       assert {'rows': 5001...04e45a56376b'} == {'rows': 5001...100f3691b499'}
+E         
+E         Differing items:
+E         {'rows': 50015} != {'rows': 50014}
+E         {'sha256': 'acb49fc475b5773dd83c78ffbc25dabc12db9e7538e81064f8f204e45a56376b'} != {'sha256': '1a4f5795928aa316b0590c8e46c9474b5a65a6189838dea69042100f3691b499'}
+E         Use -v to get more diff
+
+tests/test_bug178_bulk_write.py:589: AssertionError
+_ test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_linkage_types] _
+
+site = 'replica_merge._merge_linkage_types'
+
+    @pytest.mark.parametrize("site", sorted(MERGE_SITES))
+    def test_ac2_replica_merge_matches_head_and_reference(site):
+        d, ref, _ = _run_merge(site)
+        ref(d)
+>       assert _digest(d) == _golden()[f"{site}/duckdb"], (
+            f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
+E       AssertionError: replica_merge._merge_linkage_types: merged catalog differs from HEAD 56e8d14's golden
+E       assert {'rows': 2752...0869de0238aa'} == {'rows': 2752...a75fff26e546'}
+E         
+E         Differing items:
+E         {'rows': 27524} != {'rows': 27523}
+E         {'sha256': 'bcc237a9f177dd8ef83714e269264571cce4b96dbd6791102fe30869de0238aa'} != {'sha256': '7eddf4a0f8b67cc7f3e7b62c06ec44b1fe03e0d9c6386e4f1565a75fff26e546'}
+E         Use -v to get more diff
+
+tests/test_bug178_bulk_write.py:589: AssertionError
+_____________ test_the_repo_scope_is_clean_under_the_stricter_gate _____________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1288/test_the_repo_scope_is_clean_u0')
+
+    def test_the_repo_scope_is_clean_under_the_stricter_gate(tmp_path):
+        """The gate is only worth having if the tree it guards passes it. Runs the
+        real `scripts/lint-gmd.sh`, which is what the commit gate invokes."""
+        root = Path(__file__).resolve().parents[1]
+        # 23.0 R6: the script adds `$HOME/.claude/projects/<slug>/memory` to its scope (the ledger
+        # cites memory ids). The child gets a DECOY home holding a COPY of exactly that one memory
+        # dir -- never the real `HOME` (ch-bsd r1 m3, 2026-10-15: handing the child the real home
+        # was a documented way out of the sandbox). No memory dir for this checkout's slug (a
+        # clone) -> none is copied, and the refs surface as dangling-doc, as the script intends.
+        import shutil
+        slug = str(root).replace("/", "-").replace("_", "-")
+        real_mem = (Path(os.environ["RMX_SANDBOX_REAL_HOME"]) / ".claude" / "projects" / slug
+                    / "memory")
+        home = tmp_path / "home"
+        home.mkdir()
+        if real_mem.is_dir():
+            shutil.copytree(real_mem, home / ".claude" / "projects" / slug / "memory")
+        env = dict(os.environ, HOME=str(home))
+        assert Path(env["HOME"]).resolve() != Path(os.environ["RMX_SANDBOX_REAL_HOME"]).resolve()
+        r = subprocess.run(["./scripts/lint-gmd.sh"], cwd=str(root),
+                           capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+        # bug-179 audit s1 (2026-11-09): the gate exits 2 on a missing precondition (no linter, no
+        # parity script, no `.venv-eval` dev interpreter) BEFORE lint runs, printing no ": error"
+        # line -- so a test that only counted error lines passed in 0.13 s while nothing was linted.
+        # Exit 2 is the script's and lint's usage/precondition code, never a lint verdict (0/1), so
+        # it means the gate did not run. Assert that FIRST: a gate that did not run is a failure with
+        # its own message, never a clean tree.
+        missing = [l for l in out.splitlines() if "not found at" in l]
+        assert r.returncode != 2 and not missing, (
+            f"scripts/lint-gmd.sh did not run its checks (exit {r.returncode}); a missing "
+            "precondition is a failure, not a clean tree:\n" + out[-2000:])
+        errors = [l for l in out.splitlines() if ": error" in l]
+>       assert not errors, "in-scope GMD errors:\n" + "\n".join(errors[:20])
+E       AssertionError: in-scope GMD errors:
+E         docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/INDEX.md:33: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/INDEX.md:34: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/INDEX.md:35: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/INDEX.md:40: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/INDEX.md:42: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/INDEX.md:43: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/INDEX.md:44: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/INDEX.md:97: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+E         docs/INDEX.md:99: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+E         docs/INDEX.md:104: error: [dangling-doc] [[architecture-readme]] — no doc with id `architecture-readme` in scanned set
+E         docs/INDEX.md:106: error: [dangling-doc] [[architecture-todo]] — no doc with id `architecture-todo` in scanned set
+E         docs/adr/0000-adr-overview.md:20: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/adr/0000-adr-overview.md:21: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/adr/0000-adr-overview.md:22: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/adr/0000-adr-overview.md:57: error: [dangling-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set
+E         docs/adr/0000-adr-overview.md:58: error: [dangling-doc] [[adr-0003-canonical-partition-layout]] — no doc with id `adr-0003-canonical-partition-layout` in scanned set
+E         docs/adr/0000-adr-overview.md:59: error: [dangling-doc] [[adr-0004-unified-location-space-index]] — no doc with id `adr-0004-unified-location-space-index` in scanned set
+E         docs/adr/0001-intuition-lance-integration.md:10: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanned set
+E         docs/adr/0001-intuition-lance-integration.md:47: error: [dangling-doc] [[project-queued-work]] — no doc with id `project-queued-work` in scanned set
+E       assert not ['docs/INDEX.md:31: error: [dangling-doc] [[adr-0000-adr-overview]] — no doc with id `adr-0000-adr-overview` in scanne...g-doc] [[adr-0002-subject-memory-container]] — no doc with id `adr-0002-subject-memory-container` in scanned set', ...]
+
+tests/test_gmd_lint_requires_version.py:148: AssertionError
+_________________ test_merge_reparents_non_colliding_entities __________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1288/test_merge_reparents_non_colli0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3bf8ae350>
+
+    def test_merge_reparents_non_colliding_entities(tmp_path, monkeypatch):
+        s = _store(tmp_path, monkeypatch)
+        # Seed SRC with two memories that have no DST equivalents.
+        with s.with_partition("src"):
+            s.add_memory("alpha", "first body", mtype="curated")
+            s.add_memory("beta", "second body", mtype="curated")
+        # Seed DST partition existence with one unrelated row.
+        with s.with_partition("dst"):
+            s.add_memory("gamma", "third body", mtype="curated")
+>       result = s.merge_partition("src", "dst")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_partition_merge.py:34: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:2107: in merge_partition
+    pending_merged, pending_dropped = self._merge_pending_refs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x3bfab0d70>
+con = <sqlite3.Connection object at 0x3bf824130>, src_id = 2, dst_id = 3
+collisions = []
+
+    def _merge_pending_refs(self, con, src_id: int, dst_id: int,
+                            collisions: "list[tuple[int, int]]") -> "tuple[int, int]":
+        """`merge_partition`'s `pending_refs` step (bug-216 S2, ruling L81,
+        2026-11-13): repoint SRC's rows to DST (a collided source entity's rows
+        to the DST entity that survives it), collapse rows the move made
+        identical, and delete -- counting -- every DST row whose source entity
+        no longer exists. Before this the rows kept SRC's dropped
+        `partition_id` (and a deleted `source_id` on a collision): they could
+        never resolve and nothing cleaned them up. Returns `(merged, dropped)`."""
+        merged = int(con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=?",
+                                 (src_id,)).fetchone()[0])
+        for src_eid, dst_eid in collisions:
+            con.execute("UPDATE pending_refs SET source_id=? WHERE source_id=?",
+                        (dst_eid, src_eid))
+        con.execute("UPDATE pending_refs SET partition_id=? WHERE partition_id=?",
+                    (dst_id, src_id))
+        key = "partition_id, source_id, linkage, target_name, file, line"
+>       for row in con.execute(
+                f"SELECT {key}, min(created_at) AS c, any_value(ref) AS ref, "
+                f"any_value(weight) AS w, any_value(detail) AS d, count(*) AS n "
+                f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
+                (dst_id,)).fetchall():
+E               sqlite3.OperationalError: no such function: any_value
+
+src/refmatrix/store.py:1805: OperationalError
+______________ test_merge_collision_prefers_longer_memory_content ______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1288/test_merge_collision_prefers_l0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3bf8af150>
+
+    def test_merge_collision_prefers_longer_memory_content(tmp_path, monkeypatch):
+        """When SRC and DST both have a memory with the same name + kind,
+        the longer content wins. Linkages remap to the surviving DST
+        entity_id."""
+        s = _store(tmp_path, monkeypatch)
+        with s.with_partition("dst"):
+            s.add_memory("note", "short", mtype="curated")
+        with s.with_partition("src"):
+            s.add_memory(
+                "note", "this is a much longer body that should win",
+                mtype="curated",
+            )
+>       s.merge_partition("src", "dst")
+
+tests/test_partition_merge.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:2107: in merge_partition
+    pending_merged, pending_dropped = self._merge_pending_refs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x3bfab2120>
+con = <sqlite3.Connection object at 0x405dbe2f0>, src_id = 3, dst_id = 2
+collisions = [(2, 1)]
+
+    def _merge_pending_refs(self, con, src_id: int, dst_id: int,
+                            collisions: "list[tuple[int, int]]") -> "tuple[int, int]":
+        """`merge_partition`'s `pending_refs` step (bug-216 S2, ruling L81,
+        2026-11-13): repoint SRC's rows to DST (a collided source entity's rows
+        to the DST entity that survives it), collapse rows the move made
+        identical, and delete -- counting -- every DST row whose source entity
+        no longer exists. Before this the rows kept SRC's dropped
+        `partition_id` (and a deleted `source_id` on a collision): they could
+        never resolve and nothing cleaned them up. Returns `(merged, dropped)`."""
+        merged = int(con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=?",
+                                 (src_id,)).fetchone()[0])
+        for src_eid, dst_eid in collisions:
+            con.execute("UPDATE pending_refs SET source_id=? WHERE source_id=?",
+                        (dst_eid, src_eid))
+        con.execute("UPDATE pending_refs SET partition_id=? WHERE partition_id=?",
+                    (dst_id, src_id))
+        key = "partition_id, source_id, linkage, target_name, file, line"
+>       for row in con.execute(
+                f"SELECT {key}, min(created_at) AS c, any_value(ref) AS ref, "
+                f"any_value(weight) AS w, any_value(detail) AS d, count(*) AS n "
+                f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
+                (dst_id,)).fetchall():
+E               sqlite3.OperationalError: no such function: any_value
+
+src/refmatrix/store.py:1805: OperationalError
+__________________ test_merge_collision_keeps_longer_dst_body __________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1288/test_merge_collision_keeps_lon0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3bf8b0670>
+
+    def test_merge_collision_keeps_longer_dst_body(tmp_path, monkeypatch):
+        """Reverse of the previous: DST already has the longer body. SRC's
+        shorter body must NOT overwrite it."""
+        s = _store(tmp_path, monkeypatch)
+        with s.with_partition("dst"):
+            s.add_memory(
+                "note", "the DST body is long enough to win the merge",
+                mtype="curated",
+            )
+        with s.with_partition("src"):
+            s.add_memory("note", "short", mtype="curated")
+>       s.merge_partition("src", "dst")
+
+tests/test_partition_merge.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:2107: in merge_partition
+    pending_merged, pending_dropped = self._merge_pending_refs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x3bfab27b0>
+con = <sqlite3.Connection object at 0x405dbc6d0>, src_id = 3, dst_id = 2
+collisions = [(2, 1)]
+
+    def _merge_pending_refs(self, con, src_id: int, dst_id: int,
+                            collisions: "list[tuple[int, int]]") -> "tuple[int, int]":
+        """`merge_partition`'s `pending_refs` step (bug-216 S2, ruling L81,
+        2026-11-13): repoint SRC's rows to DST (a collided source entity's rows
+        to the DST entity that survives it), collapse rows the move made
+        identical, and delete -- counting -- every DST row whose source entity
+        no longer exists. Before this the rows kept SRC's dropped
+        `partition_id` (and a deleted `source_id` on a collision): they could
+        never resolve and nothing cleaned them up. Returns `(merged, dropped)`."""
+        merged = int(con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=?",
+                                 (src_id,)).fetchone()[0])
+        for src_eid, dst_eid in collisions:
+            con.execute("UPDATE pending_refs SET source_id=? WHERE source_id=?",
+                        (dst_eid, src_eid))
+        con.execute("UPDATE pending_refs SET partition_id=? WHERE partition_id=?",
+                    (dst_id, src_id))
+        key = "partition_id, source_id, linkage, target_name, file, line"
+>       for row in con.execute(
+                f"SELECT {key}, min(created_at) AS c, any_value(ref) AS ref, "
+                f"any_value(weight) AS w, any_value(detail) AS d, count(*) AS n "
+                f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
+                (dst_id,)).fetchall():
+E               sqlite3.OperationalError: no such function: any_value
+
+src/refmatrix/store.py:1805: OperationalError
+______________ test_merge_collision_remaps_entity_links_to_dst_id ______________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-1288/test_merge_collision_remaps_en0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x3fcf37a10>
+
+    def test_merge_collision_remaps_entity_links_to_dst_id(tmp_path, monkeypatch):
+        """A SRC memory linked to a SRC concept must survive merge with
+        its link intact pointing at the corresponding DST ids."""
+        s = _store(tmp_path, monkeypatch)
+        with s.with_partition("dst"):
+            dst_mem = s.add_memory("note", "dst body", mtype="curated")
+            dst_concept = s.add_concept("parser")
+        with s.with_partition("src"):
+            src_mem = s.add_memory("note", "src body short", mtype="curated")
+            src_concept = s.add_concept("parser")
+            s.link("mentions", src_concept, src_mem)
+>       s.merge_partition("src", "dst")
+
+tests/test_partition_merge.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/store.py:2107: in merge_partition
+    pending_merged, pending_dropped = self._merge_pending_refs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.store.Store object at 0x3bfab23c0>
+con = <sqlite3.Connection object at 0x405dbc400>, src_id = 3, dst_id = 2
+collisions = [(4, 2), (3, 1)]
+
+    def _merge_pending_refs(self, con, src_id: int, dst_id: int,
+                            collisions: "list[tuple[int, int]]") -> "tuple[int, int]":
+        """`merge_partition`'s `pending_refs` step (bug-216 S2, ruling L81,
+        2026-11-13): repoint SRC's rows to DST (a collided source entity's rows
+        to the DST entity that survives it), collapse rows the move made
+        identical, and delete -- counting -- every DST row whose source entity
+        no longer exists. Before this the rows kept SRC's dropped
+        `partition_id` (and a deleted `source_id` on a collision): they could
+        never resolve and nothing cleaned them up. Returns `(merged, dropped)`."""
+        merged = int(con.execute("SELECT count(*) FROM pending_refs WHERE partition_id=?",
+                                 (src_id,)).fetchone()[0])
+        for src_eid, dst_eid in collisions:
+            con.execute("UPDATE pending_refs SET source_id=? WHERE source_id=?",
+                        (dst_eid, src_eid))
+        con.execute("UPDATE pending_refs SET partition_id=? WHERE partition_id=?",
+                    (dst_id, src_id))
+        key = "partition_id, source_id, linkage, target_name, file, line"
+>       for row in con.execute(
+                f"SELECT {key}, min(created_at) AS c, any_value(ref) AS ref, "
+                f"any_value(weight) AS w, any_value(detail) AS d, count(*) AS n "
+                f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
+                (dst_id,)).fetchall():
+E               sqlite3.OperationalError: no such function: any_value
+
+src/refmatrix/store.py:1805: OperationalError
+_______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
+
+R = PosixPath('/private/tmp/rmx-44c42ncb/r/3491/.refmatrix')
+
+    def test_ac6_frozen_fixture_prints_the_exact_counts(R):
+        """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+        trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+        2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+        greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+        hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+        legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
+        fixes no per-route format): a line naming the surface and holding the number as a word.
+    
+        1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+        upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+        dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+        ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
+        manifest = FIXTURE / "manifest.json"
+        assert manifest.is_file(), (
+            "AC-6 BLOCKED: the redacted fixture is not committed; run "
+            "`python3 tools/cut_agent_usage_fixture.py` (reads this project's .refmatrix logs, "
+            "writes tests/fixtures/agent_usage/)")
+        L = json.loads(manifest.read_text())["L"]
+        for name in ("query.log", "cli.log"):
+            (R / name).write_bytes((FIXTURE / name).read_bytes())
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
+        assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
+        assert [ln for ln in _line_with(out, "grep-replica")
+                if re.search(r"\b1,?121\b", ln)], out
+        rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
+>       assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=4709
+E         query.log: counted=4709 unparseable=0 internal_excluded=0
+E         totals:
+E           context context-replica: 3
+E           grep grep-replica: 1121
+E           grep grep-stdin: 3330
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=unknown
+E             context context-replica: 3 p50=792ms p95=808ms
+E             grep grep-replica: 1121 p50=8ms p95=48ms
+E             grep grep-replica answered_by=dropin: 839 p50=9ms p95=26ms
+E             grep grep-replica answered_by=floor: 4 p50=64ms p95=71ms
+E             grep grep-replica answered_by=index: 21 p50=55ms p95=267ms
+E             grep grep-replica answered_by=none: 5 p50=16ms p95=105ms
+E             grep grep-replica answered_by=unknown: 252 p50=6ms p95=89ms
+E             grep grep-stdin: 3330 p50=0ms p95=0ms
+E             grep grep-stdin answered_by=stdin: 3330 p50=0ms p95=0ms
+E         outcomes:
+E           context: ok=3 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+
+tests/test_task21_1_agent_usage_report.py:392: AssertionError
+________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
+
+R = PosixPath('/private/tmp/rmx-44c42ncb/r/3492/.refmatrix')
+
+    def test_ac6_cli_log_recalls_are_split_per_channel(R):
+        """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+        channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+        `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+        into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+        (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+        AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+        survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+        invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+        (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+        `recall`, not `precompact`), each with its phase=start row (never counted)."""
+        def pair(ts, argv, source):
+            return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+        cli = []
+        for i in range(5):
+            cli += pair(f"2026-10-01T10:0{i}:00",
+                        ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                         "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-02T10:0{i}:00",
+                        ["memory", "recall", "--session-start", "--json"], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-03T10:0{i}:00",
+                        ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-04T10:0{i}:00",
+                        ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                        "unknown")
+        cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+        _write_jsonl(R / "query.log", [])
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+>       assert chan("prompt_recall", 5), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=0 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E         outcomes:
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=14 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x391bf6610>('prompt_recall', 5)
+
+tests/test_task21_1_agent_usage_report.py:434: AssertionError
+____________ test_ac2b_live_daemon_recall_writes_one_ok_recall_row _____________
+
+root = PosixPath('/private/tmp/rmx-44c42ncb/r/3663/.refmatrix')
+
+    def test_ac2b_live_daemon_recall_writes_one_ok_recall_row(root):
+        """AC-2b, "the same run against a live sandbox daemon logs outcome=ok": the same generated
+        command, served by a real `rmx daemon` on the sandbox root, writes exactly one kind=recall
+        row with outcome=ok (`ok`: an answer was rendered, however many items), budget_s=5 and the
+        envelope's session."""
+        _seed_memories(root)
+        before = len(_recall_rows(root))
+        with h.SandboxDaemon(root):
+            r = h.run_hook(_recall_cmd(root), root=root, envelope=_envelope(), timeout=240)
+        rows = _recall_rows(root)[before:]
+        assert len(rows) == 1, (
+            f"R3: one kind=recall row per recall call; got {len(rows)}: {rows}\n"
+            f"stderr={r.stderr[-800:]}")
+>       assert rows[0]["outcome"] == "ok", rows[0]
+E       AssertionError: {'body': 'which parser handles the widget tokens', 'budget_s': 5.0, 'cardinality': None, 'cwd': '/private/tmp/rmx-44c42ncb/r/3663', ...}
+E       assert 'skipped_budget' == 'ok'
+E         
+E         - ok
+E         + skipped_budget
+
+tests/test_task21_1_recall_skip.py:204: AssertionError
+=============================== warnings summary ===============================
+tests/test_cctree_web.py:17
+  /Volumes/littlebig/refmatrix-bug216/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Volumes/littlebig/refmatrix-bug216/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=20716) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-370 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug216/tests/test_rerank_budget_real_clients.py", line 361, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-bug216/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_brief_real_daemon.py::test_an_unknown_class_fails_loudly_through_the_daemon
+FAILED tests/test_bug178_bulk_write.py::test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_into]
+FAILED tests/test_bug178_bulk_write.py::test_ac2_replica_merge_matches_head_and_reference[replica_merge._merge_linkage_types]
+FAILED tests/test_gmd_lint_requires_version.py::test_the_repo_scope_is_clean_under_the_stricter_gate
+FAILED tests/test_partition_merge.py::test_merge_reparents_non_colliding_entities
+FAILED tests/test_partition_merge.py::test_merge_collision_prefers_longer_memory_content
+FAILED tests/test_partition_merge.py::test_merge_collision_keeps_longer_dst_body
+FAILED tests/test_partition_merge.py::test_merge_collision_remaps_entity_links_to_dst_id
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+FAILED tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row
+11 failed, 4449 passed, 1 skipped, 4 warnings in 3237.75s (0:53:57)

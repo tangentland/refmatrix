@@ -1,0 +1,35 @@
+...............................F.............................            [100%]
+=================================== FAILURES ===================================
+_ test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since] _
+
+named_store = (PosixPath('/private/tmp/b212s-53_zjaju'), PosixPath('/private/tmp/b212s-53_zjaju/st/.refmatrix'))
+fn = 'sync_since'
+
+    @pytest.mark.timeout(120)
+    @pytest.mark.parametrize("fn", ["sync_since", "sync_files"])
+    def test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error(named_store, fn):
+        """s-1: `sync.sync_since` (sync.py `project_root or Path.cwd()`) and `sync.sync_files` ->
+        `_sync_paths` (the same default) are library entries the daemon ops also reach. With no
+        `project_root` and the cwd gone they must raise the shared helper's error -- one that says
+        the working directory is gone -- not a bare `FileNotFoundError` (an OSError naming no
+        path)."""
+        base, root = named_store
+        probe = base / "probe.py"
+        probe.write_text(_LIB_PROBE, encoding="utf-8")
+        afile = base / "a.py"
+        afile.write_text("def a():\n    return 1\n", encoding="utf-8")
+        r = _vanished([sys.executable, str(probe), str(root), fn, str(afile)], _base_env())
+        text = f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        assert r.returncode == 0, f"the probe itself failed\n{text}"
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        assert out["raised"] is not None, f"sync.{fn} in a vanished cwd raised nothing\n{text}"
+>       assert not out["oserror"] and _says_cwd_gone(out["msg"]), \
+            f"sync.{fn} in a vanished cwd raised {out['raised']}: {out['msg']!r} -- not the named " \
+            f"cwd error"
+E       AssertionError: sync.sync_since in a vanished cwd raised FileNotFoundError: '[Errno 2] No such file or directory' -- not the named cwd error
+E       assert (not True)
+
+tests/test_bug212_r1_remedy.py:455: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r1_remedy.py::test_sync_library_entries_in_a_vanished_cwd_raise_the_named_cwd_error[sync_since]
+1 failed, 60 passed in 51.33s

@@ -1,0 +1,33 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+    assert 0 == 1
+     +  where 0 = len([])
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1249: AssertionError: R11: expected ONE SessionStart entry running recall-state; got []
+E   AssertionError: ['memory_dir', 'project', 'root', 'session']
+    assert 'max_bytes' in {'memory_dir': {'type': 'string'}, 'project': {'description': 'Target another project by NAME (any live store)', 'type...path to a project or its .refmatrix); default: the server's project", 'type': 'string'}, 'session': {'type': 'string'}}
+/Volumes/littlebig/refmatrix-plan25-1/tests/test_task25_1_recall_budget.py:1335: AssertionError: ['memory_dir', 'project', 'root', 'session']
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry
+FAILED tests/test_task25_1_recall_budget.py::test_ac15b_compact_runs_recall_state_naming_the_checkpoint_within_n
+FAILED tests/test_task25_1_recall_budget.py::test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer
+FAILED tests/test_task25_1_recall_budget.py::test_ac15d_no_daemon_prints_the_file_blocks_and_exits_0
+FAILED tests/test_task25_1_recall_budget.py::test_ac15e_unreadable_memdir_fails_with_one_error_line
+FAILED tests/test_task25_1_recall_budget.py::test_ac15f_max_bytes_is_a_recall_state_verb_parameter
+6 failed, 112 deselected in 1.28s

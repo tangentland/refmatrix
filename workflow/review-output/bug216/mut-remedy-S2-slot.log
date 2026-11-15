@@ -1,0 +1,31 @@
+pyc-guard: recompiled 19 timestamp pyc(s) under /private/tmp/claude-501/-Users-tholley-claude-tools-refmatrix/f0521bff-0006-479a-9e0f-6df02d50937e/scratchpad/mut216/refmatrix/src/refmatrix as checked-hash (bug-037)
+.........F...........                                                    [100%]
+=================================== FAILURES ===================================
+_________ test_s2_a_slot_merge_keeps_every_pending_row_with_its_source _________
+
+slots = {'a': PosixPath('/private/tmp/b216reu9auzb5/A/proj/.refmatrix/catalog.duckdb'), 'b': PosixPath('/private/tmp/b216reu9auzb5/B/proj/.refmatrix/catalog.duckdb'), 'target': PosixPath('/private/tmp/b216reu9auzb5/T/catalog.duckdb')}
+
+    def test_s2_a_slot_merge_keeps_every_pending_row_with_its_source(slots):
+        import duckdb
+    
+        from refmatrix.replica_merge import merge_slots
+        want = Counter()
+        for k in ("a", "b"):
+            con = duckdb.connect(str(slots[k]), read_only=True)
+            try:
+                want |= _pending(con)
+            finally:
+                con.close()
+        assert {r[4] for r in want} == {"missing-1", "missing-a", "missing-b"}, want
+        slots["target"].parent.mkdir()
+        res = merge_slots(slots["a"], slots["b"], slots["target"])
+>       assert res["merged_counts"].get("pending_refs") == 3, res["merged_counts"]
+E       AssertionError: {'bitmap_fragments': 3, 'concepts': 12, 'entities': 15, 'entity_links': 36, ...}
+E       assert 0 == 3
+E        +  where 0 = <built-in method get of dict object at 0x12014a1c0>('pending_refs')
+E        +    where <built-in method get of dict object at 0x12014a1c0> = {'bitmap_fragments': 3, 'concepts': 12, 'entities': 15, 'entity_links': 36, ...}.get
+
+tests/test_bug216_remedy_r1.py:384: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug216_remedy_r1.py::test_s2_a_slot_merge_keeps_every_pending_row_with_its_source
+1 failed, 20 passed in 12.93s

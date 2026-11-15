@@ -1,0 +1,31 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+______ test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted ______
+
+offline = {'a': <tests.task25_1_support.Fixture object at 0x104a5f9d0>, 'b': <tests.task25_1_support.Fixture object at 0x109eb92...('/private/tmp/rmx-sq6zm28f/p25o-034blp_o'), 'home': PosixPath('/private/tmp/rmx-sq6zm28f/p25o-034blp_o/g/.refmatrix')}
+
+    def test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted(offline):
+        """AC-4 (c) / d8: no daemon, no hub worker, HOOK mode: the per-prompt argv prints NOTHING,
+        exits 0, loads no model and spawns no worker (no `sentence_transformers` import; within the
+        5 s hook budget), and its recall row reads outcome "error", error "VerbAbsentError: …".
+        HEAD: exit 1, "needs the daemon up …"."""
+        b = offline["b"]
+        before = len(s.recall_rows(b.root))
+        cmd = s.recall_cmd(b.root, "UserPromptSubmit")
+        t0 = time.monotonic()
+        r = s.run_cmd(b, cmd, env_in=s.envelope(QUESTION), RMX_HOME=str(offline["home"]),
+                      RMX_MODEL_SOCK=str(offline["base"] / "none.sock"), PYTHONPROFILEIMPORTTIME="1")
+        took = time.monotonic() - t0
+        err = r.stderr.decode("utf-8", "replace")
+        said = "\n".join(ln for ln in err.splitlines() if not ln.startswith("import time:"))
+>       assert r.returncode == 0, f"AC-4 (c): exit {r.returncode}: {said[-600:]}"
+E       AssertionError: AC-4 (c): exit 1: Error: memory recall needs the daemon up (dense embedder lives there) or a replica + shared model workers
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/bin/bash', '-c', 'export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:$PATH"; ...aemon up (dense embedder lives there) or a replica + shared model workers\nimport time:        39 |         39 | gc\n').returncode
+
+tests/test_task25_1_recall_budget.py:527: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 21.99s

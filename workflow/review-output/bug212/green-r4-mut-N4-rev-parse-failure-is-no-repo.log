@@ -1,0 +1,98 @@
+................................FFFF....                                 [100%]
+=================================== FAILURES ===================================
+__________ test_a_failing_rev_parse_inside_a_repository_raises[slots] __________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x107d89e50>, 'slots')
+
+    def test_a_failing_rev_parse_inside_a_repository_raises(tracked_repo):
+        """m-4 (L72): a corrupted `.git/HEAD` in a repo that tracks the catalog makes `rev-parse`
+        fail. A `.git` exists above the store, so the answer is UNKNOWN: `TrackedCatalogCheckError`,
+        never `[]` (only "no `.git` anywhere at or above the store dir" is `[]`)."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        with pytest.raises(store_mod.TrackedCatalogCheckError):
+            got = store_mod.git_tracked_catalogs(repo.store)
+>           pytest.fail(f"[{layout}] git_tracked_catalogs returned {got!r} with a corrupt .git/HEAD")
+E           Failed: [slots] git_tracked_catalogs returned [] with a corrupt .git/HEAD
+
+tests/test_bug212_r4_red.py:543: Failed
+_________ test_a_failing_rev_parse_inside_a_repository_raises[legacy] __________
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x107bd4d50>, 'legacy')
+
+    def test_a_failing_rev_parse_inside_a_repository_raises(tracked_repo):
+        """m-4 (L72): a corrupted `.git/HEAD` in a repo that tracks the catalog makes `rev-parse`
+        fail. A `.git` exists above the store, so the answer is UNKNOWN: `TrackedCatalogCheckError`,
+        never `[]` (only "no `.git` anywhere at or above the store dir" is `[]`)."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        with pytest.raises(store_mod.TrackedCatalogCheckError):
+            got = store_mod.git_tracked_catalogs(repo.store)
+>           pytest.fail(f"[{layout}] git_tracked_catalogs returned {got!r} with a corrupt .git/HEAD")
+E           Failed: [legacy] git_tracked_catalogs returned [] with a corrupt .git/HEAD
+
+tests/test_bug212_r4_red.py:543: Failed
+_ test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x107bd50d0>, 'slots')
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses(tracked_repo):
+        """m-4 end to end: `rmx sync --files <f>`, no daemon, corrupt `.git/HEAD`, catalog tracked.
+        Refused (one `Error:` line with the full target), catalog bytes unchanged -- not a write."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        before = _digests(repo.store)
+        r = _cli(repo, ["sync", "--files", str(repo.proj / "README.md")])
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert _changed(before, _digests(repo.store)) == [], \
+            f"[{layout}] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not " \
+            f"a repository')\n{text}"
+E       AssertionError: [slots] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not a repository')
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert ['catalog.A.duckdb'] == []
+E         
+E         Left contains one more item: 'catalog.A.duckdb'
+E         Use -v to get more diff
+
+tests/test_bug212_r4_red.py:555: AssertionError
+_ test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[legacy] _
+
+tracked_repo = (<tests.test_bug212_hooks_in_worktrees.Repo object at 0x107bd68d0>, 'legacy')
+
+    @pytest.mark.timeout(300)
+    def test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses(tracked_repo):
+        """m-4 end to end: `rmx sync --files <f>`, no daemon, corrupt `.git/HEAD`, catalog tracked.
+        Refused (one `Error:` line with the full target), catalog bytes unchanged -- not a write."""
+        repo, layout = tracked_repo
+        _corrupt_head(repo)
+        before = _digests(repo.store)
+        r = _cli(repo, ["sync", "--files", str(repo.proj / "README.md")])
+        text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+>       assert _changed(before, _digests(repo.store)) == [], \
+            f"[{layout}] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not " \
+            f"a repository')\n{text}"
+E       AssertionError: [legacy] the in-process sync wrote the tracked catalog (corrupt HEAD read as 'not a repository')
+E         exit 0
+E         stdout:
+E         synced +1 ~0 -0 (touched=1)
+E         
+E         stderr:
+E         
+E       assert ['catalog.duckdb'] == []
+E         
+E         Left contains one more item: 'catalog.duckdb'
+E         Use -v to get more diff
+
+tests/test_bug212_r4_red.py:555: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r4_red.py::test_a_failing_rev_parse_inside_a_repository_raises[slots]
+FAILED tests/test_bug212_r4_red.py::test_a_failing_rev_parse_inside_a_repository_raises[legacy]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[slots]
+FAILED tests/test_bug212_r4_red.py::test_an_in_process_writer_in_a_repository_with_a_corrupt_head_refuses[legacy]
+4 failed, 36 passed in 106.83s (0:01:46)

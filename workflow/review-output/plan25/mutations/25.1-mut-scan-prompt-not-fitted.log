@@ -1,0 +1,34 @@
+pyc-guard: recompiled 20 timestamp pyc(s) under /Volumes/littlebig/refmatrix-plan25-1/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+________________ test_ac12_scan_prompt_alone_within_its_budget _________________
+
+fx = <tests.task25_1_support.Fixture object at 0x112536a50>
+
+    def test_ac12_scan_prompt_alone_within_its_budget(fx):
+        """AC-12 (R0b): the generated scan-prompt command on the question prints ≤
+        budget("scan_prompt"). HEAD: 6,720 B on this fixture."""
+        r = s.run_cmd(fx, s.scan_prompt_part(fx.root), env_in=s.envelope(QUESTION))
+        _ok(r, "scan-prompt argv")
+        assert r.stdout, "scan-prompt printed nothing on the fixture question"
+>       s.assert_within(len(r.stdout), "scan_prompt", "AC-12 scan-prompt argv")
+
+tests/test_task25_1_recall_budget.py:1122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+n = 6660, channel = 'scan_prompt', what = 'AC-12 scan-prompt argv'
+
+    def assert_within(n: int, channel: str, what: str) -> int:
+        """`n` bytes ≤ `hook_budget.budget(channel)`; RED names the measured bytes."""
+        b = budget_or_none(channel)
+        assert b is not None, (f"{what}: printed {n} B; R1 `refmatrix.hook_budget` is not built, "
+                               f"so budget({channel!r}) does not exist")
+>       assert n <= b, f"{what}: printed {n} B > budget({channel!r}) = {b} B"
+               ^^^^^^
+E       AssertionError: AC-12 scan-prompt argv: printed 6660 B > budget('scan_prompt') = 4500 B
+
+tests/task25_1_support.py:90: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_task25_1_recall_budget.py::test_ac12_scan_prompt_alone_within_its_budget
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 14.45s
