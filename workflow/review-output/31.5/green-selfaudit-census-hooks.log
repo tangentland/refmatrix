@@ -1,0 +1,20 @@
+PostToolUse | rmx','sync','--enqueue-only','-f',p],check=False) for p in paths if p]" 2>/dev/null || true ) & disown
+PostToolUse | rmx focus hook --event tool 2>/dev/null || true
+Stop | rmx sync --flush-queue --async >/dev/null
+Stop | rmx focus hook --event say 2>/dev/null || true
+Stop | rmx focus summarize --promote --timeout 5
+SubagentStop | rmx sync --flush-queue --async >/dev/null
+SessionStart | rmx primer --out '/nonexistent/.refmatrix/PRIMER.md' >/dev/null 2>&1 || true ) & disown ; rmx curator status || true
+SessionStart | rmx sync --flush-queue --async >/dev/null
+SessionStart | rmx focus hook --event session-start
+SessionStart | rmx memory recall --session-start --k 12 --scope both --pack --timeout 10
+SessionStart | rmx ingest-gmd --as-memory --detach '/private/tmp/claude-501/hb315/.claude/projects/-nonexistent/memory'
+SessionStart | rmx recall-state --max-bytes 9000
+SessionStart | rmx focus context --top 15
+UserPromptSubmit | rmx scan-prompt --composite-every 3 --max-tokens 2000 --timeout 5 2>/dev/null || true ; rmx curator status || true
+UserPromptSubmit | rmx focus hook --event input 2>/dev/null || true
+UserPromptSubmit | rmx memory recall --stdin-json --k 12 --scope both --pack --timeout 5
+PreToolUse | rmx focus hook --event tool-pre 2>/dev/null || true
+PreCompact | rmx focus summarize --promote --timeout 30
+PreCompact | rmx memory recall --recent --since 1h --k 30 --scope both --pack --timeout 30
+PreCompact | rmx save-state --no-promote --no-sync -m "auto: pre-compact checkpoint"

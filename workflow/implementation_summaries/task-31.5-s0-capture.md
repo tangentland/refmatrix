@@ -5,7 +5,7 @@ title: "Task 31.5 release A (GREEN): the injection capture in both modes, the R2
 tags: [implementation-summary, plan-31, task-31.5, scan-prompt, injection-capture, bug-256, bug-268]
 metadata:
   node_type: implementation-summary
-  status: green-with-flagged-tests
+  status: green
   created: 2026-11-15
   branch: task-31.5-s0-capture
   base: 4b58fce
@@ -189,19 +189,76 @@ run (load only) gave the same six. {#verify-lead}
 | `test_injection_capture.py::test_prompt_text_appears_only_inside_block_text` | `the canary outside a dropped block's header: ['=== context for `zqxcanary315 why does …` ===']` | new node: flagged |
 {#verify-table}
 
-## Flagged to the lead, not worked around {#flagged}
+## Flagged, then ruled (L155, L156) {#flagged}
 
-- **AC-0.8's node allows too little.** The content bundle's render carries the canary twice:
-  in its `# refmatrix content matches` header and in its anchor line `=== context for
-  `<candidate bag>` ===`. The delivered payload shows both (the stdout holds the canary
-  twice). The node allows only lines that start with `# refmatrix `. GREEN stores the render
-  as it would print (R0.1), so it does not strip the line. The fix belongs to the test
-  (red-315) or to a ruling. {#flag-ac08}
-- **Three `test_composite.py` tests pin pre-R2.0 behaviour.** They pass a bare `object()` as
-  the store, use plain-word members and monkeypatch `build_context`. R2.0 asks the store
-  whether it holds a plain word's concept. `object()` cannot answer, so the filter raises
-  (loudly, by choice). Even if it did not raise, the members would no longer print. The fix is
-  a fixture with a concept lookup, or identifier-shaped members. {#flag-composite}
-- **Not done here:** mutations (not GREEN's), the version bump (the release's), and a bug-268
-  registry row (no row exists at base; the lead allocates ids). {#flag-scope}
+- **AC-0.8:** the node allowed only `# refmatrix ` lines, but the content bundle's render also
+  carries the canary in its anchor line `=== context for `<candidate bag>` ===`. L155 widened
+  the test (red-315 `30ac2f6`). GREEN keeps storing the real render. {#flag-ac08}
+- **Three `test_composite.py` nodes** passed a bare `object()` store to the R2.0 filter. L156
+  kept the raise and gave them a store double (`dfcedf1`). {#flag-composite}
+- Merged at the tip; the three files re-run once: [[#after-merge]]. {#flag-merged}
 {#flagged-list}
+
+## After the merge {#after-merge}
+
+Merged red-315's `dfcedf1` (with `30ac2f6`) at `d298965`. The merge touches only
+`tests/test_composite.py`, `tests/test_injection_capture.py`, `workflow/test_mock_registry.md`
+and review logs, so only the three files re-ran, in one lane hold
+(`green-merge-3files.log`): `test_injection_capture.py`, `test_composite.py` and
+`test_stm_composite_members.py` gave 64 collected, 64 passed, exit 0, no E lines. {#after-merge-body}
+
+## Self-audit {#self-audit}
+
+1. **Real run** (`green-selfaudit-real.log`): the dev `rmx` was run by path on a throwaway
+   store, with the cwd discovering the store and capture in the default mode. Hook-shaped
+   `scan-prompt` exits 0 and writes `.gitignore` plus one record (7 blocks, `capture_ms` 0.5,
+   `capture_mode` names). `memory recall --session-start --pack` writes a `session_start`
+   record (13 blocks). `--recent --since 1h --pack` writes a `precompact` record (24 blocks).
+   `telemetry --context` prints `capture: on (mode names) · … · 3 captured of 3 hook calls
+   · errors none · composite_errors=0 · stm_errors=0 · malformed=0`. The band (AC-0.13) ran
+   the hook command 1,200 times on a copy of the live catalog. {#sa-1}
+2. **Wiring:** every capture node runs the real `rmx scan-prompt` or `rmx memory recall
+   --pack` as a child process. The bug-268 nodes send the hook's `--stdin-json` envelope.
+   `test_a_verb_recall_with_pack_writes_no_capture_record` goes through `verbs.memory_recall`
+   with a sandbox daemon. Nothing in `src/` is patched. {#sa-2}
+3. **Census** (`green-selfaudit-census-hooks.log`, `green-selfaudit-census-sites.log`): the
+   generated hook commands that print to the model are `scan-prompt`, `curator status` (×2),
+   `memory recall --pack` (×3: prompt, session start, precompact), `recall-state` and
+   `focus context`. Captured: scan-prompt and the three recall packs (the spec's four
+   channels). Left: `curator status`, `recall-state` and `focus context`, outside R0.2's
+   channel list and census row. `fit_blocks` has 5 sites; two record a capture (`scan._finish`
+   via the CLI, `recall_pack.pack` via `_RecallCall`). Both recall pack routes (verb and replica
+   fall-through) end in `_echo_pack`, so both capture. JSON and MCP do not capture (AC-0.11).
+   {#sa-3}
+4. **Bound:** the capture makes no RPC. In mode `names` it costs one stat (`.gitignore`), one
+   listdir, one stat per day file (at most 43) and one append; measured p95 5.2 ms and max
+   11.6 ms. In mode `full` it adds up to `max_concepts` (5) `build_context` calls with no time
+   bound of their own; measured max 2 builds and 3,751 ms. That is why the default is
+   `names`, and the spec's live fallback table (AC-0.17) is a setting. {#sa-4}
+5. **Busy / down:** the capture never calls a daemon. With the daemon down, the recall falls
+   through to the replica and is captured (Q1 stderr: `reading the replica`). With the daemon
+   busy, the degraded pack prints nothing and `emit` writes a record with empty `blocks`,
+   because the call still counts for coverage. Busy was not forced in a live run. {#sa-5}
+6. **Guards, each reached by a real state:**
+   - `over_bound`: a 65 MiB sparse day file (`test_a_day_file_over_the_bound_stops_appending`).
+   - Vanished file: a dangling link, which stat follows to ENOENT
+     (`test_a_file_another_process_removed_is_not_an_error`).
+   - `.gitignore` creation: a bare directory (`test_an_existing_capture_dir_without_gitignore_gets_one`).
+   - Invalid mode: the word `bogus` in the mode file (`test_the_mode_file_selects_the_path`).
+   - `FocusGraphCorrupt`: three real files (nine bug-268 nodes).
+   - `suppressed_cadence` / `suppressed_unchanged`: two AC-0.3 nodes.
+   - Member filter: the AC-2.0 nodes.
+   - Not exercised by a test: `prune_failed` (an unlink EPERM) and the 1 MiB `errors.jsonl` cap.
+   {#sa-6}
+7. **Loud** (Q1 log): an unwritable day file gives exit 0, the same payload, and stderr
+   `rmx: injection capture: append_failed for query … (PermissionError …)`. A `[]` focus graph
+   gives exit 0 and stderr `rmx scan-prompt: STM composite build failed, sent without it
+   (AttributeError: 'list' object has no attribute 'setdefault')` plus `rmx: STM focus graph of
+   session … is corrupt (FocusGraphCorrupt: … not a JSON object (list))`. A bogus mode gives
+   `capture: off (invalid mode: 'bogus' in injection-capture.mode) · … errors
+   append_failed=1 · composite_errors=1 · stm_errors=1`. No `except: pass` was added; every
+   handler says and counts. {#sa-7}
+8. **Handoff:** live checks AC-0.14 and AC-0.17 are spec ACs run after the deploy. Mutations
+   are in the spec's `#mutations`, for the lead. bug-268 has no registry row yet (the lead
+   allocates it). The version bump belongs to R1. {#sa-8}
+{#self-audit-list}
