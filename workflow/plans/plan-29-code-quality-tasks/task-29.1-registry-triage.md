@@ -87,7 +87,7 @@ one form. `→` and `->` are both accepted.
 |---|---|---|
 | `fixed <sha>[ (<test node id>)][; <note>]` | a fix that landed in this repo, by the row's own task **or by another task** | `<sha>` is an ancestor of `HEAD` (the checker runs `git merge-base --is-ancestor`). This is the only `fixed` form for a row that is not on the legacy list |
 | `fixed …` / `remedied …`, free-form | the 157 rows that were closed before this task | allowed **only** for the ids in `scripts/bug-registry-legacy-fixed.txt`, a list written once from the triage commit's parent. The list never gains an id. Those rows are not rewritten |
-| `scheduled → <target> (<track>)[; <note>]` | a named task or plan will fix it | `<target>` is the frontmatter `id` of a file under `workflow/plans/`. `<track>` is one of `T0`..`T6` ([[plan-review-2026-11-13#p1]]) or `P29` (plan-29). |
+| `scheduled → <target> (<track>)[; <note>]` | a named task or plan will fix it | `<target>` is the frontmatter `id` of a file under `workflow/plans/`. `<track>` is one of `T0`..`T6` ([[plan-review-2026-11-13#p1]]) or `P<n>` for a plan `plan-<n>-…` under `workflow/plans/` (`P29`, `P30`; amended by ruling L117). |
 | `deferred: <reason>; review <YYYY-MM-DD>[; <note>]` | nobody owns it yet, on purpose | a reason of at least 4 words; a review date no more than 183 days after the checker's `--today` (default: the current date). This bound moves forward with the calendar, so it cannot turn a green suite red; a date that has passed is `--overdue`'s business ([[#r4]]) |
 | `closed: <evidence>` | closed with no fix commit in this repo: it does not reproduce, its code is gone, another row replaced it, or the user decided not to fix it | one of the [[#r3]] evidence shapes |
 | `recurring; scheduled → …` / `recurring; deferred: …` | seen again after a fix | `recurring` alone is no longer a complete status |
@@ -232,7 +232,7 @@ written `OPEN — fix: …`: bug-096. The baseline count folded case; the checke
 | `recurring-alone` | `recurring` with no `scheduled` or `deferred` after it |
 | `sched-target` | the `scheduled` target is not a frontmatter id under `workflow/plans/` |
 | `sched-completed` | the target's `metadata.status` is `completed` |
-| `sched-track` | the track is missing, or is not one of `T0`..`T6`, `P29` (`T7` in the fixture) |
+| `sched-track` | the track is missing, or is not one of `T0`..`T6` or `P<n>` naming an existing plan file (`T7` and `P99` in the fixture) |
 | `defer-reason` | the `deferred` reason has fewer than 4 words |
 | `defer-date` | there is no review date, or it does not parse |
 | `defer-horizon` | the review date is more than 183 days after `--today` |

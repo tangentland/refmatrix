@@ -5,7 +5,7 @@ title: "Plan 30: adjacency and bitmap materialisation — a vectorised CSR adjac
 tags: [plan, performance, adjacency, ppr, scan-prompt, bitmap, daemon, materialisation]
 metadata:
   node_type: plan
-  status: drafting
+  status: approved
   created: 2026-11-14
   updated: 2026-11-15
 ---
@@ -16,8 +16,8 @@ metadata:
 `workflow/plans/plan-30-materialisation-tasks/`, written by ch-architect on Fable 5.2. ch-bsd's
 spec review r1 was DIRTY (0 BULLSHIT, 3 SKETCHY, 5 MEH; [[bsd-plan30-spec-r1]]); ruling L116
 folded all eight, and [[#rev-note-2]] says where. The confirm-lite r2 was MEH-only (0 BULLSHIT, 0 SKETCHY, 4 MEH), GO
-([[bsd-plan30-spec-r2]]); its four are folded ([[#rev-note-3]]). plan-30 D1-D3 are with the user.
-Nothing here is approved until they are answered.
+([[bsd-plan30-spec-r2]]); its four are folded ([[#rev-note-3]]). **Approved 2026-11-15:** the user decided
+plan-30 D1-D3 (ruling L117, [[plan-review-2026-11-13#lead]]).
 **Origin:** the user asked for "a plan for materialization changes" from the measurement report
 [[perf-bitmap-materialisation-2026-11-14]], then "add the adjacency change too" (bug-243).
 **Sequencing:** after plan-29. Plan-29 splits `cli.py` and `store.py` and adds the census kit, the
@@ -217,14 +217,15 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
 
 ## Decisions {#decisions}
 
-**For the user.** Each has a recommendation; none is taken. {#decisions-user}
+**Decided by the user, 2026-11-15** (ruling L117): D1 (a), D2 go, D3 yes with the files MOVED to a backup
+directory, not deleted. {#decisions-user}
 
 1. **plan-30 D1: may the daemon answer `ppr_rank` from a graph that is one or more publishes
    behind?** A rebuild takes about 0.5 s after a write batch that changed the key's inputs.
    The question is about a service that is late. A service or a publish that has FAILED is not
    "behind": past the same bound it is `build-failed` and is said in the hook's output, under
    every option ([[task-30.4-daemon-adjacency-ppr-op#r4]]).
-   - (a) **Recommended:** yes, bounded. The op waits up to 0.25 s for a build in flight; then it
+   - (a) **Decided (user, 2026-11-15)**, as recommended: yes, bounded. The op waits up to 0.25 s for a build in flight; then it
      serves the newest finished graph if it was superseded at most 10 s ago, and the reply says
      how far behind it is; past that it answers `unavailable` and the hook builds in-process.
    - (b) Never behind: wait for the build up to the caller's deadline, else `unavailable`.
@@ -234,14 +235,15 @@ memory** (report recommendations 4 and 5) are not built by this plan. {#deferred
      (365 of 390); (c) sends those same prompts to the 0.5 s in-process build.
 2. **plan-30 D2: release B re-derives the `pagerank` pass on every fleet store.** It is a
    store-changing release, outside the standing go.
-   - **Recommended:** go, in one announced window, run by the lead, checked as
+   - **Decided (user, 2026-11-15): go**, in one announced window after release B deploys, backups first, run by the lead, checked as
      [[task-29.2-mypy-gate#r7-release]] step 4 checks it (stamp time moved; no `behind_code`).
      About 2 s per partition.
    - The alternative, leaving `behind_code` until each store's next reingest, breaks ruling
      L109's rule that `behind_code` from a release is allowed only inside its window.
-3. **plan-30 D3: if 30.0's verdict is drop, delete `adjacency.cache.npz` and
-   `adjacency.cache.json` from every fleet store at release B.** About 29-33 MB per store.
-   - **Recommended:** yes, by the lead, announced, each file counted and named.
+3. **plan-30 D3: if 30.0's verdict is drop, move `adjacency.cache.npz` and
+   `adjacency.cache.json` out of every fleet store at release B.** About 29-33 MB per store.
+   - **Decided (user, 2026-11-15): yes, MOVED (not deleted)** into a per-store backup directory
+     by the lead, announced, each file counted and named.
    - The alternative is to leave the orphans. Nothing would read them.
 {#decisions-user-list}
 
