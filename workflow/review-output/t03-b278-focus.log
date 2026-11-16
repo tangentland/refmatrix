@@ -1,0 +1,102 @@
+# mini-lane slot=rmxtest1 sha=1a4505aed085874ecd8248ac49694418b4d6804b host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 17:55:37 load={ 0.95 1.06 1.05 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-b278-focus.TM6J/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 17%]
+...................F........................................F........... [ 35%]
+...................F.................................................... [ 52%]
+........................................................................ [ 70%]
+........................................................................ [ 87%]
+..................................................                       [100%]
+=================================== FAILURES ===================================
+______________ test_a_timed_probe_does_not_shorten_the_next_call _______________
+
+fake_models = <test_plan2_remedy_r7._FakeModelSock object at 0x16a1d5e80>
+
+    def test_a_timed_probe_does_not_shorten_the_next_call(fake_models):
+        c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+        assert c.info(timeout=1.0)["model"] == "fake"
+        t0 = time.monotonic()
+        hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})   # timeout=None → the client's 5 s
+        assert hdr["scores"] == [1.0, 1.0]
+        assert time.monotonic() - t0 >= 1.4
+>       assert c._sock.gettimeout() == 5.0
+               ^^^^^^^
+E       AttributeError: 'SharedWorkerClient' object has no attribute '_sock'
+
+tests/test_plan2_remedy_r7.py:96: AttributeError
+______________ test_a_budgeted_view_closes_its_forked_connection _______________
+
+stub = <class 'test_rerank_budget_real_clients.stub.<locals>.S'>
+hub = (<refmatrix.modelsrv.ModelServer object at 0x16a368370>, <refmatrix.modelsrv.SharedWorkerClient object at 0x16a37c440>)
+
+    def test_a_budgeted_view_closes_its_forked_connection(stub, hub):
+        """K7: a fork per request that is never closed is a socket (and a hub
+        handler thread) leaked per context op."""
+        from refmatrix.reranker import RemoteReranker
+    
+        _srv, client = hub
+        view = RemoteReranker(client).with_budget(2.0)
+        assert view._client is not client
+        assert _attempt(view)[1] == "scored"
+>       assert view._client._sock is None, "the forked connection was left open"
+               ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SharedWorkerClient' object has no attribute '_sock'
+
+tests/test_rerank_budget_real_clients.py:723: AttributeError
+____________ test_the_client_stamps_a_deadline_from_its_own_timeout ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x16a387930>
+
+    def test_the_client_stamps_a_deadline_from_its_own_timeout(monkeypatch):
+        """A bounded client cannot forget: if it gave itself N seconds, the frame
+        says so, and a worker that dequeues it late drops it."""
+        from refmatrix import modelsrv
+    
+        sent = {}
+    
+        class _FakeSock:
+            def settimeout(self, t):
+                pass
+    
+        c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+        c._sock = _FakeSock()
+        c._rw = object()
+>       monkeypatch.setattr(c, "_call_once",
+                            lambda req, blob: (sent.update(req) or ({"ok": True}, b"")))
+E       AttributeError: <refmatrix.modelsrv.SharedWorkerClient object at 0x16a37c830> has no attribute '_call_once'
+
+tests/test_rerank_cost_budget.py:326: AttributeError
+=============================== warnings summary ===============================
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-124 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-b278-focus.TM6J/tests/test_rerank_budget_real_clients.py", line 442, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-b278-focus.TM6J/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_plan2_remedy_r7.py::test_a_timed_probe_does_not_shorten_the_next_call
+FAILED tests/test_rerank_budget_real_clients.py::test_a_budgeted_view_closes_its_forked_connection
+FAILED tests/test_rerank_cost_budget.py::test_the_client_stamps_a_deadline_from_its_own_timeout
+3 failed, 407 passed, 1 warning in 393.33s (0:06:33)
+exit 1

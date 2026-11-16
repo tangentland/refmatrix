@@ -493,20 +493,18 @@ recorder calls the real `_spawn`. The T0.3 tests replaced in [[#sites]] keep the
 (CLI via `CliRunner`, verbs, daemon ops, real daemons).
 {#sa-2}
 
-3 **census** (corrected in the L177 fold; ch-bsd t03 r1 B1/M1). The worker stage iterates
-over two client classes, both built by `recall.new_model_client` (`recall.py:287-320`):
-`subproc.WorkerClient` (private) and `modelsrv.SharedWorkerClient` (hub-shared, the normal
-state when the hub is up). Callers of `retire`: `daemon.py:1189` `_close_workers` (shutdown,
-`abandon_in_flight=True`, private class only), `daemon.py:992` `_model_client`'s bug-272 refusal
-(same form), `daemon.py:1061` `_maybe_adopt_shared` and `recall.py:644` the embed swap (adoption;
-default, waits, so an in-flight ingest batch finishes: deliberate). `_stop_began()`:
-`daemon.py:938` (`_embedder` fallback), `:981` (`_model_client`, bug-272), `:1265` (warm-up's
-reranker step). Left, and why: (1) `SharedWorkerClient` has no `retire`; `_close_workers` calls
-its `close()`, which ignores its timeout and waits on the client's own `_lock` held by an
-in-flight `call()` (B1 / bug-278, held for the user's answer to Q51; r1's reason "holds no warm
-lock" was wrong). (2) `_fast_exit` (`os._exit(2)` on a lost writer) skips `_close_workers`
-entirely, unchanged.
-
+3 **census** (corrected in the L177 fold and for bug-278, ruling L180). The worker stage
+iterates over two client classes, both built by `recall.new_model_client` (`recall.py:287-320`):
+`subproc.WorkerClient` (private) and `modelsrv.SharedWorkerClient` (hub-shared, the normal state
+when the hub is up). Both now implement `retire(timeout, abandon_in_flight=)`. Callers of
+`retire`: `daemon.py:1188` `_close_workers` (shutdown, `abandon_in_flight=True`, BOTH classes, no
+`close()` fallback), `daemon.py:990` `_model_client`'s bug-272 refusal (same form),
+`daemon.py:1057` `_maybe_adopt_shared` and `recall.py:644` the embed swap (adoption, private
+clients only; default, waits, so an in-flight ingest batch finishes: deliberate).
+`_stop_began()`: `daemon.py:938` (`_embedder` fallback), `:981` (`_model_client`, bug-272),
+the warm-up's reranker step. Left: `_fast_exit` (`os._exit(2)` on a lost writer) skips
+`_close_workers` entirely, unchanged.
+{#sa-3}
 
 4 **bound**, stop op to exit (corrected in the L177 fold: per class, by name). Caller
 (`daemon.graceful_stop`): `ping` 0.5 s, retries 0; `call stop` 2.0 s, retries 0; then polls the
@@ -516,20 +514,22 @@ margin starts here. `_close_workers`, per client by class:
 - `subproc.WorkerClient` (private): lock wait ≤ 2.0 s, then either `close(2.0)` (EOF wait 2.0 +
   terminate wait 2.0 + kill wait 2.0) or SIGKILL + wait ≤ 2.0 s: ≤ 8 s each, ≤ 16 s for two
   (before the fix: the remaining cold loads, unbounded; 22.4 s measured).
-- `modelsrv.SharedWorkerClient` (hub-shared): `close()` waits on the client's `_lock` for as long
-  as an in-flight `call()` holds it, up to that call's socket timeout `SHARED_OP_TIMEOUT_S`
-  (45 s default) per role: ≤ 45 s each, ≤ 90 s for two. **Not bounded by this branch** (B1 /
-  bug-278, held on Q51; ch-bsd measured 5.50 s on a 6 s in-flight call against a mute hub).
+- `modelsrv.SharedWorkerClient` (hub-shared; bug-278, option (b), ruling L180): one connection
+  per call, no lock across I/O. `retire(abandon_in_flight=True)` marks the client retired and
+  `shutdown(SHUT_RDWR)`s every in-flight socket; the blocked `recv` sees EOF at once and the call
+  raises `WorkerError` ("... abandoned"). The stop's cost is the shutdowns, independent of the
+  call's own timeout (`SHARED_OP_TIMEOUT_S`, 45 s) and of the hub: a few system calls per role,
+  no wait. (Before: `close()` waited on the client's `_lock` through the in-flight call, ≤ 45 s
+  per role, ≤ 90 s for two; ch-bsd measured 5.50 s on a 6 s call against a mute hub.)
 - a client `_model_client` builds after the stop began: retired by the bug-272 check, same bound
   as its class's retire.
 Then watcher join `budget(3.0)`, three pool drains `budget(10)` each, flush/repair/replica joins
 `budget(3.0)` each, `_final_flush` capped by what is left, store close `budget(5.0)`: every one
 asks the same deadline, so they shrink by what the workers spent. The worker stage is not
-charged to the deadline. Worst case: private clients max(16 s + 5 s, 43 s) = 43 s; with
-hub-shared clients and an op in flight on a slow or mute hub, 90 s + 5 s = 95 s, past the 45 s
-grace and launchd's ExitTimeOut, until B1 lands. No `daemon.call` with default retries is on the
+charged to the deadline. Worst case: max(16 s + 5 s, 43 s) = 43 s at the default grace, for
+either class (hub-shared clients add no wait). No `daemon.call` with default retries is on the
 path.
-
+{#sa-4}
 
 5 **busy**: worker busy (a held cold load) → the lock wait times out at 2.0 s, the process is
 killed, the holder fails with `WorkerError` (the RED node; log above). Worker idle → the lock is
@@ -538,6 +538,11 @@ call holds the lock → the branch logs `retired while a call held the lock past
 process to stop` and returns; no test reaches it (named, not covered). Daemon down: not on this
 path (a stop with no daemon is `graceful_stop`'s `skipped: no daemon`, unchanged, seen in every
 confirm trial's second stop). A busy ADOPTION swap still waits for the in-flight op (default).
+Hub-shared (bug-278): a call in flight on a busy or mute hub at stop → its socket is shut down,
+the call raises `WorkerError` ("abandoned"), no reconnect
+(`test_daemon_shutdown.py::test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub`,
+which requires exactly one hub connection). Hub down → `connect` fails for that call, `alive()`
+turns False, and `recall`'s re-probe path decides as before; no silent retry.
 {#sa-5}
 
 6 **guard**: (a) the abandon branch fires on "lock still held after `timeout`", the state a
@@ -563,7 +568,7 @@ count (`test_daemon_dense_ops.py::test_op_embed_cooperative_cancel` caught the f
 (g) M4: `recall.shared_embedder` runs `on_fallback` before its "falling back to in-process model"
 warning; a refusal is logged as `subprocess embedder unavailable (<cause>); no in-process fallback:
 <refusal>` (no load claimed; the cause, e.g. the holder's `not respawning`, stays in the log) and
-re-raised. Still open: B1 / bug-278 (Q51).
+re-raised. B1 / bug-278: built per ruling L180 ([[#sa-4]]).
 {#sa-6}
 
 7 **loud**: forced bug-269 at the pre-fix tree → pytest exit 1, `E AssertionError: bug-269: the
