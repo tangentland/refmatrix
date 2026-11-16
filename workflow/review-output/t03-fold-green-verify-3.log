@@ -1,0 +1,95 @@
+# mini-lane slot=rmxtest1 sha=08a7a42dc18ec362c0aee387c34b4eabba00fa2f host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 16:35:12 load={ 1.68 1.59 1.68 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-fold-green-verify-3.n8Mq/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 22%]
+........................................F............................... [ 45%]
+........................................................................ [ 67%]
+........................................................................ [ 90%]
+................................                                         [100%]
+=================================== FAILURES ===================================
+_____ test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-39/test_close_workers_does_not_wa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x14fb096a0>
+
+    def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_path, monkeypatch):
+        """bug-278 (ch-bsd t03 r1 B1). With the hub up, `_embed_worker` is a `SharedWorkerClient`;
+        its `close()` takes `_lock`, which `call()` holds through send/recv, so a stop waited for the
+        in-flight call's own timeout (SHARED_OP_TIMEOUT_S = 45 s per role in production). Here the
+        call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call may fail
+        (the client was abandoned) but not by its own TimeoutError, and an abandoned client must not
+        reconnect to the hub."""
+        from refmatrix import modelsrv
+        CALL_TIMEOUT_S = 20.0
+        short = tempfile.mkdtemp(prefix="sh", dir=os.environ.get("RMX_SANDBOX_ROOT") or None)
+        sock = os.path.join(short, "m.sock")
+        monkeypatch.setenv("RMX_MODEL_SOCK", sock)
+        hub = _MuteHub(sock)
+        d = _make_daemon(tmp_path)
+        c = modelsrv.SharedWorkerClient("embed", timeout=CALL_TIMEOUT_S)
+        d._embed_worker, d._rerank_worker = c, None
+        events: list = []
+    
+        def inflight():
+            try:
+                c.call("embed", {"texts": ["x"]}, timeout=CALL_TIMEOUT_S)
+                events.append(("call", "returned"))
+            except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+                events.append(("call", type(exc).__name__))
+    
+        th = threading.Thread(target=inflight, daemon=True)
+        th.start()
+        try:
+            assert hub.got_request.wait(_GUARD_S), "the in-flight call never reached the hub"
+            closer = threading.Thread(target=lambda: (d._close_workers(),
+                                                      events.append(("close", "returned"))),
+                                      daemon=True)
+            closer.start()
+            closer.join(_GUARD_S)
+            th.join(_GUARD_S)
+            assert not closer.is_alive() and not th.is_alive(), f"hang guard: {events}"
+            call_end = dict(events)["call"]
+>           assert call_end != "TimeoutError", (
+                f"bug-278: the stop waited out the in-flight shared call: it ended by its own "
+                f"TimeoutError ({CALL_TIMEOUT_S:.0f} s) and only then did _close_workers return; "
+                f"order {events}")
+E               AssertionError: bug-278: the stop waited out the in-flight shared call: it ended by its own TimeoutError (20 s) and only then did _close_workers return; order [('call', 'TimeoutError'), ('close', 'returned')]
+E               assert 'TimeoutError' != 'TimeoutError'
+
+tests/test_daemon_shutdown.py:270: AssertionError
+=============================== warnings summary ===============================
+tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+  test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-29 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-3.n8Mq/tests/test_rerank_budget_real_clients.py", line 442, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-3.n8Mq/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_daemon_shutdown.py::test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub
+1 failed, 319 passed, 2 warnings in 384.58s (0:06:24)
+exit 1

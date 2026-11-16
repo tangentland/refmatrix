@@ -413,6 +413,9 @@ edited, and every importer of an edited test module (found per module with
 
 | Run | Sha | Exit | Collected | Passed / failed / skipped | Log |
 |---|---|---|---|---|---|
+| fold verify 3: the five named files + every test calling `_op_embed` (mini lane) | `08a7a42` | 1 | 320 | 319 / 1 / 0 | `t03-fold-green-verify-3.log` (the 1: held B1 node) |
+| fold verify 2: 152 files, every importer of `daemon`/`recall` + the named files (mini lane) | `e615468` | 1 | 2,541 | 2,537 / 3 / 1 | `t03-fold-green-verify-2.log` (B1 held; two `_op_embed` duck-typed-daemon failures, fixed in `08a7a42`) |
+| fold verify 1 (same set) | `1bb7e9d` | 1 | 2,541 | 2,537 / 3 / 1 | `t03-fold-green-verify.log` (B1 held; dense-op cancel and the S1 log line, fixed in `e615468`) |
 | verify 2 (final set) | `e8277d4` | 0 | 2,640 | 2,640 / 0 / 0 | `green-verify-2.log` (43:30) |
 | bug-269 RED node + stop/retire/census files | tree of `e8277d4` | 0 | 155 | 155 / 0 / 0 | `green-bug269-fix.log` |
 | verify 1 (all but `test_task21_1_recall_skip.py`) | `83c2711` | 1 | 718 | 714 / 4 / 0 | `green-verify-1.log` |
