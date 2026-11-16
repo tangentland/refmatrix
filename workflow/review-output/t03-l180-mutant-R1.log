@@ -1,0 +1,54 @@
+# mini-lane slot=rmxtest2 sha=3080ae9dcb6ac151371bdf425f1da2c553f7c649 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:34 load={ 2.23 1.51 1.51 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest2/lane/runs/t03-l180-mutant-R1.Mg5v/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_a_timed_probe_does_not_shorten_the_next_call _______________
+
+fake_models = <test_plan2_remedy_r7._FakeModelSock object at 0x103f6a270>
+
+    def test_a_timed_probe_does_not_shorten_the_next_call(fake_models):
+        """#b-1, through the socket only: after a 1 s `info` probe, a `rerank` with no timeout of its
+        own runs on the client's 5 s and succeeds although the fake worker takes 1.5 s to answer it.
+        A rerank still bounded by the probe's 1 s would raise TimeoutError. (Since bug-278, L180,
+        every call has its own connection, so nothing is read off a socket the client keeps.)"""
+        c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+        try:
+            assert c.info(timeout=1.0)["model"] == "fake"
+            t0 = time.monotonic()
+>           hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})  # timeout=None: the client's 5 s
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_plan2_remedy_r7.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/modelsrv.py:251: in call
+    hdr, out = recv_frame(rw)
+               ^^^^^^^^^^^^^^
+src/refmatrix/subproc.py:142: in recv_frame
+    raw = fh.read(_HDR.size)
+          ^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <socket.SocketIO object at 0x1028b6950>, b = <memory at 0x104ecc4c0>
+
+    def readinto(self, b):
+        """Read up to len(b) bytes into the writable buffer *b* and return
+        the number of bytes read.  If the socket is non-blocking and no bytes
+        are available, None is returned.
+    
+        If *b* is non-empty, a 0 return value indicates that the connection
+        was shutdown at the other end.
+        """
+        self._checkClosed()
+        self._checkReadable()
+        if self._timeout_occurred:
+            raise OSError("cannot read from timed out object")
+        try:
+>           return self._sock.recv_into(b)
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E           TimeoutError: timed out
+
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py:729: TimeoutError
+=========================== short test summary info ============================
+FAILED tests/test_plan2_remedy_r7.py::test_a_timed_probe_does_not_shorten_the_next_call
+1 failed in 1.25s
+exit 1

@@ -1,0 +1,5 @@
+# mini-lane slot=rmxtest2 sha=da975781319701905f18c0912d1d611b8f205fba host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:38 load={ 2.13 1.50 1.50 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest2/lane/runs/t03-l180-mutant-R2.92SW/src/refmatrix as checked-hash (bug-037)
+.                                                                        [100%]
+1 passed in 1.55s
+exit 0

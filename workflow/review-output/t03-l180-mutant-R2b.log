@@ -1,0 +1,41 @@
+# mini-lane slot=rmxtest1 sha=079b22a860eb8e8203f584014d2e85f61dfd7050 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:44:24 load={ 1.62 1.46 1.49 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-l180-mutant-R2b.U4DY/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_a_budgeted_view_closes_its_forked_connection _______________
+
+stub = <class 'test_rerank_budget_real_clients.stub.<locals>.S'>
+hub = (<refmatrix.modelsrv.ModelServer object at 0x104c4a270>, <refmatrix.modelsrv.SharedWorkerClient object at 0x104c4a900>)
+
+    def test_a_budgeted_view_closes_its_forked_connection(stub, hub):
+        """K7: a fork per request that is never closed is a socket (and a hub handler thread)
+        leaked per context op. Seen at the hub side: every connection the budgeted view opened has
+        reached EOF from the client once the call returned. The proxy's wait is a hang guard: a
+        connection still open after it is the leak."""
+        from refmatrix import modelsrv
+        from refmatrix.reranker import RemoteReranker
+    
+        _srv, client = hub
+        real = str(modelsrv.model_sock_path())
+        proxy = _EofProxy(stub.dir / "p.sock", real)
+        os.environ["RMX_MODEL_SOCK"] = str(stub.dir / "p.sock")
+        try:
+            view = RemoteReranker(client).with_budget(2.0)
+            assert view._client is not client
+            assert _attempt(view)[1] == "scored"
+            assert proxy.conns, "the budgeted view never reached the hub"
+            still_open = [i for i, eof in enumerate(proxy.conns) if not eof.wait(10.0)]
+>           assert still_open == [], (
+                f"the forked connection was left open: {len(still_open)} of {len(proxy.conns)} "
+                f"connection(s) never reached EOF at the hub side")
+E               AssertionError: the forked connection was left open: 2 of 2 connection(s) never reached EOF at the hub side
+E               assert [0, 1] == []
+E                 
+E                 Left contains 2 more items, first extra item: 0
+E                 Use -v to get more diff
+
+tests/test_rerank_budget_real_clients.py:782: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rerank_budget_real_clients.py::test_a_budgeted_view_closes_its_forked_connection
+1 failed in 21.53s
+exit 1
