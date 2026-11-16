@@ -240,7 +240,21 @@ rel: depends-on -> [[bsd-315-r1-51bbdfb]]
     difference is the composite. The capture-off control delivers the composite and commits its
     sent marker, so the capture-on call that follows correctly suppresses it as unchanged. AC-0.4
     resets the marker between its two arms (`_reset_composite_marker`); this node does not.
-    Flagged to the lead. The other 23 RED nodes pass. {#l178-verify}
+    Flagged to the lead. The other 23 RED nodes pass.
+- **Mini lane, re-run after bug-279's fix** (`315-l178-green-verify-r2.log`: rmxtest2,
+  `nofile=65536`, sha `83125cc`). Exit 1. The log ends at the short summary with no tally line.
+  The progress lines count 2,869 passed, 7 failed and 4 skipped (the four unpinned
+  `test_grep_fixed_and_file_lists` rg-branch skips). The slot's ssh session never returned
+  after the run ended, so the log was fetched with scp.
+  - **4 failed as on the old lane:** the two agent_usage nodes, same E lines as base, and the
+    two RED-node control issues above.
+  - **3 failed on the mini only, at the same sha,** none in a module this task touched. All
+    three passed on the old lane:
+    - `test_grep_fixed_and_file_lists.py::test_a_symlink_and_its_target_stay_two_rows`
+      (`['alias.txt:0', 'a.txt:3'] == ['alias.txt:3', 'a.txt:3']`);
+    - `test_mcp_session_pointer.py::test_owner_is_the_nearest_claude_ancestor_when_claude_pid_is_unset`
+      and `…::test_owner_walk_reaches_claude_through_a_deep_chain` (`assert 0 == 2`).
+    These are the slot's environment, not this change. {#l178-verify}
 
 ## Self-audit {#self-audit}
 
