@@ -23,11 +23,14 @@ NAME=$(printf '%s' "$NAME" | tr '/ ' '--')
 # Keepalives (bug-280, 2026-11-15): four lane clients sat ESTABLISHED for hours on half-open
 # TCP connections after the mini's sshd sessions were gone (remote runs finished, logs
 # complete); without ServerAlive the client never notices a dead peer. ~60 s to give up.
+# No ssh/scp/push here may read the CALLER's stdin (bug-283: a driver looping over a list on
+# stdin lost the rest of it to the reachability ssh): -n or </dev/null on each; the run's own
+# ssh reads only its heredoc.
 SSH=(ssh -o BatchMode=yes -o ForwardX11=no -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}") || { echo "mini-lane: bad ref $REF" >&2; exit 2; }
-"${SSH[@]}" rmxtest@mini true 2>/dev/null || { echo "mini-lane: mini unreachable — DID NOT RUN" >&2; exit 3; }
+"${SSH[@]}" -n rmxtest@mini true 2>/dev/null || { echo "mini-lane: mini unreachable — DID NOT RUN" >&2; exit 3; }
 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ForwardX11=no" \
-  git -C "$REPO" push -q -f rmxtest@mini:/Users/Shared/rmx-lane/refmatrix.git "$SHA:refs/lane/$NAME" 2>&1 \
+  git -C "$REPO" push -q -f rmxtest@mini:/Users/Shared/rmx-lane/refmatrix.git "$SHA:refs/lane/$NAME" </dev/null 2>&1 \
   | grep -v 'X11\|cargo' >&2
 ARGS=$(printf '%q ' "$@")
 WAIT=${MINI_LANE_WAIT_S:-3600}; waited=0
@@ -60,7 +63,7 @@ EOF
     RC=${PIPESTATUS[0]}
     if [ "$RC" -ne 75 ]; then   # 75 = EX_TEMPFAIL from lockf -t 0: slot busy
       mkdir -p "$REPO/workflow/review-output"
-      scp -q -o ForwardX11=no "$U@mini:lane/logs/$NAME.log" "$REPO/workflow/review-output/$NAME.log" 2>/dev/null \
+      scp -q -o ForwardX11=no "$U@mini:lane/logs/$NAME.log" </dev/null "$REPO/workflow/review-output/$NAME.log" 2>/dev/null \
         || echo "mini-lane: could not copy the log back from $U" >&2
       head -1 "$REPO/workflow/review-output/$NAME.log" 2>/dev/null; tail -2 "$REPO/workflow/review-output/$NAME.log" 2>/dev/null
       if [ "$RC" -eq 255 ]; then   # ssh itself failed (bug-280): pytest's own verdict is the log's last line
