@@ -87,14 +87,20 @@ def fake_models(monkeypatch):
 
 
 def test_a_timed_probe_does_not_shorten_the_next_call(fake_models):
+    """#b-1, through the socket only: after a 1 s `info` probe, a `rerank` with no timeout of its
+    own runs on the client's 5 s and succeeds although the fake worker takes 1.5 s to answer it.
+    A rerank still bounded by the probe's 1 s would raise TimeoutError. (Since bug-278, L180,
+    every call has its own connection, so nothing is read off a socket the client keeps.)"""
     c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
-    assert c.info(timeout=1.0)["model"] == "fake"
-    t0 = time.monotonic()
-    hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})   # timeout=None → the client's 5 s
-    assert hdr["scores"] == [1.0, 1.0]
-    assert time.monotonic() - t0 >= 1.4
-    assert c._sock.gettimeout() == 5.0
-    c.close()
+    try:
+        assert c.info(timeout=1.0)["model"] == "fake"
+        t0 = time.monotonic()
+        hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})  # timeout=None: the client's 5 s
+        assert hdr["scores"] == [1.0, 1.0]
+        assert time.monotonic() - t0 >= 1.4      # it really outlived the probe's 1 s
+        assert fake_models.ops == ["info", "rerank"]
+    finally:
+        c.close()
 
 
 def test_shared_reranker_scores_after_a_short_probe(fake_models, monkeypatch):

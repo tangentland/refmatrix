@@ -711,16 +711,80 @@ def test_a_cold_hub_role_warms_once_and_then_scores(stub, monkeypatch):
     assert stub.spawns() == 1 and stub.loads() == 1, (stub.spawns(), stub.loads())
 
 
+class _EofProxy:
+    """A unix socket that forwards every connection to the real hub socket and records, per
+    connection, when the CLIENT side reached EOF: what the hub's handler thread sees when a
+    client closes. Fake process boundary in front of the real ModelServer, registered in
+    workflow/test_mock_registry.md."""
+
+    def __init__(self, path, upstream):
+        self.upstream = str(upstream)
+        self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.srv.bind(str(path))
+        self.srv.listen(8)
+        self.conns: list = []          # one threading.Event per accepted connection: EOF seen
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self):
+        while True:
+            try:
+                c, _ = self.srv.accept()
+            except OSError:
+                return
+            up = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            up.connect(self.upstream)
+            eof = threading.Event()
+            self.conns.append(eof)
+            threading.Thread(target=self._pump, args=(c, up, eof), daemon=True).start()
+            threading.Thread(target=self._pump, args=(up, c, None), daemon=True).start()
+
+    @staticmethod
+    def _pump(src, dst, eof):
+        try:
+            while True:
+                b = src.recv(65536)
+                if not b:
+                    break
+                dst.sendall(b)
+        except OSError:
+            pass
+        finally:
+            if eof is not None:
+                eof.set()
+            for x in (src, dst):
+                try:
+                    x.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    def close(self):
+        self.srv.close()
+
+
 def test_a_budgeted_view_closes_its_forked_connection(stub, hub):
-    """K7: a fork per request that is never closed is a socket (and a hub
-    handler thread) leaked per context op."""
+    """K7: a fork per request that is never closed is a socket (and a hub handler thread)
+    leaked per context op. Seen at the hub side: every connection the budgeted view opened has
+    reached EOF from the client once the call returned. The proxy's wait is a hang guard: a
+    connection still open after it is the leak."""
+    from refmatrix import modelsrv
     from refmatrix.reranker import RemoteReranker
 
     _srv, client = hub
-    view = RemoteReranker(client).with_budget(2.0)
-    assert view._client is not client
-    assert _attempt(view)[1] == "scored"
-    assert view._client._sock is None, "the forked connection was left open"
+    real = str(modelsrv.model_sock_path())
+    proxy = _EofProxy(stub.dir / "p.sock", real)
+    os.environ["RMX_MODEL_SOCK"] = str(stub.dir / "p.sock")
+    try:
+        view = RemoteReranker(client).with_budget(2.0)
+        assert view._client is not client
+        assert _attempt(view)[1] == "scored"
+        assert proxy.conns, "the budgeted view never reached the hub"
+        still_open = [i for i, eof in enumerate(proxy.conns) if not eof.wait(10.0)]
+        assert still_open == [], (
+            f"the forked connection was left open: {len(still_open)} of {len(proxy.conns)} "
+            f"connection(s) never reached EOF at the hub side")
+    finally:
+        os.environ["RMX_MODEL_SOCK"] = real
+        proxy.close()
 
 
 def test_concurrent_cold_skips_start_one_warm_thread(stub):

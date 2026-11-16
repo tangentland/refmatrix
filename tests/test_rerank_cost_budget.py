@@ -14,6 +14,7 @@ still queues behind it.
 from __future__ import annotations
 
 import io
+import os
 import time
 
 import pytest
@@ -310,24 +311,30 @@ def test_a_lone_caller_reads_zero(monkeypatch):
 
 
 def test_the_client_stamps_a_deadline_from_its_own_timeout(monkeypatch):
-    """A bounded client cannot forget: if it gave itself N seconds, the frame
-    says so, and a worker that dequeues it late drops it."""
+    """A bounded client cannot forget: if it gave itself N seconds, the frame says so, and a
+    worker that dequeues it late drops it. Read at the receiving end: a real socket server
+    (`_FakeModelSock`, the frame-recording models.sock of test_plan2_remedy_r7) at
+    `RMX_MODEL_SOCK` records the frame the client sent."""
+    import tempfile
+    from pathlib import Path
+
     from refmatrix import modelsrv
+    from tests.test_plan2_remedy_r7 import _FakeModelSock
 
-    sent = {}
-
-    class _FakeSock:
-        def settimeout(self, t):
-            pass
-
+    base = Path(tempfile.mkdtemp(prefix="rmxd", dir=os.environ.get("RMX_SANDBOX_ROOT") or None))
+    path = base / "m.sock"
+    monkeypatch.setenv("RMX_MODEL_SOCK", str(path))
+    srv = _FakeModelSock(path, delay=0.0)
     c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
-    c._sock = _FakeSock()
-    c._rw = object()
-    monkeypatch.setattr(c, "_call_once",
-                        lambda req, blob: (sent.update(req) or ({"ok": True}, b"")))
-    t0 = time.time()
-    c.call("rerank", {"query": "q", "docs": ["a"]}, timeout=4.0)
-    assert t0 + 3.5 <= sent["deadline"] <= t0 + 4.5
+    try:
+        t0 = time.time()
+        c.call("rerank", {"query": "q", "docs": ["a"]}, timeout=4.0)
+        (frame,) = srv.frames
+        assert frame.get("op") == "rerank" and "deadline" in frame, frame
+        assert t0 + 3.5 <= frame["deadline"] <= t0 + 4.5, (t0, frame)
+    finally:
+        c.close()
+        srv.close()
 
 
 # ---- the call sites ------------------------------------------------------
