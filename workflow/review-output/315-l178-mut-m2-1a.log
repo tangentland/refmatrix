@@ -1,0 +1,117 @@
+# mini-lane slot=rmxtest2 sha=efc80e87c65b2e0d9334daf27720a304a2a0d534 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 14:12:49 load={ 3.55 2.81 3.08 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest2/lane/runs/315-l178-mut-m2-1a.NzQ1/src/refmatrix as checked-hash (bug-037)
+FFF.                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held] _
+
+make_store = <function make_store.<locals>._make at 0x10755c040>
+holds_question = True
+
+    @pytest.mark.parametrize("holds_question", [True, False], ids=["question-held", "not-held"])
+    def test_stopwords_and_unknown_plain_words_are_not_printed_as_members(make_store,
+                                                                          holds_question):
+        """AC-2.0 (RED at base; M2-1): a topic of `scan-prompt`, `store.py`, `the`, `buigger`,
+        `question` prints `scan-prompt`, `store.py`, and `question` only when the store holds
+        that concept. `the` is on the shared stoplist (and the store holds it as a concept, so
+        only the stoplist keeps it out); `buigger` names nothing."""
+        from refmatrix.composite import build_topic_composite
+        s, root = make_store(holds_question)
+        _topic_members(root)
+        out = build_topic_composite(s, root, expand=False, session=SESSION)
+        assert out, "fixture: no composite (the topic holds identifier-shaped members)"
+        lines = _MEMBERS_LINE.findall(out)
+        assert len(lines) == 1, f"fixture: {len(lines)} Members lines:\n{out}"
+        printed = [m.strip() for m in lines[0].split(",")]
+        want = {"scan-prompt", "store.py"} | ({"question"} if holds_question else set())
+>       assert set(printed) == want, (
+            f"store holds `question`: {holds_question}; printed members {printed}, expected "
+            f"{sorted(want)} (stoplist words and plain words naming no concept are not printed)")
+E       AssertionError: store holds `question`: True; printed members ['scan-prompt', 'store.py', 'the', 'question'], expected ['question', 'scan-prompt', 'store.py'] (stoplist words and plain words naming no concept are not printed)
+E       assert {'question', ...re.py', 'the'} == {'question', ...', 'store.py'}
+E         
+E         Extra items in the left set:
+E         'the'
+E         Use -v to get more diff
+
+tests/test_stm_composite_members.py:99: AssertionError
+_ test_stopwords_and_unknown_plain_words_are_not_printed_as_members[not-held] __
+
+make_store = <function make_store.<locals>._make at 0x1083840f0>
+holds_question = False
+
+    @pytest.mark.parametrize("holds_question", [True, False], ids=["question-held", "not-held"])
+    def test_stopwords_and_unknown_plain_words_are_not_printed_as_members(make_store,
+                                                                          holds_question):
+        """AC-2.0 (RED at base; M2-1): a topic of `scan-prompt`, `store.py`, `the`, `buigger`,
+        `question` prints `scan-prompt`, `store.py`, and `question` only when the store holds
+        that concept. `the` is on the shared stoplist (and the store holds it as a concept, so
+        only the stoplist keeps it out); `buigger` names nothing."""
+        from refmatrix.composite import build_topic_composite
+        s, root = make_store(holds_question)
+        _topic_members(root)
+        out = build_topic_composite(s, root, expand=False, session=SESSION)
+        assert out, "fixture: no composite (the topic holds identifier-shaped members)"
+        lines = _MEMBERS_LINE.findall(out)
+        assert len(lines) == 1, f"fixture: {len(lines)} Members lines:\n{out}"
+        printed = [m.strip() for m in lines[0].split(",")]
+        want = {"scan-prompt", "store.py"} | ({"question"} if holds_question else set())
+>       assert set(printed) == want, (
+            f"store holds `question`: {holds_question}; printed members {printed}, expected "
+            f"{sorted(want)} (stoplist words and plain words naming no concept are not printed)")
+E       AssertionError: store holds `question`: False; printed members ['scan-prompt', 'store.py', 'the'], expected ['scan-prompt', 'store.py'] (stoplist words and plain words naming no concept are not printed)
+E       assert {'scan-prompt...re.py', 'the'} == {'scan-prompt', 'store.py'}
+E         
+E         Extra items in the left set:
+E         'the'
+E         Use -v to get more diff
+
+tests/test_stm_composite_members.py:99: AssertionError
+_____________ test_a_topic_with_no_printable_member_is_not_emitted _____________
+
+make_store = <function make_store.<locals>._make at 0x1083847d0>
+
+    def test_a_topic_with_no_printable_member_is_not_emitted(make_store):
+        """AC-2.0 (RED at base): a topic whose members are all stoplist words or plain words
+        naming no concept renders no topic block and no `Members:` line. Driven through
+        `_render_gmd` (see the module docstring for why the public path cannot reach it)."""
+        from refmatrix.composite import _render_gmd
+        s, _root = make_store(False)
+        topic = {"members": ["the", "buigger", "and", "zorbleplain"], "nodes": []}
+        out = _render_gmd(s, [topic], expand=False, per_node_entities=4,
+                          expand_nodes_per_topic=3, max_expansions=6, max_tokens=1200, turn=2)
+>       assert "## Topic" not in out and not _MEMBERS_LINE.search(out), (
+            f"a topic with no printable member was emitted:\n{out}")
+E       AssertionError: a topic with no printable member was emitted:
+E         # STM topic composite — current focus (GMD subgraph)
+E         ```gmd
+E         ---
+E         gmd: "0.1"
+E         id: stm-topic-composite
+E         title: "STM topic composite"
+E         tags: [stm, composite, focus]
+E         metadata: {turn: 2}
+E         ---
+E         # Current focus {#root}
+E         
+E         ## Topic 1: the {#topic-1}
+E         Members: the
+E         ```
+E       assert ('## Topic' not in '# STM topic...rs: the\n```'
+E         
+E         '## Topic' is contained here:
+E            {#root}
+E           
+E           ## Topic 1: the {#topic-1}
+E         ? ++++++++
+E           Members: the
+E           ```)
+
+tests/test_stm_composite_members.py:113: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_stm_composite_members.py::test_the_focus_graph_is_unchanged_by_the_filter
+FAILED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held]
+FAILED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[not-held]
+FAILED tests/test_stm_composite_members.py::test_a_topic_with_no_printable_member_is_not_emitted
+3 failed, 1 passed in 0.48s
+exit 1

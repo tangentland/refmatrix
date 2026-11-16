@@ -1148,7 +1148,8 @@ def pack_recall(root: Path, rows: "list[dict]", *, mode: str, query: "str | None
 
     The budget is `max_bytes` when given, else `hook_budget.budget(<channel>)` (the env
     override included; a non-integer `RMX_HOOK_BUDGET_BYTES` raises `VerbArgsError` naming it).
-    Returns the pack fields: `text`, `spans`, `named`, `more`, `payload_bytes`.
+    Returns the pack fields: `text`, `spans`, `named`, `more`, `payload_bytes`, `line_bytes`
+    (every hit's hook-line bytes, named or not: task 31.5's capture records a dropped hit's).
 
     An unreadable curated-hooks index is SAID, never dropped (bsd-251 s-2, ruling L68,
     2026-11-14; CLAUDE.md #no-silent-failures): with a `warnings` list it is appended there and
@@ -1177,7 +1178,7 @@ def pack_recall(root: Path, rows: "list[dict]", *, mode: str, query: "str | None
     p = recall_pack.pack(rows, hooks=hooks, global_hooks={}, max_bytes=n, channel=label,
                          query=query, mode=mode, k_more=k, since=since, subject=subject)
     return {"text": p.text, "spans": p.spans, "named": list(p.named), "more": p.more,
-            "payload_bytes": p.payload_bytes}
+            "payload_bytes": p.payload_bytes, "line_bytes": list(p.line_bytes)}
 
 
 @verb("rmx_memory_recall",

@@ -1,0 +1,1318 @@
+FFFFFFFFFF...FFFFFFFF..FFFFFFFFFFFFFFFFFF                                [100%]
+=================================== FAILURES ===================================
+_____________ test_a_scan_call_writes_one_record_with_every_block ______________
+
+store = {'base': PosixPath('/private/tmp/cap.po_ish_n'), 'proj': PosixPath('/private/tmp/cap.po_ish_n/proj'), 'root': PosixPath('/private/tmp/cap.po_ish_n/proj/.refmatrix')}
+
+    def test_a_scan_call_writes_one_record_with_every_block(store):
+        """AC-0.1 (RED at base): one record per call; every block labelled with its kind and state,
+        in render order (tier 1, content, tier 3, composite), `capture_ms` and `capture_built`
+        set; the record joins `query.log` by `query_id`."""
+        from refmatrix import __version__, hook_budget
+        r = _scan(store, "--max-tokens", "100000")
+        assert COMP_MARK in r.stdout and "omitted by --max-bytes" not in r.stdout, (
+            f"fixture: the call must deliver every section and the composite:\n{r.stdout[-600:]}")
+        qid = _last_qid(store["root"])
+        recs = _records(store["root"])
+>       assert len(recs) == 1, (f"R0.2: one capture record per call, found {len(recs)}; "
+                                f"{_listing(store['root'])}")
+E       AssertionError: R0.2: one capture record per call, found 0; /private/tmp/cap.po_ish_n/proj/.refmatrix/injection-capture does not exist
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_injection_capture.py:428: AssertionError
+__________ test_delivered_blocks_concatenate_to_the_payload[uncapped] __________
+
+store = {'base': PosixPath('/private/tmp/cap.w51jn5aw'), 'proj': PosixPath('/private/tmp/cap.w51jn5aw/proj'), 'root': PosixPath('/private/tmp/cap.w51jn5aw/proj/.refmatrix')}
+cap = None
+
+    @pytest.mark.parametrize("cap", [None, 1500], ids=["uncapped", "byte-capped"])
+    def test_delivered_blocks_concatenate_to_the_payload(store, cap):
+        """AC-0.2 (RED): the delivered and marker texts, joined in order, are the printed payload;
+        `payload_sha256` is the `block_sha` of the call's recall events."""
+        extra = ["--max-tokens", "100000"] + ([] if cap is None else ["--max-bytes", str(cap)])
+        r = _scan(store, *extra)
+        if cap is not None:
+            assert "omitted by --max-bytes" in r.stdout, f"fixture: nothing dropped:\n{r.stdout}"
+        qid = _last_qid(store["root"])
+        evs = _events(store["root"], qid)
+        shas = {e["block_sha"] for e in evs}
+        assert len(shas) == 1, f"fixture: the call's events carry {shas}"
+>       rec = _record_for(store["root"], qid)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:477: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.w51jn5aw/proj/.refmatrix')
+qid = '7ca3ced9f1e942b1ab392e9e1c9c0928'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 7ca3ced9f1e942b1ab392e9e1c9c0928 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.w51jn5aw/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+________ test_delivered_blocks_concatenate_to_the_payload[byte-capped] _________
+
+store = {'base': PosixPath('/private/tmp/cap.zsfxk_bd'), 'proj': PosixPath('/private/tmp/cap.zsfxk_bd/proj'), 'root': PosixPath('/private/tmp/cap.zsfxk_bd/proj/.refmatrix')}
+cap = 1500
+
+    @pytest.mark.parametrize("cap", [None, 1500], ids=["uncapped", "byte-capped"])
+    def test_delivered_blocks_concatenate_to_the_payload(store, cap):
+        """AC-0.2 (RED): the delivered and marker texts, joined in order, are the printed payload;
+        `payload_sha256` is the `block_sha` of the call's recall events."""
+        extra = ["--max-tokens", "100000"] + ([] if cap is None else ["--max-bytes", str(cap)])
+        r = _scan(store, *extra)
+        if cap is not None:
+            assert "omitted by --max-bytes" in r.stdout, f"fixture: nothing dropped:\n{r.stdout}"
+        qid = _last_qid(store["root"])
+        evs = _events(store["root"], qid)
+        shas = {e["block_sha"] for e in evs}
+        assert len(shas) == 1, f"fixture: the call's events carry {shas}"
+>       rec = _record_for(store["root"], qid)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:477: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.zsfxk_bd/proj/.refmatrix')
+qid = '6f10301296604592bcf7c7b72dcab6cb'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 6f10301296604592bcf7c7b72dcab6cb (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.zsfxk_bd/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_________ test_a_block_the_byte_fit_dropped_is_stored_as_dropped_bytes _________
+
+store = {'base': PosixPath('/private/tmp/cap.aef52nkx'), 'proj': PosixPath('/private/tmp/cap.aef52nkx/proj'), 'root': PosixPath('/private/tmp/cap.aef52nkx/proj/.refmatrix')}
+
+    def test_a_block_the_byte_fit_dropped_is_stored_as_dropped_bytes(store):
+        """AC-0.3 (RED): every block the `--max-bytes` fit dropped is stored, with its text, as
+        `dropped_bytes`; as many as the omission trailer counts."""
+        r = _scan(store, "--max-tokens", "100000", "--max-bytes", "1500")
+        m = re.search(r"# \[\+(\d+) block\(s\) omitted by --max-bytes", r.stdout)
+        assert m, f"fixture: the fit dropped nothing:\n{r.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:491: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.aef52nkx/proj/.refmatrix')
+qid = '3f626eeb2f9246d89104fbf37cd35ca1'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 3f626eeb2f9246d89104fbf37cd35ca1 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.aef52nkx/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+___ test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens ____
+
+store = {'base': PosixPath('/private/tmp/cap.ixmh9_gg'), 'proj': PosixPath('/private/tmp/cap.ixmh9_gg/proj'), 'root': PosixPath('/private/tmp/cap.ixmh9_gg/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens(store, calib):
+        """AC-0.3 (RED), mode `full`: the bundle that tripped the `--max-tokens` stop and every
+        tier-3 bundle the stop prevented from being built are stored, with text, as
+        `dropped_tokens`; the ones built only for the capture are counted in `capture_built`."""
+        r = _scan(store, "--max-tokens", str(calib["t3"]), RMX_INJECTION_CAPTURE="full")
+        assert TOKEN_MARK in r.stdout and CONTENT_HDR in r.stdout, f"fixture:\n{r.stdout}"
+        assert _symbol_bundles(r.stdout) == NAMED, f"fixture: a tier-3 bundle was delivered"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:510: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.ixmh9_gg/proj/.refmatrix')
+qid = '9ae18f212414481b81e468149c6de869'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 9ae18f212414481b81e468149c6de869 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.ixmh9_gg/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_______ test_content_after_a_tier_1_token_stop_is_stored_with_text[full] _______
+
+store = {'base': PosixPath('/private/tmp/cap.qi5s_uvq'), 'proj': PosixPath('/private/tmp/cap.qi5s_uvq/proj'), 'root': PosixPath('/private/tmp/cap.qi5s_uvq/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+mode = 'full'
+
+    @pytest.mark.parametrize("mode", ["full", "names"])
+    def test_content_after_a_tier_1_token_stop_is_stored_with_text(store, calib, mode):
+        """AC-0.3 (RED), R0.1 `#r0-1-content`: when tier 1 trips the stop, `scan_prompt` returns
+        before rendering the (already built) content bundle; the capture renders it and stores it
+        as `dropped_tokens` with its text, in mode `full` and mode `names` alike; the tripping
+        tier-1 bundle is stored too."""
+        r = _scan(store, "--max-tokens", str(calib["t1"]), RMX_INJECTION_CAPTURE=mode)
+        assert TOKEN_MARK in r.stdout and CONTENT_HDR not in r.stdout, f"fixture:\n{r.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:533: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.qi5s_uvq/proj/.refmatrix')
+qid = 'a579e7756042426e910d5f66cab1b33d'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id a579e7756042426e910d5f66cab1b33d (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.qi5s_uvq/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+______ test_content_after_a_tier_1_token_stop_is_stored_with_text[names] _______
+
+store = {'base': PosixPath('/private/tmp/cap.uesgwnss'), 'proj': PosixPath('/private/tmp/cap.uesgwnss/proj'), 'root': PosixPath('/private/tmp/cap.uesgwnss/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+mode = 'names'
+
+    @pytest.mark.parametrize("mode", ["full", "names"])
+    def test_content_after_a_tier_1_token_stop_is_stored_with_text(store, calib, mode):
+        """AC-0.3 (RED), R0.1 `#r0-1-content`: when tier 1 trips the stop, `scan_prompt` returns
+        before rendering the (already built) content bundle; the capture renders it and stores it
+        as `dropped_tokens` with its text, in mode `full` and mode `names` alike; the tripping
+        tier-1 bundle is stored too."""
+        r = _scan(store, "--max-tokens", str(calib["t1"]), RMX_INJECTION_CAPTURE=mode)
+        assert TOKEN_MARK in r.stdout and CONTENT_HDR not in r.stdout, f"fixture:\n{r.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:533: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.uesgwnss/proj/.refmatrix')
+qid = '57b7bdfe9b2846d9a9632c9e6d7dd6b6'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 57b7bdfe9b2846d9a9632c9e6d7dd6b6 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.uesgwnss/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+______________ test_names_mode_records_later_bundles_as_not_built ______________
+
+store = {'base': PosixPath('/private/tmp/cap.14do53dv'), 'proj': PosixPath('/private/tmp/cap.14do53dv/proj'), 'root': PosixPath('/private/tmp/cap.14do53dv/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_names_mode_records_later_bundles_as_not_built(store, calib):
+        """AC-0.3 (RED), R0.4 `#r0-4-mode`: mode `names` builds nothing extra: the bundle that
+        tripped the stop (already built) and the content block are stored with text; later symbol
+        bundles are `not_built`, with their names and no text; `capture_built` is 0."""
+        r = _scan(store, "--max-tokens", str(calib["t3"]), RMX_INJECTION_CAPTURE="names")
+        assert TOKEN_MARK in r.stdout and _symbol_bundles(r.stdout) == NAMED, f"fixture:\n{r.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.14do53dv/proj/.refmatrix')
+qid = '9367f99dcbcb4e8187fcbe292d9296a8'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 9367f99dcbcb4e8187fcbe292d9296a8 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.14do53dv/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_______ test_an_unchanged_composite_is_recorded_as_suppressed_unchanged ________
+
+store = {'base': PosixPath('/private/tmp/cap.yrq9of3t'), 'proj': PosixPath('/private/tmp/cap.yrq9of3t/proj'), 'root': PosixPath('/private/tmp/cap.yrq9of3t/proj/.refmatrix')}
+
+    def test_an_unchanged_composite_is_recorded_as_suppressed_unchanged(store):
+        """AC-0.3 (RED): the second call's composite, not rendered because its member-set
+        signature equals the last delivered one, is a `suppressed_unchanged` block, no text."""
+        first = _scan(store, "--max-tokens", "100000")
+        assert COMP_MARK in first.stdout, "fixture: no composite on the first call"
+        second = _scan(store, "--max-tokens", "100000")
+        assert COMP_MARK not in second.stdout, "fixture: an unchanged composite was re-sent"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:573: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.yrq9of3t/proj/.refmatrix')
+qid = 'f1d6a137914d4460942d03e86e1122bd'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id f1d6a137914d4460942d03e86e1122bd (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.yrq9of3t/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+____________ test_a_cadence_skip_is_recorded_as_suppressed_cadence _____________
+
+store = {'base': PosixPath('/private/tmp/cap.ml93rfi1'), 'proj': PosixPath('/private/tmp/cap.ml93rfi1/proj'), 'root': PosixPath('/private/tmp/cap.ml93rfi1/proj/.refmatrix')}
+
+    def test_a_cadence_skip_is_recorded_as_suppressed_cadence(store):
+        """AC-0.3 (RED): a composite skipped by `--composite-every` is `suppressed_cadence`, no
+        text; the next call at every 1 delivers it (the composite exists)."""
+        from refmatrix import stm as stm_mod
+        turn = int(stm_mod.Stm(store["root"], SESSION).focus_graph().get("turn", 0))
+        assert turn > 0, f"fixture: ring turn {turn}"
+        every = str(turn + 1)                       # turn % (turn + 1) != 0: a skipped turn
+        r = _rmx(store, "scan-prompt", "--text", PROMPT, "--max-tokens", "100000",
+                 "--composite-every", every)
+        assert r.returncode == 0 and COMP_MARK not in r.stdout, f"fixture:\n{r.stdout[-400:]}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:590: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.ml93rfi1/proj/.refmatrix')
+qid = 'a482360ba57549cbaf149bd6eaf15072'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id a482360ba57549cbaf149bd6eaf15072 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.ml93rfi1/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+________ test_a_composite_stored_as_dropped_is_sent_on_the_next_prompt _________
+
+store = {'base': PosixPath('/private/tmp/cap.yuzmhnuo'), 'proj': PosixPath('/private/tmp/cap.yuzmhnuo/proj'), 'root': PosixPath('/private/tmp/cap.yuzmhnuo/proj/.refmatrix')}
+
+    def test_a_composite_stored_as_dropped_is_sent_on_the_next_prompt(store):
+        """AC-0.6 (guard of 0.84.0's S3 with the capture on; M0-3): a composite the byte fit
+        dropped is stored as `dropped_bytes` with its text, its sent marker is NOT committed, and
+        the next prompt with room delivers it. (RED at base only by the missing record.)"""
+        sections = _scan(store, "--max-tokens", "100000", "--no-composite",
+                         RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        cap = len(sections.stdout.encode("utf-8")) + 80
+        capped = _scan(store, "--max-tokens", "100000", "--max-bytes", str(cap))
+        assert COMP_MARK not in capped.stdout, f"fixture: the cap kept the composite"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:664: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.yuzmhnuo/proj/.refmatrix')
+qid = 'b2e03329b76b441bb8dac47f1ab094aa'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id b2e03329b76b441bb8dac47f1ab094aa (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.yuzmhnuo/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+________________ test_a_packed_recall_writes_one_block_per_hit _________________
+
+recall_store = {'base': PosixPath('/private/tmp/cap.vnjs459v'), 'proj': PosixPath('/private/tmp/cap.vnjs459v/proj'), 'root': PosixPath('/private/tmp/cap.vnjs459v/proj/.refmatrix')}
+
+    def test_a_packed_recall_writes_one_block_per_hit(recall_store):
+        """AC-0.7 (RED): 12 hits under a budget that names 8 and bodies 2 give 2 `delivered`,
+        6 `delivered_hook_only` and 4 `dropped_bytes` `recall_hit` blocks, and no body text
+        anywhere in the record. The SessionStart pack is used: the per-prompt pack carries no
+        bodies (25.1 d3). The budget is derived from an uncapped pack of the same store."""
+        from refmatrix import recall_pack
+        c = recall_store
+        full = _recall(c, 20000).stdout
+        lines = {m.group(1): m.group(0) for m in _HOOK.finditer(full)}
+        bodies = {m.group(1): f"## {m.group(1)}\n{m.group(2)}" for m in _BODY.finditer(full)}
+        order = [m.group(1) for m in _HOOK.finditer(full)]
+        assert len(order) == 12 and len(bodies) == 12, f"fixture: uncapped pack:\n{full}"
+        small = _recall(c, 400).stdout
+        tm = re.search(r"^\+\d+ more: (.+)$", small, re.M)
+        assert tm, f"fixture: no trailer at 400 B:\n{small}"
+        trailer4 = f"+4 more: {tm.group(1)}\n"
+        fixed = (sum(len(lines[n].encode()) for n in order[:8])
+                 + sum(len(bodies[n].encode()) for n in order[:2]) + len(trailer4.encode()))
+        budget = fixed + 60
+        for _ in range(4):                          # the header names the budget: settle its digits
+            budget = fixed + len(recall_pack.header_line(channel="session_start", hits=12,
+                                                         max_bytes=budget).encode())
+        r = _recall(c, budget)
+        named = [m.group(1) for m in _HOOK.finditer(r.stdout)]
+        bodied = [m.group(1) for m in _BODY.finditer(r.stdout)]
+        assert named == order[:8] and bodied == order[:2] and "+4 more:" in r.stdout, (
+            f"fixture: budget {budget} named {named}, bodied {bodied}:\n{r.stdout}")
+>       rec = _record_for(c["root"], _last_qid(c["root"], kind="recall"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:725: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.vnjs459v/proj/.refmatrix')
+qid = 'fe6dee5e00084eb6a74541d5cc5cccbb'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id fe6dee5e00084eb6a74541d5cc5cccbb (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.vnjs459v/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_______________ test_prompt_text_appears_only_inside_block_text ________________
+
+store = {'base': PosixPath('/private/tmp/cap.vyjexe4m'), 'proj': PosixPath('/private/tmp/cap.vyjexe4m/proj'), 'root': PosixPath('/private/tmp/cap.vyjexe4m/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_prompt_text_appears_only_inside_block_text(store, calib):
+        """AC-0.8 (RED): the record's keys are exactly the schema's; `prompt_sha256` is the
+        prompt's hash; a canary prompt term appears in no field but `blocks[*].text`, there only
+        where the printed payload carried it (a delivered block) or in a dropped block's header;
+        a prompt that produces nothing writes a record with no blocks and no canary.
+    
+        The canary is a prompt term the store does not hold, so the only place a render carries it
+        is the content block's header (its first eight terms). Call 1 delivers that block; call 2
+        (the same prompt, tier 1 tripping the token stop) drops it, so the canary is only in the
+        uncapped render of a dropped block; call 3 is the canary alone, which produces nothing."""
+        p_a = f"{CANARY} {PROMPT}"
+        p_b = CANARY
+        a = _scan(store, "--no-composite", "--max-tokens", "100000", prompt=p_a)
+        assert CANARY in a.stdout, f"fixture: the payload does not carry the canary:\n{a.stdout}"
+>       rec = _record_for(store["root"], _last_qid(store["root"]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:761: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.vyjexe4m/proj/.refmatrix')
+qid = 'a061fabd1a054a8c868da607bf9944e5'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id a061fabd1a054a8c868da607bf9944e5 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.vyjexe4m/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+____________ test_old_and_oversize_day_files_are_pruned_and_listed _____________
+
+store = {'base': PosixPath('/private/tmp/cap.i6ko46zg'), 'proj': PosixPath('/private/tmp/cap.i6ko46zg/proj'), 'root': PosixPath('/private/tmp/cap.i6ko46zg/proj/.refmatrix')}
+
+    def test_old_and_oversize_day_files_are_pruned_and_listed(store):
+        """AC-0.9 (RED): before appending, the writer removes day files older than 42 days, then
+        the oldest earlier day files while the total exceeds 64 MiB, never the current day's, and
+        lists what it removed in the record's `pruned`. The clock is the real one; the day files'
+        names and mtimes are set relative to it; the over-bound files are sparse."""
+        d = _capture_dir_with_ignore(store["root"])
+        old50 = d / f"capture-{_day(-50)}.jsonl"
+        old50.write_text("{}\n", encoding="utf-8")
+        _sparse(old50, old50.stat().st_size, days_old=50)
+        d10 = d / f"capture-{_day(-10)}.jsonl"
+        _sparse(d10, 40 * MiB, days_old=10)
+        d5 = d / f"capture-{_day(-5)}.jsonl"
+        _sparse(d5, 30 * MiB, days_old=5)
+        day0 = _today()
+        _scan(store, "--max-tokens", "100000")
+        assert _today() == day0, "the run crossed UTC midnight; rerun"
+        today = d / f"capture-{day0}.jsonl"
+>       assert today.exists(), f"no record appended today; {_listing(store['root'])}"
+E       AssertionError: no record appended today; /private/tmp/cap.i6ko46zg/proj/.refmatrix/injection-capture: ['.gitignore', 'capture-20260926.jsonl', 'capture-20261105.jsonl', 'capture-20261110.jsonl']
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/private/tmp/cap.i6ko46zg/proj/.refmatrix/injection-capture/capture-20261115.jsonl').exists
+
+tests/test_injection_capture.py:812: AssertionError
+________________ test_a_day_file_over_the_bound_stops_appending ________________
+
+store = {'base': PosixPath('/private/tmp/cap.pkf22lqy'), 'proj': PosixPath('/private/tmp/cap.pkf22lqy/proj'), 'root': PosixPath('/private/tmp/cap.pkf22lqy/proj/.refmatrix')}
+
+    def test_a_day_file_over_the_bound_stops_appending(store):
+        """AC-0.9 (RED): the current day's file is never pruned; when it alone is over the bound,
+        no record is appended that day and the skipped call is one `over_bound` line in
+        `errors.jsonl`."""
+        d = _capture_dir_with_ignore(store["root"])
+        day0 = _today()
+        today = d / f"capture-{day0}.jsonl"
+        _sparse(today, 65 * MiB, days_old=0)
+        r = _scan(store, "--max-tokens", "100000")
+        assert _today() == day0, "the run crossed UTC midnight; rerun"
+        assert r.stdout, "fixture: empty payload"
+        assert today.exists(), "the current day's file was pruned"
+        assert today.stat().st_size == 65 * MiB, (
+            f"a record was appended over the bound: {today.stat().st_size - 65 * MiB} B")
+        errs = _errors(store["root"])
+>       assert [e.get("reason") for e in errs] == ["over_bound"], (
+            f"errors.jsonl: {errs}; {_listing(store['root'])}")
+E       AssertionError: errors.jsonl: []; /private/tmp/cap.pkf22lqy/proj/.refmatrix/injection-capture: ['.gitignore', 'capture-20261115.jsonl']
+E       assert [] == ['over_bound']
+E         
+E         Right contains one more item: 'over_bound'
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:836: AssertionError
+_____________ test_a_file_another_process_removed_is_not_an_error ______________
+
+store = {'base': PosixPath('/private/tmp/cap.fhgcf41a'), 'proj': PosixPath('/private/tmp/cap.fhgcf41a/proj'), 'root': PosixPath('/private/tmp/cap.fhgcf41a/proj/.refmatrix')}
+
+    def test_a_file_another_process_removed_is_not_an_error(store):
+        """AC-0.9 (RED): two hook processes prune in parallel, so a day file that is listed and
+        then gone is not an error. Modelled by a real input: an old day file whose entry resolves
+        to nothing (a dangling link): listing finds it, stat says it does not exist. The call still
+        appends its record and writes no `errors.jsonl` line."""
+        d = _capture_dir_with_ignore(store["root"])
+        gone = d / f"capture-{_day(-50)}.jsonl"
+        os.symlink(d / "vanished-by-another-process.jsonl", gone)
+        r = _scan(store, "--max-tokens", "100000")
+        assert r.returncode == 0
+>       _record_for(store["root"], _last_qid(store["root"]))
+
+tests/test_injection_capture.py:852: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.fhgcf41a/proj/.refmatrix')
+qid = '031515a7d49545e89cd4e4d870147b6c'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 031515a7d49545e89cd4e4d870147b6c (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.fhgcf41a/proj/.refmatrix/injection-capture: ['.gitignore', 'capture-20260926.jsonl']
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+____________ test_a_failed_append_keeps_the_payload_and_is_counted _____________
+
+store = {'base': PosixPath('/private/tmp/cap.sxcr415p'), 'proj': PosixPath('/private/tmp/cap.sxcr415p/proj'), 'root': PosixPath('/private/tmp/cap.sxcr415p/proj/.refmatrix')}
+
+    def test_a_failed_append_keeps_the_payload_and_is_counted(store):
+        """AC-0.10 (RED): with the day file unwritable, stdout and exit status are those of the
+        same call with the capture off, `errors.jsonl` holds one `append_failed` line with no
+        payload text, and `rmx telemetry --context` prints a `capture:` line with one error."""
+        control = _scan_bytes(store, "--no-composite", RMX_INJECTION_CAPTURE="0",
+                              RMX_INVOCATION_SOURCE="internal")
+        d = _capture_dir_with_ignore(store["root"])
+        day = d / f"capture-{_today()}.jsonl"
+        day.write_text("", encoding="utf-8")
+        os.chmod(day, 0o444)
+        r = _scan_bytes(store, "--no-composite")
+        assert (r.returncode, r.stdout) == (control.returncode, control.stdout), (
+            f"a failed append changed the payload or exit: rc {r.returncode}; "
+            f"stderr {r.stderr[-600:]!r}")
+        errs = _errors(store["root"])
+>       assert [e.get("reason") for e in errs] == ["append_failed"], (
+            f"errors.jsonl: {errs}; {_listing(store['root'])}")
+E       AssertionError: errors.jsonl: []; /private/tmp/cap.sxcr415p/proj/.refmatrix/injection-capture: ['.gitignore', 'capture-20261115.jsonl']
+E       assert [] == ['append_failed']
+E         
+E         Right contains one more item: 'append_failed'
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:874: AssertionError
+___________ test_an_unwritable_capture_dir_shows_as_missing_coverage ___________
+
+store = {'base': PosixPath('/private/tmp/cap.yn52pic1'), 'proj': PosixPath('/private/tmp/cap.yn52pic1/proj'), 'root': PosixPath('/private/tmp/cap.yn52pic1/proj/.refmatrix')}
+
+    def test_an_unwritable_capture_dir_shows_as_missing_coverage(store):
+        """AC-0.10 (RED): when nothing can be written into the capture dir, stdout and exit status
+        are unchanged and the `capture:` line reads 0 captured of 1 hook call."""
+        control = _scan_bytes(store, "--no-composite", RMX_INJECTION_CAPTURE="0",
+                              RMX_INVOCATION_SOURCE="internal")
+        d = _capture_dir_with_ignore(store["root"])
+        os.chmod(d, 0o555)
+        try:
+            r = _scan_bytes(store, "--no-composite")
+        finally:
+            os.chmod(d, 0o755)
+        assert (r.returncode, r.stdout) == (control.returncode, control.stdout), (
+            f"an unwritable capture dir changed the payload or exit: rc {r.returncode}; "
+            f"stderr {r.stderr[-600:]!r}")
+>       line = _capture_line(store)
+               ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:899: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+c = {'base': PosixPath('/private/tmp/cap.yn52pic1'), 'proj': PosixPath('/private/tmp/cap.yn52pic1/proj'), 'root': PosixPath('/private/tmp/cap.yn52pic1/proj/.refmatrix')}
+
+    def _capture_line(c: dict) -> str:
+        r = _rmx(c, "telemetry", "--context", RMX_INVOCATION_SOURCE="internal")
+        assert r.returncode == 0, f"telemetry --context exited {r.returncode}: {r.stderr[-800:]}"
+        lines = r.stdout.splitlines()
+        idx = [i for i, ln in enumerate(lines) if ln.lstrip().startswith("capture:")]
+>       assert len(idx) == 1, (f"R0.6: `rmx telemetry --context` prints {len(idx)} `capture:` "
+                               f"line(s), not one:\n{r.stdout[-2000:]}")
+E       AssertionError: R0.6: `rmx telemetry --context` prints 0 `capture:` line(s), not one:
+E         11,026 bytes (~2,756 tokens est) over 2 counted invocation(s)
+E         ┏━━━━━━━━━━━━━┳━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━┓
+E         ┃ command     ┃ n ┃ total  ┃ mean  ┃ p50   ┃ p95   ┃ max   ┃
+E         ┡━━━━━━━━━━━━━╇━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━┩
+E         │ scan-prompt │ 2 │ 11,026 │ 5,513 │ 5,513 │ 5,513 │ 5,513 │
+E         └─────────────┴───┴────────┴───────┴───────┴───────┴───────┘
+E         ┏━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━┳━━━━━━┓
+E         ┃ producer (hook runs) ┃ n ┃ total ┃ max   ┃ budget ┃ over ┃
+E         ┡━━━━━━━━━━━━━━━━━━━━━━╇━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━╇━━━━━━┩
+E         │ prompt_recall        │ 0 │ 0     │ 0     │ 4,000  │ 0    │
+E         │ scan_prompt          │ 1 │ 5,513 │ 5,513 │ 9,000  │ 0    │
+E         │ curator_status       │ 0 │ 0     │ 0     │ 500    │ 0    │
+E         │ focus_input          │ 0 │ 0     │ 0     │ 256    │ 0    │
+E         │ session_start        │ 0 │ 0     │ 0     │ 9,000  │ 0    │
+E         │ focus_context        │ 0 │ 0     │ 0     │ 1,500  │ 0    │
+E         │ precompact           │ 0 │ 0     │ 0     │ 9,000  │ 0    │
+E         │ recall_state         │ 0 │ 0     │ 0     │ 9,000  │ 0    │
+E         └──────────────────────┴───┴───────┴───────┴────────┴──────┘
+E         
+E         per-prompt hook budget over 1 window(s): p50 5,513 B (~1,378 tok), p95 5,513 B, max 5,513 B
+E         grouping: hook-sourced rows within a 5s window ANCHORED on a scan-prompt row are one prompt's hook fan-out; windows with no prompt command are excluded
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_injection_capture.py:376: AssertionError
+_____________________ test_the_capture_dir_ignores_itself ______________________
+
+git_store = {'base': PosixPath('/private/tmp/cap.mb9303n8'), 'proj': PosixPath('/private/tmp/cap.mb9303n8/proj'), 'root': PosixPath('/private/tmp/cap.mb9303n8/proj/.refmatrix')}
+
+    def test_the_capture_dir_ignores_itself(git_store):
+        """AC-0.15 (RED): in a git repository with no ignore rules, after one `scan-prompt`
+        call, nothing under `injection-capture/` shows in `git status` or is staged by
+        `git add -A` (bug-261: fleet repos that do not ignore `.refmatrix/`)."""
+        _scan(git_store, "--max-tokens", "100000")
+        days = list((git_store["root"] / CAP_DIR).glob("capture-*.jsonl")) \
+            if (git_store["root"] / CAP_DIR).is_dir() else []
+>       assert days, f"no capture written; {_listing(git_store['root'])}"
+E       AssertionError: no capture written; /private/tmp/cap.mb9303n8/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:967: AssertionError
+___________ test_an_existing_capture_dir_without_gitignore_gets_one ____________
+
+git_store = {'base': PosixPath('/private/tmp/cap.jxbcb44g'), 'proj': PosixPath('/private/tmp/cap.jxbcb44g/proj'), 'root': PosixPath('/private/tmp/cap.jxbcb44g/proj/.refmatrix')}
+
+    def test_an_existing_capture_dir_without_gitignore_gets_one(git_store):
+        """AC-0.15 (RED; M0-10 second step): a capture dir made by hand, with no `.gitignore`,
+        before the call: the writer checks before EVERY write and creates it."""
+        (git_store["root"] / CAP_DIR).mkdir()
+        _scan(git_store, "--max-tokens", "100000")
+        days = list((git_store["root"] / CAP_DIR).glob("capture-*.jsonl"))
+>       assert days, f"no capture written; {_listing(git_store['root'])}"
+E       AssertionError: no capture written; /private/tmp/cap.jxbcb44g/proj/.refmatrix/injection-capture: []
+E       assert []
+
+tests/test_injection_capture.py:977: AssertionError
+_________ test_an_errors_only_write_into_a_bare_capture_dir_is_ignored _________
+
+git_store = {'base': PosixPath('/private/tmp/cap.efn658gp'), 'proj': PosixPath('/private/tmp/cap.efn658gp/proj'), 'root': PosixPath('/private/tmp/cap.efn658gp/proj/.refmatrix')}
+
+    def test_an_errors_only_write_into_a_bare_capture_dir_is_ignored(git_store):
+        """AC-0.15 (RED), the third case: the call's only write is a line of `errors.jsonl`
+        (the day file is unwritable) into a hand-made dir with no `.gitignore`."""
+        d = git_store["root"] / CAP_DIR
+        d.mkdir()
+        day = d / f"capture-{_today()}.jsonl"
+        day.write_text("", encoding="utf-8")
+        os.chmod(day, 0o444)
+        _scan(git_store, "--max-tokens", "100000")
+>       assert (d / "errors.jsonl").exists(), f"no errors.jsonl line; {_listing(git_store['root'])}"
+E       AssertionError: no errors.jsonl line; /private/tmp/cap.efn658gp/proj/.refmatrix/injection-capture: ['capture-20261115.jsonl']
+E       assert False
+E        +  where False = exists()
+E        +    where exists = (PosixPath('/private/tmp/cap.efn658gp/proj/.refmatrix/injection-capture') / 'errors.jsonl').exists
+
+tests/test_injection_capture.py:990: AssertionError
+____________ test_a_raising_composite_build_is_recorded_and_counted ____________
+
+store = {'base': PosixPath('/private/tmp/cap.3gh50wxa'), 'proj': PosixPath('/private/tmp/cap.3gh50wxa/proj'), 'root': PosixPath('/private/tmp/cap.3gh50wxa/proj/.refmatrix')}
+
+    def test_a_raising_composite_build_is_recorded_and_counted(store):
+        """AC-0.16 (RED; bug-256, M0-11): the composite build raises through a real input, a
+        corrupt focus-graph file of the newest ring (`[]`: valid JSON, not a graph). No session is
+        passed, so only the composite reads that ring (`stm.phase_fields` reads the envelope's
+        session, and with a session it raises on the same file: reported to the lead separately).
+        stdout is byte-identical to the same call with the composite absent; stderr carries one
+        line naming the exception; the record's `composite_error` names it; `rmx telemetry
+        --context` counts one."""
+        (store["root"] / "stm" / f"{SESSION}.focus.json").write_text("[]", encoding="utf-8")
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        r = _scan_bytes(store, "--max-tokens", "100000")
+        assert r.returncode == 0, f"rc {r.returncode}: {r.stderr[-1200:]!r}"
+        assert r.stdout == control.stdout, "a failing composite changed the payload"
+        err_new = [ln for ln in r.stderr.decode("utf-8", "replace").splitlines() if ln.strip()
+                   and ln not in control.stderr.decode("utf-8", "replace").splitlines()]
+>       assert len(err_new) == 1 and "AttributeError" in err_new[0], (
+            f"bug-256: the composite failure said on stderr: {err_new}")
+E       AssertionError: bug-256: the composite failure said on stderr: []
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+tests/test_injection_capture.py:1013: AssertionError
+_______________ test_the_capture_switch_leaves_telemetry_on[env] _______________
+
+store = {'base': PosixPath('/private/tmp/cap.dnjqpcey'), 'proj': PosixPath('/private/tmp/cap.dnjqpcey/proj'), 'root': PosixPath('/private/tmp/cap.dnjqpcey/proj/.refmatrix')}
+switch = 'env'
+
+    @pytest.mark.parametrize("switch", ["env", "marker"])
+    def test_the_capture_switch_leaves_telemetry_on(store, switch):
+        """AC-0.18 (RED; M0-12): `RMX_INJECTION_CAPTURE=0` or the marker file
+        `<store root>/injection-capture.off` turns off the capture only: no capture dir is
+        created, and the call's query.log row and recall events are written. With the switch
+        cleared the same store captures (the switch is what stopped it)."""
+        rows_before = len(_query_rows(store["root"]))
+        if switch == "env":
+            _scan(store, "--max-tokens", "100000", RMX_INJECTION_CAPTURE="0")
+        else:
+            (store["root"] / "injection-capture.off").write_text("", encoding="utf-8")
+            _scan(store, "--max-tokens", "100000")
+        assert not (store["root"] / CAP_DIR).exists(), f"switch {switch}: {_listing(store['root'])}"
+        assert len(_query_rows(store["root"])) == rows_before + 1, "no query.log row"
+        _assert_telemetry_written(store)
+        (store["root"] / "injection-capture.off").unlink(missing_ok=True)
+        _scan(store, "--max-tokens", "100000")
+>       _record_for(store["root"], _last_qid(store["root"]))
+
+tests/test_injection_capture.py:1048: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.dnjqpcey/proj/.refmatrix')
+qid = '4578901fd07b4c9b9fb9b47ba50d034e'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 4578901fd07b4c9b9fb9b47ba50d034e (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.dnjqpcey/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_____________ test_the_capture_switch_leaves_telemetry_on[marker] ______________
+
+store = {'base': PosixPath('/private/tmp/cap.e6idvcfr'), 'proj': PosixPath('/private/tmp/cap.e6idvcfr/proj'), 'root': PosixPath('/private/tmp/cap.e6idvcfr/proj/.refmatrix')}
+switch = 'marker'
+
+    @pytest.mark.parametrize("switch", ["env", "marker"])
+    def test_the_capture_switch_leaves_telemetry_on(store, switch):
+        """AC-0.18 (RED; M0-12): `RMX_INJECTION_CAPTURE=0` or the marker file
+        `<store root>/injection-capture.off` turns off the capture only: no capture dir is
+        created, and the call's query.log row and recall events are written. With the switch
+        cleared the same store captures (the switch is what stopped it)."""
+        rows_before = len(_query_rows(store["root"]))
+        if switch == "env":
+            _scan(store, "--max-tokens", "100000", RMX_INJECTION_CAPTURE="0")
+        else:
+            (store["root"] / "injection-capture.off").write_text("", encoding="utf-8")
+            _scan(store, "--max-tokens", "100000")
+        assert not (store["root"] / CAP_DIR).exists(), f"switch {switch}: {_listing(store['root'])}"
+        assert len(_query_rows(store["root"])) == rows_before + 1, "no query.log row"
+        _assert_telemetry_written(store)
+        (store["root"] / "injection-capture.off").unlink(missing_ok=True)
+        _scan(store, "--max-tokens", "100000")
+>       _record_for(store["root"], _last_qid(store["root"]))
+
+tests/test_injection_capture.py:1048: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.e6idvcfr/proj/.refmatrix')
+qid = '2462c5ed128441128896484bbb44dfb9'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id 2462c5ed128441128896484bbb44dfb9 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.e6idvcfr/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_____________________ test_no_telemetry_implies_no_capture _____________________
+
+store = {'base': PosixPath('/private/tmp/cap.0kyi3yky'), 'proj': PosixPath('/private/tmp/cap.0kyi3yky/proj'), 'root': PosixPath('/private/tmp/cap.0kyi3yky/proj/.refmatrix')}
+
+    def test_no_telemetry_implies_no_capture(store):
+        """AC-0.18 (RED): `REFMATRIX_NO_TELEMETRY` turns the capture off too; without it the same
+        store captures."""
+        _scan(store, "--max-tokens", "100000", REFMATRIX_NO_TELEMETRY="1")
+        assert not (store["root"] / CAP_DIR).exists(), _listing(store["root"])
+        _scan(store, "--max-tokens", "100000")
+>       _record_for(store["root"], _last_qid(store["root"]))
+
+tests/test_injection_capture.py:1057: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.0kyi3yky/proj/.refmatrix')
+qid = 'bd57e04a0fdd42d182658d49f35c7877'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id bd57e04a0fdd42d182658d49f35c7877 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.0kyi3yky/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_____________________ test_the_mode_file_selects_the_path ______________________
+
+store = {'base': PosixPath('/private/tmp/cap.y9berv9r'), 'proj': PosixPath('/private/tmp/cap.y9berv9r/proj'), 'root': PosixPath('/private/tmp/cap.y9berv9r/proj/.refmatrix')}
+
+    def test_the_mode_file_selects_the_path(store):
+        """AC-0.18 (RED; M0-14 second step): the one word in `<store root>/injection-capture.mode`
+        selects the mode (both words tried, so neither release default hides an ignored file);
+        `RMX_INJECTION_CAPTURE` outranks the file; an unrecognised word writes no record and
+        shows as an invalid mode on the `capture:` line."""
+        mode_file = store["root"] / "injection-capture.mode"
+    
+        def mode_of(**env) -> str:
+            _scan(store, "--no-composite", **env)
+            return _record_for(store["root"], _last_qid(store["root"]))["capture_mode"]
+    
+        mode_file.write_text("names\n", encoding="utf-8")
+>       assert mode_of() == "names"
+               ^^^^^^^^^
+
+tests/test_injection_capture.py:1072: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_injection_capture.py:1069: in mode_of
+    return _record_for(store["root"], _last_qid(store["root"]))["capture_mode"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.y9berv9r/proj/.refmatrix')
+qid = 'a772f4948ce448a9abf4c8a164894043'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id a772f4948ce448a9abf4c8a164894043 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.y9berv9r/proj/.refmatrix/injection-capture does not exist
+E       assert []
+
+tests/test_injection_capture.py:332: AssertionError
+_____________ test_the_cost_prompt_set_is_forty_synthetic_prompts ______________
+
+    def test_the_cost_prompt_set_is_forty_synthetic_prompts():
+        """R0.5 `#r0-5-method` step 3, the part checkable without the live catalog: 40 distinct
+        synthetic prompts, one per line, at least 10 carrying a hub word as a plain word. Whether
+        at least half trip the token stop on the copy of the live catalog is the measurement's
+        (AC-0.13), recorded in the implementation summary."""
+>       assert PROMPTS.exists(), f"{PROMPTS} does not exist (spec #files: new in release A)"
+E       AssertionError: /Volumes/littlebig/refmatrix-315/tests/fixtures/injection_capture/prompts.txt does not exist (spec #files: new in release A)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/Volumes/littlebig/refmatrix-315/tests/fixtures/injection_capture/prompts.txt').exists
+
+tests/test_injection_capture.py:1097: AssertionError
+_____ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node] ______
+
+store = {'base': PosixPath('/private/tmp/cap.58pslx09'), 'proj': PosixPath('/private/tmp/cap.58pslx09/proj'), 'root': PosixPath('/private/tmp/cap.58pslx09/proj/.refmatrix')}
+shape = 'int-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: /refmatrix-315/src/refmatrix/stm.py", line 1849, in phase_fields
+E             return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+E                                                                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_______ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list] ________
+
+store = {'base': PosixPath('/private/tmp/cap.yi3ojgdy'), 'proj': PosixPath('/private/tmp/cap.yi3ojgdy/proj'), 'root': PosixPath('/private/tmp/cap.yi3ojgdy/proj/.refmatrix')}
+shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph:         ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                        prompt_time=True))
+E                                        ^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1848, in phase_fields
+E             pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1803, in pre_prompt_state
+E             live_graph = s._load_graph()
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node] ___
+
+store = {'base': PosixPath('/private/tmp/cap.mhyi1hd7'), 'proj': PosixPath('/private/tmp/cap.mhyi1hd7/proj'), 'root': PosixPath('/private/tmp/cap.mhyi1hd7/proj/.refmatrix')}
+shape = 'nameless-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: ites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'scan-prompt', '--stdin-json', '--c...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-prompt_recall] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.7o1by9ch'), 'proj': PosixPath('/private/tmp/cap.7o1by9ch/proj'), 'root': PosixPath('/private/tmp/cap.7o1by9ch/proj/.refmatrix')}
+shape = 'int-node', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: /refmatrix-315/src/refmatrix/stm.py", line 1849, in phase_fields
+E             return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+E                                                                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-session_start] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.0y46dth1'), 'proj': PosixPath('/private/tmp/cap.0y46dth1/proj'), 'root': PosixPath('/private/tmp/cap.0y46dth1/proj/.refmatrix')}
+shape = 'int-node', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: lf.session, None, t0=_PROC_WALL_T0,
+E                                          prompt_time=False)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1855, in phase_fields
+E             **phase_inputs(live, None)}
+E               ~~~~~~~~~~~~^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1827, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1740, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_recall[list-prompt_recall] ___
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.4654a7fp'), 'proj': PosixPath('/private/tmp/cap.4654a7fp/proj'), 'root': PosixPath('/private/tmp/cap.4654a7fp/proj/.refmatrix')}
+shape = 'list', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: atrix/cli.py", line 13344, in emit
+E             phase = stm_mod.phase_fields(root, self.session, self.query, t0=_PROC_WALL_T0,
+E                                          prompt_time=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1848, in phase_fields
+E             pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1803, in pre_prompt_state
+E             live_graph = s._load_graph()
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_recall[list-session_start] ___
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.grkq3ra5'), 'proj': PosixPath('/private/tmp/cap.grkq3ra5/proj'), 'root': PosixPath('/private/tmp/cap.grkq3ra5/proj/.refmatrix')}
+shape = 'list', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph:   File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 12746, in memory_recall
+E             rec.emit()
+E             ~~~~~~~~^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/cli.py", line 13347, in emit
+E             phase = stm_mod.phase_fields(root, self.session, None, t0=_PROC_WALL_T0,
+E                                          prompt_time=False)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1851, in phase_fields
+E             g = s._load_graph()
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1410, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-prompt_recall] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap._nwnzllz'), 'proj': PosixPath('/private/tmp/cap._nwnzllz/proj'), 'root': PosixPath('/private/tmp/cap._nwnzllz/proj/.refmatrix')}
+shape = 'nameless-node', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: ites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-session_start] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.zmerdw_f'), 'proj': PosixPath('/private/tmp/cap.zmerdw_f/proj'), 'root': PosixPath('/private/tmp/cap.zmerdw_f/proj/.refmatrix')}
+shape = 'nameless-node', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: ites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1742, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1743, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Volumes/littlebig/refmatrix-315/src/refmatrix/stm.py", line 1727, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx', 'memory', 'recall', '--pack', '--k'...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1126: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_injection_capture.py::test_the_capture_never_changes_the_payload[token-stop]
+PASSED tests/test_injection_capture.py::test_the_capture_never_changes_the_payload[byte-fit]
+PASSED tests/test_injection_capture.py::test_capture_only_bundles_emit_no_recall_events
+PASSED tests/test_injection_capture.py::test_json_format_writes_no_capture_record
+PASSED tests/test_injection_capture.py::test_a_verb_recall_with_pack_writes_no_capture_record
+FAILED tests/test_injection_capture.py::test_a_scan_call_writes_one_record_with_every_block
+FAILED tests/test_injection_capture.py::test_delivered_blocks_concatenate_to_the_payload[uncapped]
+FAILED tests/test_injection_capture.py::test_delivered_blocks_concatenate_to_the_payload[byte-capped]
+FAILED tests/test_injection_capture.py::test_a_block_the_byte_fit_dropped_is_stored_as_dropped_bytes
+FAILED tests/test_injection_capture.py::test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens
+FAILED tests/test_injection_capture.py::test_content_after_a_tier_1_token_stop_is_stored_with_text[full]
+FAILED tests/test_injection_capture.py::test_content_after_a_tier_1_token_stop_is_stored_with_text[names]
+FAILED tests/test_injection_capture.py::test_names_mode_records_later_bundles_as_not_built
+FAILED tests/test_injection_capture.py::test_an_unchanged_composite_is_recorded_as_suppressed_unchanged
+FAILED tests/test_injection_capture.py::test_a_cadence_skip_is_recorded_as_suppressed_cadence
+FAILED tests/test_injection_capture.py::test_a_composite_stored_as_dropped_is_sent_on_the_next_prompt
+FAILED tests/test_injection_capture.py::test_a_packed_recall_writes_one_block_per_hit
+FAILED tests/test_injection_capture.py::test_prompt_text_appears_only_inside_block_text
+FAILED tests/test_injection_capture.py::test_old_and_oversize_day_files_are_pruned_and_listed
+FAILED tests/test_injection_capture.py::test_a_day_file_over_the_bound_stops_appending
+FAILED tests/test_injection_capture.py::test_a_file_another_process_removed_is_not_an_error
+FAILED tests/test_injection_capture.py::test_a_failed_append_keeps_the_payload_and_is_counted
+FAILED tests/test_injection_capture.py::test_an_unwritable_capture_dir_shows_as_missing_coverage
+FAILED tests/test_injection_capture.py::test_the_capture_dir_ignores_itself
+FAILED tests/test_injection_capture.py::test_an_existing_capture_dir_without_gitignore_gets_one
+FAILED tests/test_injection_capture.py::test_an_errors_only_write_into_a_bare_capture_dir_is_ignored
+FAILED tests/test_injection_capture.py::test_a_raising_composite_build_is_recorded_and_counted
+FAILED tests/test_injection_capture.py::test_the_capture_switch_leaves_telemetry_on[env]
+FAILED tests/test_injection_capture.py::test_the_capture_switch_leaves_telemetry_on[marker]
+FAILED tests/test_injection_capture.py::test_no_telemetry_implies_no_capture
+FAILED tests/test_injection_capture.py::test_the_mode_file_selects_the_path
+FAILED tests/test_injection_capture.py::test_the_cost_prompt_set_is_forty_synthetic_prompts
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-session_start]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[list-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[list-session_start]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-session_start]
+36 failed, 5 passed in 84.24s (0:01:24)

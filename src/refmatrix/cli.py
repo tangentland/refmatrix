@@ -8036,6 +8036,10 @@ def telemetry(since, top_queried, zero_results, as_context, window, agent_usage,
             f"p50 {hb['p50_bytes']:,} B (~{hb['p50_tokens_est']:,} tok), "
             f"p95 {hb['p95_bytes']:,} B, max {hb['max_bytes']:,} B")
         console.print(f"[dim]grouping: {hb['grouping']}[/]")
+        # Task 31.5 R0.6: ONE `capture:` line, plain (never wrapped or marked up), so a
+        # capture that stopped is visible where the hook's discarded stderr is not.
+        from refmatrix.telemetry import capture_line
+        click.echo(capture_line(data["capture"]))
         return
 
     def _run(s) -> tuple[str, Any]:
@@ -9819,6 +9823,10 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
     # Task 21.1 R4/R9: the row's and the events' session, resolved ONCE (the hook's
     # envelope first; null when nothing resolves — never the newest ring).
     session = _tel.resolve_event_session(_root(), envelope)
+    # Task 31.5 S0 (release A, 2026-11-15): the injection capture's switch and mode, read ONCE
+    # per call. A JSON render is an answer, not a hook payload: never captured (R0.3).
+    capture = _tel.capture_state(_root()) if fmt == "text" else None
+    capture_mode = capture.mode if capture is not None else None
 
     def _run(s):
         trace: dict = {}
@@ -9849,6 +9857,7 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
                 # on what the hook PRINTS (2026-11-13: a text of exactly `cap` bytes was
                 # cap+1 on the wire).
                 max_bytes=None if cap is None else max(1, cap - 1),
+                capture=capture_mode,
             )
             tlog.cardinality = result.count("=== context for") if result else 0
         # The item rows' partitions, read on the store that served them (R10).
@@ -9863,14 +9872,30 @@ def scan_prompt_cmd(query, text, max_tokens, per_concept_tokens, max_concepts,
         payload = (out + "\n").encode("utf-8")
     # R11: the scan_prompt channel's ONE emission, after the payload is written; the phase
     # inputs come from ONE pre-prompt state read (R9), never a second read of live files.
+    # bug-268 (2026-11-15): a focus graph of the wrong shape raised here, after the payload,
+    # and the call exited 1 with no events; it is now counted (`stm_error`), never raised.
     root = _root()
+    phase, stm_error = stm_mod.phase_fields_checked(root, session, prompt, t0=_PROC_WALL_T0,
+                                                    prompt_time=True)
     _tel.emit_call(root, channel="scan_prompt", invocation=_tel.invocation_source(),
                    session=session, query_id=qid,
                    retrieved=trace.get("retrieved") or [],
                    delivered=(trace.get("delivered") or []) if payload else [],
                    payload=payload, block_id=_tel.RECALL_BLOCK_IDS["scan_prompt"],
-                   phase=stm_mod.phase_fields(root, session, prompt, t0=_PROC_WALL_T0,
-                                              prompt_time=True))
+                   phase=phase)
+    if capture_mode is not None:
+        # Task 31.5 R0.2: ONE capture record per call, after the payload is printed. The
+        # outcome lives on the record; the query.log row is already written (R0.2-outcome).
+        cap_info = trace.get("capture") or {}
+        _tel.write_capture(root, channel="scan_prompt", invocation=_tel.invocation_source(),
+                           session=session, query_id=qid, prompt=prompt, budget_bytes=cap,
+                           max_tokens=max_tokens, payload=payload, mode=capture_mode,
+                           blocks=cap_info.get("blocks") or [],
+                           blocks_error=cap_info.get("error"),
+                           capture_built=int(cap_info.get("built") or 0),
+                           build_ms=float(cap_info.get("build_ms") or 0.0),
+                           composite_error=trace.get("composite_error"),
+                           stm_error=stm_error, t0=time.perf_counter())
 
 
 @main.command("top")
@@ -12786,6 +12811,7 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
             pack_bytes = _hb.resolve(_key, max_bytes)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
+        rec.pack, rec.pack_bytes = True, pack_bytes
     elif max_bytes is not None:
         raise click.ClickException("--max-bytes bounds the --pack payload; pass --pack")
     # Uniform resolution: positional query > --text > --prompt > --stdin-json
@@ -13183,6 +13209,7 @@ def _echo_pack(rec: "_RecallCall", res: dict) -> None:
             f"{[r.get('name') for r in rows[:len(named)]]}; refusing to log spans for rows "
             f"the payload does not carry")
     rec.delivered = rows[:len(named)]
+    rec.pack_res = res
     rec.echo(res["text"], spans=list(res.get("spans") or []), nl=False)
 
 
@@ -13294,6 +13321,10 @@ class _RecallCall:
         self.skipped = False
         self.nothing_asked = False
         self.session: "str | None" = None
+        # Task 31.5 S0: a `--pack` call's packer result and byte budget, for the capture.
+        self.pack = False
+        self.pack_bytes: "int | None" = None
+        self.pack_res: "dict | None" = None
 
     def set_query(self, q: str, envelope: "dict | None") -> None:
         self.query, self.envelope = q or "", envelope
@@ -13332,20 +13363,79 @@ class _RecallCall:
         self.tlog.session = self.session
 
     def emit(self) -> None:
-        from refmatrix import stm as stm_mod, telemetry as _tel
-        if self.skipped or self.nothing_asked or not (self.retrieved or self.delivered):
-            return
-        root = _root()
+        """The call's recall events (21.1 R11), then its injection-capture record (task 31.5
+        S0) when it is a `--pack` hook payload on a capture channel. The capture is written on
+        every exit that reaches here, an empty or degraded one included (a prompt the
+        pipeline had nothing for is part of the denominator, R0.2)."""
+        from refmatrix import telemetry as _tel
         channel = _tel.recall_channel(session_start=self.session_start,
                                       stdin_json=self.stdin_json, recent=self.recent,
                                       invocation=self.invocation)
+        stm_error = None
+        if not (self.skipped or self.nothing_asked or not (self.retrieved or self.delivered)):
+            stm_error = self._emit_events(channel)
+        if (self.pack and not self.json_mode and self.tlog is not None
+                and channel in _tel.CAPTURE_CHANNELS):
+            root = _root()
+            mode = _tel.capture_state(root).mode
+            if mode is not None:
+                _tel.write_capture(root, channel=channel, invocation=self.invocation,
+                                   session=self.session, query_id=self.tlog.query_id,
+                                   prompt=self.query, budget_bytes=self.pack_bytes,
+                                   max_tokens=None, payload=self.payload, mode=mode,
+                                   blocks=self._capture_blocks, stm_error=stm_error,
+                                   t0=time.perf_counter())
+
+    def _capture_blocks(self) -> "list[dict]":
+        """The pack as capture blocks (task 31.5 R0.2): the header line and the `+M more`
+        trailer as `marker`s, and ONE `recall_hit` per hit the packer was given, in rank
+        order: `delivered` (hook line and body), `delivered_hook_only`, or `dropped_bytes`
+        (behind the trailer). From the packer's own result (`named`, `spans`, `line_bytes`),
+        never a search of the text. No body text is stored."""
+        from refmatrix import telemetry as _tel
+        res = self.pack_res
+        if res is None:
+            return []
+        text = str(res.get("text") or "")
+        lines = text.splitlines(keepends=True)
+        rows = list(res.get("memories") or [])
+        named = list(res.get("named") or [])
+        spans = list(res.get("spans") or [])
+        line_bytes = list(res.get("line_bytes") or [])
+        out: "list[dict]" = []
+        if lines:
+            out.append(_tel.capture_block("marker", "delivered", text=lines[0]))
+        for i, r in enumerate(rows):
+            if i < len(named):
+                sp = spans[i] if i < len(spans) else {}
+                state = ("delivered" if sp.get("body_bytes") is not None
+                         else "delivered_hook_only")
+                hook_bytes = sp.get("bytes")
+            else:
+                state = "dropped_bytes"
+                hook_bytes = line_bytes[i] if i < len(line_bytes) else None
+            out.append(_tel.capture_hit(state=state, name=str(r.get("name")), rank=i + 1,
+                                        mtype=r.get("mtype"), scope=r.get("scope") or "project",
+                                        hook_bytes=hook_bytes, content=r.get("content")))
+        if res.get("more") and len(lines) > 1:
+            out.append(_tel.capture_block("marker", "delivered", text=lines[-1]))
+        return out
+
+    def _emit_events(self, channel: str) -> "str | None":
+        """The ONE emission of the call's recall events; returns the `stm_error` (bug-268) of
+        its phase read, else None."""
+        from refmatrix import stm as stm_mod, telemetry as _tel
+        root = _root()
         phase = None
+        stm_error = None
+        # bug-268 (2026-11-15): a focus graph of the wrong shape raised here, after the pack
+        # was printed, and the hook exited 1 with no events; it is counted, never raised.
         if channel == "prompt_recall":
-            phase = stm_mod.phase_fields(root, self.session, self.query, t0=_PROC_WALL_T0,
-                                         prompt_time=True)
+            phase, stm_error = stm_mod.phase_fields_checked(
+                root, self.session, self.query, t0=_PROC_WALL_T0, prompt_time=True)
         elif channel in ("session_start", "precompact"):
-            phase = stm_mod.phase_fields(root, self.session, None, t0=_PROC_WALL_T0,
-                                         prompt_time=False)
+            phase, stm_error = stm_mod.phase_fields_checked(
+                root, self.session, None, t0=_PROC_WALL_T0, prompt_time=False)
         retrieved = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.retrieved, 1)]
         delivered = [_tel.recall_item(r, rank=i) for i, r in enumerate(self.delivered, 1)]
         if self.payload is not None and self.json_mode:
@@ -13371,6 +13461,7 @@ class _RecallCall:
                        session=self.session, query_id=self.tlog.query_id,
                        retrieved=retrieved, delivered=delivered, payload=self.payload,
                        block_id=_tel.RECALL_BLOCK_IDS[channel], phase=phase)
+        return stm_error
 
 
 @memory_grp.command("link")

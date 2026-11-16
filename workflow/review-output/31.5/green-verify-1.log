@@ -1,0 +1,372 @@
+pyc-guard: recompiled 4 timestamp pyc(s) under /Volumes/littlebig/refmatrix-315-green/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  4%]
+........................................................................ [  9%]
+........................................................................ [ 14%]
+.........................................FFF............................ [ 19%]
+..........................................................F............. [ 24%]
+........................................................................ [ 29%]
+........................................................................ [ 34%]
+........................................................................ [ 39%]
+......................s................................................. [ 44%]
+........................................................................ [ 49%]
+........................................................................ [ 54%]
+........................................................................ [ 59%]
+.FF..................................................................... [ 64%]
+........................................................................ [ 69%]
+........................................................................ [ 74%]
+........................................................................ [ 79%]
+........................................................................ [ 84%]
+........................................................................ [ 88%]
+........................................................................ [ 93%]
+........................................................................ [ 98%]
+.................                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_intra_cluster_emits_real_verb_not_cooccurs ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x130e3b7e0>
+
+    def test_intra_cluster_emits_real_verb_not_cooccurs(monkeypatch):
+        import types
+        import refmatrix.composite as C
+    
+        def groups_for(name):
+            if name == "parser":  # parser calls lexer (member) + mentions xtern (ext)
+                return {"calls": [types.SimpleNamespace(
+                            entity=types.SimpleNamespace(id=1, name="lexer"))],
+                        "mentions": [types.SimpleNamespace(
+                            entity=types.SimpleNamespace(id=9, name="xtern"))]}
+            return {}
+    
+        _patch_bc(monkeypatch, groups_for)
+>       out = C._render_gmd(
+            object(), [_intra_topic()], expand=True, per_node_entities=4,
+            expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+            intra_edges=3)
+
+tests/test_composite.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/composite.py:277: in _render_gmd
+    printed = _printable_members(s, members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <object object at 0x131c62b30>, members = ['parser', 'lexer', 'tokens']
+
+    def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+        """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+        printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+        classifier), or when it is a plain word outside the shared stoplist
+        (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+        holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+        then printed every member, so `Members:` lines carried the prompt's own `the` and
+        `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+        25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+        printed."""
+        from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+        out: "list[str]" = []
+        for m in members:
+            if is_identifier_shaped(m):
+                out.append(m)
+            elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+>                 and s.resolve_concept_ids(m)):
+                      ^^^^^^^^^^^^^^^^^^^^^
+E                 AttributeError: 'object' object has no attribute 'resolve_concept_ids'
+
+src/refmatrix/composite.py:229: AttributeError
+__________________ test_intra_edges_zero_drops_grounded_block __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x114184b40>
+
+    def test_intra_edges_zero_drops_grounded_block(monkeypatch):
+        import types
+        import refmatrix.composite as C
+    
+        def groups_for(name):
+            if name == "parser":
+                return {"calls": [types.SimpleNamespace(
+                    entity=types.SimpleNamespace(id=1, name="lexer"))]}
+            return {}
+    
+        _patch_bc(monkeypatch, groups_for)
+>       out = C._render_gmd(
+            object(), [_intra_topic()], expand=True, per_node_entities=4,
+            expand_nodes_per_topic=3, max_expansions=6, max_tokens=5000, turn=1,
+            intra_edges=0)
+
+tests/test_composite.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/composite.py:277: in _render_gmd
+    printed = _printable_members(s, members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <object object at 0x131c633a0>, members = ['parser', 'lexer', 'tokens']
+
+    def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+        """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+        printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+        classifier), or when it is a plain word outside the shared stoplist
+        (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+        holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+        then printed every member, so `Members:` lines carried the prompt's own `the` and
+        `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+        25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+        printed."""
+        from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+        out: "list[str]" = []
+        for m in members:
+            if is_identifier_shaped(m):
+                out.append(m)
+            elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+>                 and s.resolve_concept_ids(m)):
+                      ^^^^^^^^^^^^^^^^^^^^^
+E                 AttributeError: 'object' object has no attribute 'resolve_concept_ids'
+
+src/refmatrix/composite.py:229: AttributeError
+_______________ test_ltm_expansion_ranks_sparse_first_and_dedups _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x114185400>
+
+    def test_ltm_expansion_ranks_sparse_first_and_dedups(monkeypatch):
+        import types
+        import refmatrix.composite as C
+    
+        def _ent(eid, name):
+            return types.SimpleNamespace(id=eid, name=name)
+    
+        def _entry(eid, name):
+            return types.SimpleNamespace(entity=_ent(eid, name))
+    
+        # Every anchor resolves to the same neighborhood: a hub target (high PR) and
+        # a sparse target (low PR), plus one target shared across anchors.
+        def fake_build_context(s, name, **kw):
+            return types.SimpleNamespace(
+                anchor=_ent(999, name),
+                groups={"mentions": [
+                    _entry(1, "hub_memory"),      # high centrality → demote
+                    _entry(2, "sparse_bridge"),   # low centrality → aha, surface
+                    _entry(3, "shared_target"),   # appears for every anchor → dedup
+                ]})
+    
+        import refmatrix.pagerank as PR
+        monkeypatch.setattr(C, "build_context", fake_build_context)
+        monkeypatch.setattr(PR, "load_scores", lambda s: {1: 0.90, 2: 0.01, 3: 0.50})
+    
+        topic = {
+            "members": ["alpha", "bravo"],
+            "nodes": [{"name": "alpha", "freq": 1}, {"name": "bravo", "freq": 1}],
+            "edges": [],
+        }
+>       out = C._render_gmd(
+            object(), [topic], expand=True, per_node_entities=2,
+            expand_nodes_per_topic=2, max_expansions=6, max_tokens=5000, turn=1,
+            intra_edges=0)
+
+tests/test_composite.py:216: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/composite.py:277: in _render_gmd
+    printed = _printable_members(s, members)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = <object object at 0x131c62340>, members = ['alpha', 'bravo']
+
+    def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+        """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+        printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+        classifier), or when it is a plain word outside the shared stoplist
+        (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+        holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+        then printed every member, so `Members:` lines carried the prompt's own `the` and
+        `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+        25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+        printed."""
+        from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+        out: "list[str]" = []
+        for m in members:
+            if is_identifier_shaped(m):
+                out.append(m)
+            elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+>                 and s.resolve_concept_ids(m)):
+                      ^^^^^^^^^^^^^^^^^^^^^
+E                 AttributeError: 'object' object has no attribute 'resolve_concept_ids'
+
+src/refmatrix/composite.py:229: AttributeError
+_______________ test_prompt_text_appears_only_inside_block_text ________________
+
+store = {'base': PosixPath('/private/tmp/cap._o9mv7ht'), 'proj': PosixPath('/private/tmp/cap._o9mv7ht/proj'), 'root': PosixPath('/private/tmp/cap._o9mv7ht/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_prompt_text_appears_only_inside_block_text(store, calib):
+        """AC-0.8 (RED): the record's keys are exactly the schema's; `prompt_sha256` is the
+        prompt's hash; a canary prompt term appears in no field but `blocks[*].text`, there only
+        where the printed payload carried it (a delivered block) or in a dropped block's header;
+        a prompt that produces nothing writes a record with no blocks and no canary.
+    
+        The canary is a prompt term the store does not hold, so the only place a render carries it
+        is the content block's header (its first eight terms). Call 1 delivers that block; call 2
+        (the same prompt, tier 1 tripping the token stop) drops it, so the canary is only in the
+        uncapped render of a dropped block; call 3 is the canary alone, which produces nothing."""
+        p_a = f"{CANARY} {PROMPT}"
+        p_b = CANARY
+        a = _scan(store, "--no-composite", "--max-tokens", "100000", prompt=p_a)
+        assert CANARY in a.stdout, f"fixture: the payload does not carry the canary:\n{a.stdout}"
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+        a2 = _scan(store, "--no-composite", "--max-tokens", str(calib["t1"]), prompt=p_a)
+        assert CANARY not in a2.stdout and TOKEN_MARK in a2.stdout, f"fixture:\n{a2.stdout}"
+        rec2 = _record_for(store["root"], _last_qid(store["root"]))
+        b = _scan(store, "--no-composite", prompt=p_b)
+        assert b.stdout == "", f"fixture: the canary-only prompt produced a payload:\n{b.stdout}"
+        rec_b = _record_for(store["root"], _last_qid(store["root"]))
+        for r, p in ((rec, p_a), (rec2, p_a), (rec_b, p_b)):
+            assert set(r) == SCHEMA_KEYS, (f"record keys differ from R0.2's: extra "
+                                           f"{set(r) - SCHEMA_KEYS}, missing {SCHEMA_KEYS - set(r)}")
+            assert r["prompt_sha256"] == _sha(p) and r["prompt_chars"] == len(p)
+            outer = json.dumps({k: v for k, v in r.items() if k != "blocks"})
+            assert CANARY not in outer, "the canary is in a record field outside blocks"
+            for blk in r["blocks"]:
+                assert CANARY not in json.dumps({k: v for k, v in blk.items() if k != "text"}), blk
+        for r, out in ((rec, a.stdout), (rec2, a2.stdout)):
+            delivered = _joined_delivered(r)
+            _assert_is_payload(delivered, out, "canary prompt")
+            assert delivered.count(CANARY) == out.count(CANARY)
+            for blk in r["blocks"]:
+                if blk.get("state") != "delivered" and blk.get("text"):
+                    bad = [ln for ln in blk["text"].splitlines()
+                           if CANARY in ln and not ln.startswith("# refmatrix ")]
+>                   assert not bad, f"the canary outside a dropped block's header: {bad}"
+E                   AssertionError: the canary outside a dropped block's header: ['=== context for `zqxcanary315 why does widget_registry call ledger_codec near the harbor lantern closet` ===']
+E                   assert not ['=== context for `zqxcanary315 why does widget_registry call ledger_codec near the harbor lantern closet` ===']
+
+tests/test_injection_capture.py:784: AssertionError
+_______________ test_ac6_frozen_fixture_prints_the_exact_counts ________________
+
+R = PosixPath('/private/tmp/rmx-m4pxjt_z/r/865/.refmatrix')
+
+    def test_ac6_frozen_fixture_prints_the_exact_counts(R):
+        """AC-6. The fixture (cut by the user 2026-10-19 with `tools/cut_agent_usage_fixture.py`,
+        trimmed by its `--from-fixture` re-cut, spec round 14): `--since 2026-09-23 --until
+        2026-10-07T11:06:35` prints EXACTLY 3 context calls (context-replica), 1,121 grep-replica
+        greps, 34 memory recalls (R11 channel `recall`: the agent's own `memory recall`, not the
+        hooks' 210; not 68: phase=start excluded) and `excluded_test_rows=0 legacy_fixture_rows=0
+        legacy_unattributed=<L>` (L from the manifest). Count lines matched tolerantly (the spec
+        fixes no per-route format): a line naming the surface and holding the number as a word.
+    
+        1,121, not plan-21's 1,119 (round 14, measured on the fixture): 1,119 was counted with the
+        upper bound `2026-10-07T11:06` (minute precision; bsd 3104a81 "to 2026-10-07T11:06", 837
+        dropin + 21 index), which drops the two grep-replica rows at 11:06:04. This AC's own window
+        ends at 11:06:35 and holds them (839 dropin + 21 index). Same rows, a different cut."""
+        manifest = FIXTURE / "manifest.json"
+        assert manifest.is_file(), (
+            "AC-6 BLOCKED: the redacted fixture is not committed; run "
+            "`python3 tools/cut_agent_usage_fixture.py` (reads this project's .refmatrix logs, "
+            "writes tests/fixtures/agent_usage/)")
+        L = json.loads(manifest.read_text())["L"]
+        for name in ("query.log", "cli.log"):
+            (R / name).write_bytes((FIXTURE / name).read_bytes())
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert f"excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed={L}" in out, out
+        assert [ln for ln in _line_with(out, "context-replica") if re.search(r"\b3\b", ln)], out
+        assert [ln for ln in _line_with(out, "grep-replica")
+                if re.search(r"\b1,?121\b", ln)], out
+        rec = [ln for ln in out.splitlines() if "recall" in ln.lower()]
+>       assert [ln for ln in rec if re.search(r"\b34\b", ln)], out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=4709
+E         query.log: counted=4709 unparseable=0 internal_excluded=0
+E         totals:
+E           context context-replica: 3
+E           grep grep-replica: 1121
+E           grep grep-stdin: 3330
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E           invocation=unknown
+E             context context-replica: 3 p50=792ms p95=808ms
+E             grep grep-replica: 1121 p50=8ms p95=48ms
+E             grep grep-replica answered_by=dropin: 839 p50=9ms p95=26ms
+E             grep grep-replica answered_by=floor: 4 p50=64ms p95=71ms
+E             grep grep-replica answered_by=index: 21 p50=55ms p95=267ms
+E             grep grep-replica answered_by=none: 5 p50=16ms p95=105ms
+E             grep grep-replica answered_by=unknown: 252 p50=6ms p95=89ms
+E             grep grep-stdin: 3330 p50=0ms p95=0ms
+E             grep grep-stdin answered_by=stdin: 3330 p50=0ms p95=0ms
+E         outcomes:
+E           context: ok=3 skipped_budget=0 error=0
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=244 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+
+tests/test_task21_1_agent_usage_report.py:392: AssertionError
+________________ test_ac6_cli_log_recalls_are_split_per_channel ________________
+
+R = PosixPath('/private/tmp/rmx-m4pxjt_z/r/866/.refmatrix')
+
+    def test_ac6_cli_log_recalls_are_split_per_channel(R):
+        """AC-6 / R7 (round 14, RED at 246efb8): R7 prints recall "per invocation" and "per recall
+        channel (R11's `recall_channel`, recomputed from the row)". A pre-21.1 store has no
+        `kind=recall` query.log rows, so its recalls exist only in cli.log; the report lumps them
+        into ONE `cli.log: memory recall commands=<n>` line, so the frozen fixture prints 244
+        (201 prompt_recall + 6 session_start + 3 precompact hook calls + 34 agent calls) and the 34
+        AC-6 pins is printed nowhere. The channel is recomputable from a cli.log row: the flag NAMES
+        survive redaction (`--session-start`, `--stdin-json`, `--recent`) and `source` is the
+        invocation (`hook` / `unknown`). Here: 5 prompt_recall, 2 session_start, 3 precompact
+        (hook `--recent`), 4 recall (3 agent queries + 1 agent `--recent`, which R11 files as
+        `recall`, not `precompact`), each with its phase=start row (never counted)."""
+        def pair(ts, argv, source):
+            return [_cli_row(ts, argv, phase="start", source=source), _cli_row(ts, argv, source=source)]
+        cli = []
+        for i in range(5):
+            cli += pair(f"2026-10-01T10:0{i}:00",
+                        ["memory", "recall", "--stdin-json", "--k", "sha256:" + "a" * 64,
+                         "--scope", "sha256:" + "b" * 64, "--json"], "hook")
+        for i in range(2):
+            cli += pair(f"2026-10-02T10:0{i}:00",
+                        ["memory", "recall", "--session-start", "--json"], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-03T10:0{i}:00",
+                        ["memory", "recall", "--recent", "--scope", "sha256:" + "c" * 64], "hook")
+        for i in range(3):
+            cli += pair(f"2026-10-04T10:0{i}:00",
+                        ["memory", "recall", "sha256:" + "d" * 64, "--k", "sha256:" + "e" * 64],
+                        "unknown")
+        cli += pair("2026-10-05T10:00:00", ["memory", "recall", "--recent"], "unknown")
+        _write_jsonl(R / "query.log", [])
+        _write_jsonl(R / "cli.log", cli)
+        code, out = _report("--since", "2026-09-23", "--until", "2026-10-07T11:06:35")
+        assert code == 0, out
+    
+        def chan(name: str, n: int) -> list:
+            word = re.compile(rf"(?<![\w-]){name}(?![\w-])")
+            return [ln for ln in out.splitlines() if word.search(ln) and re.search(rf"\b{n}\b", ln)]
+>       assert chan("prompt_recall", 5), out
+E       AssertionError: agent usage · window 2026-09-23 .. 2026-10-07T11:06:35 (since inclusive, until exclusive)
+E         excluded_test_rows=0 legacy_fixture_rows=0 legacy_unattributed=0
+E         query.log: counted=0 unparseable=0 internal_excluded=0
+E         totals:
+E           memory_recall rows: 0
+E           recall_unflagged=0
+E         by invocation:
+E         outcomes:
+E         expired_reads: unavailable (daemon down)
+E         used_lookup_cap_hits=0 used_no_session=0
+E         cli.log: memory recall commands=14 excluded_test_rows=0 unparseable=0
+E         recall-events.jsonl: folded=0 malformed=0 unparseable=0 excluded_test_rows=0
+E         note: stm_events_n counts every ring line until 19.0 R2 stamps an origin on subagent events.
+E         
+E       assert []
+E        +  where [] = <function test_ac6_cli_log_recalls_are_split_per_channel.<locals>.chan at 0x1317e6400>('prompt_recall', 5)
+
+tests/test_task21_1_agent_usage_report.py:434: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_composite.py::test_intra_cluster_emits_real_verb_not_cooccurs
+FAILED tests/test_composite.py::test_intra_edges_zero_drops_grounded_block - ...
+FAILED tests/test_composite.py::test_ltm_expansion_ranks_sparse_first_and_dedups
+FAILED tests/test_injection_capture.py::test_prompt_text_appears_only_inside_block_text
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_frozen_fixture_prints_the_exact_counts
+FAILED tests/test_task21_1_agent_usage_report.py::test_ac6_cli_log_recalls_are_split_per_channel
+6 failed, 1450 passed, 1 skipped in 1458.50s (0:24:18)

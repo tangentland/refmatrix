@@ -1,0 +1,1399 @@
+# mini-lane slot=rmxtest1 sha=dfbfdc3d5cd9d30bfd18d31cb32ea25a173813e6 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 14:11:55 load={ 2.81 2.60 3.03 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix as checked-hash (bug-037)
+.........F...........FF..FFFF.....F.....FFFF......FFFFFFFFFFFFFF....     [100%]
+=================================== FAILURES ===================================
+_____ test_a_composite_whose_printed_members_did_not_change_is_suppressed ______
+
+store = {'base': PosixPath('/private/tmp/cap.enkfj17o'), 'proj': PosixPath('/private/tmp/cap.enkfj17o/proj'), 'root': PosixPath('/private/tmp/cap.enkfj17o/proj/.refmatrix')}
+
+    def test_a_composite_whose_printed_members_did_not_change_is_suppressed(store):
+        """bug-277 (L178 S2; RED): the unchanged-composite signature is taken over the members
+        the composite PRINTS (R2.0), not over every focus member. After the composite is delivered,
+        `the` (stoplist) and `buigger` (names no concept) join the topic; the printed `Members:`
+        line is the same, so the next call records `suppressed_unchanged` and prints no composite
+        (bsd-315 r1 P2: it was re-sent, recorded `delivered`)."""
+        from refmatrix import stm as stm_mod
+        first = _scan(store, "--max-tokens", "100000")
+        assert COMP_MARK in first.stdout, "fixture: no composite on the first call"
+        stm_mod.Stm(store["root"], SESSION).record(
+            "input", "the parser.py and the lexer_table buigger", refs=GROUNDED + ["the", "buigger"])
+        topics = stm_mod.topic_composites(stm_mod.Stm(store["root"], SESSION).focus_graph(top=40))
+        joined = {m for t in topics for m in t["members"]}
+        assert {"the", "buigger"} & joined, f"fixture: the new words joined no topic: {topics}"
+        second = _scan(store, "--max-tokens", "100000")
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+        comp = _blocks(rec, kind="composite")
+>       assert [b["state"] for b in comp] == ["suppressed_unchanged"], (
+            f"bug-277: a composite whose printed members did not change: "
+            f"{[(b['kind'], b['state']) for b in rec['blocks']]}")
+E       AssertionError: bug-277: a composite whose printed members did not change: [('symbol_named', 'delivered'), ('symbol_named', 'delivered'), ('content', 'delivered'), ('symbol_other', 'delivered'), ('symbol_other', 'delivered'), ('symbol_other', 'delivered'), ('composite', 'delivered')]
+E       assert ['delivered'] == ['suppressed_unchanged']
+E         
+E         At index 0 diff: 'delivered' != 'suppressed_unchanged'
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:618: AssertionError
+____________ test_a_capped_errors_file_is_named_on_the_capture_line ____________
+
+store = {'base': PosixPath('/private/tmp/cap.r88q2ef5'), 'proj': PosixPath('/private/tmp/cap.r88q2ef5/proj'), 'root': PosixPath('/private/tmp/cap.r88q2ef5/proj/.refmatrix')}
+
+    def test_a_capped_errors_file_is_named_on_the_capture_line(store):
+        """AC-0.10 / R0.4 (L178 M2, X-2; RED): errors.jsonl stops growing at 1 MiB, and a capped
+        file is said on the `capture:` line as `errors_capped`, so a count that stopped is not
+        read as a count that is complete."""
+        d = _capture_dir_with_ignore(store["root"])
+        filler = (json.dumps({"ts": "2026-01-01T00:00:00.000Z", "query_id": "filler",
+                              "channel": "scan_prompt", "reason": "append_failed",
+                              "error": None}) + "\n")
+        (d / "errors.jsonl").write_text(filler * (MiB // len(filler) + 1), encoding="utf-8")
+        size = (d / "errors.jsonl").stat().st_size
+        assert size >= MiB, size
+        day = d / f"capture-{_today()}.jsonl"
+        day.write_text("", encoding="utf-8")
+        os.chmod(day, 0o444)
+        _scan(store, "--max-tokens", "100000")              # its append fails; the line is capped
+        assert (d / "errors.jsonl").stat().st_size == size, "errors.jsonl grew past its cap"
+        line = _capture_line(store)
+>       assert "errors_capped" in line, f"a capped errors.jsonl is not named: {line!r}"
+E       AssertionError: a capped errors.jsonl is not named: 'capture: on (mode names) · 1 day file(s), 0 B, newest none · 0 captured of 1 hook call (0 record(s)) · errors append_failed=8389 · composite_errors=0 · stm_errors=0 · malformed=0'
+E       assert 'errors_capped' in 'capture: on (mode names) · 1 day file(s), 0 B, newest none · 0 captured of 1 hook call (0 record(s)) · errors append_failed=8389 · composite_errors=0 · stm_errors=0 · malformed=0'
+
+tests/test_injection_capture.py:963: AssertionError
+_________ test_the_coverage_window_starts_at_the_first_capture_record __________
+
+store = {'base': PosixPath('/private/tmp/cap.juy2qyna'), 'proj': PosixPath('/private/tmp/cap.juy2qyna/proj'), 'root': PosixPath('/private/tmp/cap.juy2qyna/proj/.refmatrix')}
+
+    def test_the_coverage_window_starts_at_the_first_capture_record(store):
+        """R0.6 (L178 M3; RED): with no `--since`, the coverage denominator counts the hook calls
+        from the first capture record on, not every hook row `query.log` ever held. Three hook
+        rows from before the capture existed are not uncaptured calls. (With no record at all
+        every hook row counts, so a capture that never wrote reads 0 of N: AC-0.10.)"""
+        with open(store["root"] / "query.log", "a", encoding="utf-8") as f:
+            for i in range(3):
+                f.write(json.dumps({"ts": f"2026-01-0{i + 1}T00:00:00", "kind": "scan",
+                                    "body": "old", "source": "scan-prompt", "invocation": "hook",
+                                    "outcome": "ok", "query_id": f"old{i}"}) + "\n")
+        _scan(store, "--max-tokens", "100000")
+        line = _capture_line(store)
+>       assert _coverage(line) == (1, 1), (
+            f"the coverage counts hook calls from before the first capture record: {line!r}")
+E       AssertionError: the coverage counts hook calls from before the first capture record: 'capture: on (mode names) · 1 day file(s), 8,347 B, newest 2026-11-15T22:13:06.035Z · 1 captured of 4 hook calls (1 record(s)) · errors none · composite_errors=0 · stm_errors=0 · malformed=0'
+E       assert (1, 4) == (1, 1)
+E         
+E         At index 1 diff: 4 != 1
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:978: AssertionError
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]>>
+route = 'scan_prompt', fault = 'surrogate'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+E       AssertionError: bug-276: scan_prompt with surrogate exited 1: ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             ...<4 lines>...
+E                                composite_error=trace.get("composite_error"),
+E                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                stm_error=stm_error, t0=time.perf_counter())
+E                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/telemetry.py", line 2335, in write_capture
+E             "prompt_sha256": (hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+E                                              ~~~~~~~~~~~~~^^^^^^^^^
+E         UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' in position 16: surrogates not allowed
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'scan-prompt', '--stdin-json', '--composite-every', '1', ...^^^\nUnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 16: surrogates not allowed\n').returncode
+
+tests/test_injection_capture.py:1090: AssertionError
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-dir-0o300] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-dir-0o300]>>
+route = 'scan_prompt', fault = 'dir-0o300'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+E       AssertionError: bug-276: scan_prompt with dir-0o300 exited 1: y, reserve=estimate, channel=channel,
+E                             ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                            query_id=query_id)
+E                                            ^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/telemetry.py", line 2251, in _capture_prune
+E             for day, p in _capture_day_files(d):
+E                           ~~~~~~~~~~~~~~~~~~^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/telemetry.py", line 2226, in _capture_day_files
+E             names = os.listdir(d)
+E         PermissionError: [Errno 13] Permission denied: '/private/tmp/cap.hlit736r/proj/.refmatrix/injection-capture'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'scan-prompt', '--stdin-json', '--composite-every', '1', ...(d)\nPermissionError: [Errno 13] Permission denied: \'/private/tmp/cap.hlit736r/proj/.refmatrix/injection-capture\'\n').returncode
+
+tests/test_injection_capture.py:1090: AssertionError
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[prompt_recall-surrogate] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[prompt_recall-surrogate]>>
+route = 'prompt_recall', fault = 'surrogate'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+E       AssertionError: bug-276: prompt_recall with surrogate exited 1:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E             ...<2 lines>...
+E                                blocks=self._capture_blocks(), stm_error=stm_error,
+E                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                t0=time.perf_counter())
+E                                ^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/telemetry.py", line 2335, in write_capture
+E             "prompt_sha256": (hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+E                                              ~~~~~~~~~~~~~^^^^^^^^^
+E         UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' in position 16: surrogates not allowed
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'memory', 'recall', '--stdin-json', '--recent', '--pack',...^^^\nUnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 16: surrogates not allowed\n').returncode
+
+tests/test_injection_capture.py:1090: AssertionError
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[session_start-dir-0o300] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[session_start-dir-0o300]>>
+route = 'session_start', fault = 'dir-0o300'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+E       AssertionError: bug-276: session_start with dir-0o300 exited 1: y, reserve=estimate, channel=channel,
+E                             ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                            query_id=query_id)
+E                                            ^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/telemetry.py", line 2251, in _capture_prune
+E             for day, p in _capture_day_files(d):
+E                           ~~~~~~~~~~~~~~~~~~^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/telemetry.py", line 2226, in _capture_day_files
+E             names = os.listdir(d)
+E         PermissionError: [Errno 13] Permission denied: '/private/tmp/cap.at55m5mu/proj/.refmatrix/injection-capture'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'memory', 'recall', '--session-start', '--pack', '--k', '...(d)\nPermissionError: [Errno 13] Permission denied: \'/private/tmp/cap.at55m5mu/proj/.refmatrix/injection-capture\'\n').returncode
+
+tests/test_injection_capture.py:1090: AssertionError
+____________ test_a_raising_composite_build_is_recorded_and_counted ____________
+
+store = {'base': PosixPath('/private/tmp/cap.kbc5gzzc'), 'proj': PosixPath('/private/tmp/cap.kbc5gzzc/proj'), 'root': PosixPath('/private/tmp/cap.kbc5gzzc/proj/.refmatrix')}
+
+    def test_a_raising_composite_build_is_recorded_and_counted(store):
+        """AC-0.16 (bug-256, M0-11): the composite build raises (its dependency
+        `topic_composites`, replaced in the child: see `_COMPOSITE_RAISES_RUN`). stdout is
+        byte-identical to the same call with the composite absent; stderr carries one line naming
+        the exception; the record's `composite_error` names it; `rmx telemetry --context` counts
+        one."""
+        control = _scan_composite_raises(store, "--max-tokens", "100000", "--no-composite",
+                                         RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        r = _scan_composite_raises(store, "--max-tokens", "100000")
+>       assert r.returncode == 0, f"rc {r.returncode}: {r.stderr[-1200:]!r}"
+E       AssertionError: rc 2: b"/opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/private/tmp/cap.kbc5gzzc/proj/rmx': [Errno 2] No such file or directory\n"
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/python', '-c', '\nimport sys\nfrom refmatrix import composite\n...pp/Contents/MacOS/Python: can't open file '/private/tmp/cap.kbc5gzzc/proj/rmx': [Errno 2] No such file or directory\n").returncode
+
+tests/test_injection_capture.py:1226: AssertionError
+_____ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node] ______
+
+store = {'base': PosixPath('/private/tmp/cap.4ri0b_16'), 'proj': PosixPath('/private/tmp/cap.4ri0b_16/proj'), 'root': PosixPath('/private/tmp/cap.4ri0b_16/proj/.refmatrix')}
+shape = 'int-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+        _assert_survived(r, "scan-prompt")
+        assert r.stdout == control.stdout, "a wrong-shaped focus graph changed the payload"
+        _assert_counted(store, "scan", "scan-prompt")
+        # L178 S4: the composite reads the same graph. It is read as empty, not raised: the fault
+        # is the corrupt graph, said once for the call, not a composite failure.
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+>       assert rec["composite_error"] is None, (
+            f"bug-268: the composite raised on the corrupt graph: {rec['composite_error']!r}")
+E       AssertionError: bug-268: the composite raised on the corrupt graph: "AttributeError: 'int' object has no attribute 'get'"
+E       assert "AttributeError: 'int' object has no attribute 'get'" is None
+
+tests/test_injection_capture.py:1389: AssertionError
+_______ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list] ________
+
+store = {'base': PosixPath('/private/tmp/cap.qf45xnzu'), 'proj': PosixPath('/private/tmp/cap.qf45xnzu/proj'), 'root': PosixPath('/private/tmp/cap.qf45xnzu/proj/.refmatrix')}
+shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+        _assert_survived(r, "scan-prompt")
+        assert r.stdout == control.stdout, "a wrong-shaped focus graph changed the payload"
+        _assert_counted(store, "scan", "scan-prompt")
+        # L178 S4: the composite reads the same graph. It is read as empty, not raised: the fault
+        # is the corrupt graph, said once for the call, not a composite failure.
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+>       assert rec["composite_error"] is None, (
+            f"bug-268: the composite raised on the corrupt graph: {rec['composite_error']!r}")
+E       AssertionError: bug-268: the composite raised on the corrupt graph: "AttributeError: 'list' object has no attribute 'setdefault'"
+E       assert "AttributeError: 'list' object has no attribute 'setdefault'" is None
+
+tests/test_injection_capture.py:1389: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node] ___
+
+store = {'base': PosixPath('/private/tmp/cap.ox3d_cpw'), 'proj': PosixPath('/private/tmp/cap.ox3d_cpw/proj'), 'root': PosixPath('/private/tmp/cap.ox3d_cpw/proj/.refmatrix')}
+shape = 'nameless-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+        _assert_survived(r, "scan-prompt")
+        assert r.stdout == control.stdout, "a wrong-shaped focus graph changed the payload"
+        _assert_counted(store, "scan", "scan-prompt")
+        # L178 S4: the composite reads the same graph. It is read as empty, not raised: the fault
+        # is the corrupt graph, said once for the call, not a composite failure.
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+>       assert rec["composite_error"] is None, (
+            f"bug-268: the composite raised on the corrupt graph: {rec['composite_error']!r}")
+E       AssertionError: bug-268: the composite raised on the corrupt graph: "KeyError: 'name'"
+E       assert "KeyError: 'name'" is None
+
+tests/test_injection_capture.py:1389: AssertionError
+__ test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nonfinite-turn] ___
+
+store = {'base': PosixPath('/private/tmp/cap.c8h_ri7n'), 'proj': PosixPath('/private/tmp/cap.c8h_ri7n/proj'), 'root': PosixPath('/private/tmp/cap.c8h_ri7n/proj/.refmatrix')}
+shape = 'nonfinite-turn'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt(store, shape):
+        """bug-268 (RED): `rmx scan-prompt` for the session whose focus graph is valid JSON of
+        the wrong shape exits 0, prints the payload it prints with the composite absent, writes
+        its recall events (the phase read at `cli.py:9872` no longer raises), and the corruption
+        is counted on the capture record (`stm_error`) and the `capture:` line."""
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        _corrupt(store, shape)
+        env = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+               "cwd": str(store["proj"]), "transcript_path": ""}
+        e = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_SESSION=SESSION)
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--composite-every", "1",
+                            "--max-tokens", "100000"], input=json.dumps(env).encode(), env=e,
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt")
+
+tests/test_injection_capture.py:1383: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'scan-prompt', '--stdin-json', '--composite-every', '1', ...                            ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n')
+what = 'scan-prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt exited 1 on a wrong-shaped focus graph: ields(root, session, prompt, t0=t0, prompt_time=prompt_time), None
+E                    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1928, in phase_fields
+E             pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1831, in pre_prompt_state
+E             return PrePromptState(graph=live_graph, topic_cache={}, turn=int(live_graph.get("turn", 0)),
+E                                                                          ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         OverflowError: cannot convert float infinity to integer
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'scan-prompt', '--stdin-json', '--composite-every', '1', ...                            ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[nonfinite-turn-prompt_recall] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.334hhv1l'), 'proj': PosixPath('/private/tmp/cap.334hhv1l/proj'), 'root': PosixPath('/private/tmp/cap.334hhv1l/proj/.refmatrix')}
+shape = 'nonfinite-turn', route = 'prompt_recall'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1423: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'memory', 'recall', '--pack', '--k', '12', '--stdin-json'...                            ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n')
+what = 'memory recall (prompt_recall)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (prompt_recall) exited 1 on a wrong-shaped focus graph: ields(root, session, prompt, t0=t0, prompt_time=prompt_time), None
+E                    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1928, in phase_fields
+E             pre = pre_prompt_state(root, session, prompt or "", t0=t0)
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1831, in pre_prompt_state
+E             return PrePromptState(graph=live_graph, topic_cache={}, turn=int(live_graph.get("turn", 0)),
+E                                                                          ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         OverflowError: cannot convert float infinity to integer
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'memory', 'recall', '--pack', '--k', '12', '--stdin-json'...                            ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_recall[nonfinite-turn-session_start] _
+
+recall_ring_store = {'base': PosixPath('/private/tmp/cap.y8j6f_kk'), 'proj': PosixPath('/private/tmp/cap.y8j6f_kk/proj'), 'root': PosixPath('/private/tmp/cap.y8j6f_kk/proj/.refmatrix')}
+shape = 'nonfinite-turn', route = 'session_start'
+
+    @pytest.mark.parametrize("route", ["prompt_recall", "session_start"])
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    def test_a_wrong_shaped_focus_graph_never_crashes_recall(recall_ring_store, shape, route):
+        """bug-268 (RED), the recall routes: `_RecallCall.emit` reads the same phase fields at
+        `cli.py:13344` (prompt_recall: `--stdin-json`, here on the recent leg, which needs no
+        embedder) and `cli.py:13347` (session_start). Each exits 0 with its pack, writes its
+        recall events, and counts the corruption."""
+        c = recall_ring_store
+        _corrupt(c, shape)
+        args = ["memory", "recall", "--pack", "--k", "12"]
+        if route == "prompt_recall":
+            args += ["--stdin-json", "--recent"]
+            stdin = json.dumps({"session_id": SESSION, "prompt": "which rule applies here",
+                                "hook_event_name": "UserPromptSubmit", "cwd": str(c["proj"]),
+                                "transcript_path": ""})
+        else:
+            args += ["--session-start"]
+            stdin = ""
+        r = _rmx(c, *args, input=stdin, RMX_SESSION=SESSION)
+>       _assert_survived(r, f"memory recall ({route})")
+
+tests/test_injection_capture.py:1423: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'memory', 'recall', '--pack', '--k', '12', '--session-sta...                                     ~~~^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n')
+what = 'memory recall (session_start)'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: memory recall (session_start) exited 1 on a wrong-shaped focus graph: alse)
+E                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1905, in phase_fields_checked
+E             return phase_fields(root, session, prompt, t0=t0, prompt_time=prompt_time), None
+E                    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1932, in phase_fields
+E             live = PrePromptState(graph=g, topic_cache={}, turn=int(g.get("turn", 0)),
+E                                                                 ~~~^^^^^^^^^^^^^^^^^^
+E         OverflowError: cannot convert float infinity to integer
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'memory', 'recall', '--pack', '--k', '12', '--session-sta...                                     ~~~^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-int-node] __
+
+store = {'base': PosixPath('/private/tmp/cap.znxbnswf'), 'proj': PosixPath('/private/tmp/cap.znxbnswf/proj'), 'root': PosixPath('/private/tmp/cap.znxbnswf/proj/.refmatrix')}
+reader = 'focus-hook', shape = 'int-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+            _assert_survived(r, "focus context")
+            said = _fault_lines(r.stderr)
+            assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+            return
+        envelope = {"session_id": SESSION, "prompt": "check widget_registry and parser.py",
+                    "hook_event_name": "UserPromptSubmit", "cwd": str(store["proj"]),
+                    "transcript_path": ""}
+        r = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+>       _assert_survived(r, "focus hook --event input")
+
+tests/test_injection_capture.py:1468: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...ly_turn\n    if not nd.get("frontier"):\n           ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'focus hook --event input'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus hook --event input exited 1 on a wrong-shaped focus graph: ^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1221, in record
+E             self._ingest_into_graph(rlist, new_turn=(kind == "input"))
+E             ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1452, in _ingest_into_graph
+E             self._apply_turn(g, refs, new_turn=new_turn)
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1437, in _apply_turn
+E             if not nd.get("frontier"):
+E                    ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...ly_turn\n    if not nd.get("frontier"):\n           ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+___ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-list] ____
+
+store = {'base': PosixPath('/private/tmp/cap.fryz5arl'), 'proj': PosixPath('/private/tmp/cap.fryz5arl/proj'), 'root': PosixPath('/private/tmp/cap.fryz5arl/proj/.refmatrix')}
+reader = 'focus-hook', shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+            _assert_survived(r, "focus context")
+            said = _fault_lines(r.stderr)
+            assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+            return
+        envelope = {"session_id": SESSION, "prompt": "check widget_registry and parser.py",
+                    "hook_event_name": "UserPromptSubmit", "cwd": str(store["proj"]),
+                    "transcript_path": ""}
+        r = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+>       _assert_survived(r, "focus hook --event input")
+
+tests/test_injection_capture.py:1468: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'focus hook --event input'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus hook --event input exited 1 on a wrong-shaped focus graph: te-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/cli.py", line 2268, in focus_hook
+E             s.snapshot_pre_prompt(prompt)
+E             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1344, in snapshot_pre_prompt
+E             g = self._load_graph()
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1419, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nameless-node] _
+
+store = {'base': PosixPath('/private/tmp/cap.zz1ltdb0'), 'proj': PosixPath('/private/tmp/cap.zz1ltdb0/proj'), 'root': PosixPath('/private/tmp/cap.zz1ltdb0/proj/.refmatrix')}
+reader = 'focus-hook', shape = 'nameless-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+            _assert_survived(r, "focus context")
+            said = _fault_lines(r.stderr)
+            assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+            return
+        envelope = {"session_id": SESSION, "prompt": "check widget_registry and parser.py",
+                    "hook_event_name": "UserPromptSubmit", "cwd": str(store["proj"]),
+                    "transcript_path": ""}
+        r = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+>       _assert_survived(r, "focus hook --event input")
+
+tests/test_injection_capture.py:1468: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou..._apply_turn\n    nd["recency"] *= DECAY  # staleness falls out of scoring\n    ~~^^^^^^^^^^^\nKeyError: \'recency\'\n')
+what = 'focus hook --event input'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus hook --event input exited 1 on a wrong-shaped focus graph: ^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1221, in record
+E             self._ingest_into_graph(rlist, new_turn=(kind == "input"))
+E             ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1452, in _ingest_into_graph
+E             self._apply_turn(g, refs, new_turn=new_turn)
+E             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1438, in _apply_turn
+E             nd["recency"] *= DECAY  # staleness falls out of scoring
+E             ~~^^^^^^^^^^^
+E         KeyError: 'recency'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou..._apply_turn\n    nd["recency"] *= DECAY  # staleness falls out of scoring\n    ~~^^^^^^^^^^^\nKeyError: \'recency\'\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nonfinite-turn] _
+
+store = {'base': PosixPath('/private/tmp/cap.pt8cql_p'), 'proj': PosixPath('/private/tmp/cap.pt8cql_p/proj'), 'root': PosixPath('/private/tmp/cap.pt8cql_p/proj/.refmatrix')}
+reader = 'focus-hook', shape = 'nonfinite-turn'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+            _assert_survived(r, "focus context")
+            said = _fault_lines(r.stderr)
+            assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+            return
+        envelope = {"session_id": SESSION, "prompt": "check widget_registry and parser.py",
+                    "hook_event_name": "UserPromptSubmit", "cwd": str(store["proj"]),
+                    "transcript_path": ""}
+        r = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+>       _assert_survived(r, "focus hook --event input")
+
+tests/test_injection_capture.py:1468: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...ts_n": self.events_n(),\n            ~~~^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n')
+what = 'focus hook --event input'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus hook --event input exited 1 on a wrong-shaped focus graph: eturn ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/cli.py", line 2268, in focus_hook
+E             s.snapshot_pre_prompt(prompt)
+E             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1346, in snapshot_pre_prompt
+E             "turn": int(g.get("turn", 0)), "events_n": self.events_n(),
+E                     ~~~^^^^^^^^^^^^^^^^^^
+E         OverflowError: cannot convert float infinity to integer
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...ts_n": self.events_n(),\n            ~~~^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-int-node] _
+
+store = {'base': PosixPath('/private/tmp/cap.1okuulxo'), 'proj': PosixPath('/private/tmp/cap.1okuulxo/proj'), 'root': PosixPath('/private/tmp/cap.1okuulxo/proj/.refmatrix')}
+reader = 'focus-context', shape = 'int-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+>           _assert_survived(r, "focus context")
+
+tests/test_injection_capture.py:1460: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'context', '-s', 'sess-cap315'], returncode=1, s...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'focus context'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus context exited 1 on a wrong-shaped focus graph: uns/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/verbs.py", line 1819, in _focus_context
+E             return {"graph": s.focus_graph(top=top), "tasks": s.task_list(),
+E                              ~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1560, in focus_graph
+E             view = focus_view(self._load_graph(), top=top, include_frontier=include_frontier)
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1749, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'context', '-s', 'sess-cap315'], returncode=1, s...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+__ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-list] __
+
+store = {'base': PosixPath('/private/tmp/cap.z6t4xh5c'), 'proj': PosixPath('/private/tmp/cap.z6t4xh5c/proj'), 'root': PosixPath('/private/tmp/cap.z6t4xh5c/proj/.refmatrix')}
+reader = 'focus-context', shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+>           _assert_survived(r, "focus context")
+
+tests/test_injection_capture.py:1460: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'context', '-s', 'sess-cap315'], returncode=1, s..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n')
+what = 'focus context'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus context exited 1 on a wrong-shaped focus graph: tests.Gc2c/src/refmatrix/verbs.py", line 1819, in _focus_context
+E             return {"graph": s.focus_graph(top=top), "tasks": s.task_list(),
+E                              ~~~~~~~~~~~~~^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1560, in focus_graph
+E             view = focus_view(self._load_graph(), top=top, include_frontier=include_frontier)
+E                               ~~~~~~~~~~~~~~~~^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1419, in _load_graph
+E             g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+E             ^^^^^^^^^^^^
+E         AttributeError: 'list' object has no attribute 'setdefault'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'context', '-s', 'sess-cap315'], returncode=1, s..., {}); g.setdefault("edges", {})\n    ^^^^^^^^^^^^\nAttributeError: \'list\' object has no attribute \'setdefault\'\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-nameless-node] _
+
+store = {'base': PosixPath('/private/tmp/cap.ue4ese71'), 'proj': PosixPath('/private/tmp/cap.ue4ese71/proj'), 'root': PosixPath('/private/tmp/cap.ue4ese71/proj/.refmatrix')}
+reader = 'focus-context', shape = 'nameless-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+>           _assert_survived(r, "focus context")
+
+tests/test_injection_capture.py:1460: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'context', '-s', 'sess-cap315'], returncode=1, s...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n')
+what = 'focus context'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus context exited 1 on a wrong-shaped focus graph: le "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1751, in focus_view
+E             scored = sorted(
+E                 real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1752, in <lambda>
+E             real, key=lambda nd: _node_score(nd, maxfreq, deg, maxdeg), reverse=True)
+E                                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178-red-at-51bbdfb-tests.Gc2c/src/refmatrix/stm.py", line 1736, in _node_score
+E             cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0
+E                            ~~^^^^^^^^
+E         KeyError: 'name'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'context', '-s', 'sess-cap315'], returncode=1, s...\n    cen = (deg.get(nd["name"], 0) / maxdeg) if maxdeg else 0.0\n                   ~~^^^^^^^^\nKeyError: \'name\'\n').returncode
+
+tests/test_injection_capture.py:1353: AssertionError
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-nonfinite-turn] _
+
+store = {'base': PosixPath('/private/tmp/cap.ruuw0xn4'), 'proj': PosixPath('/private/tmp/cap.ruuw0xn4/proj'), 'root': PosixPath('/private/tmp/cap.ruuw0xn4/proj/.refmatrix')}
+reader = 'focus-context', shape = 'nonfinite-turn'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+            _assert_survived(r, "focus context")
+            said = _fault_lines(r.stderr)
+>           assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+E           AssertionError: bug-268: focus context said it 0 times: []
+E           assert 0 == 1
+E            +  where 0 = len([])
+
+tests/test_injection_capture.py:1462: AssertionError
+_____ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-int-node] _____
+
+store = {'base': PosixPath('/private/tmp/cap.rn2pcppt'), 'proj': PosixPath('/private/tmp/cap.rn2pcppt/proj'), 'root': PosixPath('/private/tmp/cap.rn2pcppt/proj/.refmatrix')}
+reader = 'pin', shape = 'int-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+>           assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+E           AssertionError: bug-268: pin said the corrupt graph 0 times: []
+E           assert 0 == 1
+E            +  where 0 = len([])
+
+tests/test_injection_capture.py:1456: AssertionError
+_______ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-list] _______
+
+store = {'base': PosixPath('/private/tmp/cap.azpjub49'), 'proj': PosixPath('/private/tmp/cap.azpjub49/proj'), 'root': PosixPath('/private/tmp/cap.azpjub49/proj/.refmatrix')}
+reader = 'pin', shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+>                   pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_injection_capture.py:1450: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/refmatrix/stm.py:1566: in pin
+    g = self._load_graph()
+        ^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <refmatrix.stm.Stm object at 0x1131c7dd0>
+
+    def _load_graph(self, *, strict: bool = False) -> dict:
+        """The raw focus graph. An absent or unparseable file is an empty graph, as always.
+        `strict` (bug-268, 2026-11-15): a file that parses but is not a focus graph raises
+        `FocusGraphCorrupt` naming the file and what is wrong, before any field is read. The
+        telemetry phase read (`phase_fields`) is strict so its callers can count the
+        corruption; the other readers keep their behaviour."""
+        if not self._graph_path.exists():
+            return {"turn": 0, "nodes": {}, "edges": {}}
+        try:
+            g = json.loads(self._graph_path.read_text())
+            if strict:
+                problem = focus_graph_problem(g)
+                if problem:
+                    raise FocusGraphCorrupt(f"{self._graph_path.name}: {problem}")
+>           g.setdefault("turn", 0); g.setdefault("nodes", {}); g.setdefault("edges", {})
+            ^^^^^^^^^^^^
+E           AttributeError: 'list' object has no attribute 'setdefault'
+
+src/refmatrix/stm.py:1419: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+store = {'base': PosixPath('/private/tmp/cap.azpjub49'), 'proj': PosixPath('/private/tmp/cap.azpjub49/proj'), 'root': PosixPath('/private/tmp/cap.azpjub49/proj/.refmatrix')}
+reader = 'pin', shape = 'list'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+>                   pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+E                   Failed: bug-268: Stm.pin raised on a list graph: AttributeError: 'list' object has no attribute 'setdefault'
+
+tests/test_injection_capture.py:1452: Failed
+__ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-nameless-node] ___
+
+store = {'base': PosixPath('/private/tmp/cap.ehh64m5h'), 'proj': PosixPath('/private/tmp/cap.ehh64m5h/proj'), 'root': PosixPath('/private/tmp/cap.ehh64m5h/proj/.refmatrix')}
+reader = 'pin', shape = 'nameless-node'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+>           assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+E           AssertionError: bug-268: pin said the corrupt graph 0 times: []
+E           assert 0 == 1
+E            +  where 0 = len([])
+
+tests/test_injection_capture.py:1456: AssertionError
+__ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-nonfinite-turn] __
+
+store = {'base': PosixPath('/private/tmp/cap.779cys2i'), 'proj': PosixPath('/private/tmp/cap.779cys2i/proj'), 'root': PosixPath('/private/tmp/cap.779cys2i/proj/.refmatrix')}
+reader = 'pin', shape = 'nonfinite-turn'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+>           assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+E           AssertionError: bug-268: pin said the corrupt graph 0 times: []
+E           assert 0 == 1
+E            +  where 0 = len([])
+
+tests/test_injection_capture.py:1456: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_injection_capture.py::test_a_scan_call_writes_one_record_with_every_block
+PASSED tests/test_injection_capture.py::test_delivered_blocks_concatenate_to_the_payload[uncapped]
+PASSED tests/test_injection_capture.py::test_delivered_blocks_concatenate_to_the_payload[byte-capped]
+PASSED tests/test_injection_capture.py::test_a_block_the_byte_fit_dropped_is_stored_as_dropped_bytes
+PASSED tests/test_injection_capture.py::test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens
+PASSED tests/test_injection_capture.py::test_content_after_a_tier_1_token_stop_is_stored_with_text[full]
+PASSED tests/test_injection_capture.py::test_content_after_a_tier_1_token_stop_is_stored_with_text[names]
+PASSED tests/test_injection_capture.py::test_names_mode_records_later_bundles_as_not_built
+PASSED tests/test_injection_capture.py::test_an_unchanged_composite_is_recorded_as_suppressed_unchanged
+PASSED tests/test_injection_capture.py::test_a_cadence_skip_is_recorded_as_suppressed_cadence
+PASSED tests/test_injection_capture.py::test_the_capture_never_changes_the_payload[token-stop]
+PASSED tests/test_injection_capture.py::test_the_capture_never_changes_the_payload[byte-fit]
+PASSED tests/test_injection_capture.py::test_capture_only_bundles_emit_no_recall_events
+PASSED tests/test_injection_capture.py::test_a_composite_stored_as_dropped_is_sent_on_the_next_prompt
+PASSED tests/test_injection_capture.py::test_a_packed_recall_writes_one_block_per_hit
+PASSED tests/test_injection_capture.py::test_prompt_text_appears_only_inside_block_text
+PASSED tests/test_injection_capture.py::test_old_and_oversize_day_files_are_pruned_and_listed
+PASSED tests/test_injection_capture.py::test_a_day_file_over_the_bound_stops_appending
+PASSED tests/test_injection_capture.py::test_a_file_another_process_removed_is_not_an_error
+PASSED tests/test_injection_capture.py::test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept
+PASSED tests/test_injection_capture.py::test_a_failed_append_keeps_the_payload_and_is_counted
+PASSED tests/test_injection_capture.py::test_an_unwritable_capture_dir_shows_as_missing_coverage
+PASSED tests/test_injection_capture.py::test_json_format_writes_no_capture_record
+PASSED tests/test_injection_capture.py::test_a_verb_recall_with_pack_writes_no_capture_record
+PASSED tests/test_injection_capture.py::test_the_capture_dir_ignores_itself
+PASSED tests/test_injection_capture.py::test_an_existing_capture_dir_without_gitignore_gets_one
+PASSED tests/test_injection_capture.py::test_an_errors_only_write_into_a_bare_capture_dir_is_ignored
+PASSED tests/test_injection_capture.py::test_the_capture_switch_leaves_telemetry_on[env]
+PASSED tests/test_injection_capture.py::test_the_capture_switch_leaves_telemetry_on[marker]
+PASSED tests/test_injection_capture.py::test_no_telemetry_implies_no_capture
+PASSED tests/test_injection_capture.py::test_the_mode_file_selects_the_path
+PASSED tests/test_injection_capture.py::test_the_cost_prompt_set_is_forty_synthetic_prompts
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-prompt_recall]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[int-node-session_start]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[list-prompt_recall]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[list-session_start]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-prompt_recall]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nameless-node-session_start]
+PASSED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held]
+PASSED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[not-held]
+PASSED tests/test_stm_composite_members.py::test_a_topic_with_no_printable_member_is_not_emitted
+PASSED tests/test_stm_composite_members.py::test_the_focus_graph_is_unchanged_by_the_filter
+FAILED tests/test_injection_capture.py::test_a_composite_whose_printed_members_did_not_change_is_suppressed
+FAILED tests/test_injection_capture.py::test_a_capped_errors_file_is_named_on_the_capture_line
+FAILED tests/test_injection_capture.py::test_the_coverage_window_starts_at_the_first_capture_record
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-dir-0o300]
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[prompt_recall-surrogate]
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[session_start-dir-0o300]
+FAILED tests/test_injection_capture.py::test_a_raising_composite_build_is_recorded_and_counted
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[int-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[list]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_scan_prompt[nonfinite-turn]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nonfinite-turn-prompt_recall]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_recall[nonfinite-turn-session_start]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-int-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-list]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nonfinite-turn]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-int-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-list]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-context-nonfinite-turn]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-int-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-list]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[pin-nonfinite-turn]
+26 failed, 42 passed in 129.79s (0:02:09)
+exit 1

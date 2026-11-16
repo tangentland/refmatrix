@@ -1,0 +1,33 @@
+== 1. hook-shaped scan-prompt, capture on (release default)
+$ rmx scan-prompt --composite-every 1 --max-tokens 2000 --timeout 5  -> exit 0
+stdout bytes 5806 | stderr: ''
+capture dir: ['.gitignore', 'capture-20261115.jsonl']
+{'v': 1, 'ts': '2026-11-15T19:39:19.034Z', 'rmx_version': '0.84.0', 'channel': 'scan_prompt', 'invocation': 'hook', 'session': 'sess-cap315', 'query_id': '21e2c02d64344933b13fa5845b0cb012', 'prompt_chars': 73, 'budget_bytes': 9000, 'max_tokens': 2000, 'payload_bytes': 5806, 'capture_mode': 'names', 'capture_ms': 0.6, 'capture_built': 0, 'pruned': [], 'composite_error': None, 'stm_error': None}
+   block 0 symbol_named delivered 1074 ['widget_registry', 'doc-0#root']
+   block 1 symbol_named delivered 973 ['ledger_codec', 'doc-2#root']
+   block 2 content delivered 1460 ['doc-4#root', 'doc-5#root']
+   block 3 symbol_other delivered 488 ['harbor', 'docs/doc-4.md']
+   block 4 symbol_other delivered 427 ['lantern', 'docs/doc-10.md']
+   block 5 symbol_other delivered 1090 ['closet', 'doc-14#root']
+   block 6 composite delivered 293 ['parser.py', 'lexer_table']
+== 2. hook-shaped session_start recall --pack
+$ rmx memory recall --session-start --pack --k 12  -> exit 0
+stdout head: ['# rmx recall · session_start · 12 hits · budget 9000 B', '- capmem_02 — capture fixture title 02 — Rule 02.  (rmx memory get capmem_02)'] | stderr: '# rmx: daemon not running for /private/tmp/cap.7ckj23pv/proj/.refmatrix; reading the replica\n'
+record: session_start names [('marker', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered'), ('recall_hit', 'delivered')]
+== 2b. hook-shaped precompact recall --recent --pack
+$ rmx memory recall --recent --since 1h --k 30 --scope both --pack  -> exit 0
+stdout head: ['# rmx recall · precompact · 23 hits · budget 9000 B'] | stderr: '/.refmatrix; reading the replica\nrmx: pointer-error row not recorded (pointer-unresolved): /private/tmp/cap.7ckj23pv/h/.refmatrix/by-pid/_errors.jsonl is unwritable or the global store root is absent\n'
+record: precompact names 24 blocks
+== 3. telemetry --context capture line
+$ rmx telemetry --context  -> exit 0
+['capture: on (mode names) · 1 day file(s), 19,161 B, newest 2026-11-15T19:39:19.815Z · 3 captured of 3 hook calls (3 record(s)) · errors none · composite_errors=0 · stm_errors=0 · malformed=0']
+== 4. forced: day file unwritable
+$ rmx scan-prompt --composite-every 1 --max-tokens 2000 --timeout 5  -> exit 0
+stdout bytes 5513 | stderr: rmx: injection capture: append_failed for query 9a192d1e9f1849c8a5c5cb4928fc79e7 (PermissionError: [Errno 13] Permission denied: '/private/tmp/cap.7ckj23pv/proj/.refmatrix/injection-capture/capture-20261115.jsonl')
+== 5. forced: wrong-shaped focus graph (bug-268) + failing composite (bug-256)
+$ rmx scan-prompt --composite-every 1 --max-tokens 2000 --timeout 5  -> exit 0
+stdout bytes 5513 | stderr: rmx scan-prompt: STM composite build failed, sent without it (AttributeError: 'list' object has no attribute 'setdefault')
+rmx: STM focus graph of session sess-cap315 is corrupt (FocusGraphCorrupt: sess-cap315.focus.json: not a JSON object (list)); phase fields not recorded
+== 6. forced: invalid mode word
+$ rmx telemetry --context  -> exit 0
+["capture: off (invalid mode: 'bogus' in injection-capture.mode) · 1 day file(s), 27,096 B, newest 2026-11-15T19:39:21.475Z · 4 captured of 5 hook calls (4 record(s)) · errors append_failed=1 · composite_errors=1 · stm_errors=1 · malformed=0"]

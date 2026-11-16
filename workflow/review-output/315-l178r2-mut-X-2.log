@@ -1,0 +1,36 @@
+# mini-lane slot=rmxtest1 sha=2506dd9fdeafe249144f15c513a3fdb680b8b0b1 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:42:43 load={ 1.01 1.23 1.42 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-X-2.b31A/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+____________ test_a_capped_errors_file_is_named_on_the_capture_line ____________
+
+store = {'base': PosixPath('/private/tmp/cap.wz2r3c57'), 'proj': PosixPath('/private/tmp/cap.wz2r3c57/proj'), 'root': PosixPath('/private/tmp/cap.wz2r3c57/proj/.refmatrix')}
+
+    def test_a_capped_errors_file_is_named_on_the_capture_line(store):
+        """AC-0.10 / R0.4 (L178 M2, X-2; RED): errors.jsonl stops growing at 1 MiB, and a capped
+        file is said on the `capture:` line as `errors_capped`, so a count that stopped is not
+        read as a count that is complete."""
+        d = _capture_dir_with_ignore(store["root"])
+        filler = (json.dumps({"ts": "2026-01-01T00:00:00.000Z", "query_id": "filler",
+                              "channel": "scan_prompt", "reason": "append_failed",
+                              "error": None}) + "\n")
+        (d / "errors.jsonl").write_text(filler * (MiB // len(filler) + 1), encoding="utf-8")
+        size = (d / "errors.jsonl").stat().st_size
+        assert size >= MiB, size
+        day = d / f"capture-{_today()}.jsonl"
+        day.write_text("", encoding="utf-8")
+        os.chmod(day, 0o444)
+        _scan(store, "--max-tokens", "100000")              # its append fails; the line is capped
+>       assert (d / "errors.jsonl").stat().st_size == size, "errors.jsonl grew past its cap"
+E       AssertionError: errors.jsonl grew past its cap
+E       assert 1048905 == 1048625
+E        +  where 1048905 = os.stat_result(st_mode=33188, st_ino=26303964, st_dev=16777229, st_nlink=1, st_uid=505, st_gid=0, st_size=1048905, st_atime=1794800565, st_mtime=1794800566, st_ctime=1794800566).st_size
+E        +    where os.stat_result(st_mode=33188, st_ino=26303964, st_dev=16777229, st_nlink=1, st_uid=505, st_gid=0, st_size=1048905, st_atime=1794800565, st_mtime=1794800566, st_ctime=1794800566) = stat()
+E        +      where stat = (PosixPath('/private/tmp/cap.wz2r3c57/proj/.refmatrix/injection-capture') / 'errors.jsonl').stat
+
+tests/test_injection_capture.py:961: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_capped_errors_file_is_named_on_the_capture_line
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 2.09s
+exit 1

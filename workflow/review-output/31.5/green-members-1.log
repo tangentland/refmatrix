@@ -1,0 +1,9 @@
+pyc-guard: recompiled 42 timestamp pyc(s) under /Volumes/littlebig/refmatrix-315-green/src/refmatrix as checked-hash (bug-037)
+....                                                                     [100%]
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held]
+PASSED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[not-held]
+PASSED tests/test_stm_composite_members.py::test_a_topic_with_no_printable_member_is_not_emitted
+PASSED tests/test_stm_composite_members.py::test_the_focus_graph_is_unchanged_by_the_filter
+4 passed in 0.95s

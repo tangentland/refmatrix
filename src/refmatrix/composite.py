@@ -77,6 +77,7 @@ def build_topic_composite_pending(
     every: int = COMPOSITE_EVERY,
     intra_edges: int = COMPOSITE_INTRA_EDGES,
     session: str | None = None,
+    status: "dict | None" = None,
 ) -> str:
     """GMD subgraph of the session's current topics, or "" when there is no STM
     or no multi-node topic.
@@ -98,18 +99,31 @@ def build_topic_composite_pending(
     `s` is the long-term Store (for LTM expansion); `root` is the project's
     `.refmatrix` dir (STM lives at `<root>/stm`, keyed like `focus hook`).
     `session` defaults to the most-recently-written ring (`latest_session`),
-    which the UserPromptSubmit `focus hook` writes on the same turn."""
+    which the UserPromptSubmit `focus hook` writes on the same turn.
+
+    `status` (task 31.5 S0, 2026-11-15), when given, receives `state`: why the composite is
+    what it is -- `no_session`, `no_topics`, `ungrounded`, `cadence` (a grounded composite
+    the `every` gate skipped), `unchanged` (with `signature`, the member-set signature equal to
+    the last one sent) or `rendered`. The injection capture records the two suppressions as
+    blocks of their own; nothing else changes."""
+    st = status if status is not None else {}
     root = Path(root)
     session = session or latest_session(root)
     if session is None:
+        st["state"] = "no_session"
         return "", _noop
     graph = Stm(root, session=session).focus_graph(top=top)
     topics = topic_composites(graph, k=k)
     if not topics:
+        st["state"] = "no_topics"
         return "", _noop
     turn = graph.get("turn", 0)
     # Cadence gate: throttle per-prompt injection to every Nth turn.
     if every > 1 and turn % every != 0:
+        # A cadence skip of a composite the grounded gate would drop anyway is not a skipped
+        # composite: the capture records `suppressed_cadence` only for a real one.
+        st["state"] = ("cadence" if any(_has_grounded_member(t["members"]) for t in topics)
+                       else "ungrounded")
         return "", _noop
     # Grounded topics only (the user, 2026-11-15: "keep the mechanism, just don't burn context
     # on every input with it"). In session 070141d0 the lead topic was the prompt's own plain
@@ -118,6 +132,7 @@ def build_topic_composite_pending(
     # the focus graph itself is unchanged and still updates every turn.
     topics = [t for t in topics if _has_grounded_member(t["members"])]
     if not topics:
+        st["state"] = "ungrounded"
         return "", _noop
     # Never re-send an unchanged composite (feedback_injection_presentation_rules): the
     # signature is the topics' member sets, so a turn counter or re-ranked edge alone does not
@@ -126,14 +141,22 @@ def build_topic_composite_pending(
     import hashlib
     import json as _json
     from .stm import _safe, stm_dir
+    # bug-277 (L178 S2, 2026-11-15): the signature is over what each topic PRINTS (R2.0), not
+    # over every focus member. Hashing `t["members"]` re-sent an identical `Members:` line
+    # whenever a stopword or a typo joined a topic. The printed members are computed once here
+    # and handed to the render.
+    for t in topics:
+        t["printed"] = _printable_members(s, [m for m in t["members"] if not _is_junk(m)])
     sig = hashlib.sha256(_json.dumps(
-        sorted(sorted(t["members"]) for t in topics)).encode("utf-8")).hexdigest()
+        sorted(sorted(t["printed"]) for t in topics)).encode("utf-8")).hexdigest()
     mark = stm_dir(root) / f"{_safe(session)}.composite.last"
     try:
         if mark.read_text(encoding="utf-8").strip() == sig:
+            st["state"], st["signature"] = "unchanged", sig
             return "", _noop
     except OSError:
         pass                                  # no marker yet: send
+    st["state"], st["signature"] = "rendered", sig
     budget = _scaled_budget(
         max_tokens, turn, autoscale=autoscale,
         ceiling=max_tokens_ceiling, per_turn=tokens_per_turn)
@@ -193,6 +216,27 @@ def _has_grounded_member(members: "list[str]") -> bool:
     return any(is_identifier_shaped(m) for m in members)
 
 
+def _printable_members(s: Any, members: "list[str]") -> "list[str]":
+    """R2.0 of task 31.5 (release A, 2026-11-15): the members a topic PRINTS. A member is
+    printed when it is identifier-shaped or a path (`scan.is_identifier_shaped`, the shared
+    classifier), or when it is a plain word outside the shared stoplist
+    (`scan._PROMPT_STOPWORDS`, feedback_reuse_shared_stoplist) that names a concept the store
+    holds. A typo names nothing. 0.84.0's grounded gate kept a topic with one identifier and
+    then printed every member, so `Members:` lines carried the prompt's own `the` and
+    `buigger`. A render filter only: the focus graph is unchanged (admission into the ring is
+    25.3's). With no store to ask, a plain word cannot be shown to name a concept and is not
+    printed."""
+    from .scan import _PROMPT_STOPWORDS, is_identifier_shaped
+    out: "list[str]" = []
+    for m in members:
+        if is_identifier_shaped(m):
+            out.append(m)
+        elif (m.lower() not in _PROMPT_STOPWORDS and s is not None
+              and s.resolve_concept_ids(m)):
+            out.append(m)
+    return out
+
+
 def _render_gmd(
     s: Any,  # Store (duck-typed; daemon and CLI both hand one in)
     topics, *, expand, per_node_entities, expand_nodes_per_topic,
@@ -236,11 +280,14 @@ def _render_gmd(
         members = [m for m in t["members"] if not _is_junk(m)]
         if len(members) < 2:
             continue  # collapsed to noise after the junk gate
+        printed = t["printed"] if "printed" in t else _printable_members(s, members)
+        if not printed:
+            continue  # R2.0: a topic with no printable member is not emitted
         topic_no += 1
-        head = members[0]
+        head = printed[0]
         lines.append("")
         lines.append(f"## Topic {topic_no}: {head} {{#topic-{topic_no}}}")
-        lines.append("Members: " + ", ".join(members))
+        lines.append("Members: " + ", ".join(printed))
         # LTM expansion: expand each strong clean node into its durable-graph
         # neighborhood, then split every neighbor two ways:
         #   INTRA — the target is ANOTHER focus member → emit the REAL typed verb
@@ -252,7 +299,11 @@ def _render_gmd(
         if expand:
             assert s is not None  # expand callers always pass a real store
             members_set = set(members)
-            clean_nodes = [nd for nd in t["nodes"] if not _is_junk(nd["name"])]
+            # Only printed members are expanded: an `{from: the}` bridge prints the stopword
+            # the Members line just dropped (R2.0).
+            printed_set = set(printed)
+            clean_nodes = [nd for nd in t["nodes"]
+                           if not _is_junk(nd["name"]) and nd["name"] in printed_set]
             intra: list[tuple[str, str, str]] = []   # (verb, src, tgt), deduped
             intra_seen: set = set()
             ext_cands: list = []                     # (pr, verb, tgt, eid, src)

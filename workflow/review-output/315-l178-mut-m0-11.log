@@ -1,0 +1,32 @@
+# mini-lane slot=rmxtest1 sha=d13649c09bcd3e999c0ed38b88f49980cc279d32 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 14:17:46 load={ 3.38 3.13 3.13 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178-mut-m0-11.6tVz/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_a_raising_composite_build_is_recorded_and_counted ____________
+
+store = {'base': PosixPath('/private/tmp/cap.3bodcn5d'), 'proj': PosixPath('/private/tmp/cap.3bodcn5d/proj'), 'root': PosixPath('/private/tmp/cap.3bodcn5d/proj/.refmatrix')}
+
+    def test_a_raising_composite_build_is_recorded_and_counted(store):
+        """AC-0.16 (bug-256, M0-11): the composite build raises (its dependency
+        `topic_composites`, replaced in the child: see `_COMPOSITE_RAISES_RUN`). stdout is
+        byte-identical to the same call with the composite absent; stderr carries one line naming
+        the exception; the record's `composite_error` names it; `rmx telemetry --context` counts
+        one."""
+        control = _scan_composite_raises(store, "--max-tokens", "100000", "--no-composite",
+                                         RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        r = _scan_composite_raises(store, "--max-tokens", "100000")
+        assert r.returncode == 0, f"rc {r.returncode}: {r.stderr[-1200:]!r}"
+        assert r.stdout == control.stdout, "a failing composite changed the payload"
+        err_new = [ln for ln in r.stderr.decode("utf-8", "replace").splitlines() if ln.strip()
+                   and ln not in control.stderr.decode("utf-8", "replace").splitlines()]
+>       assert len(err_new) == 1 and "RuntimeError" in err_new[0], (
+            f"bug-256: the composite failure said on stderr: {err_new}")
+E       AssertionError: bug-256: the composite failure said on stderr: []
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+tests/test_injection_capture.py:1233: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_raising_composite_build_is_recorded_and_counted
+1 failed in 2.37s
+exit 1

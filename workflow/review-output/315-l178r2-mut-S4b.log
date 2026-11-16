@@ -1,0 +1,83 @@
+# mini-lane slot=rmxtest1 sha=bf6708f7cc47ffa0bada741223e5681b6647fcdb host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:35 load={ 2.23 1.51 1.51 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-S4b.roCD/src/refmatrix as checked-hash (bug-037)
+...F
+=================================== FAILURES ===================================
+_ test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nonfinite-turn] _
+
+store = {'base': PosixPath('/private/tmp/cap.ulus2jav'), 'proj': PosixPath('/private/tmp/cap.ulus2jav/proj'), 'root': PosixPath('/private/tmp/cap.ulus2jav/proj/.refmatrix')}
+reader = 'focus-hook', shape = 'nonfinite-turn'
+
+    @pytest.mark.parametrize("shape", sorted(WRONG_SHAPES))
+    @pytest.mark.parametrize("reader", ["focus-hook", "focus-context", "pin"])
+    def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape):
+        """bug-268 (L178 S4; RED): every reader of the focus graph reads a wrong shape as an empty
+        graph and says it once, not only the phase read. Through their entry points:
+        `rmx focus hook --event input` (the UserPromptSubmit focus hook: `Stm.snapshot_pre_prompt`
+        then `_ingest_into_graph`), `rmx focus context` (SessionStart resume: `focus_graph`) and
+        `Stm.pin` (no CLI caller; called in-process). The focus hook then REWRITES the graph, so the
+        corruption is not sticky: the next hook reads a good graph and says nothing."""
+        from refmatrix import stm as stm_mod
+        _corrupt(store, shape)
+        g_path = store["root"] / "stm" / f"{SESSION}.focus.json"
+        if reader == "pin":
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                try:
+                    pinned = stm_mod.Stm(store["root"], SESSION).pin("parser.py")
+                except Exception as e:      # noqa: BLE001 -- the RED names it
+                    pytest.fail(f"bug-268: Stm.pin raised on a {shape} graph: "
+                                f"{type(e).__name__}: {e}")
+            assert pinned is False, "pin found a node in a graph read as empty"
+            said = _fault_lines(buf.getvalue())
+            assert len(said) == 1, f"bug-268: pin said the corrupt graph {len(said)} times: {said}"
+            return
+        if reader == "focus-context":
+            r = _rmx(store, "focus", "context", "-s", SESSION, RMX_INVOCATION_SOURCE="hook")
+            _assert_survived(r, "focus context")
+            said = _fault_lines(r.stderr)
+            assert len(said) == 1, f"bug-268: focus context said it {len(said)} times: {said}"
+            return
+        envelope = {"session_id": SESSION, "prompt": "check widget_registry and parser.py",
+                    "hook_event_name": "UserPromptSubmit", "cwd": str(store["proj"]),
+                    "transcript_path": ""}
+        r = _rmx(store, "focus", "hook", "--event", "input", input=json.dumps(envelope))
+>       _assert_survived(r, "focus hook --event input")
+
+tests/test_injection_capture.py:1538: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...ts_n": self.events_n(),\n            ~~~^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n')
+what = 'focus hook --event input'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus hook --event input exited 1 on a wrong-shaped focus graph:  1298, in invoke
+E             return ctx.invoke(self.callback, **ctx.params)
+E                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/click/core.py", line 853, in invoke
+E             return callback(*args, **kwargs)
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-S4b.roCD/src/refmatrix/cli.py", line 2268, in focus_hook
+E             s.snapshot_pre_prompt(prompt)
+E             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-S4b.roCD/src/refmatrix/stm.py", line 1346, in snapshot_pre_prompt
+E             "turn": int(g.get("turn", 0)), "events_n": self.events_n(),
+E                     ~~~^^^^^^^^^^^^^^^^^^
+E         OverflowError: cannot convert float infinity to integer
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...ts_n": self.events_n(),\n            ~~~^^^^^^^^^^^^^^^^^^\nOverflowError: cannot convert float infinity to integer\n').returncode
+
+tests/test_injection_capture.py:1423: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-int-node]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-list]
+PASSED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nameless-node]
+FAILED tests/test_injection_capture.py::test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nonfinite-turn]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 3 passed in 4.86s
+exit 1

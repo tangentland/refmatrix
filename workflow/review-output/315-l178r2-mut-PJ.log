@@ -1,0 +1,63 @@
+# mini-lane slot=rmxtest1 sha=3b476324560945050db99763bb7dedac6fa462db host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:48 load={ 2.11 1.52 1.51 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-PJ.Q4WE/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+__________ test_a_corrupt_snapshot_graph_falls_back_to_the_live_state __________
+
+store = {'base': PosixPath('/private/tmp/cap.8m3eqg5v'), 'proj': PosixPath('/private/tmp/cap.8m3eqg5v/proj'), 'root': PosixPath('/private/tmp/cap.8m3eqg5v/proj/.refmatrix')}
+
+    def test_a_corrupt_snapshot_graph_falls_back_to_the_live_state(store):
+        """bug-268 (L178, GREEN self-audit Q6: the guard it named as untested). A
+        `<session>.pre.json` that names this prompt and is fresh, but whose `graph` is the wrong
+        shape, is corrupt like a live graph: said once, counted as the call's `stm_error`, and the
+        live state is read instead, so `scan-prompt` exits 0 with its payload."""
+        from refmatrix import stm as stm_mod
+        import time as _time
+        s = stm_mod.Stm(store["root"], SESSION)
+        good = json.loads((store["root"] / "stm" / f"{SESSION}.focus.json").read_text())
+        assert stm_mod.focus_graph_problem(good) is None, "fixture: the live graph is not good"
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        s._pre_path().write_text(json.dumps({
+            "prompt_sha": stm_mod.prompt_sha(PROMPT), "wall": _time.time(), "turn": 2,
+            "events_n": 2, "graph": {"turn": 2, "nodes": {"x": 1}, "edges": {}},
+            "topic_cache": {}, "topic_match": {}}), encoding="utf-8")
+        envl = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
+                "cwd": str(store["proj"]), "transcript_path": ""}
+        r = subprocess.run([h.rmx_bin(), "scan-prompt", "--stdin-json", "--max-tokens", "100000",
+                            "--no-composite"], input=json.dumps(envl).encode(),
+                           env=h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook",
+                                         RMX_SESSION=SESSION),
+                           cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(r, "scan-prompt with a corrupt pre.json graph")
+
+tests/test_injection_capture.py:1573: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'scan-prompt', '--stdin-json', '--max-tokens', '100000', ...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n')
+what = 'scan-prompt with a corrupt pre.json graph'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: scan-prompt with a corrupt pre.json graph exited 1 on a wrong-shaped focus graph: .py", line 1967, in phase_fields
+E             return {"turn": pre.turn, "stm_session": session, **phase_inputs(pre, prompt or "")}
+E                                                                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-PJ.Q4WE/src/refmatrix/stm.py", line 1852, in phase_inputs
+E             topics = topic_composites(focus_view(pre.graph))
+E                                       ~~~~~~~~~~^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-PJ.Q4WE/src/refmatrix/stm.py", line 1753, in focus_view
+E             real = [nd for nd in nodes.values() if not nd.get("frontier")]
+E                                                        ^^^^^^
+E         AttributeError: 'int' object has no attribute 'get'
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'scan-prompt', '--stdin-json', '--max-tokens', '100000', ...")]\n                                               ^^^^^^\nAttributeError: \'int\' object has no attribute \'get\'\n').returncode
+
+tests/test_injection_capture.py:1423: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_corrupt_snapshot_graph_falls_back_to_the_live_state
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 2.52s
+exit 1

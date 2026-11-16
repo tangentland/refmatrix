@@ -1,0 +1,10 @@
+src/refmatrix/handoff.py:924:    f = hook_budget.fit_blocks(
+src/refmatrix/cli.py:1378:    f = _hb.fit_blocks(plain, max(1, cap - 1), trailer=lambda n: f"+{n} line(s) omitted to fit {cap} B; "
+src/refmatrix/cli.py:9499:        f = _hb.fit_blocks(blocks, max(1, cap - 1), trailer=_trailer)
+src/refmatrix/cli.py:13063:                    packed = {"memories": rows, **_verbs.pack_recall(
+src/refmatrix/recall_pack.py:206:    fitted = fit_blocks(lines, room, trailer=trailer) if (lines and room > 0) else None
+src/refmatrix/hook_budget.py:219:def fit_blocks(blocks: "Sequence[str]", max_bytes: int, *,
+src/refmatrix/scan.py:1139:            f = fit_blocks(blocks, int(max_bytes),
+src/refmatrix/verbs.py:1139:def pack_recall(root: Path, rows: "list[dict]", *, mode: str, query: "str | None", k: int,
+src/refmatrix/verbs.py:1178:    p = recall_pack.pack(rows, hooks=hooks, global_hooks={}, max_bytes=n, channel=label,
+src/refmatrix/verbs.py:1573:        out.update(pack_recall(root, rows, mode=mode, query=query, k=k, max_bytes=max_bytes,

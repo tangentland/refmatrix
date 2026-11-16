@@ -1,0 +1,53 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_prompt_text_appears_only_inside_block_text ________________
+
+store = {'base': PosixPath('/private/tmp/cap.vgwlvpmo'), 'proj': PosixPath('/private/tmp/cap.vgwlvpmo/proj'), 'root': PosixPath('/private/tmp/cap.vgwlvpmo/proj/.refmatrix')}
+calib = {'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledger_codec\n\n=== context for `widget_r...ed by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, 'tier3': ['harbor', 'lantern', 'closet']}
+
+    def test_prompt_text_appears_only_inside_block_text(store, calib):
+        """AC-0.8 (RED): the record's keys are exactly the schema's; `prompt_sha256` is the
+        prompt's hash; a canary prompt term appears in no field but `blocks[*].text`, there only
+        where the printed payload carried it (a delivered block) or in a dropped block's header
+        (the `# refmatrix` line, and for the content block its first `=== context for` anchor,
+        which is the prompt's candidate words; L155); a prompt that produces nothing writes a
+        record with no blocks and no canary.
+    
+        The canary is a prompt term the store does not hold, so the only block a render carries it
+        in is the content block (its header's first eight terms and its candidate-bag anchor). Call 1 delivers that block; call 2
+        (the same prompt, tier 1 tripping the token stop) drops it, so the canary is only in the
+        uncapped render of a dropped block; call 3 is the canary alone, which produces nothing."""
+        p_a = f"{CANARY} {PROMPT}"
+        p_b = CANARY
+        a = _scan(store, "--no-composite", "--max-tokens", "100000", prompt=p_a)
+        assert CANARY in a.stdout, f"fixture: the payload does not carry the canary:\n{a.stdout}"
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+        a2 = _scan(store, "--no-composite", "--max-tokens", str(calib["t1"]), prompt=p_a)
+        assert CANARY not in a2.stdout and TOKEN_MARK in a2.stdout, f"fixture:\n{a2.stdout}"
+        rec2 = _record_for(store["root"], _last_qid(store["root"]))
+        b = _scan(store, "--no-composite", prompt=p_b)
+        assert b.stdout == "", f"fixture: the canary-only prompt produced a payload:\n{b.stdout}"
+        rec_b = _record_for(store["root"], _last_qid(store["root"]))
+        for r, p in ((rec, p_a), (rec2, p_a), (rec_b, p_b)):
+            assert set(r) == SCHEMA_KEYS, (f"record keys differ from R0.2's: extra "
+                                           f"{set(r) - SCHEMA_KEYS}, missing {SCHEMA_KEYS - set(r)}")
+            assert r["prompt_sha256"] == _sha(p) and r["prompt_chars"] == len(p)
+            outer = json.dumps({k: v for k, v in r.items() if k != "blocks"})
+            assert CANARY not in outer, "the canary is in a record field outside blocks"
+            for blk in r["blocks"]:
+                assert CANARY not in json.dumps({k: v for k, v in blk.items() if k != "text"}), blk
+        for r, out in ((rec, a.stdout), (rec2, a2.stdout)):
+            delivered = _joined_delivered(r)
+            _assert_is_payload(delivered, out, "canary prompt")
+            assert delivered.count(CANARY) == out.count(CANARY)
+            for blk in r["blocks"]:
+                if blk.get("state") != "delivered" and blk.get("text"):
+                    bad = _canary_lines_outside_header(blk)
+>                   assert not bad, f"the canary outside a dropped block's header: {bad}"
+E                   AssertionError: the canary outside a dropped block's header: ['=== context for `zqxcanary315 why does widget_registry call ledger_codec near the harbor lantern closet` ===']
+E                   assert not ['=== context for `zqxcanary315 why does widget_registry call ledger_codec near the harbor lantern closet` ===']
+
+tests/test_injection_capture.py:803: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_prompt_text_appears_only_inside_block_text
+1 failed in 10.55s

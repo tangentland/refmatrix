@@ -1,0 +1,59 @@
+# mini-lane slot=rmxtest1 sha=96d59e57ef6902c629a3e62362765ec12f3ecd47 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:18 load={ 1.46 1.33 1.44 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-S1b.2fzF/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_ test_a_capture_failure_of_any_class_is_counted_and_keeps_the_exit[scan_prompt] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_of_any_class_is_counted_and_keeps_the_exit[scan_prompt]>>
+route = 'scan_prompt'
+
+    @pytest.mark.parametrize("route", ["scan_prompt", "session_start"])
+    def test_a_capture_failure_of_any_class_is_counted_and_keeps_the_exit(request, route):
+        """bug-276 (L178 S1): ONE guard around the whole capture at both call sites. A capture
+        that raises a non-I/O exception (ValueError here) leaves the payload and the exit status
+        as they are with the capture off, writes no record, and is one `capture_failed` line in
+        errors.jsonl naming the class."""
+        import sys as _sys
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        args = (["scan-prompt", "--text", PROMPT, "--composite-every", "1", "--max-tokens",
+                 "100000"] if route == "scan_prompt"
+                else ["memory", "recall", "--session-start", "--pack", "--k", "12"])
+        _capture_dir_with_ignore(c["root"])
+    
+        def call(patched: bool, **env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            env.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+            argv = ([_sys.executable, "-c", _CAPTURE_RAISES_RUN, *args] if patched
+                    else [h.rmx_bin(), *args])
+            return subprocess.run(argv, input=b"", env=h.rmx_env(c["root"], **env),
+                                  cwd=str(c["proj"]), capture_output=True, timeout=300)
+    
+        control = call(False, RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, f"fixture: {control.stderr[-400:]!r}"
+        _reset_composite_marker(c)
+        r = call(True)
+        err = r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: a non-I/O capture failure exited {r.returncode}: {err[-700:]}")
+E       AssertionError: bug-276: a non-I/O capture failure exited 1: ^^^^^^^^^^^^^
+E             ...<5 lines>...
+E                                composite_error=trace.get("composite_error"),
+E                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                                stm_error=stm_error, t0=time.perf_counter())
+E                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-S1b.2fzF/src/refmatrix/telemetry.py", line 2343, in write_capture
+E             return _write_capture(root, channel=channel, query_id=query_id, blocks=built,
+E                                   **fields)
+E           File "<string>", line 5, in _raise
+E             raise ValueError("injected non-I/O capture failure (bug-276)")
+E         ValueError: injected non-I/O capture failure (bug-276)
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/python', '-c', '\nimport sys\nfrom refmatrix import telemetry\n...se ValueError("injected non-I/O capture failure (bug-276)")\nValueError: injected non-I/O capture failure (bug-276)\n').returncode
+
+tests/test_injection_capture.py:1152: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_capture_failure_of_any_class_is_counted_and_keeps_the_exit[scan_prompt]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 2.87s
+exit 1
