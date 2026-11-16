@@ -1,0 +1,72 @@
+# mini-lane slot=rmxtest1 sha=c1ac8f6df218e5bbd165db7729060408c262a32c host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 22:36:34 load={ 1.13 1.08 1.05 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-l181-mutant-A2.7Pzk/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-63/test_close_workers_does_not_wa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x102c588a0>
+
+    def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_path, monkeypatch):
+        """bug-278 (ch-bsd t03 r1 B1). With the hub up, `_embed_worker` is a `SharedWorkerClient`;
+        its `close()` takes `_lock`, which `call()` holds through send/recv, so a stop waited for the
+        in-flight call's own timeout (SHARED_OP_TIMEOUT_S = 45 s per role in production). Here the
+        call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call ends as
+        abandoned (`WorkerError`), not by its own TimeoutError, and the retired client refuses any
+        later call without connecting to the hub (ruling L181, ch-bsd t03 confirm A2)."""
+        from refmatrix import modelsrv
+        CALL_TIMEOUT_S = 20.0
+        short = tempfile.mkdtemp(prefix="sh", dir=os.environ.get("RMX_SANDBOX_ROOT") or None)
+        sock = os.path.join(short, "m.sock")
+        monkeypatch.setenv("RMX_MODEL_SOCK", sock)
+        hub = _MuteHub(sock)
+        d = _make_daemon(tmp_path)
+        c = modelsrv.SharedWorkerClient("embed", timeout=CALL_TIMEOUT_S)
+        d._embed_worker, d._rerank_worker = c, None
+        events: list = []
+    
+        def inflight():
+            try:
+                c.call("embed", {"texts": ["x"]}, timeout=CALL_TIMEOUT_S)
+                events.append(("call", "returned"))
+            except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+                events.append(("call", type(exc).__name__))
+    
+        th = threading.Thread(target=inflight, daemon=True)
+        th.start()
+        try:
+            assert hub.got_request.wait(_GUARD_S), "the in-flight call never reached the hub"
+            closer = threading.Thread(target=lambda: (d._close_workers(),
+                                                      events.append(("close", "returned"))),
+                                      daemon=True)
+            closer.start()
+            closer.join(_GUARD_S)
+            th.join(_GUARD_S)
+            assert not closer.is_alive() and not th.is_alive(), f"hang guard: {events}"
+            call_end = dict(events)["call"]
+            # (b) is observed before anything is asserted, so a failure of (a) still shows it. A
+            # retired client refuses without connecting; one that does connect meets the mute hub
+            # and times out after 1 s (never a hang).
+            t_after = time.monotonic()
+            try:
+                c.call("embed", {"texts": ["y"]}, timeout=1.0)
+                after = "returned"
+            except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+                after = f"{type(exc).__name__}: {exc}"
+            after_s = time.monotonic() - t_after
+            after_line = f"a call after the stop: {after} ({after_s:.1f} s); hub connections {len(hub.conns)}"
+            # (a) the abandoned branch, not the call's own timeout (bug-278) and not a bare EOF
+>           assert call_end == "WorkerError", (
+                f"bug-278: the in-flight shared call did not end as abandoned (WorkerError): it "
+                f"ended by {call_end}; order {events}; {after_line}")
+E               AssertionError: bug-278: the in-flight shared call did not end as abandoned (WorkerError): it ended by EOFError; order [('close', 'returned'), ('call', 'EOFError')]; a call after the stop: TimeoutError: timed out (1.0 s); hub connections 2
+E               assert 'EOFError' == 'WorkerError'
+E                 
+E                 - WorkerError
+E                 + EOFError
+
+tests/test_daemon_shutdown.py:282: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_daemon_shutdown.py::test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub
+1 failed in 1.16s
+exit 1
