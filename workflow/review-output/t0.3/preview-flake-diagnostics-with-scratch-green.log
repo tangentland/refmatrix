@@ -1,0 +1,35 @@
+..F....                                                                  [100%]
+=================================== FAILURES ===================================
+__ test_r3_3_bug091_the_delivery_deadline_is_a_named_constant_of_at_least_30s __
+
+    def test_r3_3_bug091_the_delivery_deadline_is_a_named_constant_of_at_least_30s():
+        import ast
+    
+        from tests import test_watch as tw
+    
+        deadline = getattr(tw, "WATCHER_DELIVERY_DEADLINE_S", None)
+        assert isinstance(deadline, (int, float)) and deadline >= 30, (
+            f"R3.3: tests/test_watch.py has no WATCHER_DELIVERY_DEADLINE_S >= 30 (got {deadline!r})")
+        tree = ast.parse((REPO / "tests" / "test_watch.py").read_text())
+        (fn,) = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+                 and n.name == "test_run_watcher_picks_up_new_file"]
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        assert "WATCHER_DELIVERY_DEADLINE_S" in names, "R3.3: the test does not read the constant"
+        src = ast.get_source_segment((REPO / "tests" / "test_watch.py").read_text(), fn)
+>       assert "timeout=3.0" not in src, "R3.3: the one 3 s wait is still there"
+E       AssertionError: R3.3: the one 3 s wait is still there
+E       assert 'timeout=3.0' not in 'def test_ru...added"] >= 1'
+E         
+E         'timeout=3.0' is contained here:
+E              t.join(timeout=3.0)
+E               assert not t.is_alive()
+E           
+E               s.close()
+E               paths, report = seen[0]
+E               assert any(p.endswith("a.py") for p in paths)
+E               assert report["added"] >= 1
+
+tests/test_t03_flake_diagnostics.py:164: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_t03_flake_diagnostics.py::test_r3_3_bug091_the_delivery_deadline_is_a_named_constant_of_at_least_30s
+1 failed, 6 passed in 5.21s

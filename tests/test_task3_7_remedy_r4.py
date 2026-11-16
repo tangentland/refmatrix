@@ -184,14 +184,15 @@ def test_two_concurrent_calls_behind_a_mute_hub_finish_within_the_request_path_b
 
         time.sleep(0.3)
         before = hub.connections
-        t0 = time.monotonic()
         nxt = _one_call(root, logs)
-        took = time.monotonic() - t0
         time.sleep(0.3)
         assert nxt["ok"] and nxt["model"] == "stub/private", _brief([nxt])
-        assert hub.connections == before and took < 1.0, (
+        # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `took < 1.0` is replaced by the mechanism
+        # it stood for. The mute hub accepts every connection and never answers, so a re-probe
+        # inside the backoff window is a new connection: none may appear.
+        assert hub.connections == before, (
             f"the call after a failed re-probe probed again inside the backoff window: "
-            f"{hub.connections - before} new hub connection(s), {took:.2f}s")
+            f"{hub.connections - before} new hub connection(s)")
     finally:
         hub.close()
 

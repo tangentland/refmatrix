@@ -1,0 +1,14 @@
+2026-11-15T12:08:30 daemon starting pid=81103 root=/private/tmp/rmx-znp16_8c/r/1/.refmatrix
+2026-11-15T12:08:30 store opened backend=duckdb
+2026-11-15T12:08:30 repaired idx_entity_links_lk_concept rows=0
+2026-11-15T12:08:30 rotation bootstrapped: A=catalog.A.duckdb B=catalog.B.duckdb active=A log_offset=0
+2026-11-15T12:08:30 mem mirror ready
+2026-11-15T12:08:30 pools cli=4 bg=12 disp=20
+2026-11-15T12:08:30 worker[embed] spawned pid=81122 model=default python=/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python venv=/Users/tholley/claude_tools/refmatrix/.venv-eval
+2026-11-15T12:08:33 worker[embed] retire: the lock is still held after 2.0s (a call or the warm-up's load in flight); abandoning it, killing pid=81122
+2026-11-15T12:08:33 worker[embed] died on op=info (EOFError('worker closed')); respawning
+2026-11-15T12:08:33 worker[embed] closed
+2026-11-15T12:08:33 subprocess embedder unavailable (WorkerError('embed worker retired (replaced or shut down); not respawning')); falling back to in-process model -- this process now carries the model's RSS. Set RMX_EMBED_SUBPROC=0 to silence this, or investigate the spawn failure.
+2026-11-15T12:08:33 embedder warmup failed: RuntimeError('daemon stopping: no in-process embedder fallback')
+2026-11-15T12:08:33 reranker warmup skipped: the daemon is stopping
+2026-11-15T12:08:33 daemon stopped

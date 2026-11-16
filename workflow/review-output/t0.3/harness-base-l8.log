@@ -1,0 +1,366 @@
+{
+ "status": "counted",
+ "wall_s": 120.58598216692917,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 2.8095165829872712
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0031470840331166983
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.5434399170335382
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E           AssertionError: assert False is True",
+   "call_s": 21.14421962504275
+  }
+ }
+}
+trial 1: {"status": "counted", "wall_s": 120.58598216692917, "wall_clock_s": 120.5876898765564, "cap_hit": false, "loadavg_start": [6.84375, 8.36181640625, 11.90869140625], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "fail"}}
+{
+ "status": "counted",
+ "wall_s": 117.14962129096966,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 3.1392746249912307
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0027557919966056943
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.756486332975328
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E           AssertionError: assert False is True",
+   "call_s": 25.393991791061126
+  }
+ }
+}
+trial 2: {"status": "counted", "wall_s": 117.14962129096966, "wall_clock_s": 117.14977598190308, "cap_hit": false, "loadavg_start": [6.8671875, 7.94970703125, 8.20654296875], "live_socket_touches_added": 0, "leaked_after_kill": 2, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "fail"}}
+{
+ "status": "counted",
+ "wall_s": 107.85465108300559,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 2.633776874979958
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.006718417047522962
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.5944435839774087
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E           AssertionError: assert False is True",
+   "call_s": 25.63504004094284
+  }
+ }
+}
+trial 3: {"status": "counted", "wall_s": 107.85465108300559, "wall_clock_s": 107.85479402542114, "cap_hit": false, "loadavg_start": [33.09375, 19.37060546875, 12.841796875], "live_socket_touches_added": 0, "leaked_after_kill": 2, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "fail"}}
+{
+ "status": "counted",
+ "wall_s": 81.14995224995073,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 0.8446780419908464
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0019237080123275518
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.39798012492246926
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 6.6913900000508875
+  }
+ }
+}
+trial 4: {"status": "counted", "wall_s": 81.14995224995073, "wall_clock_s": 1002.2967088222504, "cap_hit": false, "loadavg_start": [23.18701171875, 32.9609375, 21.0087890625], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "pass"}}
+{
+ "status": "counted",
+ "wall_s": 76.59991412505042,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 0.6878556669689715
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0014737920137122273
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.4154425000306219
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 6.713162750005722
+  }
+ }
+}
+trial 5: {"status": "counted", "wall_s": 76.59991412505042, "wall_clock_s": 76.60134387016296, "cap_hit": false, "loadavg_start": [5.23193359375, 5.94580078125, 7.14404296875], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "pass"}}
+{
+ "status": "counted",
+ "wall_s": 94.2627821660135,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 0.669901708024554
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0008040829561650753
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.4120274999877438
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 6.386733707971871
+  }
+ }
+}
+trial 6: {"status": "counted", "wall_s": 94.2627821660135, "wall_clock_s": 94.26454091072083, "cap_hit": false, "loadavg_start": [6.05078125, 6.07177734375, 6.82861328125], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "pass"}}
+{
+ "status": "counted",
+ "wall_s": 76.75860000005923,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 0.6792517499998212
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.00101200002245605
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.423676542006433
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 6.570604625041597
+  }
+ }
+}
+trial 7: {"status": "counted", "wall_s": 76.75860000005923, "wall_clock_s": 76.75883889198303, "cap_hit": false, "loadavg_start": [5.37353515625, 6.224609375, 6.19091796875], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "pass"}}
+{
+ "status": "counted",
+ "wall_s": 78.35777387500275,
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 0.6361553750466555
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0007332910317927599
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.3871582500869408
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 6.35074358410202
+  }
+ }
+}
+trial 8: {"status": "counted", "wall_s": 78.35777387500275, "wall_clock_s": 78.35801696777344, "cap_hit": false, "loadavg_start": [8.0, 7.6103515625, 6.78515625], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": "pass", "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": "pass", "tests/test_watch.py::test_run_watcher_picks_up_new_file": "pass", "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": "pass"}}
+{
+ "level": 8,
+ "mode": "base",
+ "targets": [
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs",
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning",
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file",
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "voids": 0,
+ "noisy": false,
+ "trials_run": 8,
+ "rows": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 8,
+    "failures": 0,
+    "reproducer": false,
+    "decided": true
+   },
+   "e_lines": [],
+   "walls_s": [
+    120.6,
+    117.1,
+    107.9,
+    81.1,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ],
+   "wall_clocks_s": [
+    120.6,
+    117.1,
+    107.9,
+    1002.3,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ]
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 8,
+    "failures": 0,
+    "reproducer": false,
+    "decided": true
+   },
+   "e_lines": [],
+   "walls_s": [
+    120.6,
+    117.1,
+    107.9,
+    81.1,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ],
+   "wall_clocks_s": [
+    120.6,
+    117.1,
+    107.9,
+    1002.3,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ]
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "sequence": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 8,
+    "failures": 0,
+    "reproducer": false,
+    "decided": true
+   },
+   "e_lines": [],
+   "walls_s": [
+    120.6,
+    117.1,
+    107.9,
+    81.1,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ],
+   "wall_clocks_s": [
+    120.6,
+    117.1,
+    107.9,
+    1002.3,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ]
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "sequence": [
+    "fail",
+    "fail",
+    "fail",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "band": {
+    "trials": 8,
+    "failures": 3,
+    "reproducer": true,
+    "decided": true
+   },
+   "e_lines": [
+    "E           AssertionError: assert False is True",
+    "E           AssertionError: assert False is True",
+    "E           AssertionError: assert False is True"
+   ],
+   "walls_s": [
+    120.6,
+    117.1,
+    107.9,
+    81.1,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ],
+   "wall_clocks_s": [
+    120.6,
+    117.1,
+    107.9,
+    1002.3,
+    76.6,
+    94.3,
+    76.8,
+    78.4
+   ]
+  }
+ }
+}
+done

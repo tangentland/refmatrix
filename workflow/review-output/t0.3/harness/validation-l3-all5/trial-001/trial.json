@@ -1,0 +1,91 @@
+{
+ "level": 3,
+ "targets": [
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs",
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning",
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file",
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row",
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "load": [
+  [
+   "tests/test_memory_bridge.py",
+   "tests/test_bug212_r4_red.py",
+   "tests/test_plan3_remedy_r4.py",
+   "tests/test_bug216_hidden_no_pollution.py",
+   "tests/test_task3_6_r9_remedy.py",
+   "tests/test_plan3_remedy_r6.py",
+   "tests/test_bug225_handoff_trunk.py",
+   "tests/test_memory_compile_remedy_r1.py"
+  ],
+  [
+   "tests/test_task25_1_recall_budget.py",
+   "tests/test_task21_1_used_events.py",
+   "tests/test_memory_compile_scope.py",
+   "tests/test_bridge_move_safety_r1.py",
+   "tests/test_bug212_r6_red.py",
+   "tests/test_rerank_budget_real_clients.py",
+   "tests/test_plan3_remedy_r3.py",
+   "tests/test_plan4_remedy.py",
+   "tests/test_bug212_r1_remedy.py"
+  ],
+  [
+   "tests/test_bridge_move_safety.py",
+   "tests/test_plan3_remedy_r5.py",
+   "tests/test_savestate_mtype.py",
+   "tests/test_modelsrv.py",
+   "tests/test_sync_fails_loudly_r2.py",
+   "tests/test_task21_1_emitters.py",
+   "tests/test_plan4_remedy_r3.py",
+   "tests/test_catalog_measure.py"
+  ]
+ ],
+ "load_mode": "complete",
+ "warmup_s": 20.0,
+ "cap_s": 6307.200000000001,
+ "T_s": 2102.4,
+ "wall_s": 605.6873187080491,
+ "cap_hit": false,
+ "target_exit_s": 36.24327079101931,
+ "target_rc": 0,
+ "load_rcs": [
+  -15,
+  -15,
+  2
+ ],
+ "status": "counted",
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "pass",
+   "call_s": 0.616665167035535
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.0008016671054065228
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.3771023750305176
+  },
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "outcome": "pass",
+   "call_s": 6.596441125031561
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "pass",
+   "call_s": 7.646887584007345
+  }
+ },
+ "loadavg_start": [
+  11.0283203125,
+  10.91162109375,
+  10.36083984375
+ ],
+ "loadavg_end": [
+  38.515625,
+  19.798828125,
+  15.208984375
+ ],
+ "live_socket_touches_added": 0,
+ "sha": "d8d304c856b7c53b17b1c7556475af42a5f67c3a"
+}

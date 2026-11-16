@@ -1,0 +1,28 @@
+{
+ "level": 3,
+ "mode": "fix",
+ "targets": [
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row"
+ ],
+ "voids": 0,
+ "noisy": false,
+ "trials_run": 1,
+ "rows": {
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "sequence": [
+    "pass"
+   ],
+   "band": {
+    "held": null,
+    "passes": 1
+   },
+   "e_lines": [],
+   "walls_s": [
+    41.6
+   ],
+   "wall_clocks_s": [
+    41.6
+   ]
+  }
+ }
+}

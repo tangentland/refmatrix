@@ -1,0 +1,42 @@
+"""Scratch measurement plugin (green-t03, not committed): record every daemon.call /
+hub.global_call / daemon.ping each test makes, with its timeout, retries and wall."""
+import json, os, time
+
+OUT = os.environ["T03G_SPY_OUT"]
+_undo = []
+_rec = []
+
+
+def _wrap(mod, name):
+    real = getattr(mod, name)
+
+    def w(*a, **kw):
+        t0 = time.monotonic()
+        err = None
+        try:
+            return real(*a, **kw)
+        except BaseException as e:
+            err = type(e).__name__
+            raise
+        finally:
+            _rec.append({"fn": f"{mod.__name__}.{name}", "op": a[1] if len(a) > 1 else kw.get("op"),
+                         "timeout": kw.get("timeout"), "retries": kw.get("retries"),
+                         "wall": round(time.monotonic() - t0, 3), "err": err})
+    setattr(mod, name, w)
+    _undo.append((mod, name, real))
+
+
+def pytest_runtest_call(item):
+    from refmatrix import daemon as dm, hub
+    _rec.clear()
+    _wrap(dm, "call"); _wrap(hub, "global_call")
+    item._t0 = time.monotonic()
+
+
+def pytest_runtest_teardown(item):
+    if hasattr(item, "_t0"):
+        with open(OUT, "a") as fh:
+            fh.write(json.dumps({"node": item.nodeid, "wall": round(time.monotonic() - item._t0, 2),
+                                 "calls": list(_rec)}) + "\n")
+    while _undo:
+        m, n, r = _undo.pop(); setattr(m, n, r)

@@ -1,0 +1,244 @@
+# mini-lane slot=rmxtest1 sha=2a3d8cf82061da7c699210d595f2d06f98ea6f1c host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 14:14:47 load={ 3.15 2.85 3.06 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-fold-red-at-041e3ab-2.8lP5/src/refmatrix as checked-hash (bug-037)
+.......F.FF..............FFFFF.......                                    [100%]
+=================================== FAILURES ===================================
+_____ test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-33/test_close_workers_does_not_wa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10728b3e0>
+
+    def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_path, monkeypatch):
+        """bug-278 (ch-bsd t03 r1 B1). With the hub up, `_embed_worker` is a `SharedWorkerClient`;
+        its `close()` takes `_lock`, which `call()` holds through send/recv, so a stop waited for the
+        in-flight call's own timeout (SHARED_OP_TIMEOUT_S = 45 s per role in production). Here the
+        call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call may fail
+        (the client was abandoned) but not by its own TimeoutError, and an abandoned client must not
+        reconnect to the hub."""
+        from refmatrix import modelsrv
+        CALL_TIMEOUT_S = 20.0
+        short = tempfile.mkdtemp(prefix="sh", dir=os.environ.get("RMX_SANDBOX_ROOT") or None)
+        sock = os.path.join(short, "m.sock")
+        monkeypatch.setenv("RMX_MODEL_SOCK", sock)
+        hub = _MuteHub(sock)
+        d = _make_daemon(tmp_path)
+        c = modelsrv.SharedWorkerClient("embed", timeout=CALL_TIMEOUT_S)
+        d._embed_worker, d._rerank_worker = c, None
+        events: list = []
+    
+        def inflight():
+            try:
+                c.call("embed", {"texts": ["x"]}, timeout=CALL_TIMEOUT_S)
+                events.append(("call", "returned"))
+            except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+                events.append(("call", type(exc).__name__))
+    
+        th = threading.Thread(target=inflight, daemon=True)
+        th.start()
+        try:
+            assert hub.got_request.wait(_GUARD_S), "the in-flight call never reached the hub"
+            closer = threading.Thread(target=lambda: (d._close_workers(),
+                                                      events.append(("close", "returned"))),
+                                      daemon=True)
+            closer.start()
+            closer.join(_GUARD_S)
+            th.join(_GUARD_S)
+            assert not closer.is_alive() and not th.is_alive(), f"hang guard: {events}"
+            call_end = dict(events)["call"]
+>           assert call_end != "TimeoutError", (
+                f"bug-278: the stop waited out the in-flight shared call: it ended by its own "
+                f"TimeoutError ({CALL_TIMEOUT_S:.0f} s) and only then did _close_workers return; "
+                f"order {events}")
+E               AssertionError: bug-278: the stop waited out the in-flight shared call: it ended by its own TimeoutError (20 s) and only then did _close_workers return; order [('call', 'TimeoutError'), ('close', 'returned')]
+E               assert 'TimeoutError' != 'TimeoutError'
+
+tests/test_daemon_shutdown.py:270: AssertionError
+_____ test_a_model_client_built_after_the_worker_stage_cannot_serve[embed] _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-33/test_a_model_client_built_afte0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1072689f0>
+role = 'embed'
+
+    @pytest.mark.parametrize("role", ["embed", "rerank"])
+    def test_a_model_client_built_after_the_worker_stage_cannot_serve(tmp_path, monkeypatch, role):
+        """bug-272 (ch-bsd t03 r1 M1). `_shutdown_event` is set, then `_close_workers` reads the
+        slots without `_worker_lock`; a warm thread inside `new_model_client` (its shared probe can
+        take PROBE_TIMEOUT_S) assigns its client after that. This is that order, made exact: the
+        stop has begun and the worker stage has run, THEN `_model_client` builds a private client.
+        It must not be able to start a model process (or `_model_client` refuses outright).
+        `RMX_SHARED_MODELS=0` sends `new_model_client` straight to the private worker; `ping` spawns
+        the worker without loading a model."""
+        from refmatrix.subproc import WorkerError
+        monkeypatch.setenv("RMX_SHARED_MODELS", "0")
+        d = _make_daemon(tmp_path)
+        attr = "_embed_worker" if role == "embed" else "_rerank_worker"
+        d._shutdown_event.set()
+        d._close_workers()
+        client = None
+        try:
+            try:
+                client = d._model_client(role)
+            except RuntimeError as exc:
+                assert "stopping" in str(exc), exc
+            slot = getattr(d, attr, None) or client
+            if slot is None:
+                return
+            try:
+                slot.call("ping", timeout=30.0)
+                served = True
+            except WorkerError as exc:
+                served = False
+                assert "not respawning" in str(exc), exc
+            pid = getattr(getattr(slot, "_proc", None), "pid", None)
+>           assert not served and pid is None, (
+                f"bug-272: a private {role} client built after the stop's worker stage spawned a "
+                f"model process (pid={pid}) and served; nothing will retire it")
+E               AssertionError: bug-272: a private embed client built after the stop's worker stage spawned a model process (pid=28911) and served; nothing will retire it
+E               assert (not True)
+
+tests/test_daemon_shutdown.py:411: AssertionError
+____ test_a_model_client_built_after_the_worker_stage_cannot_serve[rerank] _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-33/test_a_model_client_built_afte1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107269fd0>
+role = 'rerank'
+
+    @pytest.mark.parametrize("role", ["embed", "rerank"])
+    def test_a_model_client_built_after_the_worker_stage_cannot_serve(tmp_path, monkeypatch, role):
+        """bug-272 (ch-bsd t03 r1 M1). `_shutdown_event` is set, then `_close_workers` reads the
+        slots without `_worker_lock`; a warm thread inside `new_model_client` (its shared probe can
+        take PROBE_TIMEOUT_S) assigns its client after that. This is that order, made exact: the
+        stop has begun and the worker stage has run, THEN `_model_client` builds a private client.
+        It must not be able to start a model process (or `_model_client` refuses outright).
+        `RMX_SHARED_MODELS=0` sends `new_model_client` straight to the private worker; `ping` spawns
+        the worker without loading a model."""
+        from refmatrix.subproc import WorkerError
+        monkeypatch.setenv("RMX_SHARED_MODELS", "0")
+        d = _make_daemon(tmp_path)
+        attr = "_embed_worker" if role == "embed" else "_rerank_worker"
+        d._shutdown_event.set()
+        d._close_workers()
+        client = None
+        try:
+            try:
+                client = d._model_client(role)
+            except RuntimeError as exc:
+                assert "stopping" in str(exc), exc
+            slot = getattr(d, attr, None) or client
+            if slot is None:
+                return
+            try:
+                slot.call("ping", timeout=30.0)
+                served = True
+            except WorkerError as exc:
+                served = False
+                assert "not respawning" in str(exc), exc
+            pid = getattr(getattr(slot, "_proc", None), "pid", None)
+>           assert not served and pid is None, (
+                f"bug-272: a private {role} client built after the stop's worker stage spawned a "
+                f"model process (pid={pid}) and served; nothing will retire it")
+E               AssertionError: bug-272: a private rerank client built after the stop's worker stage spawned a model process (pid=28912) and served; nothing will retire it
+E               assert (not True)
+
+tests/test_daemon_shutdown.py:411: AssertionError
+_ test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[a_different_receiver] _
+
+case = 'a_different_receiver'
+
+    @pytest.mark.parametrize("case", sorted(S3_FOOLS))
+    def test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first(case):
+        src = _WARM_HEAD + S3_FOOLS[case] + _WARM_TAIL
+        compile(src, "test_syn.py", "exec")
+>       assert _bc().violations(src, "test_syn.py") == ["test_syn.py::test_fooled"], (
+            f"S3: the census counted a readiness call that does not control the budget ({case})")
+E       AssertionError: S3: the census counted a readiness call that does not control the budget (a_different_receiver)
+E       assert [] == ['test_syn.py::test_fooled']
+E         
+E         Right contains one more item: 'test_syn.py::test_fooled'
+E         Use -v to get more diff
+
+tests/test_budget_outcome_census.py:256: AssertionError
+_ test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[if_false] _
+
+case = 'if_false'
+
+    @pytest.mark.parametrize("case", sorted(S3_FOOLS))
+    def test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first(case):
+        src = _WARM_HEAD + S3_FOOLS[case] + _WARM_TAIL
+        compile(src, "test_syn.py", "exec")
+>       assert _bc().violations(src, "test_syn.py") == ["test_syn.py::test_fooled"], (
+            f"S3: the census counted a readiness call that does not control the budget ({case})")
+E       AssertionError: S3: the census counted a readiness call that does not control the budget (if_false)
+E       assert [] == ['test_syn.py::test_fooled']
+E         
+E         Right contains one more item: 'test_syn.py::test_fooled'
+E         Use -v to get more diff
+
+tests/test_budget_outcome_census.py:256: AssertionError
+_ test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[nested_def_called_after_the_hook] _
+
+case = 'nested_def_called_after_the_hook'
+
+    @pytest.mark.parametrize("case", sorted(S3_FOOLS))
+    def test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first(case):
+        src = _WARM_HEAD + S3_FOOLS[case] + _WARM_TAIL
+        compile(src, "test_syn.py", "exec")
+>       assert _bc().violations(src, "test_syn.py") == ["test_syn.py::test_fooled"], (
+            f"S3: the census counted a readiness call that does not control the budget ({case})")
+E       AssertionError: S3: the census counted a readiness call that does not control the budget (nested_def_called_after_the_hook)
+E       assert [] == ['test_syn.py::test_fooled']
+E         
+E         Right contains one more item: 'test_syn.py::test_fooled'
+E         Use -v to get more diff
+
+tests/test_budget_outcome_census.py:256: AssertionError
+_ test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[try_except_pass] _
+
+case = 'try_except_pass'
+
+    @pytest.mark.parametrize("case", sorted(S3_FOOLS))
+    def test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first(case):
+        src = _WARM_HEAD + S3_FOOLS[case] + _WARM_TAIL
+        compile(src, "test_syn.py", "exec")
+>       assert _bc().violations(src, "test_syn.py") == ["test_syn.py::test_fooled"], (
+            f"S3: the census counted a readiness call that does not control the budget ({case})")
+E       AssertionError: S3: the census counted a readiness call that does not control the budget (try_except_pass)
+E       assert [] == ['test_syn.py::test_fooled']
+E         
+E         Right contains one more item: 'test_syn.py::test_fooled'
+E         Use -v to get more diff
+
+tests/test_budget_outcome_census.py:256: AssertionError
+_ test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[uncalled_lambda] _
+
+case = 'uncalled_lambda'
+
+    @pytest.mark.parametrize("case", sorted(S3_FOOLS))
+    def test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first(case):
+        src = _WARM_HEAD + S3_FOOLS[case] + _WARM_TAIL
+        compile(src, "test_syn.py", "exec")
+>       assert _bc().violations(src, "test_syn.py") == ["test_syn.py::test_fooled"], (
+            f"S3: the census counted a readiness call that does not control the budget ({case})")
+E       AssertionError: S3: the census counted a readiness call that does not control the budget (uncalled_lambda)
+E       assert [] == ['test_syn.py::test_fooled']
+E         
+E         Right contains one more item: 'test_syn.py::test_fooled'
+E         Use -v to get more diff
+
+tests/test_budget_outcome_census.py:256: AssertionError
+=============================== warnings summary ===============================
+tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+  test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_daemon_shutdown.py::test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub
+FAILED tests/test_daemon_shutdown.py::test_a_model_client_built_after_the_worker_stage_cannot_serve[embed]
+FAILED tests/test_daemon_shutdown.py::test_a_model_client_built_after_the_worker_stage_cannot_serve[rerank]
+FAILED tests/test_budget_outcome_census.py::test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[a_different_receiver]
+FAILED tests/test_budget_outcome_census.py::test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[if_false]
+FAILED tests/test_budget_outcome_census.py::test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[nested_def_called_after_the_hook]
+FAILED tests/test_budget_outcome_census.py::test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[try_except_pass]
+FAILED tests/test_budget_outcome_census.py::test_s3_must_fail_a_readiness_call_that_does_not_certainly_run_first[uncalled_lambda]
+8 failed, 29 passed, 1 warning in 28.01s
+exit 1

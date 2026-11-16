@@ -717,22 +717,26 @@ def test_ac4b_verb_reads_the_replica_with_a_shared_worker_and_no_daemon(offline,
 
 def test_ac4c_hook_mode_no_daemon_no_worker_exits_0_silent_and_counted(offline):
     """AC-4 (c) / d8: no daemon, no hub worker, HOOK mode: the per-prompt argv prints NOTHING,
-    exits 0, loads no model and spawns no worker (no `sentence_transformers` import; within the
-    5 s hook budget), and its recall row reads outcome "error", error "VerbAbsentError: …".
+    exits 0, loads no model and spawns no worker (no `sentence_transformers` import in the hook;
+    the row's `VerbAbsentError` shows it gave up before any worker), and its recall row reads
+    outcome "error", error "VerbAbsentError: …".
     HEAD: exit 1, "needs the daemon up …"."""
     b = offline["b"]
     before = len(s.recall_rows(b.root))
     cmd = s.recall_cmd(b.root, "UserPromptSubmit")
-    t0 = time.monotonic()
     r = s.run_cmd(b, cmd, env_in=s.envelope(QUESTION), RMX_HOME=str(offline["home"]),
                   RMX_MODEL_SOCK=str(offline["base"] / "none.sock"), PYTHONPROFILEIMPORTTIME="1")
-    took = time.monotonic() - t0
     err = r.stderr.decode("utf-8", "replace")
     said = "\n".join(ln for ln in err.splitlines() if not ln.startswith("import time:"))
     assert r.returncode == 0, f"AC-4 (c): exit {r.returncode}: {said[-600:]}"
     assert r.stdout == b"", f"AC-4 (c): stdout not empty: {r.stdout[:200]!r}"
+    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `took < 5.0` ("within the 5 s hook budget")
+    # is replaced by the mechanisms that keep an offline hook inside it. With no daemon and no
+    # hub worker, two legs could spend the budget: a model load in the hook's own process
+    # (6-33 s), which the import trace below rules out, and a private worker spawn plus its
+    # load, which the row's outcome `error` / `VerbAbsentError` rules out (the verb gave up
+    # before reaching a worker). Corrected per ch-bsd t03 r1 M3.
     assert "sentence_transformers" not in err, "AC-4 (c): the hook imported a model"
-    assert took < 5.0, f"AC-4 (c): {took:.1f}s -- over the 5 s hook budget"
     rows = s.recall_rows(b.root)[before:]
     assert len(rows) == 1, rows
     assert rows[0].get("outcome") == "error", rows[0]

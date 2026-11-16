@@ -1,0 +1,6 @@
+........................................................................ [ 36%]
+........
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py:729: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+80 passed in 561.70s (0:09:21)

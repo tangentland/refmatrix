@@ -1,0 +1,70 @@
+# mini-lane slot=rmxtest1 sha=276fd204312cb4141a35fd7ad181859adc3394e3 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 14:14:17 load={ 2.74 2.78 3.05 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-fold-mutant-M3.F19B/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_a_stop_during_warmup_abandons_the_held_load _______________
+
+    def test_a_stop_during_warmup_abandons_the_held_load():
+        """bug-269 (ruling L161), with ch-bsd t03 r1 S1/S2 folded in. A real sandbox daemon whose
+        embed worker's cold load is held open; the stop op is sent during the hold. Outcomes:
+        the daemon exits while the load is still held; the held worker is already dead then (the
+        stop killed it: M3); this launch spawned exactly one embed worker and the warm-up hit
+        `not respawning` (the retired flag: M4); the reranker warm-up was skipped and never spawned
+        (M5); the in-process embedder fallback refused and loaded nothing (M6)."""
+        from tests import task21_1_support as h
+        root = Path(os.environ["REFMATRIX_ROOT"])
+        hold = root.parent / "t269-hold"
+        hold.mkdir()
+        pre = root.parent / "t269_preload.py"
+        pre.write_text(textwrap.dedent(_PRELOAD))
+        d = h.SandboxDaemon(root, RMX_SANDBOX_PRELOAD=str(pre), T269_HOLD_DIR=str(hold),
+                            T269_HOLD_S=str(_HOLD_S))
+    
+        def log() -> str:
+            return (root / "rmxd.log").read_bytes()[d.log_offset:].decode(errors="replace")
+    
+        def wait(pred, what):
+            end = time.monotonic() + _GUARD_S
+            while time.monotonic() < end:
+                if pred():
+                    return
+                time.sleep(0.05)
+            raise AssertionError(f"hang guard: {what}; daemon rc={d.proc.poll()}; log:\n{log()}")
+    
+        try:
+            wait(lambda: (hold / "held").exists(), "the embed worker never entered its held load")
+            held_pid = int((hold / "held").read_text())
+            assert d.proc.poll() is None, "the daemon exited before the stop was sent"
+            dm.call(root, "stop", {}, timeout=2.0, retries=0)
+            wait(lambda: d.proc.poll() is not None or (hold / "released").exists(),
+                 "neither the daemon exit nor the end of the hold")
+            exited_first = d.proc.poll() is not None and not (hold / "released").exists()
+            held_dead = not _pid_alive(held_pid)
+            if not exited_first:
+                wait(lambda: d.proc.poll() is not None, "the daemon never exited after the hold")
+            text = log()
+            assert exited_first, (
+                f"bug-269: the stop waited out the warm-up: the held load was released (after the "
+                f"{_HOLD_S:.0f} s hold) before the daemon exited; log:\n{text}")
+>           assert held_dead, (
+                f"the stop left the held embed worker pid={held_pid} alive (it was not killed); "
+                f"log:\n{text}")
+E               AssertionError: the stop left the held embed worker pid=28682 alive (it was not killed); log:
+E                 2026-11-15T14:14:18 daemon starting pid=28680 root=/private/tmp/rmx-b2g1ibho/r/1/.refmatrix
+E                 2026-11-15T14:14:18 store opened backend=duckdb
+E                 2026-11-15T14:14:18 repaired idx_entity_links_lk_concept rows=0
+E                 2026-11-15T14:14:18 rotation bootstrapped: A=catalog.A.duckdb B=catalog.B.duckdb active=A log_offset=0
+E                 2026-11-15T14:14:18 mem mirror ready
+E                 2026-11-15T14:14:18 pools cli=4 bg=12 disp=20
+E                 2026-11-15T14:14:18 worker[embed] spawned pid=28682 model=default python=/Users/rmxtest1/.venv-lane/bin/python venv=/Users/rmxtest1/.venv-lane
+E                 2026-11-15T14:14:21 worker[embed] retire: the lock is still held after 2.0s (a call or the warm-up's load in flight); abandoning it, killing pid=28682
+E                 2026-11-15T14:14:23 worker[embed] retire: pid=28682 still alive 2.0s after SIGKILL
+E                 2026-11-15T14:14:23 daemon stopped
+E                 
+E               assert False
+
+tests/test_daemon_shutdown.py:360: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_daemon_shutdown.py::test_a_stop_during_warmup_abandons_the_held_load
+1 failed in 5.73s
+exit 1

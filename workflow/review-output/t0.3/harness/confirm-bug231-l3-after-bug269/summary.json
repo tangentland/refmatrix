@@ -1,0 +1,28 @@
+{
+ "level": 3,
+ "mode": "fix",
+ "targets": [
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "voids": 0,
+ "noisy": false,
+ "trials_run": 1,
+ "rows": {
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "sequence": [
+    "pass"
+   ],
+   "band": {
+    "held": null,
+    "passes": 1
+   },
+   "e_lines": [],
+   "walls_s": [
+    42.3
+   ],
+   "wall_clocks_s": [
+    42.3
+   ]
+  }
+ }
+}

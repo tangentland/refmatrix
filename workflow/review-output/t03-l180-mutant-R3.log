@@ -1,0 +1,39 @@
+# mini-lane slot=rmxtest2 sha=36bf063e18bc45be9573a01012c5f5d907cb1024 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:45 load={ 2.12 1.51 1.51 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest2/lane/runs/t03-l180-mutant-R3.M3fl/src/refmatrix as checked-hash (bug-037)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_the_client_stamps_a_deadline_from_its_own_timeout ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1051efbb0>
+
+    def test_the_client_stamps_a_deadline_from_its_own_timeout(monkeypatch):
+        """A bounded client cannot forget: if it gave itself N seconds, the frame says so, and a
+        worker that dequeues it late drops it. Read at the receiving end: a real socket server
+        (`_FakeModelSock`, the frame-recording models.sock of test_plan2_remedy_r7) at
+        `RMX_MODEL_SOCK` records the frame the client sent."""
+        import tempfile
+        from pathlib import Path
+    
+        from refmatrix import modelsrv
+        from tests.test_plan2_remedy_r7 import _FakeModelSock
+    
+        base = Path(tempfile.mkdtemp(prefix="rmxd", dir=os.environ.get("RMX_SANDBOX_ROOT") or None))
+        path = base / "m.sock"
+        monkeypatch.setenv("RMX_MODEL_SOCK", str(path))
+        srv = _FakeModelSock(path, delay=0.0)
+        c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+        try:
+            t0 = time.time()
+            c.call("rerank", {"query": "q", "docs": ["a"]}, timeout=4.0)
+            (frame,) = srv.frames
+>           assert frame.get("op") == "rerank" and "deadline" in frame, frame
+E           AssertionError: {'docs': ['a'], 'op': 'rerank', 'query': 'q', 'role': 'rerank'}
+E           assert ('rerank' == 'rerank'
+E             
+E               rerank and 'deadline' in {'docs': ['a'], 'op': 'rerank', 'query': 'q', 'role': 'rerank'})
+
+tests/test_rerank_cost_budget.py:333: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rerank_cost_budget.py::test_the_client_stamps_a_deadline_from_its_own_timeout
+1 failed in 0.24s
+exit 1

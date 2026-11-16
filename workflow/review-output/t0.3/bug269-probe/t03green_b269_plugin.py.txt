@@ -1,0 +1,57 @@
+"""Scratch measurement plugin (green-t03, bug-269; not committed). In the bug-231 node only,
+copy every *.log under the test's daemon base dir before the test's `shutil.rmtree` deletes it,
+and record graceful_stop's grace / wall / report / result with wall-clock stamps."""
+import json, os, shutil, time
+from pathlib import Path
+
+OUT = Path(os.environ["T03G_B269_OUT"])
+NODE = "test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+_undo = []
+_ON = {"target": False}
+
+
+def pytest_configure(config):
+    # Only the harness's TARGET process loads t03_capture; load processes run the same file.
+    _ON["target"] = (config.pluginmanager.has_plugin("t03_capture")
+                     or os.environ.get("T03G_B269_ANY") == "1")
+
+
+def pytest_runtest_setup(item):
+    if NODE not in item.nodeid or not _ON["target"]:
+        return
+    from refmatrix import daemon as dm
+    OUT.mkdir(parents=True, exist_ok=True)
+    tag = time.strftime("%H%M%S")
+    real_rm = shutil.rmtree
+
+    def rmtree(path, *a, **kw):
+        p = Path(path)
+        for f in p.rglob("*.log"):
+            dest = OUT / f"{tag}-{f.relative_to(p).as_posix().replace('/', '__')}"
+            try:
+                shutil.copy2(f, dest)
+            except OSError as e:
+                (OUT / f"{tag}-copy-error.txt").write_text(f"{f}: {e!r}\n")
+        return real_rm(path, *a, **kw)
+
+    real_gs = dm.graceful_stop
+
+    def graceful_stop(root, *, grace, report=None):
+        rep = report if report is not None else {}
+        w0, t0 = time.time(), time.monotonic()
+        ok = real_gs(root, grace=grace, report=rep)
+        with open(OUT / f"{tag}-stops.jsonl", "a") as fh:
+            fh.write(json.dumps({"start": time.strftime("%H:%M:%S", time.localtime(w0)),
+                                 "start_epoch": w0, "grace": grace,
+                                 "seconds": round(time.monotonic() - t0, 3),
+                                 "report": rep, "result": ok}) + "\n")
+        return ok
+
+    for obj, name, new in ((shutil, "rmtree", rmtree), (dm, "graceful_stop", graceful_stop)):
+        _undo.append((obj, name, getattr(obj, name)))
+        setattr(obj, name, new)
+
+
+def pytest_runtest_teardown(item):
+    while _undo:
+        o, n, r = _undo.pop(); setattr(o, n, r)

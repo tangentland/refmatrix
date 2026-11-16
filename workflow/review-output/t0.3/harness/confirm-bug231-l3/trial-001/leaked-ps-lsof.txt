@@ -1,0 +1,71 @@
+  PID  PPID ELAPSED      TIME COMMAND
+94908     1   00:47   0:00.51 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/rmx daemon start --no-detach --no-watch
+94910 94908   00:47   0:00.00 <defunct>
+94933 94908   00:42   0:00.00 <defunct>
+
+==== lsof -p 94908 (exit 0)
+COMMAND   PID    USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+Python  94908 tholley  cwd    DIR               1,15      160           497000882 /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj
+Python  94908 tholley  txt    REG               1,15    66200           310717331 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  94908 tholley  txt    REG               1,15   425104           310522129 /opt/local/lib/libintl.8.dylib
+Python  94908 tholley  txt    REG               1,15  2319840           485254667 /opt/local/lib/libiconv.2.dylib
+Python  94908 tholley  txt    REG               1,15   188736           310513199 /opt/local/lib/libz.1.3.2.dylib
+Python  94908 tholley  txt    REG               1,15   124520           310722493 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   105568           310722563 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   313776           310536227 /opt/local/lib/libexpat.1.11.3.dylib
+Python  94908 tholley  txt    REG               1,15  2289328 1152921500312524573 /usr/lib/dyld
+Python  94908 tholley  txt    REG               1,15   152064           310722533 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   189200           310722576 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/pyexpat.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   206016            16274024 /opt/local/lib/libbz2.1.0.8.dylib
+Python  94908 tholley  txt    REG               1,15   146680           310722596 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    89688           310722451 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   186024           310722559 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   126728           310722497 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   127296           310722582 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    87088           310722447 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    88240           310722513 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   222864           310722525 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   347600           310522879 /opt/local/lib/liblzma.5.dylib
+Python  94908 tholley  txt    REG               1,15   181800           310722572 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    87288           310722569 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    86952           310722567 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   308576           310722505 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_pickle.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   168896            16290910 /opt/local/lib/libffi.8.dylib
+Python  94908 tholley  txt    REG               1,15   186472           310722561 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/array.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   312256           310722527 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_sqlite3.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    88440           310722509 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_posixsubprocess.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   169120           310722481 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    83864           310722553 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_uuid.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15    88976           310722511 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_queue.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   157872           310722449 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15  1215360           310666684 /opt/local/lib/libzstd.1.5.7.dylib
+Python  94908 tholley  txt    REG               1,15   130080           310722491 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_interpreters.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   103152           310722483 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_heapq.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   318728            39333774 /opt/local/lib/libmpdec.4.0.1.dylib
+Python  94908 tholley  txt    REG               1,15  2380448           310569590 /opt/local/lib/libsqlite3.3.53.1.dylib
+Python  94908 tholley  txt    REG               1,15 12269368           310717325 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/Python
+Python  94908 tholley  txt    REG               1,15   409248           310722477 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_decimal.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   350560           310722467 /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ctypes.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   154848           298126533 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/linalg/_umath_linalg.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15   948480           298613843 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/pyroaring.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15 45263296           495527258 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_duckdb.cpython-314-darwin.so
+Python  94908 tholley  txt    REG               1,15  9914608           310546318 /opt/local/libexec/openssl3/lib/libcrypto.3.dylib
+Python  94908 tholley  txt    REG               1,15  3695624           298126618 /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/numpy/_core/_multiarray_umath.cpython-314-darwin.so
+Python  94908 tholley    0r   CHR                3,2      0t0                 339 /dev/null
+Python  94908 tholley    1w   REG               1,15       54           497001182 /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj/daemon-test.stderr.log
+Python  94908 tholley    2w   REG               1,15       54           497001182 /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj/daemon-test.stderr.log
+Python  94908 tholley    3w   REG               1,15        0           497001183 /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj/.refmatrix/daemon.lock
+Python  94908 tholley    4w   REG               1,15    12317           497001184 /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj/.refmatrix/rmxd.log
+Python  94908 tholley    5u   REG               1,15 15478784           497001188 /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj/.refmatrix/catalog.A.duckdb
+Python  94908 tholley    6u  unix 0x700ee50f4f2a8573      0t0                     /private/tmp/rmx-us11jd0c/p25-h1_xztxk/fxproj/.refmatrix/rmxd.sock
+Python  94908 tholley    8   PIPE 0xdc573b7bb74874d3    16384                     
+Python  94908 tholley    9   PIPE 0x6154ba245baccdfe    16384                     
+Python  94908 tholley   10   PIPE 0x4475baa27f93d8b4    16384                     
+Python  94908 tholley   11   PIPE 0x1e055216d2f1f884    16384                     
+lsof: WARNING: can't stat() smbfs file system /Volumes/.timemachine/192.168.16.245/C17A1AF4-A72D-490F-8E31-5653B7749EED/time_machine
+      Output information may be incomplete.
+      assuming "dev=360002a7" from mount table
+
+==== lsof -p 94933 (exit 1)
+
+==== lsof -p 94910 (exit 1)

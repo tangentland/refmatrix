@@ -1,0 +1,100 @@
+{
+ "level": 5,
+ "targets": [
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs",
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning",
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file",
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly"
+ ],
+ "load": [
+  [
+   "tests/test_memory_bridge.py",
+   "tests/test_sync_fails_loudly_r2.py",
+   "tests/test_task21_1_emitters.py",
+   "tests/test_catalog_measure.py"
+  ],
+  [
+   "tests/test_task25_1_recall_budget.py",
+   "tests/test_plan3_remedy_r4.py",
+   "tests/test_modelsrv.py",
+   "tests/test_plan3_remedy_r6.py",
+   "tests/test_plan4_remedy.py"
+  ],
+  [
+   "tests/test_bridge_move_safety.py",
+   "tests/test_savestate_mtype.py",
+   "tests/test_bug216_hidden_no_pollution.py",
+   "tests/test_task3_6_r9_remedy.py",
+   "tests/test_bug225_handoff_trunk.py"
+  ],
+  [
+   "tests/test_plan3_remedy_r5.py",
+   "tests/test_memory_compile_scope.py",
+   "tests/test_bridge_move_safety_r1.py",
+   "tests/test_plan4_remedy_r3.py",
+   "tests/test_bug212_r1_remedy.py"
+  ],
+  [
+   "tests/test_task21_1_used_events.py",
+   "tests/test_bug212_r4_red.py",
+   "tests/test_bug212_r6_red.py",
+   "tests/test_rerank_budget_real_clients.py",
+   "tests/test_plan3_remedy_r3.py",
+   "tests/test_memory_compile_remedy_r1.py"
+  ]
+ ],
+ "load_mode": "until-target",
+ "warmup_s": 20.0,
+ "cap_s": 6281.07,
+ "T_s": 2093.69,
+ "wall_s": 109.6257375839632,
+ "wall_clock_s": 109.62596201896667,
+ "cap_hit": false,
+ "leaked_after_kill": 0,
+ "leaked": [],
+ "target_exit_s": 44.41253329196479,
+ "target_rc": 1,
+ "load_rcs": [
+  -15,
+  2,
+  2,
+  -15,
+  2
+ ],
+ "status": "counted",
+ "outcomes": {
+  "tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E       KeyError: 'rewrite_bytes_all'",
+   "call_s": 1.9856379999546334
+  },
+  "tests/test_rerank_budget_real_clients.py::test_a_cold_private_worker_is_skipped_without_spawning": {
+   "outcome": "pass",
+   "call_s": 0.002616457990370691
+  },
+  "tests/test_watch.py::test_run_watcher_picks_up_new_file": {
+   "outcome": "pass",
+   "call_s": 0.603309000027366
+  },
+  "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly": {
+   "outcome": "fail",
+   "phase": "call",
+   "e_line": "E           AssertionError: assert False is True",
+   "call_s": 19.135510416934267
+  }
+ },
+ "loadavg_start": [
+  10.9052734375,
+  14.5859375,
+  14.85107421875
+ ],
+ "loadavg_end": [
+  19.86328125,
+  17.5556640625,
+  16.0341796875
+ ],
+ "live_socket_touches_added": 0,
+ "sha": "dcebb15c73c50afd9110720ba505be9b96ce9c8b",
+ "lane_request_to_release_s": 186.51439690589905
+}

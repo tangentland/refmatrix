@@ -1,0 +1,4 @@
+{"node": "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row", "event": "start", "t": 1794770054.632401}
+{"node": "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row", "event": "report", "phase": "setup", "outcome": "passed", "duration": 0.04306599998380989, "e_lines": [], "crash": null, "t": 1794770054.6759622}
+{"node": "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row", "event": "report", "phase": "call", "outcome": "passed", "duration": 7.883615083992481, "e_lines": [], "crash": null, "t": 1794770062.560339}
+{"node": "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row", "event": "report", "phase": "teardown", "outcome": "passed", "duration": 0.0016050420235842466, "e_lines": [], "crash": null, "t": 1794770062.562195}

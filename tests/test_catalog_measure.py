@@ -320,14 +320,55 @@ def test_rewrite_s_max_covers_the_noisy_first_batch(tmp_path, scratch):
     assert row["band_c"] == "C0"         # the final batch is quiet
 
 
+_MEDIAN_BYTES_STEPS = (0, 100, 300)
+
+
+def _median_bytes_hook(ix: int, b: int) -> int:
+    """The median test's size offsets by rehearsal run index. A noisy batch is rerun (run
+    indexes 3-5, `measure_catalogs._measure_copy`), so the offsets repeat per batch rather than
+    run out (bug-270)."""
+    return b + _MEDIAN_BYTES_STEPS[ix % len(_MEDIAN_BYTES_STEPS)]
+
+
 def test_rewrite_bytes_is_the_median_of_the_runs(tmp_path, scratch):
-    """ch-bsd r1 #s-5: r1 kept the LAST run's size; sizes vary ~1.3 % run to run."""
+    """ch-bsd r1 #s-5: r1 kept the LAST run's size; sizes vary ~1.3 % run to run.
+
+    bug-130 (T0.3 R3.1/R3.4, 2026-11-15): under suite load a failed store reached the index
+    below and the test failed on a bare KeyError for the missing sizes key, hiding why the
+    store failed. `failed == 0` is asserted first, and its message carries every failed store's
+    captured error (the base sweep's one capture was bug-270's IndexError)."""
     root = _root(tmp_path, "m", rows=1_000)
-    rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep",
-                           bytes_hook=lambda ix, b: b + (0, 100, 300)[ix])
+    rows, verdict, code = mc.run([root], scratch, tmp_path / "out" / "rep",
+                                 bytes_hook=_median_bytes_hook)
+    errors = [f"{r.get('store')}: step {r.get('step')}: {r.get('error')}"
+              for r in rows if "error" in r]
+    assert verdict.get("failed", 0) == 0 and not errors, (
+        f"bug-130: {verdict.get('failed')} store(s) failed to measure (exit {code}): "
+        + "; ".join(errors))
     (row,) = rows
     base = row["rewrite_bytes_all"][0]
-    assert code == 0 and row["rewrite_bytes_all"] == [base, base + 100, base + 300]
+    # A rerun batch (noisy timings under load) repeats the offsets; the median is unchanged.
+    assert code == 0 and row["rewrite_bytes_all"] == (
+        [base, base + 100, base + 300] * (1 + row["rehearsal_reruns"]))
+    assert row["rewrite_bytes"] == base + 100
+
+
+def test_bug270_a_rerun_batch_does_not_overflow_the_median_bytes_hook(tmp_path, scratch):
+    """bug-270 (ruling L157; T0.3 base sweep, L3 trial 5 and L5 trial 4): under load the three
+    rehearsal timings are noisy, `run` reruns the batch (run indexes 3-5), and the median test's
+    bytes hook indexed past its three offsets. The IndexError made the store a failed row, and
+    the test then read bug-130's `KeyError: 'rewrite_bytes_all'`. The rerun is forced here
+    through `time_hook`, as `test_ac8_a_noisy_rehearsal_reruns_once_then_reports_noisy` does,
+    so the test decides which side of the noise gate the run falls on."""
+    root = _root(tmp_path, "r", rows=1_000)
+    noisy_first = lambda ix, s: (s + 1.0) * (4.0 if ix == 0 else 1.0)
+    rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep",
+                           time_hook=noisy_first, bytes_hook=_median_bytes_hook)
+    (row,) = rows
+    assert "error" not in row, f"bug-270: step {row.get('step')}: {row.get('error')}"
+    assert code == 0 and row["rehearsal_reruns"] == 1, row.get("rehearsal_reruns")
+    base = row["rewrite_bytes_all"][0]
+    assert row["rewrite_bytes_all"] == [base, base + 100, base + 300] * 2
     assert row["rewrite_bytes"] == base + 100
 
 

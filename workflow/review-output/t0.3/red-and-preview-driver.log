@@ -1,0 +1,11 @@
+sha 84ca55daf93a0befc9b27a651fa734fc766baf3b; harness present: ls: scripts/t03_load_harness.py: No such file or directory
+FAILED tests/test_t03_load_harness.py::test_base_band_three_failures_in_ten_is_the_reproducer_and_hangs_count
+FAILED tests/test_t03_load_harness.py::test_fix_band_needs_45_consecutive_passes_and_any_failure_ends_it
+84 failed in 13.04s
+RED PIPESTATUS=1
+preview patch applied
+.......                                                                  [100%]
+7 passed in 7.88s
+PREVIEW PIPESTATUS=0
+preview patch reverted
+?? .venv-eval

@@ -1,0 +1,47 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_bug269_a_stop_during_warmup_does_not_wait_out_the_warmup _________
+
+    def test_bug269_a_stop_during_warmup_does_not_wait_out_the_warmup():
+        root = Path(os.environ["REFMATRIX_ROOT"])
+        hold = root.parent / "t269-hold"
+        hold.mkdir()
+        pre = root.parent / "t269_preload.py"
+        pre.write_text(textwrap.dedent(_PRELOAD))
+        d = h.SandboxDaemon(root, RMX_SANDBOX_PRELOAD=str(pre), T269_HOLD_DIR=str(hold),
+                            T269_HOLD_S=str(HOLD_S))
+        try:
+            _wait(lambda: (hold / "held").exists(), "the embed worker entering its held warm-up", d)
+            assert d.proc.poll() is None, "the daemon exited before the stop was sent"
+            dm.call(root, "stop", {}, timeout=2.0, retries=0)
+            _wait(lambda: d.proc.poll() is not None or (hold / "released").exists(),
+                  "the daemon exiting or the warm-up hold ending", d)
+            exited_first = d.proc.poll() is not None and not (hold / "released").exists()
+            if not exited_first:
+                _wait(lambda: d.proc.poll() is not None, "the daemon exiting after the hold", d)
+>           assert exited_first, (
+                f"bug-269: the stop waited out the warm-up: the embed worker's load was released "
+                f"(after the {HOLD_S:.0f} s hold) before the daemon exited (rc={d.proc.returncode}); "
+                f"log tail: {(root / 'rmxd.log').read_text()[-1200:]}")
+E               AssertionError: bug-269: the stop waited out the warm-up: the embed worker's load was released (after the 20 s hold) before the daemon exited (rc=0); log tail: 2026-11-15T12:07:33 daemon starting pid=80679 root=/private/tmp/rmx-0hfram1i/r/1/.refmatrix
+E                 2026-11-15T12:07:33 store opened backend=duckdb
+E                 2026-11-15T12:07:33 repaired idx_entity_links_lk_concept rows=0
+E                 2026-11-15T12:07:33 rotation bootstrapped: A=catalog.A.duckdb B=catalog.B.duckdb active=A log_offset=0
+E                 2026-11-15T12:07:33 mem mirror ready
+E                 2026-11-15T12:07:33 pools cli=4 bg=12 disp=20
+E                 2026-11-15T12:07:33 worker[embed] spawned pid=80681 model=default python=/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python venv=/Users/tholley/claude_tools/refmatrix/.venv-eval
+E                 2026-11-15T12:07:55 embedder loaded (subprocess) model=BAAI/bge-small-en-v1.5 dim=384
+E                 2026-11-15T12:07:55 embedder warm in 22.4s
+E                 2026-11-15T12:07:55 worker[rerank] spawned pid=80808 model=default python=/Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python venv=/Users/tholley/claude_tools/refmatrix/.venv-eval
+E                 2026-11-15T12:07:56 worker[embed] closed
+E                 2026-11-15T12:07:58 reranker loaded (subprocess) model=cross-encoder/ms-marco-MiniLM-L-12-v2
+E                 2026-11-15T12:07:58 reranker warm in 2.2s
+E                 2026-11-15T12:07:58 worker[rerank] closed
+E                 2026-11-15T12:07:58 daemon stopped
+E                 
+E               assert False
+
+tests/test_bug269_stop_during_warmup.py:95: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bug269_stop_during_warmup.py::test_bug269_a_stop_during_warmup_does_not_wait_out_the_warmup
+1 failed in 25.39s

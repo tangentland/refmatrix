@@ -244,16 +244,23 @@ def test_await_shutdown_waits_on_a_fresh_marker_until_the_pid_exits(root):
             p.kill(); p.wait()
 
 
-def test_await_shutdown_returns_at_once_without_a_marker(root):
+def test_await_shutdown_returns_at_once_without_a_marker(root, monkeypatch):
     """No marker = not shutting down: the caller's stale-heartbeat state
     alone must not buy a second grace (the r3 arithmetic)."""
     p = _draining_process(root, exit_after_term_s=0.0, heartbeat=False, ignore_term=True)
     dm.pid_path(root).write_text(str(p.pid))
     hb = root / "heartbeat"; hb.touch(); _age(hb, 61)
     try:
-        t0 = time.monotonic()
-        hub_mod.Watchdog()._await_shutdown(root)
-        assert time.monotonic() - t0 < 0.3
+        # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.3` is an ordering check now.
+        # The call returns while the test-owned process (which ignores SIGTERM) is still alive,
+        # and without one poll-loop sleep: no marker buys no wait.
+        sleeps: list = []
+        real_sleep = hub_mod.time.sleep
+        with monkeypatch.context() as mp:
+            mp.setattr(hub_mod.time, "sleep", lambda s: sleeps.append(s) or real_sleep(s))
+            hub_mod.Watchdog()._await_shutdown(root)
+        assert sleeps == [], f"waited on a pid with no shutdown marker: {len(sleeps)} poll(s)"
+        assert p.poll() is None, "the process the call would wait on had already exited"
     finally:
         p.kill(); p.wait()
 

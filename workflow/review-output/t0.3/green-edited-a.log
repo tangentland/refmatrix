@@ -1,0 +1,70 @@
+...........................................F............................ [ 39%]
+........................................................................ [ 79%]
+......................................                                   [100%]
+=================================== FAILURES ===================================
+________________ test_stop_daemon_signals_first_when_ping_fails ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105813a10>
+
+    def test_stop_daemon_signals_first_when_ping_fails(monkeypatch):
+        """29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 1.5` on a 5 s grace stood for
+        "the signal goes first, the wait comes after". That order is asserted directly: the SIGTERM
+        is the first event after the failed ping, before any poll of the grace."""
+        import signal as _signal
+    
+        events: list = []
+        real_kill, real_alive = dm.os.kill, dm.is_alive
+    
+        def kill(pid, sig):
+            if sig == _signal.SIGTERM:
+                events.append("SIGTERM")
+            return real_kill(pid, sig)
+    
+        monkeypatch.setattr(dm.os, "kill", kill)
+        monkeypatch.setattr(dm, "is_alive", lambda pid: events.append("poll") or real_alive(pid))
+        d = _SilentDaemon()
+        try:
+            report: dict = {}
+            ok = dm.stop_daemon(d.root, timeout=5.0, report=report)
+            assert ok is True, report
+>           assert events and events[0] == "SIGTERM", (
+                f"the grace was polled before the signal was sent: {events[:6]}", report)
+E               AssertionError: ("the grace was polled before the signal was sent: ['poll', 'SIGTERM', 'poll', 'poll']", {'pid': 87974, 'signal': 'SIGTERM', 'stop_op': 'skipped: not answering ping (SIGTERM sent now)'})
+E               assert (['poll', 'SIGTERM', 'poll', 'poll'] and 'poll' == 'SIGTERM'
+E                 
+E                 - SIGTERM
+E                 + poll)
+
+tests/test_plan4_remedy_r2.py:253: AssertionError
+=============================== warnings summary ===============================
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-70 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-t03-green/tests/test_rerank_budget_real_clients.py", line 436, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Volumes/littlebig/refmatrix-t03-green/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_plan4_remedy_r2.py::test_stop_daemon_signals_first_when_ping_fails
+1 failed, 181 passed, 1 warning in 200.70s (0:03:20)

@@ -1,0 +1,48 @@
+"""SCRATCH MEASUREMENT PROBE (green-t03, bug-269), copied into tests/ for one run and deleted;
+never committed. A/B: graceful_stop right after spawn (models warming) vs after the startup
+warmup logged both models warm. Records the stop wall and the daemon's own log."""
+import json, os, shutil, time
+from pathlib import Path
+
+import pytest
+
+from refmatrix import daemon as dm
+from refmatrix import hub as hub_mod
+from tests.test_plan4_remedy import _spawn
+
+OUT = Path(os.environ["T03G_B269_OUT"])
+
+
+def _wait_warm(root, limit=120.0):
+    t0 = time.monotonic()
+    log = root / "rmxd.log"
+    while time.monotonic() - t0 < limit:
+        txt = log.read_text(errors="replace") if log.exists() else ""
+        done_e = any(k in txt for k in ("embedder warm in", "embedder warmup failed", "embedder warmup skipped"))
+        done_r = any(k in txt for k in ("reranker warm in", "reranker warmup failed", "reranker warmup skipped"))
+        if done_e and done_r:
+            return time.monotonic() - t0
+        time.sleep(0.1)
+    return None
+
+
+@pytest.mark.parametrize("when", ["cold-1", "warm-1", "cold-2", "warm-2", "cold-3", "warm-3"])
+def test_probe(when):
+    base, root, pid = _spawn()
+    waited = None
+    try:
+        if when.startswith("warm"):
+            waited = _wait_warm(root)
+        w0, t0 = time.time(), time.monotonic()
+        ok = hub_mod.graceful_stop(root, grace=60.0)
+        secs = time.monotonic() - t0
+        alive = dm.is_alive(pid)
+    finally:
+        dm.stop_daemon(root)
+        log = (root / "rmxd.log").read_text(errors="replace") if (root / "rmxd.log").exists() else ""
+        OUT.mkdir(parents=True, exist_ok=True)
+        with open(OUT / "probe.jsonl", "a") as fh:
+            fh.write(json.dumps({"when": when, "warm_wait_s": waited, "stop_start": w0,
+                                 "stop_s": round(secs, 2), "ok": ok, "alive": alive,
+                                 "log": log[-4000:]}) + "\n")
+        shutil.rmtree(base, ignore_errors=True)

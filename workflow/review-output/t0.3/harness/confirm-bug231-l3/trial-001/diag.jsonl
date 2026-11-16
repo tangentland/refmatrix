@@ -1,0 +1,2 @@
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "kind": "bug231.graceful_stop", "grace": 60.0, "seconds": 5.368339375010692, "report": {"stop_op": "sent", "pid": 94831}, "result": true, "t": 1794768692.740018}
+{"node": "tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly", "kind": "bug231.graceful_stop", "grace": 45.0, "seconds": 3.1125033274292946e-05, "report": {"stop_op": "skipped: no daemon"}, "result": true, "t": 1794768692.740756}

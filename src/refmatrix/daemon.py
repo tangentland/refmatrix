@@ -935,6 +935,10 @@ class Daemon:
         from refmatrix import recall as recall_mod
 
         def _drop_private_worker() -> None:
+            if self._stop_began():
+                # bug-269: the stop abandoned the worker's load (`_close_workers`);
+                # loading the model in-process now would put it in a stopping daemon.
+                raise RuntimeError("daemon stopping: no in-process embedder fallback")
             # Only the embed worker: a live rerank worker is unrelated and killing it
             # would cost a needless model reload.
             w, self._embed_worker = self._embed_worker, None
@@ -974,7 +978,18 @@ class Daemon:
             from refmatrix.recall import new_model_client
             client = new_model_client(role, log=self._log, stderr=self.log_fh)
             setattr(self, attr, client)
-            return client
+        if self._stop_began():
+            # bug-272 (ch-bsd t03 r1 M1, ruling L177, 2026-11-15): serve_forever sets
+            # `_shutdown_event` BEFORE `_close_workers` reads these slots, and
+            # `new_model_client` can take up to PROBE_TIMEOUT_S on a mute hub. So either
+            # `_close_workers` read the slot after this assignment and retires the client,
+            # or the event was already set when this check ran: no client built across a
+            # stop serves. Retired (not closed), it refuses every call, so none can spawn
+            # a model process into the stopping daemon; the slot keeps it so later callers
+            # get the same refusal instead of another hub probe.
+            client.retire(timeout=2.0, abandon_in_flight=True)
+            raise RuntimeError(f"daemon stopping: no new {role} model client")
+        return client
 
     def _maybe_adopt_shared(self, *, now: "float | None" = None) -> list[str]:
         """Re-probe the hub's shared model socket for any role still holding a
@@ -1140,17 +1155,37 @@ class Daemon:
         want = args.get("rerank")
         return rerank_enabled() if want is None else bool(want)
 
+    def _stop_began(self) -> bool:
+        """True once `serve_forever`'s shutdown set `_shutdown_event` (bug-269). Read
+        with getattr: `__init__` always sets it, but a Daemon assembled without
+        `__init__` (unit tests driving the warm-up or the embedder alone) has no stop
+        to honour, and must not raise from a warm thread."""
+        ev = getattr(self, "_shutdown_event", None)
+        return ev is not None and ev.is_set()
+
     def _close_workers(self) -> None:
         """Terminate model workers. Called on shutdown so a daemon exit
-        never strands a child holding ~610 MB (or its pipes)."""
+        never strands a child holding ~610 MB (or its pipes).
+
+        bug-269 (ruling L161, 2026-11-15): a private worker is retired with
+        `abandon_in_flight=True`, so a stop sent during the startup warm-up no
+        longer waits out the cold loads: each retire is bounded by its timeout plus
+        the kill. bug-278 (ruling L180): a hub-shared client is retired the same way
+        and shuts its in-flight connections down, so a call on a slow or mute hub
+        no longer holds the stop for its own timeout. The warm thread it abandons then stops too (`_start_embedder_
+        warmup`: no reranker load into a stopping daemon; `_embedder`: no in-process
+        fallback once the stop began)."""
         for attr in ("_embed_worker", "_rerank_worker"):
             w = getattr(self, attr, None)
             if w is None:
                 continue
             try:
                 # Retired: an in-flight op's warmup must not respawn a worker
-                # after shutdown (ch-bsd r12 #s-1).
-                getattr(w, "retire", w.close)(timeout=2.0)
+                # after shutdown (ch-bsd r12 #s-1). Both client classes implement
+                # `retire(abandon_in_flight=)` (bug-278, ruling L180): a private
+                # worker is killed after a 2.0 s lock wait, a hub-shared client
+                # shuts its in-flight connections down at once.
+                w.retire(timeout=2.0, abandon_in_flight=True)
             except Exception as exc:
                 self._log(f"worker close failed ({attr}): {exc!r}")
             setattr(self, attr, None)
@@ -1223,6 +1258,11 @@ class Daemon:
             # exactly the way the cold embedder used to.
             from refmatrix.reranker import rerank_enabled
             if not rerank_enabled():
+                return
+            if self._stop_began():
+                # bug-269: a stop abandoned the embed load above; do not start the
+                # second load into a stopping daemon.
+                self._log("reranker warmup skipped: the daemon is stopping")
                 return
             t1 = time.time()
             try:
@@ -6199,10 +6239,17 @@ def _op_embed(d: Daemon, args: dict) -> dict:
 
     Routes through bg_pool (CPU-heavy under the model). Honors
     cooperative shutdown via `d._shutdown_event`."""
-    try:
-        emb = d._embedder()
-    except ImportError as exc:
-        return {"ok": False, "error": f"dense extra not installed: {exc}"}
+    # Once the stop began, `_model_client` refuses to build a model client (bug-272), so
+    # no embedder is asked for: phase 2 of the locked op returns `cancelled` with the
+    # pending row count before it would touch one.
+    # (The op's own stop signal, as in phase 2: `d` may be any object carrying
+    # `_shutdown_event` and `_embedder`, not only a Daemon.)
+    emb = None
+    if not d._shutdown_event.is_set():
+        try:
+            emb = d._embedder()
+        except ImportError as exc:
+            return {"ok": False, "error": f"dense extra not installed: {exc}"}
     from refmatrix import embedder as embmod
 
     kinds = args.get("kinds") or ["code", "doc", "concept", "memory"]

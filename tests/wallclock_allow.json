@@ -1,0 +1,251 @@
+{
+ "note": "Allow list of the wall-clock census (tests/wallclock_census.py) and the budget-outcome census (tests/budget_outcome_census.py); task 29.4 R3, T0.3 + 29.4c, 2026-11-15. legacy: a bound that existed at the base (c4b44d0) and stays, with its class (A hang guard / B budget honoured); the set only shrinks. feature-bound: a deadline that IS the feature, shrunk through its knob. budget-outcome: a real-daemon outcome test with a reason.",
+ "entries": [
+  {
+   "key": "test_bug112_duckdb_reopen.py::test_stale_reader_mid_statement_is_interrupted_and_the_writer_proceeds::took < 10.0",
+   "kind": "legacy",
+   "class": "A",
+   "note": "the write open must not wait out a 50e9-row statement; the outcome (interrupted, values) is asserted too"
+  },
+  {
+   "key": "test_bug112_duckdb_reopen.py::test_stale_writer_mid_statement_is_interrupted_and_the_reopen_proceeds::took < 10.0",
+   "kind": "legacy",
+   "class": "A",
+   "note": "the reopen must not wait out the stale writer's statement"
+  },
+  {
+   "key": "test_bug115_liveness_under_load.py::test_call_does_not_resend_a_request_the_daemon_already_has::took < 0.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 0.3 s timeout with retries=2 gave up within ~one timeout (no resend; conns==1 is asserted)"
+  },
+  {
+   "key": "test_bug129_hub_pidfile.py::test_a_daemon_that_cannot_start_fails_fast_with_its_reason::_t.monotonic() - t0 < 15.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a dead launcher is not polled for the 30 s readiness window"
+  },
+  {
+   "key": "test_daemon_shutdown.py::test_drain_pool_returns_within_timeout_when_worker_hangs::elapsed < 1.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the drain gives up within its 0.4 s timeout"
+  },
+  {
+   "key": "test_daemon_shutdown_drain.py::test_a_silent_client_does_not_pin_a_dispatcher_past_shutdown::elapsed < 3.0",
+   "kind": "legacy",
+   "class": "A",
+   "note": "a handler lets go of a silent socket on shutdown instead of its 30 s read"
+  },
+  {
+   "key": "test_learn_broker_bounded.py::test_the_learn_broker_is_bounded_well_under_the_old_wall::elapsed < 5.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the learn broker against a deaf daemon is bounded by its budget"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_daemon_status_takes_a_probe_budget::_time.monotonic() - t0 < 1.2",
+   "kind": "legacy",
+   "class": "B",
+   "note": "daemon_status(retries=0) costs one probe"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_detach_is_bounded_when_the_daemon_answers_ping_but_holds_the_store::elapsed < 4.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the 1 s detach budget on a held store"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget::abs(float(m.group(1)) - elapsed) < 0.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "one probe + the 1 s detach budget; the reported wait matches"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget::elapsed < 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "one probe + the 1 s detach budget; the reported wait matches"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_detach_path_has_one_deadline_and_reports_the_wait::elapsed < 2.5",
+   "kind": "legacy",
+   "class": "B",
+   "note": "probe + partition_list + ingest_gmd_start under one 1 s budget; the reported wait matches"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_detach_path_has_one_deadline_and_reports_the_wait::m and abs(float(m.group(1)) - elapsed) < 0.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "probe + partition_list + ingest_gmd_start under one 1 s budget; the reported wait matches"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_recall_hook_modes_are_bounded_and_degrade_to_empty::elapsed < 1.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the recall hook's 1 s budget + 0.6"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_stop_promote_bounds_subject_filing_and_is_loud::_time.monotonic() - t0 < 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "--timeout 0.5 across the promote's calls (timeouts and retries also asserted)"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_stop_promote_never_exceeds_its_timeout_across_calls::elapsed < 1.2",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the 0.5 s promote budget is one deadline across calls"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_stop_promote_says_busy_not_absent_on_a_silent_daemon::elapsed < 2.5",
+   "kind": "legacy",
+   "class": "B",
+   "note": "--timeout 0.5 on a silent daemon"
+  },
+  {
+   "key": "test_plan2_remedy.py::test_verb_recall_timeout_is_a_deadline_across_calls::_time.monotonic() - t0 < 1.5",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the recall verb's 0.5 s timeout is one deadline"
+  },
+  {
+   "key": "test_plan2_remedy_r6.py::test_global_leg_on_a_held_global_store_is_bounded_and_named::elapsed < 1.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the 1 s budget with a held global store"
+  },
+  {
+   "key": "test_plan2_remedy_r6.py::test_precompact_recall_is_bounded_and_hook_env_is_hook_mode::elapsed < 1.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the PreCompact recall's 1 s budget in hook mode"
+  },
+  {
+   "key": "test_plan2_remedy_r6.py::test_recall_hook_wall_is_within_budget_on_a_held_writer::elapsed < 1.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the recall hook's 1 s budget on a held writer"
+  },
+  {
+   "key": "test_plan2_remedy_r6.py::test_replica_path_is_bounded_when_the_shared_worker_stalls::elapsed < 2.6",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the 2 s budget with a stalled shared worker"
+  },
+  {
+   "key": "test_plan2_remedy_r6.py::test_rerank_is_skipped_and_said_when_the_budget_is_short::time.monotonic() - t0 < 1.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "rerank skipped with 0.8 s left (rr.calls == 0 also asserted)"
+  },
+  {
+   "key": "test_plan2_remedy_r7.py::test_verb_memory_partition_falls_back_to_the_daemon_without_a_replica::time.monotonic() - t0 < 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the 1 s partition budget without a replica"
+  },
+  {
+   "key": "test_plan3_remedy_r6.py::test_federated_where_names_pool_stragglers::elapsed < 4.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the 0.5 s where fan-out deadline does not wait a 5 s straggler"
+  },
+  {
+   "key": "test_plan3_remedy_r6.py::test_memory_get_degree_on_a_held_writer_degrades_by_name::elapsed < 36.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the read budget on a held writer (was 10.1 s + a NameError)"
+  },
+  {
+   "key": "test_plan3_remedy_r6.py::test_promote_on_a_held_writer_says_busy_within_the_budget::elapsed < 36.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "promote within the read budget (was 180.2 s)"
+  },
+  {
+   "key": "test_plan3_remedy_r6.py::test_promote_verb_read_is_single_attempt_under_the_action_budget::elapsed < 20.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "one attempt under the action budget (was 90.2 s)"
+  },
+  {
+   "key": "test_plan3_remedy_r7.py::test_promote_is_bounded_on_the_global_write_too::elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "MEMORY_READ_BUDGET_S + 3 on the global write"
+  },
+  {
+   "key": "test_plan3_remedy_r7.py::test_promote_subtracts_its_partition_probe_from_the_budget::elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the partition probe is subtracted from MEMORY_READ_BUDGET_S"
+  },
+  {
+   "key": "test_plan4_remedy.py::test_adoption_never_kills_a_busy_predecessor::time.monotonic() - t0 < 8.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "adoption grace 1 s + stop_daemon's 2 s SIGTERM wait"
+  },
+  {
+   "key": "test_plan4_remedy.py::test_graceful_stop_signals_first_then_waits_the_grace::ok is False and 0.9 < elapsed < 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 1 s grace on a stopped daemon is waited, then given up (lower half 0.9 is the wait)"
+  },
+  {
+   "key": "test_plan4_remedy_r2.py::test_foreground_start_refuses_a_busy_daemon_without_reaping_it::time.monotonic() - t0 < 4.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "the busy refusal costs its probe budget"
+  },
+  {
+   "key": "test_plan4_remedy_r3.py::test_stop_daemon_keeps_the_ping_discovered_pid_after_a_failed_grace::time.monotonic() - t0 < 10.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 1 s stop grace on a pid that ignores SIGTERM"
+  },
+  {
+   "key": "test_read_path_partition_and_budget.py::test_a_busy_worker_costs_at_most_the_budget::time.time() - t0 < 1.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 0.5 s rerank budget against a 3 s busy worker"
+  },
+  {
+   "key": "test_rerank_budget_real_clients.py::test_a_busy_private_worker_is_skipped_not_waited_on::wall < 1.2",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 0.8 s budget against a busy private worker"
+  },
+  {
+   "key": "test_rerank_budget_real_clients.py::test_the_daemons_own_unbudgeted_rerank_does_not_hold_a_budgeted_view::wall < 1.2",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 0.8 s view does not wait behind the client lock"
+  },
+  {
+   "key": "test_rerank_budget_real_clients.py::test_the_header_refill_has_its_own_bound::wall < 1.5",
+   "kind": "legacy",
+   "class": "B",
+   "note": "REFILL_TIMEOUT_S (0.3) bounds a wedged header refill"
+  },
+  {
+   "key": "test_rerank_budget_real_clients.py::test_the_socket_gets_what_is_left_after_the_header_not_the_whole_budget::wall < 1.2",
+   "kind": "legacy",
+   "class": "B",
+   "note": "a 0.5 s header on a 1.0 s budget leaves 0.5 s"
+  },
+  {
+   "key": "test_subproc_workers.py::test_timeout_kills_the_worker::time.time() - t0 < 20",
+   "kind": "legacy",
+   "class": "A",
+   "note": "a 1 s worker timeout does not hang the caller (20 s guard)"
+  },
+  {
+   "key": "test_task3_5_r8_remedy.py::test_promote_says_not_running_when_the_global_daemon_cannot_start::elapsed < verbs.MEMORY_READ_BUDGET_S + 3.0",
+   "kind": "legacy",
+   "class": "B",
+   "note": "MEMORY_READ_BUDGET_S + 3 when the global daemon cannot start"
+  }
+ ]
+}

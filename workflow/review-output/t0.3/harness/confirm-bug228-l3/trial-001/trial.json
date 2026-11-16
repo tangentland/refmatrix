@@ -1,0 +1,75 @@
+{
+ "level": 3,
+ "targets": [
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row"
+ ],
+ "load": [
+  [
+   "tests/test_memory_bridge.py",
+   "tests/test_bug212_r4_red.py",
+   "tests/test_plan3_remedy_r4.py",
+   "tests/test_bug216_hidden_no_pollution.py",
+   "tests/test_task3_6_r9_remedy.py",
+   "tests/test_plan3_remedy_r6.py",
+   "tests/test_bug225_handoff_trunk.py",
+   "tests/test_memory_compile_remedy_r1.py"
+  ],
+  [
+   "tests/test_task25_1_recall_budget.py",
+   "tests/test_task21_1_used_events.py",
+   "tests/test_memory_compile_scope.py",
+   "tests/test_bridge_move_safety_r1.py",
+   "tests/test_bug212_r6_red.py",
+   "tests/test_rerank_budget_real_clients.py",
+   "tests/test_plan3_remedy_r3.py",
+   "tests/test_plan4_remedy.py",
+   "tests/test_bug212_r1_remedy.py"
+  ],
+  [
+   "tests/test_bridge_move_safety.py",
+   "tests/test_plan3_remedy_r5.py",
+   "tests/test_savestate_mtype.py",
+   "tests/test_modelsrv.py",
+   "tests/test_sync_fails_loudly_r2.py",
+   "tests/test_task21_1_emitters.py",
+   "tests/test_plan4_remedy_r3.py",
+   "tests/test_catalog_measure.py"
+  ]
+ ],
+ "load_mode": "until-target",
+ "warmup_s": 20.0,
+ "cap_s": 5942.52,
+ "T_s": 1980.8400000000001,
+ "wall_s": 41.64068741700612,
+ "wall_clock_s": 41.641117095947266,
+ "cap_hit": false,
+ "leaked_after_kill": 0,
+ "leaked": [],
+ "target_exit_s": 28.57688966707792,
+ "target_rc": 0,
+ "load_rcs": [
+  2,
+  2,
+  2
+ ],
+ "status": "counted",
+ "outcomes": {
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "outcome": "pass",
+   "call_s": 7.883615083992481
+  }
+ },
+ "loadavg_start": [
+  4.16943359375,
+  5.0068359375,
+  5.33642578125
+ ],
+ "loadavg_end": [
+  5.44677734375,
+  5.2119140625,
+  5.39404296875
+ ],
+ "live_socket_touches_added": 0,
+ "sha": "b9d15faa83ea6aef8c2a15612f7581091a6dc958",
+ "lane_request_to_release_s": 43.822590827941895
+}

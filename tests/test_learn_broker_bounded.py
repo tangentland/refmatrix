@@ -136,11 +136,12 @@ def test_the_default_path_queues_instead_of_calling_the_daemon(deaf_daemon, monk
         raise AssertionError("the default learn path called the daemon")
 
     monkeypatch.setattr(dm, "call", _boom)
-    t0 = time.monotonic()
     ok = cli_mod._broker_learn_from_grep(
         deaf_daemon, "somepattern", [{"file": "a.py", "line": 1}])
-    elapsed = time.monotonic() - t0
 
+    # 29.4 R3 class D (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.5` measured that one append is
+    # fast, a latency number and not a suite outcome. It is deleted; what it stood for is the
+    # mechanism, asserted here: the daemon is never called (`_boom`) and exactly one line is
+    # queued.
     assert ok is True
-    assert elapsed < 0.5, f"queuing took {elapsed:.2f}s; it is one append"
     assert lq.pending_lines(deaf_daemon) == 1

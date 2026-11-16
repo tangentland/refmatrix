@@ -1,0 +1,1 @@
+{"ts": "2026-11-15T10:52:54", "argv": ["daemon", "start", "--no-watch"], "cwd": "/Volumes/littlebig/refmatrix-t03-green", "exit_code": 0, "latency_ms": 229, "outcome": "ok", "error": null, "pid": 95382, "source": "agent", "out_bytes": 74, "out_tokens_est": 18}

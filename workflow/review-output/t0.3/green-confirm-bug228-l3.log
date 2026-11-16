@@ -1,0 +1,39 @@
+{
+ "status": "counted",
+ "wall_s": 41.64068741700612,
+ "outcomes": {
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "outcome": "pass",
+   "call_s": 7.883615083992481
+  }
+ }
+}
+trial 1: {"status": "counted", "wall_s": 41.64068741700612, "wall_clock_s": 41.641117095947266, "cap_hit": false, "loadavg_start": [4.16943359375, 5.0068359375, 5.33642578125], "live_socket_touches_added": 0, "leaked_after_kill": 0, "outcomes": {"tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": "pass"}}
+{
+ "level": 3,
+ "mode": "fix",
+ "targets": [
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row"
+ ],
+ "voids": 0,
+ "noisy": false,
+ "trials_run": 1,
+ "rows": {
+  "tests/test_task21_1_recall_skip.py::test_ac2b_live_daemon_recall_writes_one_ok_recall_row": {
+   "sequence": [
+    "pass"
+   ],
+   "band": {
+    "held": null,
+    "passes": 1
+   },
+   "e_lines": [],
+   "walls_s": [
+    41.6
+   ],
+   "wall_clocks_s": [
+    41.6
+   ]
+  }
+ }
+}

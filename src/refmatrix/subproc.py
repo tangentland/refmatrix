@@ -348,17 +348,53 @@ class WorkerClient:
                         pass
                 self._log("closed")
 
-    def retire(self, *, timeout: float = 5.0) -> None:
+    def retire(self, *, timeout: float = 5.0, abandon_in_flight: bool = False) -> None:
         """Close for good: no later call or warmup respawns this client.
 
         The daemon swaps a private client for the hub's (adoption) and drops it
         at shutdown, but a budgeted op that captured it before the swap could
         still `warm_async()` it and spawn a model process nothing tracked
         (ch-bsd r12 #s-1: one live orphan per such op). Set the flag under the
-        lock so a call or warm already holding it finishes first."""
-        with self._lock:
-            self._retired = True
-            self.close(timeout=timeout)
+        lock so a call or warm already holding it finishes first.
+
+        `abandon_in_flight=True` is the daemon's SHUTDOWN form (bug-269, ruling
+        L161, 2026-11-15). The startup warm-up holds this lock for the whole cold
+        model load, so a stop sent during warm-up waited out both loads before the
+        daemon could exit: measured 5.0-5.5 s against 1.9 s once warm (quiet), and
+        past the 10 s stop grace when the loads were slow (T0.3 base sweep). Here
+        the lock is waited for at most `timeout`. Past it the holder is abandoned:
+        the client is retired at once and its model process killed, so the holder's
+        call fails with `WorkerError` ("retired ... not respawning") instead of
+        holding the stop. The default keeps the old wait, because adoption must let
+        an in-flight op (an ingest's embedding batch) finish."""
+        if not abandon_in_flight:
+            with self._lock:
+                self._retired = True
+                self.close(timeout=timeout)
+            return
+        if self._lock.acquire(timeout=max(0.0, float(timeout))):
+            try:
+                self._retired = True
+                self.close(timeout=timeout)
+            finally:
+                self._lock.release()
+            return
+        # Flag first: the holder's call sees EOF, closes, and must not respawn.
+        self._retired = True
+        p = self._proc
+        pid = getattr(p, "pid", None)
+        if p is None or p.poll() is not None:
+            self._log(f"retired while a call held the lock past {timeout:.1f}s; "
+                      f"no live process to stop (pid={pid})")
+            return
+        self._log(f"retire: the lock is still held after {timeout:.1f}s (a call or "
+                  f"the warm-up's load in flight); abandoning it, killing pid={pid}")
+        p.kill()
+        try:
+            p.wait(timeout=max(float(timeout), 0.5))
+        except subprocess.TimeoutExpired:
+            self._log(f"retire: pid={pid} still alive {max(float(timeout), 0.5):.1f}s "
+                      f"after SIGKILL")
 
     @property
     def warming(self) -> bool:

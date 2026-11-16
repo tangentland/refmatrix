@@ -1,0 +1,5 @@
+...............
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Volumes/littlebig/refmatrix-t03/src/refmatrix/subproc.py:393: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+15 passed in 80.48s (0:01:20)

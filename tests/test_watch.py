@@ -10,6 +10,12 @@ import pytest
 from refmatrix.store import Store
 from refmatrix.watch import Debouncer, is_relevant, run_watcher
 
+# bug-091 (T0.3 R3.3, 2026-11-15): the watcher test waited ONE 3 s `wait` for a real FSEvents
+# callback and failed under suite load (`watcher did not fire` / `wait(timeout=3.0)`, twice). It
+# measures that the event is delivered, not how fast, so it polls until this deadline. Read at
+# call time (never bound as a default) so a forced-failure run can shorten it.
+WATCHER_DELIVERY_DEADLINE_S = 30.0
+
 
 def test_is_relevant_filters_unsupported_and_ignored(tmp_path):
     assert is_relevant(Path("a.py")) is True
@@ -86,13 +92,29 @@ def test_run_watcher_picks_up_new_file(tmp_path):
         daemon=True,
     )
     t.start()
-    # give the observer a moment to subscribe
-    time.sleep(0.2)
-    (proj / "a.py").write_text("x = 1\n")
-
-    assert seen_event.wait(timeout=3.0), "watcher did not fire"
-    stop.set()
-    t.join(timeout=3.0)
+    # A write made before the observer subscribes is never delivered, and no deadline fixes
+    # that (ruling L141). There is no subscription signal to wait on, so the file is re-written
+    # while polling: whichever write lands after the subscription is the one delivered.
+    deadline_s = WATCHER_DELIVERY_DEADLINE_S
+    t0 = time.monotonic()
+    writes = 0
+    try:
+        while not seen_event.is_set():
+            elapsed = time.monotonic() - t0
+            if elapsed >= deadline_s:
+                break
+            (proj / "a.py").write_text(f"x = {writes + 1}\n")
+            writes += 1
+            seen_event.wait(timeout=min(1.0, deadline_s - elapsed))
+        elapsed = time.monotonic() - t0
+        assert seen_event.is_set(), (
+            f"watcher did not fire: elapsed {elapsed:.1f} s against the delivery deadline "
+            f"{deadline_s:g} s after {writes} write(s); watcher thread alive={t.is_alive()} "
+            f"(alive and silent: the observer never delivered; not alive: run_watcher exited), "
+            f"batches seen={len(seen)}")
+    finally:
+        stop.set()
+        t.join(timeout=3.0)
     assert not t.is_alive()
 
     s.close()

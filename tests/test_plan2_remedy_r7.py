@@ -36,6 +36,7 @@ class _FakeModelSock:
         self._stop = False
         self.ops: list[str] = []
         self.frames: list[dict] = []
+        self.eofs: list[threading.Event] = []   # one per connection: the client closed it
         threading.Thread(target=self._accept, daemon=True).start()
 
     def _accept(self):
@@ -47,6 +48,8 @@ class _FakeModelSock:
             threading.Thread(target=self._serve, args=(c,), daemon=True).start()
 
     def _serve(self, c):
+        eof = threading.Event()
+        self.eofs.append(eof)
         rw = c.makefile("rwb")
         try:
             while True:
@@ -60,7 +63,9 @@ class _FakeModelSock:
                     send_frame(rw, {"ok": True, "scores": [1.0] * len(req.get("docs") or [])})
                 else:
                     send_frame(rw, {"ok": False, "error": f"unknown op {op}"})
-        except (EOFError, OSError):
+        except EOFError:
+            eof.set()                       # the client closed its end of this connection
+        except OSError:
             pass
         finally:
             try:
@@ -87,14 +92,39 @@ def fake_models(monkeypatch):
 
 
 def test_a_timed_probe_does_not_shorten_the_next_call(fake_models):
+    """#b-1, through the socket only: after a 1 s `info` probe, a `rerank` with no timeout of its
+    own runs on the client's 5 s and succeeds although the fake worker takes 1.5 s to answer it.
+    A rerank still bounded by the probe's 1 s would raise TimeoutError. (Since bug-278, L180,
+    every call has its own connection, so nothing is read off a socket the client keeps.)"""
     c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
-    assert c.info(timeout=1.0)["model"] == "fake"
-    t0 = time.monotonic()
-    hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})   # timeout=None → the client's 5 s
-    assert hdr["scores"] == [1.0, 1.0]
-    assert time.monotonic() - t0 >= 1.4
-    assert c._sock.gettimeout() == 5.0
-    c.close()
+    try:
+        assert c.info(timeout=1.0)["model"] == "fake"
+        t0 = time.monotonic()
+        hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})  # timeout=None: the client's 5 s
+        assert hdr["scores"] == [1.0, 1.0]
+        assert time.monotonic() - t0 >= 1.4      # it really outlived the probe's 1 s
+        assert fake_models.ops == ["info", "rerank"]
+    finally:
+        c.close()
+
+
+def test_each_call_closes_its_own_connection_before_any_close(fake_models):
+    """bug-278 (L180, one connection per call) and ruling L181: the daemon's long-lived shared
+    clients are never forked, so a call that left its socket open would leak one fd (and a hub
+    handler thread) per call, for the life of the daemon (the bug-279 class). On a plain client,
+    each call's connection reaches EOF at the server once the call returns, before any
+    `close()`. The wait is a hang guard."""
+    c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+    try:
+        c.call("info", timeout=2.0)
+        c.call("rerank", {"query": "q", "docs": ["a"]}, timeout=5.0)
+        assert len(fake_models.eofs) == 2, len(fake_models.eofs)
+        open_after = [i for i, e in enumerate(fake_models.eofs) if not e.wait(10.0)]
+        assert open_after == [], (
+            f"a call left its connection open after it returned (no close() yet): "
+            f"{len(open_after)} of 2 never reached EOF at the server")
+    finally:
+        c.close()
 
 
 def test_shared_reranker_scores_after_a_short_probe(fake_models, monkeypatch):
@@ -175,9 +205,12 @@ def test_cli_partition_probe_reads_the_replica_under_a_held_writer(held_with_rep
         reads.append(a)
         return real(*a, **kw)
     monkeypatch.setattr(verbs, "memory_partition", spy)
-    t0 = time.monotonic()
     assert cli_mod._memory_partition_default(timeout=1.0) == discovery.store_name(d.root)
-    assert time.monotonic() - t0 < 0.8
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.8` ("the budget is not spent") is
+    # an ordering check now. The writer the test holds is held for the whole call, every op but
+    # ping stalls on it, and `dm.call` raises, so the answer above came from the replica while
+    # the writer was held: the daemon was asked nothing that waits on the lock.
+    assert [op for op in d.ops if op != "ping"] == [], d.ops
     assert cli_mod._memory_partition_default(timeout=1.0) == discovery.store_name(d.root)
     assert len(reads) == 2, "the second command did not resolve again -- something cached it"
     assert not hasattr(cli_mod, "_legacy_memory_partition_exists"), (
@@ -190,9 +223,10 @@ def test_verb_memory_partition_reads_the_replica_under_a_held_writer(held_with_r
     from refmatrix import daemon as dm, discovery
     d = held_with_replica
     monkeypatch.setattr(dm, "call", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("asked the daemon")))
-    t0 = time.monotonic()
     assert verbs.memory_partition(d.root, timeout=1.0) == discovery.store_name(d.root)
-    assert time.monotonic() - t0 < 0.8
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.8` is an ordering check now: the
+    # answer came while the test still held the writer, and no lock-bound op reached the daemon.
+    assert [op for op in d.ops if op != "ping"] == [], d.ops
 
 
 def test_verb_memory_partition_falls_back_to_the_daemon_without_a_replica():
@@ -215,14 +249,15 @@ def test_session_start_hook_answers_from_the_replica_under_a_held_writer(held_wi
     from click.testing import CliRunner
     d = held_with_replica
     monkeypatch.setattr(cli_mod, "_root", lambda: d.root)
-    t0 = time.monotonic()
     r = CliRunner().invoke(cli_mod.main, ["memory", "recall", "--session-start", "--k", "10",
                                          "--scope", "project", "--json", "--timeout", "5"])
-    elapsed = time.monotonic() - t0
     assert r.exit_code == 0, r.output
     rows = json.loads(r.stdout)
+    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 2.5` on a 5 s budget is replaced by
+    # the outcome it stood for. A probe that ate the budget leaves the recent path no time and
+    # the hook prints [] with a busy word; ROWS, read while the test still holds the writer,
+    # mean the probe did not wait on the lock.
     assert [m["name"] for m in rows] == ["held_row"], (rows, r.stderr)
-    assert elapsed < 2.5, f"{elapsed:.2f}s"
 
 
 def test_cached_replica_never_creates_a_catalog(tmp_path):

@@ -1,0 +1,5 @@
+.....
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/Volumes/littlebig/refmatrix-t03/src/refmatrix/daemon.py:7199: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+5 passed in 58.79s

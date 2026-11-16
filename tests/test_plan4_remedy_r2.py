@@ -230,14 +230,35 @@ def test_heartbeat_advances_when_the_pool_completes_late(tmp_path, monkeypatch):
 
 # ---- #b-3 stop_daemon signals first --------------------------------------------------
 
-def test_stop_daemon_signals_first_when_ping_fails():
+def test_stop_daemon_signals_first_when_ping_fails(monkeypatch):
+    """29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 1.5` on a 5 s grace stood for
+    "the signal goes first, the wait comes after". That order is asserted directly: the SIGTERM
+    is recorded before the grace's first wait (a sleep of its poll loop). Both recorders call
+    the real function through."""
+    import signal as _signal
+
+    events: list = []
+    real_kill, real_sleep = dm.os.kill, dm.time.sleep
     d = _SilentDaemon()
+
+    def kill(pid, sig):
+        if sig == _signal.SIGTERM and pid == d.pid:
+            events.append("SIGTERM")
+        return real_kill(pid, sig)
+
+    def sleep(s):
+        events.append("wait")
+        return real_sleep(s)
+
     try:
         report: dict = {}
-        t0 = time.monotonic()
-        ok = dm.stop_daemon(d.root, timeout=5.0, report=report)
-        elapsed = time.monotonic() - t0
-        assert ok is True and elapsed < 1.5, (elapsed, report)
+        with monkeypatch.context() as mp:
+            mp.setattr(dm.os, "kill", kill)
+            mp.setattr(dm.time, "sleep", sleep)
+            ok = dm.stop_daemon(d.root, timeout=5.0, report=report)
+        assert ok is True, report
+        assert "SIGTERM" in events and "wait" not in events[:events.index("SIGTERM")], (
+            f"the grace waited before the signal was sent: {events[:6]}", report)
         assert d.proc.poll() is not None, "SIGTERM was not delivered at t=0"
         assert report.get("signal") == "SIGTERM" and "not answering" in report.get("stop_op", ""), report
     finally:

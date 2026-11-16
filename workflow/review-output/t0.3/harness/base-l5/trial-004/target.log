@@ -1,0 +1,36 @@
+F..F                                                                     [100%]
+=================================== FAILURES ===================================
+_________________ test_rewrite_bytes_is_the_median_of_the_runs _________________
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2053/test_rewrite_bytes_is_the_medi0')
+scratch = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2053/test_rewrite_bytes_is_the_medi0/scratch')
+
+    def test_rewrite_bytes_is_the_median_of_the_runs(tmp_path, scratch):
+        """ch-bsd r1 #s-5: r1 kept the LAST run's size; sizes vary ~1.3 % run to run."""
+        root = _root(tmp_path, "m", rows=1_000)
+        rows, _, code = mc.run([root], scratch, tmp_path / "out" / "rep",
+                               bytes_hook=lambda ix, b: b + (0, 100, 300)[ix])
+        (row,) = rows
+>       base = row["rewrite_bytes_all"][0]
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'rewrite_bytes_all'
+
+tests/test_catalog_measure.py:329: KeyError
+----------------------------- Captured stdout call -----------------------------
+measured 0/1 stores; failed=1; verdict: INCOMPLETE
+_____________ test_graceful_stop_on_a_live_daemon_returns_quickly ______________
+
+    def test_graceful_stop_on_a_live_daemon_returns_quickly():
+        base, root, pid = _spawn()
+        try:
+            t0 = time.monotonic()
+>           assert hub_mod.graceful_stop(root, grace=10.0) is True
+E           AssertionError: assert False is True
+E            +  where False = <function graceful_stop at 0x1049e5010>(PosixPath('/tmp/rmxp4-wrcib_z3/proj/.refmatrix'), grace=10.0)
+E            +    where <function graceful_stop at 0x1049e5010> = hub_mod.graceful_stop
+
+tests/test_plan4_remedy.py:128: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_catalog_measure.py::test_rewrite_bytes_is_the_median_of_the_runs
+FAILED tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+2 failed, 2 passed in 22.63s

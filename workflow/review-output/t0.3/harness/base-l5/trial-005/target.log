@@ -1,0 +1,17 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+_____________ test_graceful_stop_on_a_live_daemon_returns_quickly ______________
+
+    def test_graceful_stop_on_a_live_daemon_returns_quickly():
+        base, root, pid = _spawn()
+        try:
+            t0 = time.monotonic()
+>           assert hub_mod.graceful_stop(root, grace=10.0) is True
+E           AssertionError: assert False is True
+E            +  where False = <function graceful_stop at 0x107a41010>(PosixPath('/tmp/rmxp4-a43st5jv/proj/.refmatrix'), grace=10.0)
+E            +    where <function graceful_stop at 0x107a41010> = hub_mod.graceful_stop
+
+tests/test_plan4_remedy.py:128: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_plan4_remedy.py::test_graceful_stop_on_a_live_daemon_returns_quickly
+1 failed, 3 passed in 23.67s

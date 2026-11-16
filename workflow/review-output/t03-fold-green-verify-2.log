@@ -1,0 +1,273 @@
+# mini-lane slot=rmxtest1 sha=e615468573f11be4e3c6dbf100881fb0bf0e237c host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 15:08:37 load={ 1.22 2.03 2.87 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 22%]
+.............................F..............s........................... [ 25%]
+...........................................F............................ [ 28%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 56%]
+........................................................................ [ 59%]
+..............................F......................................... [ 62%]
+........................................................................ [ 65%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 82%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................................................ [ 93%]
+........................................................................ [ 96%]
+........................................................................ [ 99%]
+.....................                                                    [100%]SkipGate: 1 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_declared_python_floor.py::test_every_src_module_compiles_on_the_declared_floor: Skipped: no python3.10 on this machine — the declared floor cannot be checked here. This skip is the finding: install it, or raise requires-python to a version that is checked.
+
+=================================== FAILURES ===================================
+_____ test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub _____
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-37/test_close_workers_does_not_wa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e864f30>
+
+    def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_path, monkeypatch):
+        """bug-278 (ch-bsd t03 r1 B1). With the hub up, `_embed_worker` is a `SharedWorkerClient`;
+        its `close()` takes `_lock`, which `call()` holds through send/recv, so a stop waited for the
+        in-flight call's own timeout (SHARED_OP_TIMEOUT_S = 45 s per role in production). Here the
+        call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call may fail
+        (the client was abandoned) but not by its own TimeoutError, and an abandoned client must not
+        reconnect to the hub."""
+        from refmatrix import modelsrv
+        CALL_TIMEOUT_S = 20.0
+        short = tempfile.mkdtemp(prefix="sh", dir=os.environ.get("RMX_SANDBOX_ROOT") or None)
+        sock = os.path.join(short, "m.sock")
+        monkeypatch.setenv("RMX_MODEL_SOCK", sock)
+        hub = _MuteHub(sock)
+        d = _make_daemon(tmp_path)
+        c = modelsrv.SharedWorkerClient("embed", timeout=CALL_TIMEOUT_S)
+        d._embed_worker, d._rerank_worker = c, None
+        events: list = []
+    
+        def inflight():
+            try:
+                c.call("embed", {"texts": ["x"]}, timeout=CALL_TIMEOUT_S)
+                events.append(("call", "returned"))
+            except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+                events.append(("call", type(exc).__name__))
+    
+        th = threading.Thread(target=inflight, daemon=True)
+        th.start()
+        try:
+            assert hub.got_request.wait(_GUARD_S), "the in-flight call never reached the hub"
+            closer = threading.Thread(target=lambda: (d._close_workers(),
+                                                      events.append(("close", "returned"))),
+                                      daemon=True)
+            closer.start()
+            closer.join(_GUARD_S)
+            th.join(_GUARD_S)
+            assert not closer.is_alive() and not th.is_alive(), f"hang guard: {events}"
+            call_end = dict(events)["call"]
+>           assert call_end != "TimeoutError", (
+                f"bug-278: the stop waited out the in-flight shared call: it ended by its own "
+                f"TimeoutError ({CALL_TIMEOUT_S:.0f} s) and only then did _close_workers return; "
+                f"order {events}")
+E               AssertionError: bug-278: the stop waited out the in-flight shared call: it ended by its own TimeoutError (20 s) and only then did _close_workers return; order [('call', 'TimeoutError'), ('close', 'returned')]
+E               assert 'TimeoutError' != 'TimeoutError'
+
+tests/test_daemon_shutdown.py:270: AssertionError
+______________ test_two_concurrent_embed_ops_encode_each_row_once ______________
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-37/test_two_concurrent_embed_ops_0')
+
+    def test_two_concurrent_embed_ops_encode_each_row_once(tmp_path):
+        from refmatrix.daemon import _op_embed
+    
+        s = Store(tmp_path / ".refmatrix")
+        s.init()
+        for i in range(3):
+            s.add_memory(name=f"e{i}", content=BODY + str(i))
+        emb = _SlowEmb()
+        d = _D(s, emb)
+        outs: list[dict] = []
+        barrier = threading.Barrier(2)
+    
+        def run():
+            barrier.wait()
+            outs.append(_op_embed(d, {"kinds": ["memory"], "limit": 10}))
+    
+        ts = [threading.Thread(target=run) for _ in range(2)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        s.close()
+>       assert len(emb.encoded) == 3, f"encoded {len(emb.encoded)} texts for 3 rows: {outs}"
+E       AssertionError: encoded 0 texts for 3 rows: []
+E       assert 0 == 3
+E        +  where 0 = len([])
+E        +    where [] = <test_embed_phases_r10._SlowEmb object at 0x340a43620>.encoded
+
+tests/test_embed_phases_r10.py:91: AssertionError
+_ test_the_embed_op_encodes_off_the_lock_and_never_stamps_a_row_edited_meanwhile _
+
+tmp_path = PosixPath('/private/var/folders/nd/tnv78ybx59qddn44mv3bvdy40000gs/T/pytest-of-rmxtest1/pytest-37/test_the_embed_op_encodes_off_0')
+
+    def test_the_embed_op_encodes_off_the_lock_and_never_stamps_a_row_edited_meanwhile(tmp_path):
+        from refmatrix.daemon import _op_embed
+    
+        s = Store(tmp_path / ".refmatrix")
+        s.init()
+        ids = [s.add_memory(name=f"e{i}", content=BODY) for i in range(3)]
+        d = _D(s)
+        d._shutdown_event = threading.Event()
+        d._request_snapshot = lambda: None
+    
+        def edit_one():
+            # an edit lands while the model runs (the lock is free now)
+            s.add_memory(name="e1", content=BODY + " edited")
+    
+        pe = _ProbeEmb(d, on_embed=edit_one)
+        d._embedder = lambda: pe
+>       out = _op_embed(d, {"kinds": ["memory"], "limit": 10})
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rerank_warning_routes.py:309: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <test_rerank_warning_routes._D object at 0x340c36fd0>
+args = {'kinds': ['memory'], 'limit': 10}
+
+    def _op_embed(d: Daemon, args: dict) -> dict:
+        """Run a batch embedding pass. Walks `Store.pending_embeddings` for
+        the given kinds (or all if None), extracts text per kind, embeds in
+        a single sentence-transformers call, upserts vectors via Lance, and
+        stamps `entities.vectors_updated_at` for the touched rows.
+    
+        Args:
+            kinds: optional list of entity kinds to embed.
+                Default: ["code", "doc", "concept", "memory"].
+            limit: cap rows per call so the daemon stays responsive
+                (default 256). Caller iterates if more pending.
+            rebuild: if True, ignore the `vectors_updated_at` filter and
+                re-embed every row of the selected kinds.
+    
+        Routes through bg_pool (CPU-heavy under the model). Honors
+        cooperative shutdown via `d._shutdown_event`."""
+        # Once the stop began, `_model_client` refuses to build a model client (bug-272), so
+        # no embedder is asked for: phase 2 of the locked op returns `cancelled` with the
+        # pending row count before it would touch one.
+        emb = None
+>       if not d._stop_began():
+               ^^^^^^^^^^^^^
+E       AttributeError: '_D' object has no attribute '_stop_began'
+
+src/refmatrix/daemon.py:6236: AttributeError
+=============================== warnings summary ===============================
+tests/test_graph_landing.py:9
+  /Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/tests/test_graph_landing.py:9: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+  test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=44529) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_embed_phases_r10.py::test_two_concurrent_embed_ops_encode_each_row_once
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-63 (run)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/tests/test_embed_phases_r10.py", line 83, in run
+      outs.append(_op_embed(d, {"kinds": ["memory"], "limit": 10}))
+                  ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/src/refmatrix/daemon.py", line 6236, in _op_embed
+      if not d._stop_began():
+             ^^^^^^^^^^^^^
+  AttributeError: '_D' object has no attribute '_stop_began'
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_embed_phases_r10.py::test_two_concurrent_embed_ops_encode_each_row_once
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-64 (run)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/tests/test_embed_phases_r10.py", line 83, in run
+      outs.append(_op_embed(d, {"kinds": ["memory"], "limit": 10}))
+                  ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/src/refmatrix/daemon.py", line 6236, in _op_embed
+      if not d._stop_began():
+             ^^^^^^^^^^^^^
+  AttributeError: '_D' object has no attribute '_stop_began'
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-357 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/tests/test_rerank_budget_real_clients.py", line 442, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-fold-green-verify-2.7nsp/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_daemon_shutdown.py::test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub
+FAILED tests/test_embed_phases_r10.py::test_two_concurrent_embed_ops_encode_each_row_once
+FAILED tests/test_rerank_warning_routes.py::test_the_embed_op_encodes_off_the_lock_and_never_stamps_a_row_edited_meanwhile
+3 failed, 2537 passed, 1 skipped, 7 warnings in 2756.90s (0:45:56)
+exit 1
