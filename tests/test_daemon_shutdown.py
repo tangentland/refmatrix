@@ -234,9 +234,9 @@ def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_pat
     """bug-278 (ch-bsd t03 r1 B1). With the hub up, `_embed_worker` is a `SharedWorkerClient`;
     its `close()` takes `_lock`, which `call()` holds through send/recv, so a stop waited for the
     in-flight call's own timeout (SHARED_OP_TIMEOUT_S = 45 s per role in production). Here the
-    call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call may fail
-    (the client was abandoned) but not by its own TimeoutError, and an abandoned client must not
-    reconnect to the hub."""
+    call's timeout is `CALL_TIMEOUT_S`; the stop must not be what ends it: the call ends as
+    abandoned (`WorkerError`), not by its own TimeoutError, and the retired client refuses any
+    later call without connecting to the hub (ruling L181, ch-bsd t03 confirm A2)."""
     from refmatrix import modelsrv
     CALL_TIMEOUT_S = 20.0
     short = tempfile.mkdtemp(prefix="sh", dir=os.environ.get("RMX_SANDBOX_ROOT") or None)
@@ -267,10 +267,24 @@ def test_close_workers_does_not_wait_on_a_shared_call_held_by_a_mute_hub(tmp_pat
         th.join(_GUARD_S)
         assert not closer.is_alive() and not th.is_alive(), f"hang guard: {events}"
         call_end = dict(events)["call"]
-        assert call_end != "TimeoutError", (
-            f"bug-278: the stop waited out the in-flight shared call: it ended by its own "
-            f"TimeoutError ({CALL_TIMEOUT_S:.0f} s) and only then did _close_workers return; "
-            f"order {events}")
+        # (b) is observed before anything is asserted, so a failure of (a) still shows it. A
+        # retired client refuses without connecting; one that does connect meets the mute hub
+        # and times out after 1 s (never a hang).
+        t_after = time.monotonic()
+        try:
+            c.call("embed", {"texts": ["y"]}, timeout=1.0)
+            after = "returned"
+        except Exception as exc:  # noqa: BLE001 — the outcome IS the assertion
+            after = f"{type(exc).__name__}: {exc}"
+        after_s = time.monotonic() - t_after
+        after_line = f"a call after the stop: {after} ({after_s:.1f} s); hub connections {len(hub.conns)}"
+        # (a) the abandoned branch, not the call's own timeout (bug-278) and not a bare EOF
+        assert call_end == "WorkerError", (
+            f"bug-278: the in-flight shared call did not end as abandoned (WorkerError): it "
+            f"ended by {call_end}; order {events}; {after_line}")
+        # (b) retired: no later call connects (ch-bsd t03 confirm A2)
+        assert after.startswith("WorkerError") and "not connecting" in after, (
+            f"the stopped shared client is not retired: {after_line}")
         assert len(hub.conns) == 1, (
             f"the abandoned shared client reconnected to the hub ({len(hub.conns)} connections)")
         assert d._embed_worker is None

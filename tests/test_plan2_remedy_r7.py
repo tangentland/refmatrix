@@ -36,6 +36,7 @@ class _FakeModelSock:
         self._stop = False
         self.ops: list[str] = []
         self.frames: list[dict] = []
+        self.eofs: list[threading.Event] = []   # one per connection: the client closed it
         threading.Thread(target=self._accept, daemon=True).start()
 
     def _accept(self):
@@ -47,6 +48,8 @@ class _FakeModelSock:
             threading.Thread(target=self._serve, args=(c,), daemon=True).start()
 
     def _serve(self, c):
+        eof = threading.Event()
+        self.eofs.append(eof)
         rw = c.makefile("rwb")
         try:
             while True:
@@ -60,7 +63,9 @@ class _FakeModelSock:
                     send_frame(rw, {"ok": True, "scores": [1.0] * len(req.get("docs") or [])})
                 else:
                     send_frame(rw, {"ok": False, "error": f"unknown op {op}"})
-        except (EOFError, OSError):
+        except EOFError:
+            eof.set()                       # the client closed its end of this connection
+        except OSError:
             pass
         finally:
             try:
@@ -99,6 +104,25 @@ def test_a_timed_probe_does_not_shorten_the_next_call(fake_models):
         assert hdr["scores"] == [1.0, 1.0]
         assert time.monotonic() - t0 >= 1.4      # it really outlived the probe's 1 s
         assert fake_models.ops == ["info", "rerank"]
+    finally:
+        c.close()
+
+
+def test_each_call_closes_its_own_connection_before_any_close(fake_models):
+    """bug-278 (L180, one connection per call) and ruling L181: the daemon's long-lived shared
+    clients are never forked, so a call that left its socket open would leak one fd (and a hub
+    handler thread) per call, for the life of the daemon (the bug-279 class). On a plain client,
+    each call's connection reaches EOF at the server once the call returns, before any
+    `close()`. The wait is a hang guard."""
+    c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+    try:
+        c.call("info", timeout=2.0)
+        c.call("rerank", {"query": "q", "docs": ["a"]}, timeout=5.0)
+        assert len(fake_models.eofs) == 2, len(fake_models.eofs)
+        open_after = [i for i, e in enumerate(fake_models.eofs) if not e.wait(10.0)]
+        assert open_after == [], (
+            f"a call left its connection open after it returned (no close() yet): "
+            f"{len(open_after)} of 2 never reached EOF at the server")
     finally:
         c.close()
 
