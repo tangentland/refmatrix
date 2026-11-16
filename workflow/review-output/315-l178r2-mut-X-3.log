@@ -1,0 +1,42 @@
+# mini-lane slot=rmxtest1 sha=267ed3aef32474b66d36367506372d928c6058fa host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:05 load={ 1.40 1.31 1.44 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-X-3.MxjS/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_________ test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept _________
+
+store = {'base': PosixPath('/private/tmp/cap.29x4kyhm'), 'proj': PosixPath('/private/tmp/cap.29x4kyhm/proj'), 'root': PosixPath('/private/tmp/cap.29x4kyhm/proj/.refmatrix')}
+
+    def test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept(store):
+        """AC-0.9 (L178 M2, X-3; bsd-315 r1 P4 as a test): a capture dir at 0o555 holding a 2020
+        day file. The pruner cannot remove it: the call still exits 0 with its payload, the
+        failure is one `prune_failed` line in errors.jsonl (naming PermissionError), the old file
+        stays, and today's record is appended (today's file and errors.jsonl exist and are
+        writable; only the directory is not)."""
+        _scan(store, "--max-tokens", "100000")              # makes the dir, .gitignore, today's file
+        d = store["root"] / CAP_DIR
+        old = d / "capture-20200101.jsonl"
+        old.write_text("{}\n", encoding="utf-8")
+        (d / "errors.jsonl").write_text("", encoding="utf-8")
+        control = _scan_bytes(store, "--max-tokens", "100000", "--no-composite",
+                              RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        os.chmod(d, 0o555)
+        try:
+            r = _scan_bytes(store, "--max-tokens", "100000", "--no-composite")
+        finally:
+            os.chmod(d, 0o755)
+        assert (r.returncode, r.stdout) == (control.returncode, control.stdout), (
+            f"rc {r.returncode}; stderr {r.stderr[-600:]!r}")
+        errs = _errors(store["root"])
+>       assert [e.get("reason") for e in errs] == ["prune_failed"], f"errors.jsonl: {errs}"
+E       AssertionError: errors.jsonl: []
+E       assert [] == ['prune_failed']
+E         
+E         Right contains one more item: 'prune_failed'
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:940: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 3.63s
+exit 1

@@ -1,0 +1,40 @@
+# mini-lane slot=rmxtest1 sha=d0b9eecaf492f7ef58ea8b267bd2dfe0c8b5e1d9 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:24 load={ 1.83 1.41 1.47 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-S2.fBXJ/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_____ test_a_composite_whose_printed_members_did_not_change_is_suppressed ______
+
+store = {'base': PosixPath('/private/tmp/cap.orwn7xnn'), 'proj': PosixPath('/private/tmp/cap.orwn7xnn/proj'), 'root': PosixPath('/private/tmp/cap.orwn7xnn/proj/.refmatrix')}
+
+    def test_a_composite_whose_printed_members_did_not_change_is_suppressed(store):
+        """bug-277 (L178 S2; RED): the unchanged-composite signature is taken over the members
+        the composite PRINTS (R2.0), not over every focus member. After the composite is delivered,
+        `the` (stoplist) and `buigger` (names no concept) join the topic; the printed `Members:`
+        line is the same, so the next call records `suppressed_unchanged` and prints no composite
+        (bsd-315 r1 P2: it was re-sent, recorded `delivered`)."""
+        from refmatrix import stm as stm_mod
+        first = _scan(store, "--max-tokens", "100000")
+        assert COMP_MARK in first.stdout, "fixture: no composite on the first call"
+        stm_mod.Stm(store["root"], SESSION).record(
+            "input", "the parser.py and the lexer_table buigger", refs=GROUNDED + ["the", "buigger"])
+        topics = stm_mod.topic_composites(stm_mod.Stm(store["root"], SESSION).focus_graph(top=40))
+        joined = {m for t in topics for m in t["members"]}
+        assert {"the", "buigger"} & joined, f"fixture: the new words joined no topic: {topics}"
+        second = _scan(store, "--max-tokens", "100000")
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+        comp = _blocks(rec, kind="composite")
+>       assert [b["state"] for b in comp] == ["suppressed_unchanged"], (
+            f"bug-277: a composite whose printed members did not change: "
+            f"{[(b['kind'], b['state']) for b in rec['blocks']]}")
+E       AssertionError: bug-277: a composite whose printed members did not change: [('symbol_named', 'delivered'), ('symbol_named', 'delivered'), ('content', 'delivered'), ('symbol_other', 'delivered'), ('symbol_other', 'delivered'), ('symbol_other', 'delivered'), ('composite', 'delivered')]
+E       assert ['delivered'] == ['suppressed_unchanged']
+E         
+E         At index 0 diff: 'delivered' != 'suppressed_unchanged'
+E         Use -v to get more diff
+
+tests/test_injection_capture.py:618: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_composite_whose_printed_members_did_not_change_is_suppressed
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 3.09s
+exit 1

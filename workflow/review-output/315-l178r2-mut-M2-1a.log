@@ -1,0 +1,41 @@
+# mini-lane slot=rmxtest1 sha=3ade10fa815c105bbe00dd5d693e57daa0d73e3d host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:41:34 load={ 0.95 1.30 1.46 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-M2-1a.vFqR/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_ test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held] _
+
+make_store = <function make_store.<locals>._make at 0x110158720>
+holds_question = True
+
+    @pytest.mark.parametrize("holds_question", [True, False], ids=["question-held", "not-held"])
+    def test_stopwords_and_unknown_plain_words_are_not_printed_as_members(make_store,
+                                                                          holds_question):
+        """AC-2.0 (RED at base; M2-1): a topic of `scan-prompt`, `store.py`, `the`, `buigger`,
+        `question` prints `scan-prompt`, `store.py`, and `question` only when the store holds
+        that concept. `the` is on the shared stoplist (and the store holds it as a concept, so
+        only the stoplist keeps it out); `buigger` names nothing."""
+        from refmatrix.composite import build_topic_composite
+        s, root = make_store(holds_question)
+        _topic_members(root)
+        out = build_topic_composite(s, root, expand=False, session=SESSION)
+        assert out, "fixture: no composite (the topic holds identifier-shaped members)"
+        lines = _MEMBERS_LINE.findall(out)
+        assert len(lines) == 1, f"fixture: {len(lines)} Members lines:\n{out}"
+        printed = [m.strip() for m in lines[0].split(",")]
+        want = {"scan-prompt", "store.py"} | ({"question"} if holds_question else set())
+>       assert set(printed) == want, (
+            f"store holds `question`: {holds_question}; printed members {printed}, expected "
+            f"{sorted(want)} (stoplist words and plain words naming no concept are not printed)")
+E       AssertionError: store holds `question`: True; printed members ['scan-prompt', 'store.py', 'the', 'question'], expected ['question', 'scan-prompt', 'store.py'] (stoplist words and plain words naming no concept are not printed)
+E       assert {'question', ...re.py', 'the'} == {'question', ...', 'store.py'}
+E         
+E         Extra items in the left set:
+E         'the'
+E         Use -v to get more diff
+
+tests/test_stm_composite_members.py:99: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_stm_composite_members.py::test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.17s
+exit 1

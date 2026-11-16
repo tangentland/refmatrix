@@ -1,0 +1,43 @@
+# mini-lane slot=rmxtest1 sha=db8751ed66a04ae7b839af204c1f2e2aadd5ac27 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:42:24 load={ 0.90 1.23 1.42 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-X-1.bpwV/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+___ test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens ____
+
+store = {'base': PosixPath('/private/tmp/cap.uje1ofb4'), 'proj': PosixPath('/private/tmp/cap.uje1ofb4/proj'), 'root': PosixPath('/private/tmp/cap.uje1ofb4/proj/.refmatrix')}
+calib = {'build_ms_min': 109.43062500155065, 'full': '# refmatrix context for prompt-mentioned symbols: widget_registry, ledge...et notes, closet entry 1.\n\n[truncated by budget]\n\n[~379 tokens, 6 neighbors, degree=0]', 't1': 264, 't3': 504, ...}
+
+    def test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens(store, calib):
+        """AC-0.3 (RED), mode `full`: the bundle that tripped the `--max-tokens` stop and every
+        tier-3 bundle the stop prevented from being built are stored, with text, as
+        `dropped_tokens`; the ones built only for the capture are counted in `capture_built`."""
+        r = _scan(store, "--max-tokens", str(calib["t3"]), RMX_INJECTION_CAPTURE="full")
+        assert TOKEN_MARK in r.stdout and CONTENT_HDR in r.stdout, f"fixture:\n{r.stdout}"
+        assert _symbol_bundles(r.stdout) == NAMED, f"fixture: a tier-3 bundle was delivered"
+        rec = _record_for(store["root"], _last_qid(store["root"]))
+        assert rec["capture_mode"] == "full", rec["capture_mode"]
+        cut = _blocks(rec, kind="symbol_other", state="dropped_tokens")
+        assert len(cut) >= 2, (f"tier-3 bundles past the stop: {len(cut)} stored as dropped_tokens; "
+                               f"states {[(b['kind'], b['state']) for b in rec['blocks']]}")
+        for b in cut:
+            assert b.get("text") and _anchors(b), f"a dropped_tokens bundle without its text: {b}"
+        seen = {a for b in cut for a in _anchors(b)}
+        missing = [n for n in calib["tier3"] if n not in seen]
+        assert not missing, f"tier-3 bundles the stop prevented, not stored: {missing} (have {seen})"
+        assert rec["capture_built"] >= len(cut) - 1, (rec["capture_built"], len(cut))
+        # M1 (L178, X-1): `capture_ms` is the wall time the capture added, the extra builds
+        # included (R0.2); AC-0.17 reads it. A quarter of the fastest in-process build per built
+        # bundle is a floor no honest record falls under (X-1's record read 0.5 ms).
+        floor = 0.25 * rec["capture_built"] * calib["build_ms_min"]
+>       assert rec["capture_built"] >= 1 and rec["capture_ms"] >= floor, (
+            f"capture_ms {rec['capture_ms']} does not cover {rec['capture_built']} built bundle(s) "
+            f"(floor {floor:.1f} ms at {calib['build_ms_min']:.1f} ms per in-process build)")
+E       AssertionError: capture_ms 0.5 does not cover 2 built bundle(s) (floor 54.7 ms at 109.4 ms per in-process build)
+E       assert (2 >= 1 and 0.5 >= 54.715312500775326)
+
+tests/test_injection_capture.py:539: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 15.25s
+exit 1

@@ -325,3 +325,37 @@ as a mutation: it is re-run after GREEN. {#l178-not-first}
 - with no capture record at all, every hook row counts in the coverage, so a capture that never
   wrote reads 0 of N (AC-0.10's existing node keeps that).
 {#l178-contracts}
+
+## L178 round 2: on GREEN's fold (83125cc), mutations {#l178-r2}
+
+Round 2 starts from GREEN's fold, `e2aa629` (src at `83125cc`). The test commit is `e7bb081`:
+- the S1 node resets the composite's sent marker between its arms, per the lead's ruling;
+- the S1 node also asserts that the capture still works: a record per call, no
+  `capture_failed`, and `list_failed` counted for a 0o300 directory;
+- a non-I/O guard node, using a child-process `ValueError` from `telemetry._write_capture`
+  (registered);
+- the snapshot (pre.json) fallback node;
+- the capture-off surrogate node, for `prompt_sha`.
+
+Verify at `e7bb081` (`315-l178r2-verify-e7bb081.log`, mini lane): 91 passed, exit 0. Every
+mutation below ran from a scratch commit (`scratch-l178r2-*`, never merged) on its named nodes
+with `-x`. Each is KILLED, and none hung. {#l178-r2-run}
+
+| Mutation | `src` change | Killed by | E line |
+|---|---|---|---|
+| M2-1a | `composite.py` filter: `elif (m.lower() not in _PROMPT_STOPWORDS and s is not None` → `elif (s is not None` | `test_stopwords_and_unknown_plain_words_are_not_printed_as_members[question-held]` | `printed members ['scan-prompt', 'store.py', 'the', 'question'], expected [...]` |
+| X-1 | `telemetry.py`: `capture_ms = round(float(build_ms) + …` → `round(0.0 + …` | `test_bundles_past_the_token_stop_are_built_and_stored_as_dropped_tokens` | `capture_ms 0.5 does not cover 2 built bundle(s) (floor 54.7 ms …)` |
+| X-2 | `telemetry.py` `_capture_error`: `if size >= CAPTURE_ERRORS_CAP_BYTES:` → `if False:` | `test_a_capped_errors_file_is_named_on_the_capture_line` | `errors.jsonl grew past its cap` |
+| X-3 | `telemetry.py` `_capture_prune._remove`: the `prune_failed` count dropped | `test_a_day_file_the_pruner_cannot_remove_is_counted_and_kept` | `errors.jsonl: [] == ['prune_failed']` |
+| S1a | `telemetry._utf8`: `encode("utf-8", "surrogatepass")` → `encode("utf-8")` | `test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]` | `no capture record for query_id … (R0.2 …)` (the guard kept exit 0; the record was lost) |
+| S1b | `telemetry.write_capture`: `except Exception` → `except OSError` | `test_a_capture_failure_of_any_class_is_counted_and_keeps_the_exit[scan_prompt]` | `bug-276: a non-I/O capture failure exited 1` (`ValueError: injected non-I/O capture failure`) |
+| S2 | `composite.py` signature: `sorted(t["printed"])` → `sorted(t["members"])` | `test_a_composite_whose_printed_members_did_not_change_is_suppressed` | `bug-277: a composite whose printed members did not change: [... ('composite', 'delivered')]` |
+| S4a | `stm.Stm._load_graph`: `problem = focus_graph_problem(g)` → `problem = None` | `test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-int-node]` | `focus hook --event input exited 1` (`AttributeError: 'int' object has no attribute 'get'`) |
+| S4b | `stm._is_num`: `and math.isfinite(v))` → `and True)` | `test_a_wrong_shaped_focus_graph_never_crashes_a_reader[focus-hook-nonfinite-turn]` | `focus hook --event input exited 1` (`OverflowError: cannot convert float infinity to integer`) |
+| PS | `stm.prompt_sha`: `encode("utf-8", "surrogatepass")` → `encode("utf-8")` | `test_a_surrogate_prompt_never_crashes_the_prompt_hooks_with_the_capture_off` | `focus hook --event input with a surrogate prompt exited 1` (`UnicodeEncodeError`, `cli.py:2268`) |
+| PJ | `stm.pre_prompt_state`: `problem = focus_graph_problem(pre["graph"])` → `problem = None` | `test_a_corrupt_snapshot_graph_falls_back_to_the_live_state` | `scan-prompt with a corrupt pre.json graph exited 1` (`AttributeError: 'int' object has no attribute 'get'`, `phase_fields`) |
+{#l178-r2-table}
+
+`_assert_survived`'s message says "on a wrong-shaped focus graph" for every caller, so it reads
+oddly on the PS row. It is the shared bug-268 helper. The traceback in the log names the real
+cause. {#l178-r2-note}

@@ -1,0 +1,94 @@
+# mini-lane slot=rmxtest1 sha=70785c76c7e390cdad0c84a05a409f05653b8a11 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:12 load={ 1.42 1.32 1.44 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-S1a.DpyP/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_ test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate] _
+
+request = <FixtureRequest for <Function test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]>>
+route = 'scan_prompt', fault = 'surrogate'
+
+    @pytest.mark.parametrize("route,fault", [
+        ("scan_prompt", "surrogate"), ("scan_prompt", "dir-0o300"),
+        ("prompt_recall", "surrogate"), ("session_start", "dir-0o300"),
+    ])
+    def test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line(
+            request, route, fault):
+        """AC-0.10 (L178 S1, bug-276; RED): the capture never changes the exit status, whatever
+        class its failure is. (a) A lone-surrogate prompt in the hook envelope (the writer's
+        `prompt.encode` raised UnicodeEncodeError: capture-off exited 0, capture-on 1). (b) A
+        capture dir at 0o300, writable but not listable (`os.listdir` raised PermissionError
+        from the pruner and from the report). Each call prints what the same call prints with the
+        capture off, exits 0 with no traceback, and `rmx telemetry --context` still exits 0 with
+        its `capture:` line. The recall `--pack` hooks have no `|| true`, so a scan and a recall
+        route are both covered."""
+        c = request.getfixturevalue("store" if route == "scan_prompt" else "recall_store")
+        if route == "scan_prompt":
+            args = ["scan-prompt", "--stdin-json", "--composite-every", "1", "--max-tokens",
+                    "100000"]
+        elif route == "prompt_recall":
+            args = ["memory", "recall", "--stdin-json", "--recent", "--pack", "--k", "12"]
+        else:
+            args = ["memory", "recall", "--session-start", "--pack", "--k", "12"]
+        stdin = (_surrogate_envelope(c) if fault == "surrogate" else
+                 (json.dumps({"session_id": SESSION, "prompt": PROMPT,
+                              "hook_event_name": "UserPromptSubmit"}) if "--stdin-json" in args
+                  else ""))
+    
+        def call(**env):
+            env.setdefault("RMX_INVOCATION_SOURCE", "hook")
+            return subprocess.run([h.rmx_bin(), *args], input=stdin.encode("utf-8", "surrogatepass"),
+                                  env=h.rmx_env(c["root"], **env), cwd=str(c["proj"]),
+                                  capture_output=True, timeout=300)
+    
+        d = c["root"] / CAP_DIR
+        if fault == "dir-0o300":
+            _capture_dir_with_ignore(c["root"])
+        control = call(RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
+        assert control.returncode == 0 and control.stdout, (
+            f"fixture: the capture-off call: rc {control.returncode} {control.stderr[-400:]!r}")
+        # The control arm delivers the composite and commits its sent marker; reset it so the
+        # capture-on arm starts from the same state (as AC-0.4 does). `--no-composite` would hide
+        # the composite path from this check (L178 GREEN verify, lead ruling).
+        _reset_composite_marker(c)
+        if fault == "dir-0o300":
+            os.chmod(d, 0o300)
+        try:
+            r = call()
+            line_err = None
+            try:
+                _capture_line(c)
+            except AssertionError as e:
+                line_err = str(e)
+        finally:
+            if d.exists():
+                os.chmod(d, 0o755)
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-276: {route} with {fault} exited {r.returncode}: {err[-700:]}")
+        assert r.stdout == control.stdout, f"bug-276: {route} with {fault} changed the payload"
+        assert line_err is None, f"bug-276: the capture: line is lost: {line_err[:600]}"
+        # Not merely survived: the capture still works. The surrogate prompt is hashed (no
+        # `capture_failed`), and a dir it cannot list is counted `list_failed` while the record is
+        # still appended (0o300 can create and append, not list).
+        qid = _last_qid(c["root"], kind="scan" if route == "scan_prompt" else "recall")
+>       _record_for(c["root"], qid)
+
+tests/test_injection_capture.py:1102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/private/tmp/cap.cebx7q6f/proj/.refmatrix')
+qid = 'd66381eb434d4a96903fcd7b1860ef09'
+
+    def _record_for(root: Path, qid: str) -> dict:
+        recs = [r for r in _records(root) if r.get("query_id") == qid]
+>       assert recs, (f"no capture record for query_id {qid} (R0.2: one record per call, written "
+                      f"after the payload is printed); {_listing(root)}")
+E       AssertionError: no capture record for query_id d66381eb434d4a96903fcd7b1860ef09 (R0.2: one record per call, written after the payload is printed); /private/tmp/cap.cebx7q6f/proj/.refmatrix/injection-capture: ['.gitignore', 'errors.jsonl']
+E       assert []
+
+tests/test_injection_capture.py:346: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_capture_failure_never_changes_the_exit_or_loses_the_capture_line[scan_prompt-surrogate]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 3.31s
+exit 1

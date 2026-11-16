@@ -1,0 +1,50 @@
+# mini-lane slot=rmxtest1 sha=70f66df9accca902afcfee5ea1bb098f1a37db06 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 19:43:43 load={ 2.12 1.51 1.51 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/315-l178r2-mut-PS.A94t/src/refmatrix as checked-hash (bug-037)
+F
+=================================== FAILURES ===================================
+_ test_a_surrogate_prompt_never_crashes_the_prompt_hooks_with_the_capture_off __
+
+store = {'base': PosixPath('/private/tmp/cap.i53fsv1u'), 'proj': PosixPath('/private/tmp/cap.i53fsv1u/proj'), 'root': PosixPath('/private/tmp/cap.i53fsv1u/proj/.refmatrix')}
+
+    def test_a_surrogate_prompt_never_crashes_the_prompt_hooks_with_the_capture_off(store):
+        """bug-276's class outside the capture (L178 GREEN's real run): `stm.prompt_sha` encoded
+        the prompt strictly. A lone surrogate in the envelope made the UserPromptSubmit focus hook
+        (`snapshot_pre_prompt`) exit 1, and with a `<session>.pre.json` present made
+        `scan-prompt` exit 1, with the capture OFF. Both exit 0 now; the hook writes its
+        snapshot, and the scan prints what it prints for any prompt."""
+        envl = _surrogate_envelope(store).encode("utf-8")
+        off = h.rmx_env(store["root"], RMX_INVOCATION_SOURCE="hook", RMX_INJECTION_CAPTURE="0")
+        hook = subprocess.run([h.rmx_bin(), "focus", "hook", "--event", "input"], input=envl,
+                              env=off, cwd=str(store["proj"]), capture_output=True, timeout=300)
+>       _assert_survived(hook, "focus hook --event input with a surrogate prompt")
+
+tests/test_injection_capture.py:1592: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+r = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...^^^\nUnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 16: surrogates not allowed\n')
+what = 'focus hook --event input with a surrogate prompt'
+
+    def _assert_survived(r: subprocess.CompletedProcess, what: str) -> None:
+        err = r.stderr if isinstance(r.stderr, str) else r.stderr.decode("utf-8", "replace")
+>       assert r.returncode == 0 and "Traceback" not in err, (
+            f"bug-268: {what} exited {r.returncode} on a wrong-shaped focus graph: {err[-700:]}")
+E       AssertionError: bug-268: focus hook --event input with a surrogate prompt exited 1 on a wrong-shaped focus graph: 315-l178r2-mut-PS.A94t/src/refmatrix/cli.py", line 2268, in focus_hook
+E             s.snapshot_pre_prompt(prompt)
+E             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-PS.A94t/src/refmatrix/stm.py", line 1345, in snapshot_pre_prompt
+E             rec = {"prompt_sha": prompt_sha(prompt), "wall": time.time(),
+E                                  ~~~~~~~~~~^^^^^^^^
+E           File "/Users/rmxtest1/lane/runs/315-l178r2-mut-PS.A94t/src/refmatrix/stm.py", line 1801, in prompt_sha
+E             return hashlib.sha256((prompt or "").encode("utf-8")).hexdigest()
+E                                   ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+E         UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' in position 16: surrogates not allowed
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/rmx', 'focus', 'hook', '--event', 'input'], returncode=1, stdou...^^^\nUnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 16: surrogates not allowed\n').returncode
+
+tests/test_injection_capture.py:1423: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_injection_capture.py::test_a_surrogate_prompt_never_crashes_the_prompt_hooks_with_the_capture_off
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 1.30s
+exit 1
