@@ -593,9 +593,9 @@ class ModelServer:
                              daemon=True).start()
 
     def _handle(self, conn: socket.socket) -> None:
-        """One client connection. Stays open for many requests — a daemon
-        holds its connection for its lifetime rather than reconnecting per
-        query."""
+        """One client connection. It may carry many requests, but since bug-278 (ruling L180,
+        2026-11-15) `SharedWorkerClient` opens one connection per call and closes it when the
+        call ends, so in practice each connection carries one request."""
         try:
             rw = conn.makefile("rwb")
             while not self._stop.is_set():
