@@ -14,12 +14,16 @@
 # <repo-dir>/workflow/review-output/<log-name>.log. Exit code = pytest's.
 # Fails loud: unreachable mini → exit 3 "DID NOT RUN"; all slots busy → waits, polling every 15 s,
 # up to MINI_LANE_WAIT_S (default 3600) then exit 4. Never falls back to a local run.
+# ssh dropped (255) → the exit is read from the copied log's `exit N` line, else exit 5 "RUN STATE UNKNOWN".
 set -u
 REPO=${1:?repo dir}; REF=${2:?ref}; NAME=${3:?log name}; shift 3
 # a log name is one path component: "/" would make mktemp and `git worktree add` fail (bug-273)
 NAME=$(printf '%s' "$NAME" | tr '/ ' '--')
 [ $# -gt 0 ] || { echo "mini-lane: no test files given" >&2; exit 2; }
-SSH=(ssh -o BatchMode=yes -o ForwardX11=no -o ConnectTimeout=10)
+# Keepalives (bug-280, 2026-11-15): four lane clients sat ESTABLISHED for hours on half-open
+# TCP connections after the mini's sshd sessions were gone (remote runs finished, logs
+# complete); without ServerAlive the client never notices a dead peer. ~60 s to give up.
+SSH=(ssh -o BatchMode=yes -o ForwardX11=no -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 SHA=$(git -C "$REPO" rev-parse --verify "$REF^{commit}") || { echo "mini-lane: bad ref $REF" >&2; exit 2; }
 "${SSH[@]}" rmxtest@mini true 2>/dev/null || { echo "mini-lane: mini unreachable — DID NOT RUN" >&2; exit 3; }
 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ForwardX11=no" \
@@ -59,6 +63,11 @@ EOF
       scp -q -o ForwardX11=no "$U@mini:lane/logs/$NAME.log" "$REPO/workflow/review-output/$NAME.log" 2>/dev/null \
         || echo "mini-lane: could not copy the log back from $U" >&2
       head -1 "$REPO/workflow/review-output/$NAME.log" 2>/dev/null; tail -2 "$REPO/workflow/review-output/$NAME.log" 2>/dev/null
+      if [ "$RC" -eq 255 ]; then   # ssh itself failed (bug-280): pytest's own verdict is the log's last line
+        LRC=$(tail -1 "$REPO/workflow/review-output/$NAME.log" 2>/dev/null | awk '$1=="exit"{print $2}')
+        if [ -n "$LRC" ]; then echo "mini-lane: ssh to $U dropped after the run finished; exit taken from the log ($LRC)" >&2; exit "$LRC"; fi
+        echo "mini-lane: ssh to $U dropped and the log has no exit line — RUN STATE UNKNOWN" >&2; exit 5
+      fi
       exit "$RC"
     fi
   done
