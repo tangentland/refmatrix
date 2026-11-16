@@ -6232,8 +6232,10 @@ def _op_embed(d: Daemon, args: dict) -> dict:
     # Once the stop began, `_model_client` refuses to build a model client (bug-272), so
     # no embedder is asked for: phase 2 of the locked op returns `cancelled` with the
     # pending row count before it would touch one.
+    # (The op's own stop signal, as in phase 2: `d` may be any object carrying
+    # `_shutdown_event` and `_embedder`, not only a Daemon.)
     emb = None
-    if not d._stop_began():
+    if not d._shutdown_event.is_set():
         try:
             emb = d._embedder()
         except ImportError as exc:

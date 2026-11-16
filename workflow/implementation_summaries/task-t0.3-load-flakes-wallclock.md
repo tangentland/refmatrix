@@ -554,9 +554,13 @@ exposed) is **bug-272, filed and fixed** in the L177 fold: (f) `_model_client` c
 daemon stopping: no new <role> model client`). The event is set before `_close_workers` reads the
 slots, so either the stage sees the client or this check sees the event. Test:
 `test_daemon_shutdown.py::test_a_model_client_built_after_the_worker_stage_cannot_serve[embed|rerank]`
-(RED at `041e3ab`). (g) M4: `recall.shared_embedder` runs `on_fallback` before its "falling back to
-in-process model" warning, so a stop's refusal no longer leaves a line claiming a load. Still
-open: B1 / bug-278 (Q51).
+(RED at `041e3ab`). Because `_model_client` now refuses at stop, `_op_embed` asks for no
+embedder once the stop began and its phase-2 cancel check answers `cancelled` with the pending
+count (`test_daemon_dense_ops.py::test_op_embed_cooperative_cancel` caught the first version).
+(g) M4: `recall.shared_embedder` runs `on_fallback` before its "falling back to in-process model"
+warning; a refusal is logged as `subprocess embedder unavailable (<cause>); no in-process fallback:
+<refusal>` (no load claimed; the cause, e.g. the holder's `not respawning`, stays in the log) and
+re-raised. Still open: B1 / bug-278 (Q51).
 {#sa-6}
 
 7 **loud**: forced bug-269 at the pre-fix tree → pytest exit 1, `E AssertionError: bug-269: the
