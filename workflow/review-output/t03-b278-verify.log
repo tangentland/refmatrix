@@ -1,0 +1,150 @@
+# mini-lane slot=rmxtest1 sha=3f096e0838bf90f3a69195c43f31a3d08719b486 host=Todds-Mac-mini.local macOS 15.3.2 py=Python 3.14.10 start=2026-11-15 18:53:09 load={ 0.98 0.97 0.98 } nofile=65536
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/t03-b278-verify.eWyj/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 19%]
+........................................................................ [ 22%]
+............................................s........................... [ 25%]
+........................................................................ [ 28%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+........F............................................................... [ 50%]
+........................................................................ [ 53%]
+........................................................................ [ 56%]
+......................................................F................. [ 59%]
+.............F.......................................................... [ 62%]
+........................................................................ [ 64%]
+........................................................................ [ 67%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 98%]
+...............................                                          [100%]SkipGate: 1 skip(s) not pinned with their exact reason (tests/conftest.py ALLOWED_SKIPS); a skip is a test that stopped running:
+  SKIPPED-UNPINNED tests/test_declared_python_floor.py::test_every_src_module_compiles_on_the_declared_floor: Skipped: no python3.10 on this machine — the declared floor cannot be checked here. This skip is the finding: install it, or raise requires-python to a version that is checked.
+
+=================================== FAILURES ===================================
+______________ test_a_timed_probe_does_not_shorten_the_next_call _______________
+
+fake_models = <test_plan2_remedy_r7._FakeModelSock object at 0x146985d30>
+
+    def test_a_timed_probe_does_not_shorten_the_next_call(fake_models):
+        c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+        assert c.info(timeout=1.0)["model"] == "fake"
+        t0 = time.monotonic()
+        hdr, _ = c.call("rerank", {"query": "q", "docs": ["a", "b"]})   # timeout=None → the client's 5 s
+        assert hdr["scores"] == [1.0, 1.0]
+        assert time.monotonic() - t0 >= 1.4
+>       assert c._sock.gettimeout() == 5.0
+               ^^^^^^^
+E       AttributeError: 'SharedWorkerClient' object has no attribute '_sock'
+
+tests/test_plan2_remedy_r7.py:96: AttributeError
+______________ test_a_budgeted_view_closes_its_forked_connection _______________
+
+stub = <class 'test_rerank_budget_real_clients.stub.<locals>.S'>
+hub = (<refmatrix.modelsrv.ModelServer object at 0x1688825d0>, <refmatrix.modelsrv.SharedWorkerClient object at 0x146912720>)
+
+    def test_a_budgeted_view_closes_its_forked_connection(stub, hub):
+        """K7: a fork per request that is never closed is a socket (and a hub
+        handler thread) leaked per context op."""
+        from refmatrix.reranker import RemoteReranker
+    
+        _srv, client = hub
+        view = RemoteReranker(client).with_budget(2.0)
+        assert view._client is not client
+        assert _attempt(view)[1] == "scored"
+>       assert view._client._sock is None, "the forked connection was left open"
+               ^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SharedWorkerClient' object has no attribute '_sock'
+
+tests/test_rerank_budget_real_clients.py:723: AttributeError
+____________ test_the_client_stamps_a_deadline_from_its_own_timeout ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x16d8ba9e0>
+
+    def test_the_client_stamps_a_deadline_from_its_own_timeout(monkeypatch):
+        """A bounded client cannot forget: if it gave itself N seconds, the frame
+        says so, and a worker that dequeues it late drops it."""
+        from refmatrix import modelsrv
+    
+        sent = {}
+    
+        class _FakeSock:
+            def settimeout(self, t):
+                pass
+    
+        c = modelsrv.SharedWorkerClient("rerank", timeout=5.0)
+        c._sock = _FakeSock()
+        c._rw = object()
+>       monkeypatch.setattr(c, "_call_once",
+                            lambda req, blob: (sent.update(req) or ({"ok": True}, b"")))
+E       AttributeError: <refmatrix.modelsrv.SharedWorkerClient object at 0x145dc7ad0> has no attribute '_call_once'
+
+tests/test_rerank_cost_budget.py:326: AttributeError
+=============================== warnings summary ===============================
+tests/test_graph_landing.py:9
+  /Users/rmxtest1/lane/runs/t03-b278-verify.eWyj/tests/test_graph_landing.py:9: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+tests/test_budget_outcome_census.py::test_the_tree_passes_the_budget_outcome_census
+  test_grep_stdin_dialect.py:11: SyntaxWarning: "\|" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\|"? A raw string is also an option.
+    present, and GNU BRE escapes (`a\|b`) fail loud (exit 2 → wrapper falls back
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/lance/__init__.py:298: UserWarning: lance is not fork-safe. If you are using multiprocessing, use spawn or forkserver instead.
+    warnings.warn(
+
+tests/test_bug129_hub_pidfile.py::test_a_forked_child_does_not_keep_the_hub_lock
+  /Users/rmxtest1/lane/runs/t03-b278-verify.eWyj/tests/test_bug129_hub_pidfile.py:227: DeprecationWarning: This process (pid=65499) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+tests/test_rerank_budget_real_clients.py::test_a_header_that_eats_the_budget_sends_no_rerank
+  /Users/Shared/rmx-lane/venv/lib/python3.14/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-406 (one)
+  
+  Traceback (most recent call last):
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1083, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1025, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-b278-verify.eWyj/tests/test_rerank_budget_real_clients.py", line 442, in one
+      send_frame(rw, {"ok": True, "model": "stub/ce",
+      ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      "cost_s_per_doc": None, "queue_depth": 0})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/Users/rmxtest1/lane/runs/t03-b278-verify.eWyj/src/refmatrix/subproc.py", line 126, in send_frame
+      fh.flush()
+      ~~~~~~~~^^
+    File "/opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+      return self._sock.send(b)
+             ~~~~~~~~~~~~~~~^^^
+  BrokenPipeError: [Errno 32] Broken pipe
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_plan2_remedy_r7.py::test_a_timed_probe_does_not_shorten_the_next_call
+FAILED tests/test_rerank_budget_real_clients.py::test_a_budgeted_view_closes_its_forked_connection
+FAILED tests/test_rerank_cost_budget.py::test_the_client_stamps_a_deadline_from_its_own_timeout
+3 failed, 2547 passed, 1 skipped, 5 warnings in 2732.62s (0:45:32)
+exit 1
