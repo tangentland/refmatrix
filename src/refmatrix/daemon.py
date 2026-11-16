@@ -987,11 +987,7 @@ class Daemon:
             # stop serves. Retired (not closed), it refuses every call, so none can spawn
             # a model process into the stopping daemon; the slot keeps it so later callers
             # get the same refusal instead of another hub probe.
-            retire = getattr(client, "retire", None)
-            if retire is not None:
-                retire(timeout=2.0, abandon_in_flight=True)
-            else:
-                client.close(timeout=2.0)
+            client.retire(timeout=2.0, abandon_in_flight=True)
             raise RuntimeError(f"daemon stopping: no new {role} model client")
         return client
 
@@ -1174,7 +1170,9 @@ class Daemon:
         bug-269 (ruling L161, 2026-11-15): a private worker is retired with
         `abandon_in_flight=True`, so a stop sent during the startup warm-up no
         longer waits out the cold loads: each retire is bounded by its timeout plus
-        the kill. The warm thread it abandons then stops too (`_start_embedder_
+        the kill. bug-278 (ruling L180): a hub-shared client is retired the same way
+        and shuts its in-flight connections down, so a call on a slow or mute hub
+        no longer holds the stop for its own timeout. The warm thread it abandons then stops too (`_start_embedder_
         warmup`: no reranker load into a stopping daemon; `_embedder`: no in-process
         fallback once the stop began)."""
         for attr in ("_embed_worker", "_rerank_worker"):
@@ -1183,12 +1181,11 @@ class Daemon:
                 continue
             try:
                 # Retired: an in-flight op's warmup must not respawn a worker
-                # after shutdown (ch-bsd r12 #s-1).
-                retire = getattr(w, "retire", None)
-                if retire is not None:
-                    retire(timeout=2.0, abandon_in_flight=True)
-                else:
-                    w.close(timeout=2.0)
+                # after shutdown (ch-bsd r12 #s-1). Both client classes implement
+                # `retire(abandon_in_flight=)` (bug-278, ruling L180): a private
+                # worker is killed after a 2.0 s lock wait, a hub-shared client
+                # shuts its in-flight connections down at once.
+                w.retire(timeout=2.0, abandon_in_flight=True)
             except Exception as exc:
                 self._log(f"worker close failed ({attr}): {exc!r}")
             setattr(self, attr, None)

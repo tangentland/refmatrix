@@ -130,10 +130,20 @@ def shared_available(timeout: float = 0.5) -> bool:
 
 class SharedWorkerClient:
     """Client half. Same surface as `subproc.WorkerClient` — `call`, `info`,
-    `alive`, `close` — so the model proxies cannot tell the difference.
+    `alive`, `close`, `retire` — so the model proxies cannot tell the difference.
 
-    One socket per client object, opened lazily and reconnected once on a
-    dropped connection (the hub restarting under us is the expected case).
+    ONE CONNECTION PER CALL (bug-278, ch-bsd t03 r1 B1; the user's option (b), ruling L180,
+    2026-11-15). The client used to hold one long-lived socket and take its `_lock` through a
+    whole send/recv. A daemon stopping with a call in flight on a slow, cold or mute hub then
+    waited in `close()` for that call's own timeout (`SHARED_OP_TIMEOUT_S`, 45 s per role, 90 s
+    for both: past the stop grace and launchd's ExitTimeOut). The same persistent socket carried
+    a per-call timeout into the next call unless it was restored (bsd-plan2 r7 #b-1) and needed
+    a reconnect-and-retry after a hub restart. Now each `call` opens its own unix socket, with
+    that call's timeout on it alone, and closes it when the call ends; no lock is held across
+    I/O. The open sockets are kept in `_inflight` (its lock guards only the add and the remove),
+    so `retire()` can shut every in-flight connection down and the blocked `recv` sees EOF at
+    once. A dropped connection fails that call; nothing retries silently (a hub restart between
+    calls needs no retry: the next call connects fresh).
     """
 
     def __init__(self, role: str, *, log=None, timeout: float | None = None):
@@ -143,10 +153,14 @@ class SharedWorkerClient:
         self._log_fn = log
         from refmatrix.subproc import DEFAULT_TIMEOUT_S
         self.timeout = timeout or DEFAULT_TIMEOUT_S
-        self._sock: socket.socket | None = None
-        self._rw = None
-        self._lock = threading.RLock()
+        self._inflight: set = set()
+        self._inflight_lock = threading.Lock()   # add / remove only, never around I/O
         self._info: dict = {}
+        # True after a round trip completed (a header came back, ok or not); False before the
+        # first, after a transport failure or a timeout, and once retired. `recall`'s
+        # re-probe reads False as "this shared client is dead" (`_shared_client_is_dead`).
+        self._alive = False
+        self._retired = False
 
     def _log(self, msg: str) -> None:
         if self._log_fn is not None:
@@ -156,41 +170,63 @@ class SharedWorkerClient:
                 pass
 
     def alive(self) -> bool:
-        return self._sock is not None
+        return self._alive and not self._retired
 
-    def _connect(self) -> None:
-        sp = model_sock_path()
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(self.timeout)
-        s.connect(str(sp))
-        self._sock = s
-        self._rw = s.makefile("rwb")
-        self._log(f"connected to {sp}")
+    def _refused(self):
+        from refmatrix.subproc import WorkerError
+        return WorkerError(f"shared {self.role} client retired (shut down); not connecting")
+
+    def retire(self, *, timeout: float = 5.0, abandon_in_flight: bool = False) -> None:
+        """Close for good: every later call raises without connecting, and the calls in flight
+        end now or after `timeout`.
+
+        The client is marked retired FIRST, so a call that has not connected yet refuses.
+        `abandon_in_flight=True` (the daemon's stop, `_close_workers`) then shuts down every
+        in-flight socket at once: the blocked `recv` sees EOF and its call raises `WorkerError`
+        ("in-flight call abandoned"), so the stop waits on nothing the hub does (bug-278). The
+        default first lets the in-flight calls finish for up to `timeout`, then shuts down
+        whatever is still open. Never blocks longer than `timeout` plus the shutdowns."""
+        self._retired = True
+        self._alive = False
+        if not abandon_in_flight and timeout > 0:
+            import time as _time
+            end = _time.monotonic() + float(timeout)
+            while _time.monotonic() < end:
+                with self._inflight_lock:
+                    if not self._inflight:
+                        break
+                _time.sleep(0.02)
+        with self._inflight_lock:
+            socks = list(self._inflight)
+        for s in socks:
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError as exc:
+                # Already closed by its own call's `finally` between the snapshot and here.
+                self._log(f"retire: shutdown of an in-flight connection: {exc!r}")
+        if socks:
+            self._log(f"retired; shut down {len(socks)} in-flight connection(s)")
 
     def close(self, *, timeout: float = 0.0) -> None:
-        with self._lock:
-            for obj in (self._rw, self._sock):
-                try:
-                    if obj is not None:
-                        obj.close()
-                except Exception:
-                    pass
-            self._rw = None
-            self._sock = None
+        """`retire` without waiting: there is no persistent connection to close, only the
+        in-flight ones, which are shut down. Never blocks."""
+        self.retire(timeout=0.0, abandon_in_flight=True)
 
-    def _call_once(self, req: dict, blob: bytes | None):
-        if self._sock is None:
-            self._connect()
-        assert self._rw is not None
-        send_frame(self._rw, req, blob)
-        hdr, out = recv_frame(self._rw)
-        if not hdr.get("ok"):
-            from refmatrix.subproc import WorkerError
-            raise WorkerError(hdr.get("error") or "shared worker error")
-        return hdr, out
+    def _connect(self, timeout: float) -> socket.socket:
+        sp = model_sock_path()
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(timeout)
+            s.connect(str(sp))
+        except BaseException:
+            s.close()
+            raise
+        return s
 
     def call(self, op: str, payload: dict | None = None, *,
              blob: bytes | None = None, timeout: float | None = None):
+        if self._retired:
+            raise self._refused()
         req = {"role": self.role, "op": op, **(payload or {})}
         # A bounded client cannot forget: if it gave itself N seconds, the
         # frame says when it stops caring, and a worker that dequeues it after
@@ -198,39 +234,47 @@ class SharedWorkerClient:
         if timeout is not None and op != "info" and "deadline" not in req:
             import time as _time
             req["deadline"] = _time.time() + float(timeout)
-        with self._lock:
-            if timeout is not None:
-                if self._sock is None:
-                    self._connect()
-                self._sock.settimeout(timeout)
+        budget = self.timeout if timeout is None else float(timeout)
+        try:
+            s = self._connect(budget)
+        except OSError:
+            self._alive = False
+            raise
+        with self._inflight_lock:
+            self._inflight.add(s)
+        try:
+            if self._retired:            # retired between the check above and the add
+                raise self._refused()
+            rw = s.makefile("rwb")
             try:
-                return self._call_once(req, blob)
-            except TimeoutError:
-                # A timeout is the answer, not a dropped connection: the
-                # reconnect-and-retry below used to catch it (it is an
-                # OSError) and reconnect with the DEFAULT 300 s timeout, so a
-                # bounded probe blocked for five minutes anyway.
-                self.close()
-                raise
-            except (EOFError, BrokenPipeError, ConnectionError, OSError) as exc:
-                self._log(f"connection lost on op={op} ({exc!r}); reconnecting")
-                self.close()
-                if timeout is not None:
-                    self._connect()
-                    self._sock.settimeout(timeout)
-                return self._call_once(req, blob)
+                send_frame(rw, req, blob)
+                hdr, out = recv_frame(rw)
             finally:
-                # A per-call timeout is for THIS call only. It used to stay
-                # on the socket, so the 1 s `info` probe of the recall hook
-                # shortened the `rerank` that followed to 1 s — a warm worker
-                # scores 20 docs in ~1 s, and 0 of 12 live hook runs reranked
-                # (bsd-plan2-r7 #b-1); the daemon's 45 s probe likewise left
-                # its 30 s client at 45 s.
-                if timeout is not None and self._sock is not None:
-                    try:
-                        self._sock.settimeout(self.timeout)
-                    except OSError:
-                        pass
+                try:
+                    rw.close()
+                except OSError as exc:
+                    self._log(f"closing the op={op} stream: {exc!r}")
+        except TimeoutError:
+            # A timeout is the answer for THIS call; the connection goes with it.
+            self._alive = False
+            raise
+        except (EOFError, OSError) as exc:
+            self._alive = False
+            if self._retired:
+                from refmatrix.subproc import WorkerError
+                raise WorkerError(f"shared {self.role} client retired; in-flight op={op} "
+                                  f"abandoned") from exc
+            self._log(f"connection lost on op={op} ({exc!r})")
+            raise
+        finally:
+            with self._inflight_lock:
+                self._inflight.discard(s)
+            s.close()
+        self._alive = True
+        if not hdr.get("ok"):
+            from refmatrix.subproc import WorkerError
+            raise WorkerError(hdr.get("error") or "shared worker error")
+        return hdr, out
 
     def evict_if_idle(self, idle_s: float) -> bool:
         """No-op. The daemon's idle tick calls this on whatever client it
@@ -254,22 +298,23 @@ class SharedWorkerClient:
         if nowait:
             hdr, _ = self.call("info", {"nowait": True}, timeout=timeout)
             return {k: v for k, v in hdr.items() if k != "ok"}
-        with self._lock:
-            if self._info:
-                return self._info
-            hdr, _ = self.call("info", timeout=timeout)
-            self._info = {k: v for k, v in hdr.items() if k != "ok"}
+        # No lock across the call (bug-278): two first callers may both ask; the header is
+        # the same, and the last assignment wins.
+        if self._info:
             return self._info
+        hdr, _ = self.call("info", timeout=timeout)
+        self._info = {k: v for k, v in hdr.items() if k != "ok"}
+        return self._info
 
     def fork(self, timeout: float | None = None) -> "SharedWorkerClient":
         """A new client on its OWN connection, for one bounded request.
 
-        The daemon holds one long-lived client per role, and `call` holds its
-        lock for a whole round trip. A budgeted read that shared it queued
+        The daemon holds one long-lived client per role, and `call` used to hold
+        its lock for a whole round trip. A budgeted read that shared it queued
         behind the daemon's own unbudgeted `memory_recall` rerank: 3.80 s on a
-        1.0 s budget (ch-bsd r10 #b-1). This is the shape `shared_reranker`
-        already uses for the hook. The connection opens lazily; `close()` it
-        after use."""
+        1.0 s budget (ch-bsd r10 #b-1). Every call now has its own connection
+        (bug-278), so the fork's job is its own `timeout` and its own retirement:
+        `close()` it after use."""
         return SharedWorkerClient(self.role, log=self._log_fn, timeout=timeout)
 
 
