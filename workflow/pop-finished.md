@@ -369,3 +369,11 @@ Applied: `.claude/PROJECT_PROFILE.md` `#corpus` now states the read-only MCP too
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
 | Q53 | 2026-11-18 | T1 step 0b says "reword the 66 'when its file is next touched' `tmp_root_allow.json` entries to R5" (L169 MEH-4). 65 entries carry the reason "…move it to rmx_sandbox.short_root(prefix) when its file is next touched" (task-29.4 #r5, bug-229). Which is meant? | (rec) (b) move them: an isolated agent converts each listed `/tmp` root to `rmx_sandbox.short_root(prefix)` file by file and deletes its allowlist entry (the list shrinks toward 0; no deferral wording left); (a) reword only: the reason text cites #r5 as the rule and drops the open-ended 'when next touched' deferral, entries unchanged | **(b)** (the user: "q53-b", after a first "q53-a" that was corrected before any edit); applied as L185 |
+
+### Plan finished: plan-6 (2026-11-18) {#plan-6-finished-2026-11-18}
+
+Plan-6 closed with T0.4 (merged `21728dac`, follow-up `c073a9e3`): bsd-t04 r1 DIRTY 1B/2S/2M → L186 fold → confirm-lite GO ([[bsd-t04-r1-5eae7916]]), per [[task-t0-suite-trust-sweep#ac-4-close]]; the two pass-module lines stay allow-listed, owned by [[task-29.2-mypy-gate#ac-29]] (L122). The row as it stood:
+
+| # | plan | status | what remains | where | evidence |
+|---|---|---|---|---|---|
+| 6 | [[plan-6-deferrals-docs-benchmark]] | in-progress | Tasks built. Closes when T0.4 lands (the ch-bsd r1 remedy), with two named, self-expiring exceptions | step 2 | D-Q6, L122; [[task-t0-suite-trust-sweep#t0-4]] |
