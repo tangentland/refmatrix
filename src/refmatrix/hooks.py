@@ -614,11 +614,9 @@ def install(
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
     if apply and scope == "project":
-        from refmatrix.search_hooks import wrapper_paths
         record_flags(project_root, dict(claude=claude, memory_hooks=memory_hooks,
                                         primer=primer, scan_prompt=scan_prompt,
-                                        search=search, wrappers=list(wrapper_paths()),
-                                        **hook_opts))
+                                        search=search, **hook_opts))
         out.append(f"[green]write[/] {project_root / '.claude' / 'rmx-hooks.json'} (flags)")
     if not apply:
         out.append("[dim]dry-run — pass --apply to write[/]")
@@ -785,7 +783,11 @@ def check(project_root: Path) -> "tuple[bool, str]":
     # drift too.
     if flags.get("search", True):
         from refmatrix.search_hooks import hooks_dir, render_scripts
-        for name, content in render_scripts(flags.get("wrappers")).items():
+        # A flags file written before 2026-11-18 may still carry `wrappers`
+        # (the install-time paths the rewriter no longer bakes). It is not
+        # read: the render takes no paths, so the key cannot cause drift
+        # (task T0.4 R4.3).
+        for name, content in render_scripts().items():
             on_disk = hooks_dir() / name
             if not on_disk.exists() or on_disk.read_text() != content:
                 lines.append(f"- script {name} differs from the generator's "

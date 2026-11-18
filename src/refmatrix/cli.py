@@ -6193,11 +6193,10 @@ def _grep_bare_flags(flag_tokens: list, gf: dict, stdin_mode: bool = False) -> t
 def _render_grep_rows(rows, gf, limit, source_tag="idx"):
     """Render index-backed rows respecting the gf flag bundle:
       -l files-only          → one line per unique file path
-      -L files-without-match → routed through fallback (needs file universe)
+      -L files-without-match → refused, falls back to rg (needs file universe)
       -c count               → `path: N` per file
-      -v invert              → printed in caller (needs a full entity
-                               universe); for now we honor it as a no-op
-                               on the indexed path
+      -v invert              → refused, falls back to rg (needs a full
+                               entity universe the indexed rows lack)
       default                → `path:line  [src linkage]  concept` per row
     """
     if gf["invert"] or gf["files_without_match"]:
