@@ -1547,7 +1547,11 @@ def test_a_wrong_shaped_focus_graph_never_crashes_a_reader(store, reader, shape)
         f"the corruption is sticky: {_fault_lines(again.stderr)}")
 
 
-def test_a_corrupt_snapshot_graph_falls_back_to_the_live_state(store):
+@pytest.mark.parametrize("bad_graph", [
+    {"turn": 2, "nodes": {"x": 1}, "edges": {}},    # wrong-shaped object (bug-268)
+    [], 5,                                          # not an object at all (bug-285)
+], ids=["object", "list", "int"])
+def test_a_corrupt_snapshot_graph_falls_back_to_the_live_state(store, bad_graph):
     """bug-268 (L178, GREEN self-audit Q6: the guard it named as untested). A
     `<session>.pre.json` that names this prompt and is fresh, but whose `graph` is the wrong
     shape, is corrupt like a live graph: said once, counted as the call's `stm_error`, and the
@@ -1561,7 +1565,7 @@ def test_a_corrupt_snapshot_graph_falls_back_to_the_live_state(store):
                           RMX_INJECTION_CAPTURE="0", RMX_INVOCATION_SOURCE="internal")
     s._pre_path().write_text(json.dumps({
         "prompt_sha": stm_mod.prompt_sha(PROMPT), "wall": _time.time(), "turn": 2,
-        "events_n": 2, "graph": {"turn": 2, "nodes": {"x": 1}, "edges": {}},
+        "events_n": 2, "graph": bad_graph,
         "topic_cache": {}, "topic_match": {}}), encoding="utf-8")
     envl = {"session_id": SESSION, "prompt": PROMPT, "hook_event_name": "UserPromptSubmit",
             "cwd": str(store["proj"]), "transcript_path": ""}
