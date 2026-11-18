@@ -15,6 +15,7 @@ rel: implements -> [[task-t0-suite-trust-sweep#t0-4]]
 rel: implements -> [[plan-6-deferrals-docs-benchmark#q1]]
 rel: evidence-for -> [[bsd-plan6-deferrals-docs-benchmark-r1-e0b7df6]]
 rel: depends-on -> [[self-audit]]
+rel: derives-from -> [[bsd-t04-r1-5eae7916]]
 
 Branch `task-t0.4-plan6-remedy` in `/Volumes/littlebig/refmatrix-t04-green`, base `c8ff7a3e`
 (master). RED (red-t04, `8533d258`, `1907379b`) merged at `3bb81ed8`. GREEN commits:
