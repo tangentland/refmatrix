@@ -133,7 +133,7 @@ passed. Five were callers of the removed API that RED had already rewritten
 
 ## ch-bsd r1 fold, registry side (L186) {#fold-r1}
 
-[[bsd-t04-r1-5eae7916]] was DIRTY 1B/2S/2M with src clean. The registry side is in `27d71d3e`:
+ch-bsd r1 (`workflow/bullshit/2026-11-18-2300-t04-r1-5eae7916.md`, id `bsd-t04-r1-5eae7916`, persisted on master after this branch's base; the typed edge is added at merge) was DIRTY 1B/2S/2M with src clean. The registry side is in `27d71d3e`:
 - **B1.** Row 74 states what the R4.2 guard enforces (external boundaries, each target named)
   and gives internal patch sites to POP T1 step 4 (patched busy/down tests to a real busy daemon,
   Q45 = a) and step 3 (consolidation). Row 39 (`_MiniHub`) is permanent (L186, option b): the
@@ -149,7 +149,6 @@ passed. Five were callers of the removed API that RED had already rewritten
 - S1 and M1 are red-t04's (guard tightening). Every new hit its tightened guard lists is
   registered after it lands ([[#fold-r1-hits]]).
 
-rel: derives-from -> [[bsd-t04-r1-5eae7916]]
 
 red-t04's tightened guard (`6a188d4f`: per-double registration, module-object swaps, a
 row-width check, `\s+` in the phrase families) is merged at `5df3c6b9`. At the merged tree it
