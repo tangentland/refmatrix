@@ -213,16 +213,60 @@ def test_rewriter_bakes_no_tree_path(env_hooks):
         assert str(tree) not in body, f"rewriter bakes {tree}"
 
 
-def test_rewriter_renders_identically_from_any_tree(env_hooks, monkeypatch):
+def test_rewriter_renders_identically_from_any_tree(env_hooks, monkeypatch, tmp_path):
     """The property that makes bug-008 impossible rather than merely caught:
-    two different generating trees produce the same bytes."""
-    monkeypatch.setattr(sh, "wrapper_paths",
-                        lambda: ("/dev/tree/bin/rmxgrep", "/dev/tree/bin/rmxrg"))
-    a = sh.render_scripts()[sh.REWRITER_NAME]
-    monkeypatch.setattr(sh, "wrapper_paths",
-                        lambda: ("/deploy/bin/rmxgrep", "/deploy/bin/rmxrg"))
-    b = sh.render_scripts()[sh.REWRITER_NAME]
-    assert a == b, "the rendered rewriter still depends on the generating tree"
+    two different generating environments produce the same bytes. The
+    environment is varied for real (a different `rmxgrep`/`rmxrg` first on
+    PATH), not by patching a resolver, so the test outlives the removal of
+    the wrapper plumbing (T0.4 R4.3)."""
+    renders = []
+    for tree in ("dev-tree", "deploy-tree"):
+        b = tmp_path / tree / "bin"
+        b.mkdir(parents=True)
+        for n in ("rmxgrep", "rmxrg"):
+            (b / n).write_text("#!/bin/sh\nexit 0\n")
+            (b / n).chmod(0o755)
+        monkeypatch.setenv("PATH", f"{b}:/usr/bin:/bin")
+        renders.append(sh.render_scripts()[sh.REWRITER_NAME])
+    assert renders[0] == renders[1], "the rendered rewriter still depends on the generating tree"
+
+
+def _install_project(proj: Path) -> None:
+    from refmatrix import hooks as hooks_mod
+    (proj / ".refmatrix").mkdir(parents=True)
+    hooks_mod.install(project_root=proj, refmatrix_root=proj / ".refmatrix", git=False,
+                      claude=True, briefing=False, agent_env=False, search=True,
+                      scope="project", apply=True, force=True)
+
+
+def test_apply_records_no_wrapper_paths(env_hooks, tmp_path):
+    """T0.4 R4.3 (ch-bsd plan-6 r1 #s-1): the rewriter resolves its wrappers at
+    runtime (bug-008), so the `wrappers` paths `install --apply` recorded in
+    `.claude/rmx-hooks.json` are read by nothing. The apply records no such
+    flag."""
+    proj = tmp_path / "proj"
+    _install_project(proj)
+    flags = json.loads((proj / ".claude" / "rmx-hooks.json").read_text())["flags"]
+    assert flags.get("search") is True, flags
+    assert "wrappers" not in flags, flags
+
+
+def test_an_install_recorded_with_wrappers_reads_in_sync(env_hooks, tmp_path):
+    """AC-4.3 / R0.7: every install applied before R4.3 carries a `wrappers`
+    key in `.claude/rmx-hooks.json`. The dev code's `hooks.check` on such a
+    fixture install (a tmp root, never the live install) reads in sync: the
+    leftover key is not drift, and the scripts it would name are not
+    re-rendered differently. M4.3 (check treats the key as drift) is red."""
+    from refmatrix import hooks as hooks_mod
+    proj = tmp_path / "proj"
+    _install_project(proj)
+    rec_file = proj / ".claude" / "rmx-hooks.json"
+    rec = json.loads(rec_file.read_text())
+    rec["flags"]["wrappers"] = ["/old/tree/bin/rmxgrep", "/old/tree/bin/rmxrg"]
+    rec_file.write_text(json.dumps(rec, indent=2) + "\n")
+    ok, diff = hooks_mod.check(proj)
+    assert ok, diff
+    assert (env_hooks / sh.REWRITER_NAME).read_text() == sh.render_scripts()[sh.REWRITER_NAME]
 
 
 def test_rewriter_resolves_its_wrappers_at_runtime(env_hooks, tmp_path):

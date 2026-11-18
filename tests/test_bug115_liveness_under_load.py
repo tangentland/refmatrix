@@ -250,7 +250,7 @@ def test_grep_tool_teach_hook_stands_down_while_learning_is_off(tmp_path):
     """The user, 2026-10-15: the grep->graph loop is off until plan 16's passive shim
     exists. The rewrite already honours `learn.off`; the Grep-tool teach hook spawned
     `rmx grep` regardless."""
-    script = search_hooks.render_scripts(("/bin/false", "/bin/false"))[search_hooks.TEACH_NAME]
+    script = search_hooks.render_scripts()[search_hooks.TEACH_NAME]
     hook = tmp_path / "teach.sh"
     hook.write_text(script)
     hook.chmod(0o755)

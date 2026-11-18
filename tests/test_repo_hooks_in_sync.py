@@ -95,7 +95,7 @@ def _install_under_real_home(tmp_path: Path, monkeypatch) -> "tuple[Path, Path, 
         m.setenv("HOME", str(_real_home()))
         m.setenv("RMX_CLAUDE_HOOKS_DIR", str(hooks_dir))
         block = hooks_mod.render_managed(proj, flags)
-        scripts = search_hooks.render_scripts(flags.get("wrappers"))
+        scripts = search_hooks.render_scripts()
     (proj / ".claude" / "settings.json").write_text(json.dumps({"hooks": block["hooks"]}))
     for name, content in scripts.items():
         (hooks_dir / name).write_text(content)
