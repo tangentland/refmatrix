@@ -11,7 +11,7 @@ stoplist (`scan._PROMPT_STOPWORDS`, `feedback_reuse_shared_stoplist`) that names
 store holds. A topic with no printed member is not emitted. It is a RENDER filter: the focus
 graph is unchanged (admission into the ring is 25.3's).
 
-Throwaway stores under a short `mkdtemp()` root, in-process `Store`, no daemon, no mocks.
+Throwaway stores under a short sandbox root (`rmx_sandbox.short_root`), in-process `Store`, no daemon, no mocks.
 `_render_gmd` is called directly in one test only: the spec puts the filter there (`#census`),
 and a topic with no printable member cannot reach it through the public path, because the
 0.84.0 grounded-topic gate (`_has_grounded_member`) runs first and every member it accepts is
@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import re
 import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
+
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 SESSION = "sess-members315"
 MEMBERS = ["scan-prompt", "store.py", "the", "buigger", "question"]
@@ -47,7 +48,7 @@ def make_store():
     made: list = []
 
     def _make(holds_question: bool):
-        base = Path(tempfile.mkdtemp(prefix="mem.", dir="/tmp")).resolve()
+        base = Path(rmx_sandbox.short_root("mem.")).resolve()
         root = base / "proj" / ".refmatrix"
         root.mkdir(parents=True)
         s = Store(root, backend="duckdb")

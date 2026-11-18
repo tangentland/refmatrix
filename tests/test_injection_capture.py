@@ -12,9 +12,9 @@ composite build that raises was indistinguishable from an absent composite.
 
 How these tests run (spec `#s0-acceptance` preamble): each one runs the REAL `rmx scan-prompt` or
 `rmx memory recall --pack` command, as a child process importing this checkout's `src/`, against
-a throwaway store under a short `mkdtemp()` root (`/tmp/cap.XXXXXXXX`, every root the same
-length so the rendered absolute paths, and with them the token costs, are the same in every
-store). No daemon unless a test says so; the CLI reads the store in-process. "Capture off" is
+a throwaway store under a short sandbox root (`rmx_sandbox.short_root("cap.")`:
+`<sandbox root>/t/cap.XXXXXXXX`, every root the same length so the rendered absolute paths, and
+with them the token costs, are the same in every store). No daemon unless a test says so; the CLI reads the store in-process. "Capture off" is
 `RMX_INJECTION_CAPTURE=0`, never `REFMATRIX_NO_TELEMETRY`, unless a test says so. Nothing in
 `src/` is patched; no mock is used. The prompts are synthetic (no real prompt text,
 `feedback_no_raw_prompts_in_public_repo`).
@@ -41,12 +41,12 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from collections import Counter
 from pathlib import Path
 
 import pytest
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 from tests import task21_1_support as h
 
 CAP_DIR = "injection-capture"
@@ -108,7 +108,7 @@ def _bodies() -> "list[str]":
 
 
 def _new_base() -> Path:
-    return Path(tempfile.mkdtemp(prefix="cap.", dir="/tmp")).resolve()
+    return Path(rmx_sandbox.short_root("cap.")).resolve()
 
 
 def _build(*, ring: bool = True, docs: bool = True, memories: int = 0) -> dict:
