@@ -372,60 +372,14 @@ _HAS_LANCE = importlib.util.find_spec("lance") is not None
 _OFFLINE = __import__("os").environ.get("RMX_EMBED_OFFLINE") == "1"
 
 
-@pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
-@pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
-def test_op_embed_reports_degraded_rows_to_its_caller(tmp_path):
-    """The count is useless if it stays in the daemon: embed runs daemon-side
-    in the common case, so a CLI-process counter always reads zero."""
-    from refmatrix.daemon import Daemon, _op_embed
-    from refmatrix.store import Store
-
-    root = tmp_path / ".refmatrix"
-    root.mkdir(parents=True, exist_ok=True)
-    d = Daemon(root)
-    s = Store(root)
-    s.init()
-    d.store = s
-
-    # A memory entity with NO memory_content sidecar — embeds as its slug.
-    s.upsert_entity(kind="memory", name="feedback_orphan_slug")
-
-    result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
-
-    assert result.get("degraded", {}).get("memory_content_missing") == 1
-    s.close()
-
-
-@pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
-@pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
-def test_op_embed_reports_no_degradation_for_healthy_memories(tmp_path):
-    from refmatrix.daemon import Daemon, _op_embed
-    from refmatrix.store import Store
-
-    root = tmp_path / ".refmatrix"
-    root.mkdir(parents=True, exist_ok=True)
-    d = Daemon(root)
-    s = Store(root)
-    s.init()
-    d.store = s
-
-    s.add_memory(name="feedback_real", content="the daemon owns the writer",
-                 mtype="feedback")
-
-    result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
-
-    assert result["embedded"] == 1
-    assert result.get("degraded") == {}
-    s.close()
-
-
-def test_op_embed_carries_degraded_on_a_shutdown_cancel(tmp_path):
-    """T0.4 R4.6 (ch-bsd plan-6 r1 #m-2): extraction has already counted its degradations when a
-    stop cancels the batch before the model runs, so the cancel return carries `degraded` as the
-    `skipped_empty` return does. The stop is the daemon's real `_shutdown_event`, set before the
-    op: no embedder is asked for, phase 1 extracts, phase 2 returns `cancelled`. M4.6 (drop
-    `degraded` from that return) is red here."""
-    from refmatrix.daemon import Daemon, _op_embed
+@pytest.fixture
+def bare_daemon(tmp_path):
+    """A bare `Daemon` over a throwaway store, the shape `_op_embed` also runs on from the CLI.
+    Teardown retires its model workers before closing the store: `_op_embed` spawns a private
+    `embed_worker` when no hub is up, and a bare Daemon that is never stopped left that child
+    alive past the test, which the bug-229 leak gate fails the session on (seen on lane-mini
+    in `test_op_embed_reports_degraded_rows_to_its_caller`, T0.4, 2026-11-18)."""
+    from refmatrix.daemon import Daemon
     from refmatrix.store import Store
 
     root = tmp_path / ".refmatrix"
@@ -435,17 +389,61 @@ def test_op_embed_carries_degraded_on_a_shutdown_cancel(tmp_path):
     s.init()
     d.store = s
     try:
-        # A memory entity with NO memory_content sidecar: extraction falls back to its slug and
-        # counts it.
-        s.upsert_entity(kind="memory", name="feedback_orphan_slug")
-        d._shutdown_event.set()
-
-        result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
-
-        assert result.get("cancelled") is True, result
-        assert result.get("degraded") == {"memory_content_missing": 1}, result
+        yield d, s
     finally:
+        d._close_workers()
         s.close()
+
+
+@pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
+@pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
+def test_op_embed_reports_degraded_rows_to_its_caller(bare_daemon):
+    """The count is useless if it stays in the daemon: embed runs daemon-side
+    in the common case, so a CLI-process counter always reads zero."""
+    from refmatrix.daemon import _op_embed
+
+    d, s = bare_daemon
+    # A memory entity with NO memory_content sidecar — embeds as its slug.
+    s.upsert_entity(kind="memory", name="feedback_orphan_slug")
+
+    result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
+
+    assert result.get("degraded", {}).get("memory_content_missing") == 1
+
+
+@pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
+@pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
+def test_op_embed_reports_no_degradation_for_healthy_memories(bare_daemon):
+    from refmatrix.daemon import _op_embed
+
+    d, s = bare_daemon
+    s.add_memory(name="feedback_real", content="the daemon owns the writer",
+                 mtype="feedback")
+
+    result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
+
+    assert result["embedded"] == 1
+    assert result.get("degraded") == {}
+
+
+def test_op_embed_carries_degraded_on_a_shutdown_cancel(bare_daemon):
+    """T0.4 R4.6 (ch-bsd plan-6 r1 #m-2): extraction has already counted its degradations when a
+    stop cancels the batch before the model runs, so the cancel return carries `degraded` as the
+    `skipped_empty` return does. The stop is the daemon's real `_shutdown_event`, set before the
+    op: no embedder is asked for, phase 1 extracts, phase 2 returns `cancelled`. M4.6 (drop
+    `degraded` from that return) is red here."""
+    from refmatrix.daemon import _op_embed
+
+    d, s = bare_daemon
+    # A memory entity with NO memory_content sidecar: extraction falls back to its slug and
+    # counts it.
+    s.upsert_entity(kind="memory", name="feedback_orphan_slug")
+    d._shutdown_event.set()
+
+    result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
+
+    assert result.get("cancelled") is True, result
+    assert result.get("degraded") == {"memory_content_missing": 1}, result
 
 
 # --- plan-6 Q1 "Delete": the DuckDB read facade is gone (T0.4 R4.1, AC-4.1) --------------
