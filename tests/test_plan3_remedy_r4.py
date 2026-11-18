@@ -213,13 +213,53 @@ def test_memory_partition_reads_the_replica_under_a_held_writer(held, monkeypatc
     assert [op for op in held.ops if op != "ping"] == [], held.ops
 
 
-def test_memory_partition_still_guesses_on_an_answered_error(monkeypatch, tmp_path):
-    root = tmp_path / ".refmatrix"; root.mkdir()
-    monkeypatch.setattr(verbs, "require_daemon", lambda r, **kw: {"up": True})
-    monkeypatch.setattr(dm, "call", lambda *a, **kw: {"ok": False, "error": "no such op"})
+class _OldOpDaemon(_PingOnlyDaemon):
+    """A daemon that answers `ping` and answers every other op with an ERROR, the way a daemon
+    older than an op answers it (`unknown op …`). Nothing faked below the socket."""
+
+    def _serve_one(self, c):
+        import json as _json
+        try:
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = c.recv(65536)
+                if not chunk:
+                    return
+                buf += chunk
+            req = _json.loads(buf.decode() or "{}")
+            op = req.get("op")
+            self.ops.append(op)
+            resp = ({"ok": True, "result": {"pid": self.pid, "version": "x"}} if op == "ping"
+                    else {"ok": False, "error": f"unknown op {op}"})
+            c.sendall((_json.dumps(resp) + "\n").encode())
+        except OSError:
+            pass
+        finally:
+            c.close()
+
+
+def test_memory_partition_guesses_loudly_on_an_answered_error(caplog):
+    """T0.4 R4.4 (ch-bsd plan-6 r1 #s-2): an ANSWERED error from `partition_list` is the one case
+    the project default is a legitimate guess, and it is said, never mute: a `warning` naming the
+    root, the daemon's error and the partition it falls back to. Through the real socket: no
+    replica yet, a live daemon that answers ping and refuses the op. M4.4 (the warning is not
+    logged) is red here."""
     from refmatrix import discovery
-    monkeypatch.setattr(discovery, "store_name", lambda r: "proj")
-    assert verbs.memory_partition(root) == "proj"
+    d = _OldOpDaemon()
+    try:
+        with caplog.at_level("WARNING", logger="refmatrix.verbs"):
+            got = verbs.memory_partition(d.root)
+        project = discovery.store_name(d.root)
+        assert got == project
+        assert "partition_list" in d.ops, d.ops
+        warned = [r.getMessage() for r in caplog.records
+                  if r.name == "refmatrix.verbs" and r.levelname == "WARNING"]
+        assert len(warned) == 1, warned
+        assert str(d.root) in warned[0], warned
+        assert "unknown op partition_list" in warned[0], warned
+        assert repr(project) in warned[0], warned
+    finally:
+        d.close()
 
 
 # ---- global leg: one attempt under a budget ---------------------------------------------

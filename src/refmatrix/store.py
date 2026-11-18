@@ -1365,15 +1365,6 @@ class Store:
         self._partition_id: int | None = None
         # Duck-typed across backends: sqlite3.Connection or backend ConnLike.
         self._conn: Any = None
-        # Phase-1 of the DuckDB migration: when RMX_READ_VIA_DUCKDB is set,
-        # SELECTs on this Store are routed through a DuckDB sqlite_scanner
-        # view of catalog.db. Writes still go through SQLite. The DuckDB view
-        # and read shim are constructed lazily on first read.
-        self._read_via_duckdb: bool = os.environ.get("RMX_READ_VIA_DUCKDB") in (
-            "1", "true", "True",
-        )
-        self._duck_view = None
-        self._read_conn = None
         # See `deferred_links()`. None = direct mode (default); list =
         # buffering link/weighted_link calls for one bulk_link flush.
         self._link_buffer: list[tuple[str, int, int, float | None]] | None = None
@@ -1451,7 +1442,7 @@ class Store:
     def _log_event(self, op: str, **fields) -> None:
         """Append one JSON event to facts.log if RMX_LOG=1 and not replaying.
 
-        Called after the SQLite commit on every mutation. facts.log is a
+        Called after the catalog commit on every mutation. facts.log is a
         VERIFICATION and replay log; the catalog is authoritative and stays
         that way. The 2026-09 facts.log audit found no edge-time history to
         recover from it and three write paths that never logged at all, so
@@ -1558,9 +1549,9 @@ class Store:
         return cand if cand.exists() else None
 
     def _connect(self) -> Any:
-        # -> Any: the connection is sqlite3.Connection, DuckDBPyConnection,
-        # or duckdb_view.ReadConnection depending on backend/mode; all expose
-        # the same execute/fetch cursor surface. Never returns None.
+        # -> Any: the connection is sqlite3.Connection or DuckDBPyConnection
+        # depending on backend; both expose the same execute/fetch cursor
+        # surface. Never returns None.
         if self._conn is None:
             if self._read_only:
                 # Fast path: replica reader. Open the backend in read-only
@@ -2513,22 +2504,15 @@ class Store:
                 pass
 
     def _read(self):
-        """Return the connection used for SELECTs. Defaults to the SQLite
-        write connection. When RMX_READ_VIA_DUCKDB is set, returns a DuckDB
-        sqlite_scanner view that exposes the same `con.execute(sql, params)`
-        cursor surface (see refmatrix.duckdb_view.ReadConnection)."""
-        if not self._read_via_duckdb:
-            return self._connect()
-        if self._read_conn is None:
-            # Force the SQLite catalog into existence (schema, migrations,
-            # default linkages, partition row) before DuckDB attaches it —
-            # DuckDB opens read-only and won't trigger our self-heal.
-            self._connect()
-            from refmatrix.duckdb_view import DuckCatalogView
+        """Return the connection used for SELECTs: the store's own connection.
 
-            self._duck_view = DuckCatalogView(self.db_path)
-            self._read_conn = self._duck_view.read_connection()
-        return self._read_conn
+        Until 2026-11-18 an environment flag could route SELECTs through a
+        phase-1 sqlite_scanner facade over the SQLite catalog. Nothing set the
+        flag and the catalog is DuckDB-native, so plan-6 Q1 ("Delete") was
+        executed by task T0.4 (R4.1) and the facade is gone. The method stays as
+        the one SELECT entry point the read sites call.
+        """
+        return self._connect()
 
     def close(self) -> None:
         # Persist any in-memory fragment edits before tearing down the
@@ -2543,13 +2527,6 @@ class Store:
             self.flush_fragments()
         except Exception:
             pass
-        if self._duck_view is not None:
-            try:
-                self._duck_view.close()
-            except Exception:
-                pass
-            self._duck_view = None
-            self._read_conn = None
         if self._conn is not None:
             try:
                 self._conn.close()

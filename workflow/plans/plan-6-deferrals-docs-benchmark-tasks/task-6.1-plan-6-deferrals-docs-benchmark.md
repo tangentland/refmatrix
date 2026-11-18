@@ -29,7 +29,12 @@ rel: part-of -> [[plan-6-deferrals-docs-benchmark]]
 - `src/refmatrix/sync.py` — `yield_lock`/`yield_every` removed from **four** signatures (`sync_files`, `sync_since`, `flush_queue`, `_sync_paths`). Verified dead first: no caller anywhere passes them (the daemon passes them to `ingest_path`/`ingest_gmd_paths`, which do use them).
 - `workflow/deferral_registry.md` — row added for launchctl Linux (`fail-closed-seam`); bug-008's row updated to GRADUATED LIVE after checking the live hook.
 
-**Correction to this spec: `src/refmatrix/duckdb_view.py` is NOT deleted.** It is live — `store.py:1762` imports `DuckCatalogView` at runtime and `store.py:867`/`:1754` document `ReadConnection` as part of the cursor surface. `tests/test_duckdb_read_routing.py` does not exist; `tests/test_duckdb_parity.py` imports the module and passes. Deleting it would have broken the read path. The prescription was written when the module looked orphaned and was not re-checked.
+**Correction to this spec: `src/refmatrix/duckdb_view.py` is NOT deleted.** It is live — `store.py:1762` imports `DuckCatalogView` at runtime and `store.py:867`/`:1754` document `ReadConnection` as part of the cursor surface. `tests/test_duckdb_read_routing.py` does not exist; `tests/test_duckdb_parity.py` imports the module and passes. Deleting it would have broken the read path. The prescription was written when the module looked orphaned and was not re-checked. {#correction}
+
+**Superseded (2026-11-18): the correction above was wrong, and the module is deleted.** ch-bsd plan-6 r1 (#b-1) found its three facts false: the runtime import sat behind an `RMX_READ_VIA_DUCKDB` flag that nothing in the repo, `~/Library/LaunchAgents/` or `.claude/hooks/hooks.env` sets; the facade mounted SQLite only; and no production read reached it. Plan-6 Q1 ("Delete") was executed by task T0.4 R4.1, which deleted `duckdb_view.py`, both of its tests and the flag's store state. {#correction-superseded}
+
+rel: supersedes -> [[#correction]]
+rel: derives-from -> [[task-t0-suite-trust-sweep#r4-1]]
 
 ## Test Strategy (RED first) {#test-strategy}
 

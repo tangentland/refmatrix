@@ -15,9 +15,21 @@ the graph and every reasoning-free dodge structurally impossible:
 Scripts always live at the user-global hooks dir (one stable path, like the
 agent bashrc); the settings wiring follows --scope: project merges into
 .claude/settings.json, user prints a snippet (we never silently edit
-~/.claude/settings.json). Wrapper paths are resolved at install time — PATH
-first, then this package's repo bin/ — and baked in absolute, because the
-guard's own history shows aliasable names get aliased out from under hooks.
+~/.claude/settings.json).
+
+The rmxgrep/rmxrg wrapper paths are resolved at RUNTIME, by the rendered
+rewriter itself (`_wrapper()` in REWRITER_TEMPLATE): the `bin/` of the tree that
+owns the `rmx` on PATH, then that `rmx`'s sibling, then PATH, then `~/bin`, then
+the bare name. They used to be resolved at install time and baked in absolute,
+so the user-global rewriter named whichever checkout generated it, and an
+`install-hooks --apply` from a dev venv overwrote the live hook with dev-tree
+paths (bug-008, seen twice; bug-066 fixed the resolution order). Runtime
+resolution makes the rendered bytes the same from every tree, so nothing about
+the generating tree is recorded or passed: the install-time `wrapper_paths()`,
+`render_scripts(wrappers=)` and the `wrappers` value in `.claude/rmx-hooks.json`
+were removed as dead plumbing on 2026-11-18 (task T0.4 R4.3, ch-bsd plan-6 r1
+#s-1). An older install whose flags file still carries `wrappers` reads in sync:
+`hooks.check()` never reads the key.
 """
 from __future__ import annotations
 
@@ -402,29 +414,13 @@ def hooks_dir() -> Path:
         "RMX_CLAUDE_HOOKS_DIR", str(Path.home() / ".claude" / "hooks")))
 
 
-def wrapper_paths() -> "tuple[str, str]":
-    """(rmxgrep, rmxrg) absolute paths: PATH first, else this package's
-    repo bin/ (editable installs), else the bare names as a last resort."""
-    out = []
-    pkg_bin = Path(__file__).resolve().parents[2] / "bin"
-    for name in ("rmxgrep", "rmxrg"):
-        p = shutil.which(name)
-        if not p and (pkg_bin / name).exists():
-            p = str(pkg_bin / name)
-        out.append(p or name)
-    return out[0], out[1]
+def render_scripts() -> "dict[str, str]":
+    """name -> rendered content, with the rewriter's path baked into the guard.
 
-
-def render_scripts(wrappers: "tuple[str, str] | list | None" = None) -> "dict[str, str]":
-    """name -> rendered content, wrapper + rewriter paths baked in.
-    `wrappers` = (rmxgrep, rmxrg) paths to bake; default = this process's
-    `wrapper_paths()`. `check()` passes the paths recorded at apply time so
-    the comparison does not depend on which venv renders it."""
-    # `wrappers` is accepted and IGNORED for the rewriter: it resolves its own
-    # wrappers at runtime now, so the rendered bytes no longer depend on which
-    # tree rendered them (bug-008). The parameter stays because `check()` still
-    # passes the paths recorded at apply time, and removing it would break that
-    # caller for no gain.
+    Takes no wrapper paths: the rewriter resolves rmxgrep/rmxrg at runtime, so
+    the rendered bytes do not depend on which tree renders them (bug-008; see
+    the module docstring). The only baked path is the rewriter's own, under
+    `hooks_dir()`."""
     rewriter = str(hooks_dir() / REWRITER_NAME)
     # The toggle's constants are baked in from `learn_switch`, never retyped:
     # the rewriter cannot import refmatrix (system python3), so interpolation is

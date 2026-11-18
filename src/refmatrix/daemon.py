@@ -446,8 +446,7 @@ class _MemMirror:
         schema + data without re-running migrations.
 
         Uses the real `Store.__init__` so every lazily-checked attribute
-        (`_read_via_duckdb`, `_duck_view`, `_link_buffer`, `_fragments`,
-        etc.) is populated. Then overrides `db_path` to `:memory:` and
+        (`_link_buffer`, `_fragments`, etc.) is populated. Then overrides `db_path` to `:memory:` and
         connects the in-memory backend manually, bypassing the snapshot/
         symlink resolution from __init__ and the migration logic in
         `_connect`.
@@ -6334,7 +6333,12 @@ def _op_embed_locked(d, args, emb, embmod, kinds, limit, rebuild,
     # lock-holding wedge class of bug-085. Single batch encode keeps the model
     # warm and amortizes the tokenizer cost.
     if d._shutdown_event.is_set():
-        return {"embedded": 0, "remaining": len(rows), "cancelled": True}
+        # `degraded` rides on the cancel return too, as on `skipped_empty`: the
+        # batch was extracted, so its fallback count is real and a caller
+        # summing degraded rows across calls must not lose it (ch-bsd plan-6
+        # r1 #m-2; task T0.4 R4.6).
+        return {"embedded": 0, "remaining": len(rows), "cancelled": True,
+                "degraded": degraded}
     vectors = emb.embed_texts([t for (_eid, _k, t) in triples])
 
     # Phase 3 — write back under the lock, skipping any row edited (or

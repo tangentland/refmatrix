@@ -42,7 +42,6 @@ rel: related-to -> [[PERFORMANCE]]
 │              + memory_content sidecar + Lance dense vectors          │
 │  backend.py  SQLite vs DuckDB backend selection (new stores: DuckDB) │
 │  duckdb_catalog.py   native DuckDB schema (phase 3, current default) │
-│  duckdb_view.py      read-only DuckDB facade over SQLite (phase 1)   │
 │  migrate.py          one-shot SQLite → DuckDB migration              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -54,7 +53,6 @@ rel: related-to -> [[PERFORMANCE]]
 | `store.py`          | Root abstraction: catalog + bitmap fragments                | `Store`, `Entity`                                 |
 | `backend.py`        | Catalog backend selection (SQLite vs DuckDB)                | `select_backend`, `SQLiteBackend`, `DuckDBBackend`|
 | `duckdb_catalog.py` | Native DuckDB schema (CATALOG_DDL)                          | `init_catalog`                                    |
-| `duckdb_view.py`    | Read-only DuckDB view over SQLite catalog                   | `ReadConnection`, `DuckCatalogView`               |
 | `migrate.py`        | One-shot SQLite → DuckDB migration                          | `migrate_catalog`                                 |
 | `ingest.py`         | Multi-source ingestion (metadata/tldr/tree/semantic)        | `ingest_path`                                     |
 | `ingest_gmd.py`     | GMD (Graph Markdown) parser + registration                  | `parse_gmd`, `ingest_gmd_paths`                   |
@@ -67,7 +65,7 @@ rel: related-to -> [[PERFORMANCE]]
 | `telemetry.py`      | JSONL query log (`query.log`)                               | `log_query`, `summarize`                          |
 | `daemon.py`         | Per-store Unix-socket server; OPS dispatch                  | `Daemon`, `ping`, `call`, `spawn_daemon`          |
 | `hooks.py`          | Git + Claude Code hook installer                            | `install`                                         |
-| `cli.py`            | Click CLI; routes ~50 subcommands; daemon lifecycle         | `main`                                            |
+| `cli.py`            | Click CLI ([[#cli-hook-surface]]: generated tree); daemon lifecycle | `main`                                     |
 
 ## Dependency flow {#dependency-flow}
 
@@ -79,8 +77,8 @@ cli ─────────────────────────�
    │                            │
    ├─→ ingest ──────────────────│
    ├─→ ingest_gmd ──────────────│→ store ─→ backend ─→ duckdb_catalog
-   ├─→ migrate ──→ duckdb_catalog                ↘
-   ├─→ query ─────────────────→ store             duckdb_view (phase 1)
+   ├─→ migrate ──→ duckdb_catalog
+   ├─→ query ─────────────────→ store
    ├─→ context ──→ query ─────→ store
    ├─→ primer ────────────────→ store
    ├─→ scan ─────→ context ───→ store
@@ -125,8 +123,10 @@ running daemon open no `Store` of their own.
 
 The catalog has gone through three phases:
 
-1. **Phase 1 (SQLite + DuckDB view)** — SQLite owns writes, `duckdb_view.py`
-   gives read-only DuckDB query access for analytics.
+1. **Phase 1 (SQLite + DuckDB view)** — SQLite owned writes and a read-only
+   DuckDB facade (`duckdb_view.py`) mounted it for analytics. The facade was never
+   switched on in production and was deleted on 2026-11-18 (task T0.4 R4.1,
+   plan-6 Q1).
 2. **Phase 2 (DuckDB catalog + SQLite fragments)** — DuckDB owns catalog
    tables, bitmap fragments still on disk.
 3. **Phase 3 (DuckDB native)** — all catalog + bitmaps in one DuckDB file.

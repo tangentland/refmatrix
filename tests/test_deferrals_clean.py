@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -39,9 +40,12 @@ _skip_no_dense = pytest.mark.skipif(
     not _HAS_DENSE, reason="[dense] extra not installed"
 )
 
-# Phrases that describe a phase boundary that has already passed. Each one was
-# true when written and false by the time it was read.
-BANNED = [
+# Phrases that describe a phase boundary that has already passed. Each one was true when written
+# and false by the time it was read. Task 6.1 froze five literals; ch-bsd plan-6 r1 #s-3 found three
+# stale deferrals the literals could not see ("for now", "later phases") and showed that the old
+# meta-test (`len(BANNED) >= 4`) stayed green with a literal replaced by one that never matches.
+# T0.4 R4.5 widens the guard to phrase FAMILIES and compares the family SET.
+LEGACY_LITERALS = [
     "deferred to v1",
     "Phase 2 will",
     "Phase A stub",
@@ -49,25 +53,197 @@ BANNED = [
     "Phase B memory entities will add",
 ]
 
+# family name -> (regex, a line it must match). Case-insensitive except TODO, which is a marker
+# only in capitals. "TODO with no plan id": a TODO that names plan-N / task-N / bug-N is anchored.
+FAMILIES: "dict[str, tuple[str, str]]" = {
+    "for now": (r"(?i)\bfor\s+now\b", "ANN search is L2-distance based for now."),
+    "in v1": (r"(?i)\bin\s+v1\b", "the retry budget lands in v1"),
+    "later phase(s)": (r"(?i)\blater\s+phases?\b", "routing land in later phases."),
+    "eventually": (r"(?i)\beventually\b", "we will eventually index this"),
+    "when needed": (r"(?i)\bwhen\s+needed\b", "add the cache when needed"),
+    "not yet": (r"(?i)\bnot\s+yet\b", "this flag is not yet wired"),
+    "TODO without a plan id": (r"\bTODO\b(?!.*\b(?:plan-\d+|task-\d[\w.]*|bug-\d+)\b)",
+                               "# TODO: handle the empty case"),
+}
+for _lit in LEGACY_LITERALS:
+    FAMILIES[_lit] = (r"\s+".join(map(re.escape, _lit.split())), f"x {_lit} y")
+
+# The family set this guard bans. Spelled out separately from FAMILIES so that emptying or
+# renaming a family is a visible diff here, not a silent loss of coverage (r1 #s-3 M3).
+EXPECTED_FAMILIES = {
+    "for now", "in v1", "later phase(s)", "eventually", "when needed", "not yet",
+    "TODO without a plan id", *LEGACY_LITERALS,
+}
+
+_PASS_OWNER = "task-29.2-mypy-gate#ac-29"
+_PASS_REASON = "derive pass module: the edit is made by 29.2's R7 release"
+
+# Reviewed exceptions: (path, family, anchor, line, reason, owner). `anchor` is a substring of
+# the one line the entry excuses; `line` pins it for the two derive pass modules (their bytes are
+# frozen until 29.2 R7, ruling L122). Each entry is self-expiring: when its line no longer holds
+# its phrase the guard fails naming it, so the fix and the entry's deletion land together.
+ALLOW: "list[tuple[str, str, str, int | None, str, str | None]]" = [
+    ("src/refmatrix/session_ingest.py", "later phase(s)", "routing land in later phases.", 5,
+     _PASS_REASON, _PASS_OWNER),
+    ("src/refmatrix/vectors.py", "for now", "ANN search is L2-distance based for now.", 14,
+     _PASS_REASON, _PASS_OWNER),
+    ("src/refmatrix/daemon.py", "eventually", "must eventually flip `status` to `done` or `error`",
+     None, "states the caller's obligation on an ingest job; no deferral", None),
+    ("src/refmatrix/launchctl.py", "not yet", "support (systemd user unit) is not yet implemented",
+     None, "the user-facing refusal of the Linux supervisor gap, a registered fail-closed seam "
+     "(workflow/deferral_registry.md, Linux supervisor support)", None),
+    ("src/refmatrix/memory_layout.py", "not yet", "not yet respawned",
+     None, "describes a runtime state (a stale MCP server), not deferred work", None),
+    ("src/refmatrix/stm.py", "not yet", "owners not yet shown",
+     None, "describes a runtime state (errors an owner has not seen), not deferred work", None),
+    ("src/refmatrix/stm.py", "not yet", "had not yet touched",
+     None, "describes a runtime state (what the input hook has seen), not deferred work", None),
+    ("src/refmatrix/telemetry.py", "not yet", "NOT yet written",
+     None, "describes a runtime state (events buffered before emit), not deferred work", None),
+    ("src/refmatrix/cli.py", "TODO without a plan id", "`ok`, `TODO`, closing markers",
+     None, "names the token as data the rationale filter skips", None),
+    ("src/refmatrix/cli.py", "TODO without a plan id", 'rg -l TODO | rmx grep "FIXME"',
+     None, "a usage example in the grep help text", None),
+]
+
+# The derive pass modules whose lines may be held (ruling L122, #r4-5-derive-hold): exactly these.
+_HELD_PASS_LINES = {("src/refmatrix/session_ingest.py", 5, "later phase(s)"),
+                    ("src/refmatrix/vectors.py", 14, "for now")}
+
+
+def _rel(pkg: Path, p: Path) -> str:
+    return "src/refmatrix/" + p.relative_to(pkg).as_posix()
+
+
+def _lines(pkg: Path, rel: str) -> "list[str]":
+    f = pkg / rel.removeprefix("src/refmatrix/")
+    return f.read_text(encoding="utf-8", errors="replace").splitlines() if f.exists() else []
+
+
+def _entry_line(pkg: Path, entry) -> "int | None":
+    """The 1-based line an entry excuses, or None when it no longer holds its phrase."""
+    path, family, anchor, line, _reason, _owner = entry
+    lines = _lines(pkg, path)
+    pat = re.compile(FAMILIES[family][0])
+    if line is not None:
+        ok = 0 < line <= len(lines) and anchor in lines[line - 1] and pat.search(lines[line - 1])
+        return line if ok else None
+    at = [i for i, ln in enumerate(lines, 1) if anchor in ln]
+    if len(at) != 1 or not pat.search(lines[at[0] - 1]):
+        return None
+    return at[0]
+
+
+def stale_entries(pkg: Path, allow=None) -> "list[str]":
+    """Allow-list entries whose line no longer holds their phrase."""
+    return [f"{e[0]} ({e[1]!r}, {e[2]!r})"
+            for e in (ALLOW if allow is None else allow) if _entry_line(pkg, e) is None]
+
+
+def offenders(pkg: Path, allow=None) -> "list[str]":
+    """`path:line: family` for every phrase-family hit in `pkg` no live entry excuses."""
+    excused = set()
+    for e in (ALLOW if allow is None else allow):
+        ln = _entry_line(pkg, e)
+        if ln is not None:
+            excused.add((e[0], ln, e[1]))
+    pats = {name: re.compile(rx) for name, (rx, _sample) in FAMILIES.items()}
+    out: list[str] = []
+    for p in sorted(pkg.rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
+        rel = _rel(pkg, p)
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for name, pat in pats.items():
+                if pat.search(line) and (rel, i, name) not in excused:
+                    out.append(f"{rel}:{i}: {name!r}: {line.strip()[:100]}")
+    return out
+
+
+def held_pass_entries_beyond_the_two(allow=None) -> "list[str]":
+    """Allow-list entries on a derive pass module other than the two #r4-5-derive-hold names."""
+    from refmatrix.store import _DERIVE_PASS_MODULES
+    pass_files = {f"src/refmatrix/{m}" for mods in _DERIVE_PASS_MODULES.values() for m in mods}
+    return [f"{e[0]}:{e[3]} {e[1]!r}" for e in (ALLOW if allow is None else allow)
+            if e[0] in pass_files and (e[0], e[3], e[1]) not in _HELD_PASS_LINES]
+
 
 def test_no_stale_phase_language_in_src():
-    offenders: list[str] = []
-    for p in sorted(_SRC.rglob("*.py")):
-        text = p.read_text(encoding="utf-8", errors="replace")
-        for i, line in enumerate(text.splitlines(), 1):
-            for phrase in BANNED:
-                if phrase in line:
-                    offenders.append(f"{p.relative_to(_SRC.parent.parent)}:{i}: {phrase!r}")
-    assert offenders == [], (
-        "stale phase language in src/ — the phase it describes is over:\n  "
-        + "\n  ".join(offenders)
+    found = offenders(_SRC)
+    assert found == [], (
+        "stale phase language in src/: the phase it describes is over, or it names no plan. "
+        "Fix the line, or add a reviewed ALLOW entry with its reason:\n  " + "\n  ".join(found)
     )
 
 
-def test_this_guard_names_the_phrases_it_bans():
-    """A guard whose banned list is empty passes forever. Fail loudly if it
-    is ever emptied to get green."""
-    assert len(BANNED) >= 4
+def test_every_allow_list_entry_still_holds_its_phrase():
+    """Self-expiring entries (#r4-5-derive-hold): the release that fixes an excused line deletes
+    its entry in the same commit."""
+    stale = stale_entries(_SRC)
+    assert stale == [], "allow-list entries whose line no longer holds the phrase:\n  " + \
+        "\n  ".join(stale)
+
+
+def test_this_guard_bans_the_phrase_families_not_a_count():
+    """The meta-test compares the SET of families and proves each pattern still fires on its own
+    sample line. Replacing one with a never-matching literal (r1 #s-3 M3, T0.4 M4.5a) is red."""
+    assert set(FAMILIES) == EXPECTED_FAMILIES
+    dead = [name for name, (rx, sample) in FAMILIES.items() if not re.search(rx, sample)]
+    assert dead == [], f"families whose pattern no longer matches their own sample: {dead}"
+    # bsd-t04 r1 #m1: a family is words, not one spacing of them. Every multi-word family still
+    # fires with its spaces doubled or tabbed.
+    narrow = [name for name, (rx, sample) in FAMILIES.items()
+              for spaced in (sample.replace(" ", "  "), sample.replace(" ", "\t"))
+              if not re.search(rx, spaced)]
+    assert narrow == [], f"families that miss a respaced sample: {sorted(set(narrow))}"
+    # TODO is anchored by a plan id, and only then.
+    assert not re.search(FAMILIES["TODO without a plan id"][0], "# TODO(plan-29): wire it")
+    # every entry is reviewed: a family the guard knows, and a reason
+    for e in ALLOW:
+        assert e[1] in FAMILIES and e[4], e
+
+
+def test_only_the_two_held_pass_module_lines_are_allow_listed():
+    """M4.5d: ruling L122 holds exactly two derive-pass-module lines until 29.2 R7; any other
+    entry on a pass module is red. 29.2's deletion of both keeps this green."""
+    assert held_pass_entries_beyond_the_two() == []
+    for e in ALLOW:
+        if (e[0], e[3], e[1]) in _HELD_PASS_LINES:
+            assert e[5] == _PASS_OWNER, e
+    planted = ALLOW + [("src/refmatrix/embedder.py", "for now", "x", 3, _PASS_REASON, _PASS_OWNER)]
+    assert held_pass_entries_beyond_the_two(planted) == ["src/refmatrix/embedder.py:3 'for now'"]
+
+
+def _tree_copy(tmp_path: Path) -> Path:
+    pkg = tmp_path / "src" / "refmatrix"
+    shutil.copytree(_SRC, pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    return pkg
+
+
+def test_a_stale_entry_is_named_on_a_tree_copy(tmp_path):
+    """M4.5c: on a tmp copy of the tree whose vectors.py line 14 no longer says "for now", with
+    the allow-list unchanged, the guard is red naming that entry. No pass module in the checkout
+    is edited (their bytes feed the derive pass hash)."""
+    pkg = _tree_copy(tmp_path)
+    f = pkg / "vectors.py"
+    lines = f.read_text(encoding="utf-8").splitlines(keepends=True)
+    assert "for now" in lines[13]
+    lines[13] = lines[13].replace("for now", "by design")
+    f.write_text("".join(lines), encoding="utf-8")
+    assert stale_entries(pkg) == [
+        "src/refmatrix/vectors.py ('for now', 'ANN search is L2-distance based for now.')"]
+
+
+@pytest.mark.parametrize("planted", ["# for now", "# for  now", "# For\tnow"])
+def test_a_new_for_now_in_src_is_named_on_a_tree_copy(tmp_path, planted):
+    """M4.5b, planted: a `# for now` appended to a src/ file is red, naming the file, in any
+    spacing (bsd-t04 r1 #m1: `for  now` passed the single-space pattern)."""
+    pkg = _tree_copy(tmp_path)
+    f = pkg / "helix.py"
+    n = len(f.read_text(encoding="utf-8").splitlines())
+    f.write_text(f.read_text(encoding="utf-8") + planted + "\n", encoding="utf-8")
+    assert [o.split(": ")[0] for o in offenders(pkg)
+            if o.startswith("src/refmatrix/helix.py")] == [f"src/refmatrix/helix.py:{n + 1}"]
 
 
 # --- sync.py: the dead yield parameters are gone ---------------------------
@@ -196,12 +372,14 @@ _HAS_LANCE = importlib.util.find_spec("lance") is not None
 _OFFLINE = __import__("os").environ.get("RMX_EMBED_OFFLINE") == "1"
 
 
-@pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
-@pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
-def test_op_embed_reports_degraded_rows_to_its_caller(tmp_path):
-    """The count is useless if it stays in the daemon: embed runs daemon-side
-    in the common case, so a CLI-process counter always reads zero."""
-    from refmatrix.daemon import Daemon, _op_embed
+@pytest.fixture
+def bare_daemon(tmp_path):
+    """A bare `Daemon` over a throwaway store, the shape `_op_embed` also runs on from the CLI.
+    Teardown retires its model workers before closing the store: `_op_embed` spawns a private
+    `embed_worker` when no hub is up, and a bare Daemon that is never stopped left that child
+    alive past the test, which the bug-229 leak gate fails the session on (seen on lane-mini
+    in `test_op_embed_reports_degraded_rows_to_its_caller`, T0.4, 2026-11-18)."""
+    from refmatrix.daemon import Daemon
     from refmatrix.store import Store
 
     root = tmp_path / ".refmatrix"
@@ -210,29 +388,35 @@ def test_op_embed_reports_degraded_rows_to_its_caller(tmp_path):
     s = Store(root)
     s.init()
     d.store = s
+    try:
+        yield d, s
+    finally:
+        d._close_workers()
+        s.close()
 
+
+@pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
+@pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
+def test_op_embed_reports_degraded_rows_to_its_caller(bare_daemon):
+    """The count is useless if it stays in the daemon: embed runs daemon-side
+    in the common case, so a CLI-process counter always reads zero."""
+    from refmatrix.daemon import _op_embed
+
+    d, s = bare_daemon
     # A memory entity with NO memory_content sidecar — embeds as its slug.
     s.upsert_entity(kind="memory", name="feedback_orphan_slug")
 
     result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
 
     assert result.get("degraded", {}).get("memory_content_missing") == 1
-    s.close()
 
 
 @pytest.mark.skipif(not (_HAS_DENSE and _HAS_LANCE), reason="[dense] extra not installed")
 @pytest.mark.skipif(_OFFLINE, reason="RMX_EMBED_OFFLINE=1")
-def test_op_embed_reports_no_degradation_for_healthy_memories(tmp_path):
-    from refmatrix.daemon import Daemon, _op_embed
-    from refmatrix.store import Store
+def test_op_embed_reports_no_degradation_for_healthy_memories(bare_daemon):
+    from refmatrix.daemon import _op_embed
 
-    root = tmp_path / ".refmatrix"
-    root.mkdir(parents=True, exist_ok=True)
-    d = Daemon(root)
-    s = Store(root)
-    s.init()
-    d.store = s
-
+    d, s = bare_daemon
     s.add_memory(name="feedback_real", content="the daemon owns the writer",
                  mtype="feedback")
 
@@ -240,4 +424,63 @@ def test_op_embed_reports_no_degradation_for_healthy_memories(tmp_path):
 
     assert result["embedded"] == 1
     assert result.get("degraded") == {}
-    s.close()
+
+
+def test_op_embed_carries_degraded_on_a_shutdown_cancel(bare_daemon):
+    """T0.4 R4.6 (ch-bsd plan-6 r1 #m-2): extraction has already counted its degradations when a
+    stop cancels the batch before the model runs, so the cancel return carries `degraded` as the
+    `skipped_empty` return does. The stop is the daemon's real `_shutdown_event`, set before the
+    op: no embedder is asked for, phase 1 extracts, phase 2 returns `cancelled`. M4.6 (drop
+    `degraded` from that return) is red here."""
+    from refmatrix.daemon import _op_embed
+
+    d, s = bare_daemon
+    # A memory entity with NO memory_content sidecar: extraction falls back to its slug and
+    # counts it.
+    s.upsert_entity(kind="memory", name="feedback_orphan_slug")
+    d._shutdown_event.set()
+
+    result = _op_embed(d, {"kinds": ["memory"], "limit": 32})
+
+    assert result.get("cancelled") is True, result
+    assert result.get("degraded") == {"memory_content_missing": 1}, result
+
+
+# --- plan-6 Q1 "Delete": the DuckDB read facade is gone (T0.4 R4.1, AC-4.1) --------------
+
+# Spelled in two halves so this file does not name the flag it bans.
+_FACADE_FLAG = "RMX_READ_VIA_" + "DUCKDB"
+
+
+def _files_naming(token: str, *dirs: Path, root: "Path | None" = None) -> "list[str]":
+    root = root or _SRC.parent.parent
+    out: list[str] = []
+    for d in dirs:
+        for p in sorted(d.rglob("*")):
+            if not p.is_file() or "__pycache__" in p.parts:
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            if token in text:
+                out.append(str(p.relative_to(root)))
+    return out
+
+
+def test_the_duckdb_read_facade_flag_is_named_nowhere_in_src_or_tests():
+    """plan-6 Q1 was decided "Delete" (r1 #b-1): `duckdb_view.py` mounts the old SQLite catalog,
+    no production path sets its flag, and two tests kept it alive. AC-4.1: the flag appears in
+    no file under src/ or tests/, and the module is gone."""
+    root = _SRC.parent.parent
+    assert _files_naming(_FACADE_FLAG, root / "src", root / "tests") == []
+    assert importlib.util.find_spec("refmatrix.duckdb_view") is None
+
+
+def test_the_facade_flag_scan_names_a_planted_file(tmp_path):
+    """The scan above can fail: a planted file naming the flag is listed."""
+    sub = tmp_path / "tests"
+    sub.mkdir()
+    (sub / "planted.py").write_text(f'os.environ.get("{_FACADE_FLAG}")\n')
+    (sub / "clean.py").write_text("x = 1\n")
+    assert _files_naming(_FACADE_FLAG, sub, root=tmp_path) == ["tests/planted.py"]
