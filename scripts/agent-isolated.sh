@@ -42,7 +42,9 @@ for i in $(seq 1 30); do
   if printf '%s' "$SCR" | LC_ALL=C grep -q 'Yes, I trust this folder'; then
     "${T[@]}" send-keys -t "$S" Down; sleep 0.5; "${T[@]}" send-keys -t "$S" Enter; continue
   fi
-  if printf '%s' "$SCR" | LC_ALL=C grep -q 'Enter to confirm'; then
+  # A Claude Code update re-shows its first-run screens (security notice, syntax theme); before
+  # 2026-11-18 the loop missed them and the start prompt was typed into them and lost (bug-287).
+  if printf '%s' "$SCR" | LC_ALL=C grep -qE 'Enter to confirm|Press Enter to continue|Syntax theme|Choose the text style'; then
     "${T[@]}" send-keys -t "$S" Enter; continue
   fi
   printf '%s' "$SCR" | LC_ALL=C grep -qE 'Try "|shift\+tab|for shortcuts' && break
