@@ -490,10 +490,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q52**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q53**. Open: Q52. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q52 | 2026-11-18 | The user: "we could probably drop sqllite as the main store if its still in there. Where is sqllitye still used". The lead's census (read-only): no fleet store has a `catalog.db` and nothing sets `RMX_BACKEND` (LaunchAgents, hooks, scripts), so the SQLite CATALOG backend is dead in production, yet the code carries it: `backend.py` `SQLiteBackend` (326 lines, opt-in `RMX_BACKEND=sqlite` or a legacy `catalog.db` autodetect), ~51 mentions and `kind == "sqlite"` branches in `store.py`, `migrate.py` (182 lines) plus `rmx` migrate command (`cli.py:4137`), SQLite branches/comments in `daemon.py`, `pagerank.py` (a `sqlite_sql=` path), `ingest.py`, `vectors.py`; 28 test files. `duckdb_view.py` (the SQLite-mounting facade) is already deleted by T0.4 R4.1. Separately, the hub BUS is a live SQLite file (`~/.refmatrix/bus/bus.db`, 3.3 MB), not the main store | (rec) (a) one task after T0.4 and before 29.5 (it shrinks `store.py` ahead of the split): delete `SQLiteBackend`, the autodetect, `migrate.py` and its command, every `kind == "sqlite"` branch and `sqlite_sql=` path, and the SQLite-only tests; an `rmx` that finds a legacy `catalog.db` refuses with one line naming it; the bus stays on SQLite (a small multi-writer log, which SQLite suits and DuckDB's single writer does not); (b) fold it into T0.4 now (larger review); (c) also move the bus to DuckDB | **open** {#q52} |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
