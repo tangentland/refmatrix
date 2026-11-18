@@ -1828,11 +1828,14 @@ def pre_prompt_state(root: Path, session: str, prompt: str, *, t0: float) -> Pre
             close = abs(float(pre.get("wall")) - float(t0)) <= PRE_PROMPT_SKEW_S
         except (TypeError, ValueError):
             close = False
-        if close and isinstance(pre.get("graph"), dict):
-            problem = focus_graph_problem(pre["graph"])
+        if close:
+            # bug-268: a wrong-shaped snapshot graph is corrupt like the live one: said
+            # once, and the live state is read instead. bug-285 (2026-11-18): a `graph`
+            # that is not an object at all (`[]`, `5`) is the same corruption, not a skip.
+            g = pre.get("graph")
+            problem = (focus_graph_problem(g) if isinstance(g, dict)
+                       else f"not an object ({type(g).__name__})")
             if problem:
-                # bug-268: a wrong-shaped snapshot graph is corrupt like the live one: said
-                # once, and the live state is read instead.
                 _say_corrupt(s._pre_path(), f"its graph: {problem}")
                 return PrePromptState(graph=live_graph, topic_cache={},
                                       turn=int(live_graph.get("turn", 0)),
