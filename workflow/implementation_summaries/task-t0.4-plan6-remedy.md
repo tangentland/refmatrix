@@ -164,6 +164,15 @@ had already cleared 4). Each file gets a row naming every leaf, written from its
 tree: 0 width errors, 0 unregistered (`workflow/review-output/t04-fold-census-2.log`).
 {#fold-r1-hits}
 
+Fold confirm: `t04-green-fold` at `d380d9ca` (`test_mock_registry_coverage.py`,
+`test_deferrals_clean.py`) read 66 passed but exited 1 on the bug-229 leak gate: a private
+`refmatrix.embed_worker` outlived the task-6.1 test
+`test_op_embed_reports_degraded_rows_to_its_caller` (a bare `Daemon` whose workers were never
+closed; also in red-t04's base-src runs, intermittent). red-t04's `0038f810` (test-only) gives
+the three bare-Daemon `_op_embed` tests a fixture that calls `d._close_workers()`; its lane-mini
+run at `0038f810` (those two files plus `test_search_hooks.py`): 95 passed, exit 0, no leak.
+{#verify-fold}
+
 ## Not done, flagged {#flags}
 
 - A fixture script of mine short-circuited on a failed `ls` with `$T` empty and wrote a planted
