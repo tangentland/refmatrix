@@ -37,6 +37,7 @@ from refmatrix import cli as cli_mod
 from refmatrix import daemon as dm
 from refmatrix import discovery
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 REPO = Path(__file__).resolve().parents[1]
 GMD = "---\ngmd: \"0.1\"\nid: {id}\ntitle: t\ntags: [x]\n---\n\n# T {{#root}}\n\n{body}\n"
@@ -44,7 +45,7 @@ GMD = "---\ngmd: \"0.1\"\nid: {id}\ntitle: t\ntags: [x]\n---\n\n# T {{#root}}\n\
 
 def _seeded_root() -> tuple[Path, Path]:
     """A real initialised store on a short /tmp path (unix-socket length)."""
-    base = Path(tempfile.mkdtemp(prefix="rmxb-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxb-"))
     root = base / ".refmatrix"
     s = Store(root); s.init(); s.close()
     return base, root

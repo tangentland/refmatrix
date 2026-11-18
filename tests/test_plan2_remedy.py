@@ -11,6 +11,7 @@ from click.testing import CliRunner
 from refmatrix import hooks as hooks_mod
 from refmatrix.hooks import _claude_hook_block, install
 from tests.test_hooks_reproducible import _cmds, _project, _apply
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 def test_enforce_forced_on_emits_entries_without_scripts(tmp_path):
@@ -200,7 +201,7 @@ class _SilentDaemon:
 
     def __init__(self, seeded: bool = False):
         from refmatrix import daemon as daemon_mod
-        self.base = Path(_tempfile.mkdtemp(prefix="rmxs-", dir="/tmp"))
+        self.base = Path(rmx_sandbox.short_root("rmxs-"))
         self.root = self.base / ".refmatrix"
         self.root.mkdir()
         self.writer = None

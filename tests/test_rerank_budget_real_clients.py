@@ -24,6 +24,7 @@ import os
 import socket
 import sys
 import tempfile
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import threading
 import time
 from pathlib import Path
@@ -92,7 +93,7 @@ _SRC = str(Path(__file__).resolve().parents[1] / "src")
 def stub(monkeypatch):
     """Short root (macOS sun_path), a stub worker script, and a hub socket
     path INSIDE it — nothing here can reach the live ~/.refmatrix/models.sock."""
-    root = Path(tempfile.mkdtemp(prefix="rmxb", dir="/tmp"))
+    root = Path(rmx_sandbox.short_root("rmxb"))
     (root / "w.py").write_text(_STUB)
     (root / "rr_s").write_text("0.05")
     (root / "spawns").write_text("")

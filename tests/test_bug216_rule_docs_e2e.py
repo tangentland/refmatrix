@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 # ---------------------------------------------------------------- the fixture repo
 
@@ -135,7 +136,7 @@ EXPECTED_OLD = {"docs/finding.md", "docs/other.md"}
 
 def _make_proj() -> tuple[Path, Path, Path]:
     """(base, proj, store_root). `store_root` = `<proj>/.refmatrix` with an initialised store."""
-    base = Path(tempfile.mkdtemp(prefix="b216", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216")).resolve()
     proj = base / "proj"
     files = {
         "CLAUDE.md": CLAUDE_MD,
@@ -631,7 +632,7 @@ def test_the_memory_walk_is_not_put_through_should_ignore():
     (`memory_layout.iter_memory_files`, ADR-0005 #one-walk) must not be, or every memory is
     dropped. Green at HEAD; a guard for the implementation."""
     from refmatrix.ingest_gmd import collect_gmd_files
-    base = Path(tempfile.mkdtemp(prefix="b216m", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216m")).resolve()
     try:
         mem = base / ".claude" / "projects" / "p" / "memory"
         mem.mkdir(parents=True)

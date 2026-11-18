@@ -17,6 +17,7 @@ import textwrap
 import threading
 
 import pytest
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 _HAS_DENSE = importlib.util.find_spec("sentence_transformers") is not None
 _OFFLINE = os.environ.get("RMX_EMBED_OFFLINE") == "1"
@@ -35,7 +36,7 @@ def sock_path(monkeypatch):
     """
     import shutil
     import tempfile
-    d = tempfile.mkdtemp(prefix="rmxsock", dir="/tmp")
+    d = rmx_sandbox.short_root("rmxsock")
     p = pathlib.Path(d) / "models.sock"
     monkeypatch.setenv("RMX_MODEL_SOCK", str(p))
     yield p

@@ -62,6 +62,7 @@ from refmatrix import subproc
 from refmatrix.subproc import WorkerError
 from tests.test_shared_worker_readoption import _FakePrivate, _StubHub
 from tests.test_task3_7_remedy_r2 import _one_call, rig  # noqa: F401 — the fixture
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 REQUEST_PATH_CEILING_S = 2.5
 COLD_PROBE_S = 6.0          # PROBE_TIMEOUT_S under test: must never be paid on a request
@@ -290,7 +291,7 @@ def test_a_successful_reprobe_clears_the_backoff_so_the_next_stint_starts_at_bas
 
 @pytest.fixture
 def daemon4(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="r37r4d-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("r37r4d-"))
     root = base / "p" / ".refmatrix"
     root.parent.mkdir(parents=True)
     sock = base / "models.sock"

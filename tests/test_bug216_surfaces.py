@@ -39,6 +39,7 @@ from refmatrix import daemon as daemon_mod
 from refmatrix import verbs
 from refmatrix.ingest_gmd import ingest_gmd_paths
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 VERB = "rmx_derive_denotes"
 COUNT_KEYS = ("added", "concepts", "targets", "multi_target")
@@ -51,7 +52,7 @@ def _gmd(doc_id: str, body: str = "Body.\n") -> str:
 
 @pytest.fixture
 def env(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="b216s", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216s")).resolve()
     proj = base / "proj"
     (proj / "docs").mkdir(parents=True)
     root = proj / ".refmatrix"

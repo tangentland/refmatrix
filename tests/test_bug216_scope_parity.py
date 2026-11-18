@@ -26,6 +26,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 REPO = Path(__file__).resolve().parents[1]
 PARITY = REPO / "scripts" / "check-gmd-parity.py"
@@ -42,7 +43,7 @@ PLAIN = "<!-- not-gmd: bug-216 fixture -->\n# Not GMD\n\nNo frontmatter, so neit
 
 
 def _root(prefix: str = "b216p") -> Path:
-    root = Path(tempfile.mkdtemp(prefix=prefix, dir="/tmp")).resolve()
+    root = Path(rmx_sandbox.short_root(prefix)).resolve()
     (root / ".git").mkdir()
     (root / "scripts").mkdir()
     shutil.copy2(PARITY, root / "scripts" / "check-gmd-parity.py")

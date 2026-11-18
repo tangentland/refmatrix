@@ -26,6 +26,7 @@ import pytest
 
 from refmatrix.store import Store
 from tests.test_bug216_rule_docs_e2e import _ingested, _open, _run
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 ANCESTORS = (".hidden", "build")
 ROUTES = ("watcher", "sync", "ingest-path", "op-ingest-gmd")
@@ -38,7 +39,7 @@ def _gmd(doc_id: str) -> str:
 
 @pytest.fixture(params=ANCESTORS)
 def proj(request):
-    base = Path(tempfile.mkdtemp(prefix="b216w", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216w")).resolve()
     proj = base / request.param / "proj"
     for rel, doc_id in (("docs/d.md", "d"), ("build/x.md", "inner-build-x"),
                         ("dist/y.md", "inner-dist-y")):

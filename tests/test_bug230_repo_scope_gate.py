@@ -96,7 +96,7 @@ def test_1_a_gate_whose_parity_step_crashed_fails_the_repo_scope_verdict(gate_ro
 def checkout():
     """A throwaway checkout root with `.refmatrix/.refmatrix_ignore` and a catalog file beside
     it, and the deny set the sandbox builds for such a checkout plus the session's own."""
-    base = Path(tempfile.mkdtemp(prefix="b230", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b230")).resolve()
     (base / ".refmatrix").mkdir()
     (base / IGNORE_REL).write_text(R4_SPEC)
     (base / ".refmatrix" / "catalog.A.duckdb").write_bytes(b"not really a catalog")
@@ -187,7 +187,7 @@ def test_2a_the_dev_tree_shape_runs_the_scope_parity_step_under_the_sandbox(gate
     gate_roots.append(root)
     (root / ".refmatrix").mkdir()
     (root / IGNORE_REL).write_text(R4_SPEC)
-    sb = Path(tempfile.mkdtemp(prefix="b230s", dir="/tmp")).resolve()
+    sb = Path(rmx_sandbox.short_root("b230s")).resolve()
     gate_roots.append(sb)
     session = rmx_sandbox._STATE["deny"]
     deny = dict(session,

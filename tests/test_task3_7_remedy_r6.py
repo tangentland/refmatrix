@@ -58,6 +58,7 @@ from tests.test_shared_worker_readoption import _FakePrivate, _StubHub
 from tests.test_task3_7_remedy_r2 import _one_call, rig  # noqa: F401 -- the fixture
 from tests.test_task3_7_remedy_r4 import _brief, rig4  # noqa: F401 -- the fixture
 from tests.test_task3_7_remedy_r5 import _env_warnings, _settle, env_warned, rig5  # noqa: F401
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 
@@ -69,7 +70,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 def mute_daemon(monkeypatch):
     """A real `Daemon` (never served) with a PRIVATE embed worker, its log captured, and a
     models.sock path in a SHORT root (macOS `sun_path` is ~104 bytes)."""
-    base = Path(tempfile.mkdtemp(prefix="r37r6-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("r37r6-"))
     root = base / "p" / ".refmatrix"
     root.parent.mkdir(parents=True)
     sock = base / "models.sock"
@@ -206,7 +207,7 @@ def _import_with_env(module: str, expr: str, **env) -> "tuple[int, object, str]"
     Python expression over the imported module `m`) as JSON. Returns (rc, value, stderr).
     The interpreter's logging is unconfigured, so a `logging.warning` reaches stderr through
     the last-resort handler -- the operator's view of an import-time knob."""
-    home = tempfile.mkdtemp(prefix="r37r6h-", dir="/tmp")
+    home = rmx_sandbox.short_root("r37r6h-")
     try:
         e = {k: v for k, v in os.environ.items()
              if not k.startswith(("RMX_", "CLAUDE", "REFMATRIX_"))}
