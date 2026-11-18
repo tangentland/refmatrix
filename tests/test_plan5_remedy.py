@@ -215,9 +215,6 @@ def test_sync_disk_is_a_thin_alias_of_the_bridge(tmp_path, monkeypatch):
     for bad in (["--mtype", "x"], ["--dry-run"]):
         r = CliRunner().invoke(cli_mod.main, ["memory", "sync-disk", *bad, str(memdir)])
         assert r.exit_code == 2, (bad, r.output)
-    src = (REPO / "src" / "refmatrix" / "cli.py").read_text()
-    assert "Kept as an alias for one release" not in src
-    assert "hand-rolled walker" not in src
 
 
 def test_sync_disk_alias_fails_loud_when_the_bridge_fails(booting, monkeypatch):

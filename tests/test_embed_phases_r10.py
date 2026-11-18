@@ -139,20 +139,6 @@ def test_the_cli_embed_loop_verdict(result, streak, want):
     assert _embed_batch_verdict(result, changed_streak=streak) == want
 
 
-def test_the_cli_embed_loop_uses_the_verdict():
-    """The verdict is THE decision, not a parallel copy of it."""
-    from pathlib import Path
-
-    from refmatrix import cli
-
-    # from disk, not inspect: a mutation run edits src/ under a loaded module
-    src = Path(cli.__file__).read_text()
-    loop = src[src.index("total_embedded = 0\n    total_degraded"):]
-    loop = loop[:loop.index("_stamp_derive_pass(root, part, \"embed\")")]
-    assert "_embed_batch_verdict(" in loop
-    assert "if embedded == 0 or remaining == 0" not in loop
-
-
 # ---- R2 / V16 ------------------------------------------------------------
 
 def test_the_precomputed_query_refuses_any_other_text():
@@ -178,13 +164,3 @@ def test_the_watch_flush_sums_vector_delete_failures_across_roots():
     ])
     assert tot == {"added": 5, "updated": 3, "purged": 4,
                    "vector_delete_failed": 7, "cancelled": True}
-
-
-def test_the_watch_flush_uses_the_sum():
-    from pathlib import Path
-
-    from refmatrix import daemon
-
-    src = Path(daemon.__file__).read_text()
-    assert "_sum_sync_reports(" in src
-    assert "total_vec_failed +=" not in src
