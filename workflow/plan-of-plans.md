@@ -494,10 +494,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q53**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q54**. Open: Q53. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
+| Q53 | 2026-11-18 | T1 step 0b says "reword the 66 'when its file is next touched' `tmp_root_allow.json` entries to R5" (L169 MEH-4). 65 entries carry the reason "…move it to rmx_sandbox.short_root(prefix) when its file is next touched" (task-29.4 #r5, bug-229). Which is meant? | (rec) (b) move them: an isolated agent converts each listed `/tmp` root to `rmx_sandbox.short_root(prefix)` file by file and deletes its allowlist entry (the list shrinks toward 0; no deferral wording left); (a) reword only: the reason text cites #r5 as the rule and drops the open-ended 'when next touched' deferral, entries unchanged | **open** {#q53} |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
