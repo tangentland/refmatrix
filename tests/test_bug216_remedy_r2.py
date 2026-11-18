@@ -35,6 +35,7 @@ Throwaway stores under short `/tmp` mkdtemp roots only; no live `.refmatrix/` is
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import os
 import shutil
 import subprocess
@@ -55,7 +56,7 @@ FEEDBACK_FM = "metadata:\n  type: feedback\n"
 
 @pytest.fixture
 def base():
-    b = Path(tempfile.mkdtemp(prefix="b216q", dir="/tmp")).resolve()
+    b = Path(rmx_sandbox.short_root("b216q")).resolve()
     # The test's own premise: no `.refmatrix/` anywhere above the mkdtemp root.
     assert not any((p / ".refmatrix").exists() for p in b.parents), b
     yield b

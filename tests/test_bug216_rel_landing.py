@@ -26,6 +26,7 @@ ONE JSON object with the keys in `EXPECTED`. The human-readable default is free-
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import hashlib
 import json
 import os
@@ -122,7 +123,7 @@ def _digest(d: Path) -> dict[str, str]:
 
 @pytest.fixture
 def catalog():
-    base = Path(tempfile.mkdtemp(prefix="b216l", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216l")).resolve()
     proj = base / "proj"
     (proj / "docs").mkdir(parents=True)
     a, b = proj / "docs" / "a.md", proj / "docs" / "b.md"
@@ -260,7 +261,7 @@ def _link9(s: Store, verb: str, c: int, e: int) -> None:
 
 @pytest.fixture
 def catalog9():
-    base = Path(tempfile.mkdtemp(prefix="b216n", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216n")).resolve()
     proj = base / "proj"
     d = proj / "docs"
     d.mkdir(parents=True)

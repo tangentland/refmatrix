@@ -21,6 +21,7 @@ hidden-dir rule, so a root under any dot-dir would ignore everything and prove n
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import ast
 import os
 import shutil
@@ -37,7 +38,7 @@ SRC = Path(ingest_mod.__file__).resolve().parent
 
 @pytest.fixture
 def root():
-    base = Path(tempfile.mkdtemp(prefix="b216i", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216i")).resolve()
     assert not any(seg.startswith(".") for seg in base.parts[1:]), base
     yield base
     shutil.rmtree(base)

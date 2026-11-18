@@ -29,6 +29,7 @@ Every store is a throwaway under a short `/tmp` mkdtemp root; no live `.refmatri
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import os
 import shutil
 import subprocess
@@ -77,7 +78,7 @@ def _open(root: Path) -> Store:
 
 @pytest.fixture
 def base():
-    b = Path(tempfile.mkdtemp(prefix="b216r", dir="/tmp")).resolve()
+    b = Path(rmx_sandbox.short_root("b216r")).resolve()
     yield b
     shutil.rmtree(b)
 

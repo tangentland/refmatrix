@@ -21,6 +21,7 @@ Killers (behaviour that exists; each test must FAIL under the mutation the r1 au
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
 import logging
 import shutil
@@ -38,7 +39,7 @@ import pytest
 @contextmanager
 def _store(kind: str):
     from refmatrix.store import Store
-    base = Path(tempfile.mkdtemp(prefix="b178r2", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("b178r2"))
     s = Store(base / ".refmatrix", backend=kind)
     s.init()
     try:

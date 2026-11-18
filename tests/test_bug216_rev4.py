@@ -20,6 +20,7 @@ nothing), not through a table name the spec does not fix.
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import ast
 import os
 import shutil
@@ -53,7 +54,7 @@ def _gmd(doc_id: str, body: str = "Body.\n") -> str:
 
 @pytest.fixture
 def store_env():
-    base = Path(tempfile.mkdtemp(prefix="b216p4", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216p4")).resolve()
     proj = base / "proj"
     (proj / "docs").mkdir(parents=True)
     root = proj / ".refmatrix"
@@ -219,7 +220,7 @@ def _tree(root: Path, files: dict[str, str]) -> None:
 
 @pytest.fixture
 def bare_root():
-    base = Path(tempfile.mkdtemp(prefix="b216r11", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216r11")).resolve()
     yield base
     shutil.rmtree(base)
 
@@ -284,7 +285,7 @@ def test_ac12_every_walker_ingests_the_rule_docs_with_no_ignore_file(route, monk
 
 def _gate_root() -> Path:
     import sys
-    root = Path(tempfile.mkdtemp(prefix="b216g", dir="/tmp")).resolve()
+    root = Path(rmx_sandbox.short_root("b216g")).resolve()
     (root / ".git").mkdir()
     (root / "scripts").mkdir()
     for f in ("check-gmd-parity.py", "lint-gmd.sh"):

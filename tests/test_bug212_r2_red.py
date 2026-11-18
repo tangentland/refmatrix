@@ -32,6 +32,7 @@ also records `$GIT_DIR`, which is the observation that makes the fixture the E1 
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import hashlib
 import shutil
 import subprocess
@@ -85,7 +86,7 @@ def _corrupt_index(proj: Path) -> None:
 def corrupt_index_repo():
     """A repo `proj` whose store is COMMITTED (catalog.duckdb tracked -- the b-1 shape) and whose
     `.git/index` is then corrupted. Generated hooks installed, recording shim written. No daemon."""
-    base = Path(tempfile.mkdtemp(prefix="b212x-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212x-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -217,7 +218,7 @@ def two_repos():
     """Repo A (`proj`, store ignored) with a linked worktree `wt` that holds its own ignored
     store (so the generated gate lets the hook through), the generated hooks, and a shim that
     records `$GIT_DIR`. Repo B (`b`) whose store's catalog is COMMITTED. No daemon anywhere."""
-    base = Path(tempfile.mkdtemp(prefix="b212e-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212e-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -323,7 +324,7 @@ def test_the_cwd_gone_remedy_depends_on_refmatrix_root(monkeypatch):
 
 @pytest.fixture
 def w1_store():
-    base = Path(tempfile.mkdtemp(prefix="b212w-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212w-")).resolve()
     root = base / "st" / ".refmatrix"
     s = Store(root)
     s.init()
@@ -528,7 +529,7 @@ READ_ARGVS = [["pairs", "show", "foo_bar"], ["memory", "get", "bug212_r2_absent"
 def slot_only_tracked_repo():
     """A repo whose committed store is ONE rotation slot: `active` = A, `catalog.A.duckdb`, and
     no other catalog or reader file. No daemon. Short resolved `/tmp` root."""
-    base = Path(tempfile.mkdtemp(prefix="b212r-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212r-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -610,7 +611,7 @@ def writable_store(request):
     """GUARD fixture: a store `proj/.refmatrix` that is in no git repository, or in one whose
     `.gitignore` ignores `.refmatrix/` (the catalog is untracked)."""
     kind = request.param
-    base = Path(tempfile.mkdtemp(prefix="b212g-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212g-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()

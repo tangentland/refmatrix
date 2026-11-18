@@ -23,6 +23,7 @@ Throwaway stores under short `/tmp` mkdtemp roots only; no live `.refmatrix/` is
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import shutil
 import tempfile
 from pathlib import Path
@@ -40,7 +41,7 @@ TERM = "zebrafinch"
 
 @pytest.fixture
 def base():
-    b = Path(tempfile.mkdtemp(prefix="b216s", dir="/tmp")).resolve()
+    b = Path(rmx_sandbox.short_root("b216s")).resolve()
     yield b
     shutil.rmtree(b)
 

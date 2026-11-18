@@ -23,6 +23,7 @@ Throwaway stores under short `/tmp` mkdtemp roots only; no live `.refmatrix/` is
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
 import os
 import re
@@ -63,7 +64,7 @@ finally:
 
 @pytest.fixture
 def store_with_vectors():
-    base = Path(tempfile.mkdtemp(prefix="b216v", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216v")).resolve()
     root = base / "proj" / ".refmatrix"
     _new_store(root)
     s = _open(root)

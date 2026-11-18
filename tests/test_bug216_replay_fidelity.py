@@ -28,6 +28,7 @@ multiset, so a duplicate is a difference.
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
 import shutil
 import tempfile
@@ -66,7 +67,7 @@ A_V2 = _gmd("a", "Intro.\n\n## Cite {#cite}\n\nText, edited.\n\nInserted line.\n
 @pytest.fixture
 def env(monkeypatch):
     monkeypatch.setenv("RMX_LOG", "1")
-    base = Path(tempfile.mkdtemp(prefix="b216l", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216l")).resolve()
     proj = base / "proj"
     (proj / "docs").mkdir(parents=True)
     root = proj / ".refmatrix"

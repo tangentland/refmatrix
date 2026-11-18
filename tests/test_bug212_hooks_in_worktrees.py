@@ -52,6 +52,7 @@ checkout's `.refmatrix/` holds exactly what git checked out". A store in the mai
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import os
 import re
 import shutil
@@ -186,7 +187,7 @@ def repo():
     """A git repo `proj` on `main` with the fleet layout (`.refmatrix/CLAUDE.md` tracked, a real
     store beside it), a branch `other` one commit ahead (adds `other.py`), the GENERATED hooks
     installed, and the recording shim. Everything under a short resolved `/tmp` root."""
-    base = Path(tempfile.mkdtemp(prefix="b212-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()
@@ -398,7 +399,7 @@ def test_rmx_started_in_a_vanished_cwd_is_a_clean_error(argv):
     `cd`s into the dir, the dir goes, then `rmx` starts. No `REFMATRIX_ROOT` (a hook has none).
     A project command fails as a clean `Error:` naming the directory; `version` may also
     succeed (it needs no project) -- either way, never a traceback."""
-    base = Path(tempfile.mkdtemp(prefix="b212v-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212v-")).resolve()
     try:
         gone = base / "gone"
         gone.mkdir()

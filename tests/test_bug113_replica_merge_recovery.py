@@ -17,6 +17,7 @@ Slots here are built the way production builds them: through `Store`.
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import shutil
 import subprocess
 import sys
@@ -157,7 +158,7 @@ def test_a_failed_merge_closes_every_connection(tmp_path, where):
 def _daemon(tmp_path: Path, writer: str = "A"):
     from refmatrix import daemon as dm
     from refmatrix.store import Store
-    root = Path(__import__("tempfile").mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
+    root = Path(rmx_sandbox.short_root("rmx")) / ".refmatrix"
     root.mkdir()
     a, b = _slots(tmp_path)
     shutil.copyfile(a, root / "catalog.A.duckdb")
@@ -288,9 +289,9 @@ def test_writer_lost_exits_2_from_a_real_serving_daemon(tmp_path, degrade_s):
     The real `serve_forever` runs in a child; its exit status must be 2."""
     import os
     import tempfile
-    root = Path(tempfile.mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
+    root = Path(rmx_sandbox.short_root("rmx")) / ".refmatrix"
     root.mkdir()
-    home = Path(tempfile.mkdtemp(prefix="rmxh", dir="/tmp"))
+    home = Path(rmx_sandbox.short_root("rmxh"))
     env = dict(os.environ, HOME=str(home), RMX_HOME=str(home / ".refmatrix"),
                RMX_DEGRADE_EXIT_S=degrade_s, HF_HUB_OFFLINE="1",
                PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"))
