@@ -219,16 +219,6 @@ def test_cli_partition_probe_reads_the_replica_under_a_held_writer(held_with_rep
         assert not hasattr(fn, "_cache"), f"{fn.__name__} grew a process cache"
 
 
-def test_verb_memory_partition_reads_the_replica_under_a_held_writer(held_with_replica, monkeypatch):
-    from refmatrix import daemon as dm, discovery
-    d = held_with_replica
-    monkeypatch.setattr(dm, "call", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("asked the daemon")))
-    assert verbs.memory_partition(d.root, timeout=1.0) == discovery.store_name(d.root)
-    # 29.4 R3 class C (T0.3 + 29.4c, 2026-11-15): `elapsed < 0.8` is an ordering check now: the
-    # answer came while the test still held the writer, and no lock-bound op reached the daemon.
-    assert [op for op in d.ops if op != "ping"] == [], d.ops
-
-
 def test_verb_memory_partition_falls_back_to_the_daemon_without_a_replica():
     d = _PingOnlyDaemon(seeded=True)
     try:

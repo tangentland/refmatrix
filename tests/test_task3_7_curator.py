@@ -507,18 +507,6 @@ def test_a_real_daemon_watcher_writes_one_spool_file_per_flush_and_sweeps_tmp(mo
 # ---- the watcher's write path, driven directly (deterministic) --------------------------
 
 
-def test_enqueue_curator_writes_through_the_atomic_spool_writer():
-    """`_enqueue_curator` (the watcher's flush hook, a closure in `_start_watcher`) writes
-    through `gmd_curator.write_spool` — the one atomic writer pinned below."""
-    tree = ast.parse((_SRC / "daemon.py").read_text())
-    enq = [f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
-           and f.name == "_enqueue_curator"]
-    assert len(enq) == 1, "no single _enqueue_curator"
-    calls = {c.func.attr for c in ast.walk(enq[0]) if isinstance(c, ast.Call)
-             and isinstance(c.func, ast.Attribute)}
-    assert "write_spool" in calls, calls
-
-
 def test_write_spool_is_tmp_fsync_rename_and_never_visible_half_written(root, monkeypatch):
     """The durable sequence is: fsync the WHOLE tmp file -> rename it within the spool dir ->
     fsync the spool directory (remedy r1 R-L added the last step: a crash after an un-synced

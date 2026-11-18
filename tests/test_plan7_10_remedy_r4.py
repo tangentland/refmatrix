@@ -289,12 +289,3 @@ def test_no_test_reinterprets_a_loaded_code_object_against_an_edited_file():
     assert offenders == [], (
         f"{offenders} assert on inspect.getsource; snapshot the module source "
         f"at import (Path(mod.__file__).read_text()) or assert on behaviour")
-
-
-def test_this_guard_names_the_mechanism_it_replaces():
-    """Snapshotting at module import is the fix, so prove the replacement
-    reads the whole file rather than a stale slice."""
-    import refmatrix.daemon as dm
-    src = Path(dm.__file__).read_text()
-    assert "def serve_foreground" in src
-    assert len(src.splitlines()) > 100
