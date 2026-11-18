@@ -56,17 +56,17 @@ LEGACY_LITERALS = [
 # family name -> (regex, a line it must match). Case-insensitive except TODO, which is a marker
 # only in capitals. "TODO with no plan id": a TODO that names plan-N / task-N / bug-N is anchored.
 FAMILIES: "dict[str, tuple[str, str]]" = {
-    "for now": (r"(?i)\bfor now\b", "ANN search is L2-distance based for now."),
-    "in v1": (r"(?i)\bin v1\b", "the retry budget lands in v1"),
-    "later phase(s)": (r"(?i)\blater phases?\b", "routing land in later phases."),
+    "for now": (r"(?i)\bfor\s+now\b", "ANN search is L2-distance based for now."),
+    "in v1": (r"(?i)\bin\s+v1\b", "the retry budget lands in v1"),
+    "later phase(s)": (r"(?i)\blater\s+phases?\b", "routing land in later phases."),
     "eventually": (r"(?i)\beventually\b", "we will eventually index this"),
-    "when needed": (r"(?i)\bwhen needed\b", "add the cache when needed"),
-    "not yet": (r"(?i)\bnot yet\b", "this flag is not yet wired"),
+    "when needed": (r"(?i)\bwhen\s+needed\b", "add the cache when needed"),
+    "not yet": (r"(?i)\bnot\s+yet\b", "this flag is not yet wired"),
     "TODO without a plan id": (r"\bTODO\b(?!.*\b(?:plan-\d+|task-\d[\w.]*|bug-\d+)\b)",
                                "# TODO: handle the empty case"),
 }
 for _lit in LEGACY_LITERALS:
-    FAMILIES[_lit] = (re.escape(_lit), f"x {_lit} y")
+    FAMILIES[_lit] = (r"\s+".join(map(re.escape, _lit.split())), f"x {_lit} y")
 
 # The family set this guard bans. Spelled out separately from FAMILIES so that emptying or
 # renaming a family is a visible diff here, not a silent loss of coverage (r1 #s-3 M3).
@@ -190,6 +190,12 @@ def test_this_guard_bans_the_phrase_families_not_a_count():
     assert set(FAMILIES) == EXPECTED_FAMILIES
     dead = [name for name, (rx, sample) in FAMILIES.items() if not re.search(rx, sample)]
     assert dead == [], f"families whose pattern no longer matches their own sample: {dead}"
+    # bsd-t04 r1 #m1: a family is words, not one spacing of them. Every multi-word family still
+    # fires with its spaces doubled or tabbed.
+    narrow = [name for name, (rx, sample) in FAMILIES.items()
+              for spaced in (sample.replace(" ", "  "), sample.replace(" ", "\t"))
+              if not re.search(rx, spaced)]
+    assert narrow == [], f"families that miss a respaced sample: {sorted(set(narrow))}"
     # TODO is anchored by a plan id, and only then.
     assert not re.search(FAMILIES["TODO without a plan id"][0], "# TODO(plan-29): wire it")
     # every entry is reviewed: a family the guard knows, and a reason
@@ -228,12 +234,14 @@ def test_a_stale_entry_is_named_on_a_tree_copy(tmp_path):
         "src/refmatrix/vectors.py ('for now', 'ANN search is L2-distance based for now.')"]
 
 
-def test_a_new_for_now_in_src_is_named_on_a_tree_copy(tmp_path):
-    """M4.5b, planted: a `# for now` appended to a src/ file is red, naming the file."""
+@pytest.mark.parametrize("planted", ["# for now", "# for  now", "# For\tnow"])
+def test_a_new_for_now_in_src_is_named_on_a_tree_copy(tmp_path, planted):
+    """M4.5b, planted: a `# for now` appended to a src/ file is red, naming the file, in any
+    spacing (bsd-t04 r1 #m1: `for  now` passed the single-space pattern)."""
     pkg = _tree_copy(tmp_path)
     f = pkg / "helix.py"
     n = len(f.read_text(encoding="utf-8").splitlines())
-    f.write_text(f.read_text(encoding="utf-8") + "# for now\n", encoding="utf-8")
+    f.write_text(f.read_text(encoding="utf-8") + planted + "\n", encoding="utf-8")
     assert [o.split(": ")[0] for o in offenders(pkg)
             if o.startswith("src/refmatrix/helix.py")] == [f"src/refmatrix/helix.py:{n + 1}"]
 
