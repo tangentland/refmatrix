@@ -20,6 +20,9 @@ m-2 (MEH, ruled). A bridge that is only DEFERRED behind a running ingest job ("i
     the job, exit 0, `sync.deferred = {job, reason}` in the result; MCP not isError with the
     field present. Every OTHER bridge failure still raises.
 
+S1 (2026-11-19, one catalog backend) deleted s-1's two tests with `rmx migrate-to-duckdb`;
+m-1 and m-2 stay.
+
 Everything is real: git, the CLI, the MCP stdio server, a throwaway daemon with a real running
 `ingest_gmd_start` job (the wait is shortened through the existing `RMX_BRIDGE_WAIT_S`, never by
 patching the function under test), the store. Stand-in: the registered rmx-lookalike process
@@ -29,7 +32,6 @@ from __future__ import annotations
 
 import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,107 +43,18 @@ from click.testing import CliRunner
 from refmatrix import cli as cli_mod
 from refmatrix import daemon as dm
 from refmatrix import mcp as mcp_mod
-from refmatrix import store as store_mod
 from refmatrix import verbs
-from refmatrix.store import Store
-from tests.test_bug212_hooks_in_worktrees import TRACEBACK, Repo, _base_env, _quiet
+from tests.test_bug212_hooks_in_worktrees import _base_env
 from tests.test_bug212_r1_remedy import (  # noqa: F401 -- `tracked_repo` is used by name
-    _refusal_head, _refusal_lines, _status_refmatrix_catalogs, _target_catalog, tracked_repo,
+    _target_catalog, tracked_repo,
 )
 from tests.test_bug212_r4_red import (  # noqa: F401 -- fixtures are used by name
-    _changed, _cli, _digests, _errors, ignored_store_repo,
+    _errors, ignored_store_repo,
 )
 from tests.test_bug212_r5_red import (  # noqa: F401 -- fixtures are used by name
-    _mcp, _text, busy_store, sqlite_tracked_repo,
+    _mcp, _text, busy_store,
 )
 from tests.test_memory_bridge import GMD, _big_dir, live  # noqa: F401 -- `live` by name
-
-
-# =============================================================================================
-# s-1: migrate-to-duckdb aims the check at the file it replaces
-# =============================================================================================
-
-@pytest.fixture
-def ignored_sqlite_repo():
-    """Repo A: a store holding a SQLite `catalog.db`, IGNORED by git (`.refmatrix/`), so the
-    source store is not tracked. Repo B: a store whose `catalog.duckdb` is COMMITTED. No
-    daemon. Short resolved `/tmp` root."""
-    base = Path(rmx_sandbox.short_root("b212m-")).resolve()
-    a = Repo(base)
-    try:
-        a.proj.mkdir()
-        _quiet(a.proj, a, "init", "-q", "--template=", "-b", "main")
-        (a.proj / ".gitignore").write_text(".refmatrix/\n", encoding="utf-8")
-        _quiet(a.proj, a, "add", "-A")
-        _quiet(a.proj, a, "commit", "-q", "-m", "A c0 (store ignored)")
-        s = Store(a.store, backend="sqlite")
-        s.init()
-        s.add_concept("bug212_r6_source")
-        s.close()
-        assert (a.store / "catalog.db").is_file()
-        assert store_mod.git_tracked_catalogs(a.store) == [], "fixture: A's catalog tracked"
-        b = base / "repob"
-        b.mkdir()
-        _quiet(b, a, "init", "-q", "--template=", "-b", "main")
-        d = Store(b / ".refmatrix", backend="duckdb")
-        d.init()
-        d.close()
-        _quiet(b, a, "add", "-A")
-        _quiet(b, a, "commit", "-q", "-m", "B c0 (catalog.duckdb committed)")
-        assert "catalog.duckdb" in store_mod.git_tracked_catalogs(b / ".refmatrix")
-        yield a, b
-    finally:
-        shutil.rmtree(base, ignore_errors=True)
-
-
-@pytest.mark.timeout(300)
-def test_migrate_out_into_another_repos_tracked_catalog_is_refused(ignored_sqlite_repo):
-    """s-1 (a): from an IGNORED store, `rmx migrate-to-duckdb --out <repo B>/.refmatrix/
-    catalog.duckdb --overwrite`, where repo B tracks that file: one `Error:` line `refusing to
-    open <that file> read-write in-process: ...`, exit non-zero, repo B's file byte-identical
-    and its `git status` clean. At c854bad the check asks about repo A, passes, and the
-    migration rewrites repo B's committed catalog."""
-    a, b = ignored_sqlite_repo
-    dst = (b / ".refmatrix" / "catalog.duckdb").resolve()
-    before = _digests(b / ".refmatrix")
-    r = _cli(a, ["migrate-to-duckdb", "--out", str(dst), "--overwrite"])
-    text = _text(r)
-    changed = _changed(before, _digests(b / ".refmatrix"))
-    status = _status_refmatrix_catalogs(b)
-    assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
-    assert not changed and status == "", (
-        f"`--out` into repo B's tracked catalog rewrote it {changed} (exit {r.returncode})\n"
-        f"repo B git status:\n{status}\n{text}")
-    assert r.returncode != 0, f"`migrate-to-duckdb --out <tracked>` exited 0\n{text}"
-    errs = _errors(r.stderr)
-    assert len(errs) == 1 and _refusal_lines(r.stderr, dst) == errs, \
-        f"expected ONE `Error:` line `{_refusal_head(dst)} ...`; got {errs}\n{text}"
-
-
-@pytest.mark.timeout(300)
-def test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed(sqlite_tracked_repo):
-    """s-1 (b): from a store whose catalogs git TRACKS, `rmx migrate-to-duckdb --out <an
-    untracked path outside any repo>` touches nothing committed, so it runs: exit 0, the
-    destination is written, and the tracked store's catalogs are byte-identical. At c854bad it
-    is refused, because the check asks about the source store."""
-    repo = sqlite_tracked_repo
-    out_dir = Path(rmx_sandbox.short_root("b212o-")).resolve()
-    try:
-        probe = subprocess.run(["git", "-C", str(out_dir), "rev-parse", "--git-dir"],
-                               env=_base_env(), capture_output=True, text=True)
-        assert probe.returncode != 0, f"fixture: {out_dir} is inside a git repo"
-        dst = out_dir / "x.duckdb"
-        before = _digests(repo.store)
-        r = _cli(repo, ["migrate-to-duckdb", "--out", str(dst)])
-        text = _text(r)
-        assert _changed(before, _digests(repo.store)) == [], \
-            f"the tracked source store's catalogs changed\n{text}"
-        assert r.returncode == 0 and TRACEBACK not in r.stderr and not _errors(r.stderr), \
-            f"`migrate-to-duckdb --out <untracked path>` from a tracked store was refused or " \
-            f"failed\n{text}"
-        assert dst.is_file(), f"the destination {dst} was not written\n{text}"
-    finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
 
 
 # =============================================================================================

@@ -3,8 +3,9 @@
 Round 3 found the merge's home-binding rebind still outside the writer lock (#b3-1, the 7th
 bug-098-class case), merge collisions whose fragment bits were never remapped from the SRC id to
 the DST id so the repair dropped them as dead (#s3-1), unpinned report prints (#s3-2) and a silent
-rmxd.log (#m3-2). The auditor's probes P1-P3 and P5-P8 are adopted; P4 (SQLite's best-effort
-fragment-dir skip, #m3-1) is a known MEH on a non-production backend and stays open.
+rmxd.log (#m3-2). The auditor's probes P1-P3 and P5-P8 are adopted; P4 (the file-fragment
+backend's best-effort fragment-dir skip, #m3-1) was a MEH on a non-production backend, closed
+when S1 (2026-11-19) deleted that backend.
 """
 import os
 import shutil

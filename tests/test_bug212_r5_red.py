@@ -39,10 +39,9 @@ from pathlib import Path
 import pytest
 
 from refmatrix import daemon as dm
-from refmatrix import store as store_mod
 from refmatrix.store import WRITER_CATALOG_FILES, Store
 from tests.test_bridge_move_safety_r1 import absolute_pythonpath
-from tests.test_bug212_hooks_in_worktrees import TRACEBACK, Repo, _base_env, _entry, _quiet
+from tests.test_bug212_hooks_in_worktrees import TRACEBACK, Repo, _base_env, _entry
 from tests.test_bug212_r1_remedy import (  # noqa: F401 -- `tracked_repo` is used by name
     _refusal_head, _refusal_lines, _status_refmatrix_catalogs, _target_catalog, tracked_repo,
 )
@@ -72,7 +71,7 @@ def _one_refusal_line(stderr: str, store: Path) -> list[str]:
 
 
 # =============================================================================================
-# b-1: `rmx compact` and `rmx migrate-to-duckdb` refuse a git-tracked catalog
+# b-1: `rmx compact` refuses a git-tracked catalog (S1 deleted the `rmx migrate-to-duckdb` half)
 # =============================================================================================
 
 def _compact_leftovers(store: Path) -> list[str]:
@@ -134,58 +133,6 @@ def test_compact_refuses_before_it_stops_a_running_daemon(tracked_repo, monkeypa
         f"got {errs}\n{text}"
     assert not _compact_leftovers(repo.store), \
         f"[{layout}] compact left {_compact_leftovers(repo.store)}"
-
-
-@pytest.fixture
-def sqlite_tracked_repo():
-    """A repo whose store holds a SQLite `catalog.db` (the source `migrate-to-duckdb` reads)
-    AND a DuckDB `catalog.duckdb` (the destination `--overwrite` replaces), both COMMITTED.
-    No daemon. Short resolved `/tmp` root."""
-    base = Path(rmx_sandbox.short_root("b212q-")).resolve()
-    r = Repo(base)
-    try:
-        r.proj.mkdir()
-        _quiet(r.proj, r, "init", "-q", "--template=", "-b", "main")
-        r.store.mkdir()
-        s = Store(r.store, backend="sqlite")
-        s.init()
-        s.add_concept("bug212_r5_sqlite")
-        s.close()
-        d = Store(r.store, backend="duckdb")
-        d.init()
-        d.close()
-        for name in ("catalog.db", "catalog.duckdb"):
-            assert (r.store / name).is_file(), f"fixture: no {name}: {list(r.store.iterdir())}"
-        _quiet(r.proj, r, "add", "-A")
-        _quiet(r.proj, r, "commit", "-q", "-m", "c0 (sqlite + duckdb catalogs committed)")
-        assert set(store_mod.git_tracked_catalogs(r.store)) >= {"catalog.db", "catalog.duckdb"}
-        assert _status_refmatrix_catalogs(r.proj) == "", "fixture: catalogs dirty"
-        yield r
-    finally:
-        dm.stop_daemon(r.store)
-        shutil.rmtree(base, ignore_errors=True)
-
-
-@pytest.mark.timeout(300)
-def test_migrate_to_duckdb_overwrite_refuses_a_git_tracked_catalog(sqlite_tracked_repo):
-    """b-1 (iii): `rmx migrate-to-duckdb --overwrite` on a repo that commits its catalogs
-    refuses BEFORE it unlinks and rebuilds `catalog.duckdb`: one `Error:` line naming that
-    destination, exit non-zero, bytes unchanged, `git status` clean."""
-    repo = sqlite_tracked_repo
-    before = _digests(repo.store)
-    r = _cli(repo, ["migrate-to-duckdb", "--overwrite"])
-    text = _text(r)
-    changed = _changed(before, _digests(repo.store))
-    status = _status_refmatrix_catalogs(repo.proj)
-    assert TRACEBACK not in r.stderr, f"migrate-to-duckdb crashed\n{text}"
-    assert not changed and status == "", (
-        f"`rmx migrate-to-duckdb --overwrite` rewrote the git-tracked catalog {changed} (exit "
-        f"{r.returncode})\ngit status:\n{status}\n{text}")
-    assert r.returncode != 0, f"`rmx migrate-to-duckdb --overwrite` exited 0\n{text}"
-    target = repo.store / "catalog.duckdb"
-    errs = _errors(r.stderr)
-    assert len(errs) == 1 and _refusal_lines(r.stderr, target) == errs, \
-        f"expected ONE `Error:` line `{_refusal_head(target)} ...`; got {errs}\n{text}"
 
 
 # =============================================================================================

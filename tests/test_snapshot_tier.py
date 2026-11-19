@@ -8,8 +8,6 @@ Locks in the daemon-side contract:
   * Debounce coalesces burst calls; `force=True` bypasses it.
   * `_request_snapshot()` is the lock-safe handoff write-op handlers use;
     it only sets a flag + Event, never touches DuckDB itself.
-  * SQLite backend skips silently — SQLite WAL already gives readers
-    lock-free concurrency.
   * `_op_snapshot` is registered in OPS and CLI_OPS.
 """
 from __future__ import annotations
@@ -106,21 +104,6 @@ def test_snapshot_catalog_force_bypasses_debounce(tmp_path, monkeypatch):
         d._snapshot_catalog(force=True)
         second = d._snapshot_catalog(force=True)
         assert "snapshot_path" in second, second
-    finally:
-        s.close()
-
-
-def test_snapshot_catalog_skips_sqlite_backend(tmp_path):
-    """SQLite already has many-readers-one-writer concurrency via WAL.
-    Snapshot-tier is a no-op there — return a skip marker instead of
-    burning a copy."""
-    s = Store(tmp_path, backend="sqlite")
-    s._connect()
-    try:
-        d = _bare_daemon(tmp_path, s)
-        out = d._snapshot_catalog(force=True)
-        assert out.get("skipped") == "non-duckdb", out
-        assert not (tmp_path / "catalog.read.duckdb").exists()
     finally:
         s.close()
 

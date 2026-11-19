@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-# DuckDB backend only; SQLite stores don't have rotation slots.
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("duckdb") is None,
     reason="duckdb not installed",

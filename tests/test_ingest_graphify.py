@@ -249,7 +249,6 @@ def test_ingest_graphify_weight_modulated_by_confidence(store, tmp_path):
     # × confidence_label_w 0.5 = 0.35. AMBIGUOUS (similar_to) had
     # 0.6 × 0.8 × 0.3 = 0.144. EXTRACTED (calls) = 1.0.
     # The shadow entity_links table records weight — verify ordering.
-    import sqlite3
     con = store._connect()
     rows = con.execute(
         "SELECT lt.name, el.weight FROM entity_links el "

@@ -55,7 +55,7 @@ def test_read_only_store_prefers_read_only_symlink_when_present(tmp_path, monkey
 
 
 def test_read_only_store_falls_back_to_primary_when_no_symlink(tmp_path, monkeypatch):
-    """Without the symlink (daemon down, fresh install, sqlite backend),
+    """Without the symlink (daemon down, fresh install),
     Store(read_only=True) opens the primary catalog file. The symlink
     optimization is purely additive."""
     monkeypatch.setenv("RMX_BACKEND", "duckdb")
@@ -66,25 +66,6 @@ def test_read_only_store_falls_back_to_primary_when_no_symlink(tmp_path, monkeyp
     try:
         assert s.db_path == primary
         assert not (root / "read_only.duckdb").exists()
-    finally:
-        s.close()
-
-
-def test_read_only_symlink_only_applies_to_duckdb_backend(tmp_path, monkeypatch):
-    """SQLite-backed stores skip the symlink lookup entirely — the path
-    is DuckDB-specific (DuckDB is what has the exclusive-file-lock
-    problem; SQLite WAL doesn't)."""
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
-    s_setup = Store(tmp_path, backend="sqlite")
-    s_setup._connect()
-    s_setup.close()
-    # Even with a stray symlink present, sqlite Store ignores it.
-    (tmp_path / "catalog.alt.duckdb").write_text("")
-    os.symlink("catalog.alt.duckdb", tmp_path / "read_only.duckdb")
-
-    s = Store(tmp_path, read_only=True, backend="sqlite")
-    try:
-        assert s.db_path.name == "catalog.db"
     finally:
         s.close()
 

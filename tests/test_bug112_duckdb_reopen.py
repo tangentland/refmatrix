@@ -167,7 +167,7 @@ def _install(snapshot: Path, root: Path) -> None:
 def _project_root(tmp_path: Path) -> Path:
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
-    (root / "catalog.duckdb").touch()       # select_backend autodetect -> duckdb
+    (root / "catalog.duckdb").touch()
     return root
 
 
@@ -243,7 +243,7 @@ def test_every_file_backed_duckdb_connect_goes_through_open_duckdb():
 
 def test_every_file_attach_goes_through_attach_file():
     """ch-bsd plan-23/17 r9: raw `ATTACH '<file>'` strings (the mirror, the
-    merge, the audit, the sqlite migration/view) are file opens too. One
+    merge, the audit, the old migration/view) are file opens too. One
     helper, `backend.attach_file`, renders them; a literal elsewhere fails."""
     import re
     # ch-bsd r2 A1: `f"ATTACH {p!r} AS x"` has the Constant part "ATTACH " —

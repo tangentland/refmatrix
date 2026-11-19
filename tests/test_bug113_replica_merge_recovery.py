@@ -62,7 +62,7 @@ def _store_catalog(tmp_path: Path, name: str = "s") -> Path:
 # ---- 1. one schema --------------------------------------------------------
 
 def test_init_catalog_builds_exactly_the_store_schema(tmp_path):
-    """Every schema-building site (merge target, sqlite->duckdb migration,
+    """Every schema-building site (merge target, the old catalog migration,
     the Store itself) comes out of `duckdb_catalog.init_catalog`; it must
     equal what a Store opens — the lag that broke the merge."""
     from refmatrix.duckdb_catalog import init_catalog

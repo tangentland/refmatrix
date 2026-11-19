@@ -8,8 +8,10 @@ FENCE the live merge (the daemon refuses it; an offline merge with the daemon do
 concurrent writer), and move the merge redesign to the helix plan, which owns merge (d9ac).
 
 It also found four repair-path mutants alive for a third round (#b4-2): the daemon's periodic
-flush guard (M1), the `links_skipped` count (M11), the SQLite repair's delete list (M12) and the
-canonical verb on the entity_links side (M14), plus unpinned operator output (M24, M25).
+flush guard (M1), the `links_skipped` count (M11), the fragment-file repair's delete list (M12)
+and the canonical verb on the entity_links side (M14), plus unpinned operator output (M24, M25).
+S1 (2026-11-19, one catalog backend) deleted M12's test and M24's CLI listing of unread
+fragment dirs with the file-fragment layout.
 """
 import re
 import shutil
@@ -154,46 +156,7 @@ def test_repair_files_a_legacy_snake_verb_link_under_the_canonical_kebab_name(s,
     assert (s.partition_id, "related_to") not in rows, rows
 
 
-# ---- M12: the SQLite repair deletes only files it read, ON THE WRITE PATH -----------------------
-
-def test_sqlite_repair_that_writes_keeps_an_unread_dir(tmp_path, monkeypatch):
-    """The r1 test never changed a row, so the write (and its delete list) never ran."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    st = Store(tmp_path / ".refmatrix", backend="sqlite"); st.init()
-    try:
-        with st.with_partition("p"):
-            c = st.add_concept("k"); e = st.upsert_entity(kind="doc", name="a.md")
-        home_dir = st.fragments_dir / st.partition_name
-        home_dir.mkdir(parents=True, exist_ok=True)
-        (home_dir / "mentions.rb64").write_bytes(BitMap64([st._pack(c, e)]).serialize())  # foreign
-        unread = st.fragments_dir / "gone-partition"
-        unread.mkdir(parents=True, exist_ok=True)
-        (unread / "mentions.rb64").write_bytes(BitMap64([st._pack(c, e)]).serialize())
-        rep = st.repair_fragments(dry_run=False, manifest_dir=tmp_path / "m")
-        assert rep["moved"] >= 1 and rep["rows_changed"] >= 1, rep    # the write path ran
-        assert (unread / "mentions.rb64").exists()
-        assert str(unread) in rep["unread_dirs"]
-    finally:
-        st.close()
-
-
 # ---- M24 / M25: the operator sees every counter --------------------------------------------------
-
-def test_cli_repair_lists_unread_dirs(tmp_path, monkeypatch):
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
-    root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
-    st = Store(root, backend="sqlite"); st.init()
-    st.add_concept("k"); st.flush_fragments()
-    unread = st.fragments_dir / "gone-partition"
-    unread.mkdir(parents=True, exist_ok=True)
-    (unread / "mentions.rb64").write_bytes(BitMap64([1]).serialize())
-    st.close()
-    monkeypatch.chdir(root.parent)
-    monkeypatch.setenv("REFMATRIX_ROOT", str(root))
-    r = CliRunner().invoke(cli_mod.main, ["repair-index", "--fragments", "--dry-run"])
-    assert r.exit_code == 0, r.output
-    assert "unread, left in place" in r.output and "gone-partition" in r.output, r.output
-
 
 def test_daemon_repair_log_line_names_every_counter(live, monkeypatch):
     r = dm.call(live, "repair_fragments", {"dry_run": True}, timeout=120.0)

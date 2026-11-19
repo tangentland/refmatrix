@@ -469,7 +469,7 @@ def _files_naming(token: str, *dirs: Path, root: "Path | None" = None) -> "list[
 
 
 def test_the_duckdb_read_facade_flag_is_named_nowhere_in_src_or_tests():
-    """plan-6 Q1 was decided "Delete" (r1 #b-1): `duckdb_view.py` mounts the old SQLite catalog,
+    """plan-6 Q1 was decided "Delete" (r1 #b-1): `duckdb_view.py` mounts the pre-DuckDB catalog,
     no production path sets its flag, and two tests kept it alive. AC-4.1: the flag appears in
     no file under src/ or tests/, and the module is gone."""
     root = _SRC.parent.parent

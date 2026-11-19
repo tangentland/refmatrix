@@ -26,19 +26,15 @@ def store(tmp_path):
 
 
 def test_vectors_updated_at_column_present(store):
-    """Schema migration adds vectors_updated_at on init for both backends."""
+    """Schema migration adds vectors_updated_at on init."""
     con = store._connect()
-    backend = store._backend.kind
-    if backend == "sqlite":
-        cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
-    else:
-        cols = {
-            r[0]
-            for r in con.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name='entities'"
-            ).fetchall()
-        }
+    cols = {
+        r[0]
+        for r in con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='entities'"
+        ).fetchall()
+    }
     assert "vectors_updated_at" in cols
 
 

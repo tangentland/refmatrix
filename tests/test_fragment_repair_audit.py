@@ -131,24 +131,6 @@ def test_repair_rolls_back_on_failure(s, tmp_path, monkeypatch):
     assert _rows(s) == before
 
 
-def test_sqlite_repair_leaves_an_unknown_partition_dir_and_reports_it(tmp_path, monkeypatch):
-    """Audit #s-4: the SQLite repair deleted every *.rb64, including directories it never read."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    st = Store(tmp_path / ".refmatrix", backend="sqlite"); st.init()
-    try:
-        c = st.add_concept("k")
-        a = st.upsert_entity(kind="doc", name="a.md")
-        st.flush_fragments()
-        d = st.fragments_dir / "gone-partition"
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "mentions.rb64").write_bytes(BitMap64([st._pack(c, a)]).serialize())
-        rep = st.repair_fragments(dry_run=False, manifest_dir=tmp_path / "m")
-        assert (d / "mentions.rb64").exists()
-        assert str(d) in rep["unread_dirs"]
-    finally:
-        st.close()
-
-
 def test_periodic_flush_guard_sees_other_binding_dirty(s):
     """Audit #b-1: the daemon tick gated on the home binding's dirty set only."""
     with s.with_partition("memory-x"):

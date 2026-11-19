@@ -247,7 +247,7 @@ def _resolve_read_only_path(s, tmp_path):
     against the bare-store fixture."""
     snap = tmp_path / "catalog.read.duckdb"
     link = tmp_path / "read_only.duckdb"
-    if s._read_only and s._backend.kind == "duckdb":
+    if s._read_only:   # one backend since S1 (2026-11-19): no kind test
         if snap.exists():
             s.db_path = snap
         elif link.exists() or link.is_symlink():

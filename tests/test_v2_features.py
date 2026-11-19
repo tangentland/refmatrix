@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from refmatrix.cli import main as cli_main
 from refmatrix.primer import build_primer, is_symbol_like
 from refmatrix.scan import extract_candidates, match_concepts, scan_prompt
-from refmatrix.store import Store, default_partition_name
+from refmatrix.store import Store
 
 
 @pytest.fixture
@@ -381,54 +381,6 @@ def test_query_explain_flag(tmp_path, monkeypatch):
     assert "42" in result.output
 
 
-# --- legacy bitmap migration -----------------------------------------------
-
-
-def test_legacy_per_concept_bitmaps_migrate_to_fragments(tmp_path, monkeypatch):
-    # SQLite-only legacy migration: DuckDB has no equivalent on-disk legacy.
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
-    """Simulate a pre-fragment catalog: write some .rb files into
-    .refmatrix/bitmaps/<linkage>/<concept_id>.rb, open the Store, and verify
-    the migration packs them into fragments and deletes the originals."""
-    from pyroaring import BitMap as _BitMap
-
-    root = tmp_path / ".refmatrix"
-    root.mkdir()
-    s = Store(root)
-    s.init()
-    # Create concepts + an entity so there's something for linkage to point at.
-    cid_a = s.add_concept("alpha")
-    cid_b = s.add_concept("beta")
-    eid = s.upsert_entity(kind="code", name="x.py")
-    # Forge legacy .rb files (don't go through s.link — that'd write to
-    # fragments). Mirror the pre-migration on-disk layout exactly.
-    legacy_dir = root / "bitmaps" / "mentions"
-    legacy_dir.mkdir(parents=True, exist_ok=True)
-    bm_a = _BitMap()
-    bm_a.add(eid)
-    (legacy_dir / f"{cid_a}.rb").write_bytes(bm_a.serialize())
-    bm_b = _BitMap()
-    bm_b.add(eid)
-    (legacy_dir / f"{cid_b}.rb").write_bytes(bm_b.serialize())
-    s.close()
-
-    # Reopen — _connect() should run the migration.
-    s2 = Store(root)
-    # Force a connect so migration actually runs.
-    s2._connect()
-    # Fragments live under fragments/<partition>/ since the partition split.
-    assert (root / "fragments" / default_partition_name(root)
-            / "mentions.rb64").exists()
-    # Legacy dir should be cleaned up.
-    assert not list(legacy_dir.glob("*.rb"))
-    # And load_bitmap should return the migrated rows.
-    out_a = s2.load_bitmap("mentions", cid_a)
-    out_b = s2.load_bitmap("mentions", cid_b)
-    assert eid in out_a
-    assert eid in out_b
-    s2.close()
-
-
 # --- sync.log ---------------------------------------------------------------
 
 
@@ -436,8 +388,6 @@ def test_existing_catalog_auto_heals_missing_tables(tmp_path):
     """Simulate viascope-style catalog created before linkage_evidence existed:
     drop the table, close, reopen, verify it's recreated and add_evidence works.
     """
-    import sqlite3 as _sql
-
     s = Store(tmp_path / ".refmatrix")
     s.init()
     cid = s.add_concept("auth")
@@ -458,60 +408,6 @@ def test_existing_catalog_auto_heals_missing_tables(tmp_path):
     s2.add_evidence("defines", cid, e, file="auth.py", line=1, detail="ok")
     rows = s2.get_evidence(e)
     assert len(rows) == 1 and rows[0]["line"] == 1
-    s2.close()
-
-
-def test_legacy_catalog_without_protected_noise_self_heals(tmp_path, monkeypatch):
-    """Simulate a catalog created before protected/noise existed: drop the
-    columns, reopen, verify the migration adds them and indexes work."""
-    import sqlite3 as _sql
-
-    # SQLite-only path: DuckDB schema starts with these columns and has no
-    # equivalent self-heal migration.
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
-    s = Store(tmp_path / ".refmatrix")
-    s.init()
-    cid = s.add_concept("legacy_concept", protected=True)
-    s.close()
-
-    # Rebuild the entities table without the new columns, exactly as it
-    # would have looked before this migration shipped.
-    con = _sql.connect(s.db_path)
-    con.executescript("""
-        CREATE TABLE entities_legacy (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL,
-            path TEXT,
-            name TEXT NOT NULL,
-            tldr TEXT,
-            meta TEXT,
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            UNIQUE(kind, name)
-        );
-        INSERT INTO entities_legacy (id, kind, path, name, tldr, meta, created_at, updated_at)
-            SELECT id, kind, path, name, tldr, meta, created_at, updated_at FROM entities;
-        DROP INDEX IF EXISTS idx_entities_protected;
-        DROP INDEX IF EXISTS idx_entities_noise;
-        DROP TABLE entities;
-        ALTER TABLE entities_legacy RENAME TO entities;
-        CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
-        CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
-    """)
-    con.commit()
-    con.close()
-
-    # Reopen — should ALTER in the missing columns and indexes.
-    s2 = Store(tmp_path / ".refmatrix")
-    e = s2.get_entity_by_id(cid)
-    assert e is not None
-    # protected was lost in the legacy round-trip (column didn't exist), but
-    # the new column should default to 0 — that's the documented behavior.
-    assert e.protected is False
-    assert e.noise is False
-    # And the column is real now: re-set protected and verify it sticks.
-    s2.upsert_entity(kind="concept", name="legacy_concept", protected=True)
-    assert s2.get_entity_by_id(cid).protected is True
     s2.close()
 
 

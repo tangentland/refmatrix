@@ -39,7 +39,6 @@ import hashlib
 import json
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -52,7 +51,7 @@ import pytest
 # ---- placeholders the implementer pins --------------------------------------------------
 HELPER = ("backend", "bulk_write")            # (module under refmatrix, function name)
 # Functions (module-stem-qualified) where an `executemany` call may appear in src/refmatrix:
-#   the helper (its SQLite branch) and the DuckDBConnection wrapper itself (R3: it raises
+#   the helper and the DuckDBConnection wrapper itself (R3: it raises
 #   above a small row count or logs a counted warning — the runtime spy guards that).
 ALLOWED = {"backend.bulk_write", "backend.DuckDBConnection.executemany"}
 
@@ -93,8 +92,6 @@ class _Spy:
         name = getattr(arg, "__name__", None)
         if name not in ("executemany", "execute"):
             return
-        if isinstance(getattr(arg, "__self__", None), (sqlite3.Connection, sqlite3.Cursor)):
-            return                                          # SQLite is allowed (AC-4)
         if name == "executemany":
             self.native.append(self._site(frame))
         else:
@@ -140,10 +137,10 @@ def _short_dir(prefix: str = "b178") -> Path:
 
 
 @contextmanager
-def _store(backend: str):
+def _store():
     from refmatrix.store import Store
     base = _short_dir()
-    s = Store(base / ".refmatrix", backend=backend)
+    s = Store(base / ".refmatrix")
     s.init()
     try:
         yield s
@@ -289,7 +286,7 @@ def _site_save_coref(s):
         return s.save_coref(eid, res)
 
     def dump():
-        # confidence is REAL: float32 on DuckDB, float64 on SQLite — compare at 6 places
+        # confidence is REAL: float32 on DuckDB — compare at 6 places
         return sorted(r[:5] + (round(r[5], 6),) for r in _rows(s,
             "SELECT e.name, r.partition_id, r.pos, r.pronoun, r.antecedent, r.confidence "
             "FROM coref_resolutions r JOIN entities e ON e.id = r.entity_id"))
@@ -336,8 +333,8 @@ def _site_compile_pairs(s):
 
 def _site_bulk_upsert_dups(s):
     """bulk_upsert_entity's DuckDB fallback: an intra-batch duplicate (kind, name) key sends the
-    WHOLE batch through `executemany` on DuckDB (store.py:2326) — the spec's inventory had it as
-    SQLite-only. HEAD semantics are a sequential merge: path/tldr/meta COALESCE (later non-NULL
+    WHOLE batch through `executemany` on DuckDB (store.py:2326) — the spec's inventory had
+    missed it. HEAD semantics are a sequential merge: path/tldr/meta COALESCE (later non-NULL
     wins), protected ratchets up, canonical_name first-set wins."""
     pre = [f"bu{i:05d}" for i in range(0, N // 2, 5)]           # pre-existing keys
     for i in range(0, len(pre), 1000):
@@ -551,8 +548,8 @@ def _golden() -> dict:
     return data["sites"]
 
 
-def _run_store_site(site: str, backend: str, monkeypatch=None):
-    with _store(backend) as s:
+def _run_store_site(site: str, monkeypatch=None):
+    with _store() as s:
         op, dump, ref, _n = STORE_SITES[site](s)
         if monkeypatch is None:
             result, sp = op(), None
@@ -572,7 +569,7 @@ def _quiet_log(monkeypatch):
 
 @pytest.mark.parametrize("site", sorted(STORE_SITES))
 def test_ac1_store_site_issues_no_duckdb_executemany(site, monkeypatch):
-    with _store("duckdb") as s:
+    with _store() as s:
         op, _dump, _ref, n = STORE_SITES[site](s)
         assert n >= N, f"{site}: only {n} rows written; AC-1 needs >= {N}"
         with spy(monkeypatch) as sp:
@@ -586,15 +583,14 @@ def test_ac1_replica_merge_issues_no_duckdb_executemany(site, monkeypatch):
     _assert_no_duckdb_executemany(sp, site)
 
 
-# ---- AC-2 (DuckDB) + AC-4 (SQLite): rows equal HEAD's golden and the reference ----------
+# ---- AC-2: rows equal HEAD's golden and the reference (AC-4's other-backend leg went in S1) --
 
-@pytest.mark.parametrize("backend", ["duckdb", "sqlite"])
 @pytest.mark.parametrize("site", sorted(STORE_SITES))
-def test_ac2_ac4_store_site_rows_match_head_and_reference(site, backend):
-    got, ref, _ = _run_store_site(site, backend)
-    assert got["rows"] == ref, f"{site}/{backend}: rows differ from the reference implementation"
-    assert _digest(got) == _golden()[f"{site}/{backend}"], (
-        f"{site}/{backend}: rows or return value differ from HEAD {HEAD_SHA[:7]}'s golden")
+def test_ac2_ac4_store_site_rows_match_head_and_reference(site):
+    got, ref, _ = _run_store_site(site)
+    assert got["rows"] == ref, f"{site}: rows differ from the reference implementation"
+    assert _digest(got) == _golden()[f"{site}/duckdb"], (
+        f"{site}: rows or return value differ from HEAD {HEAD_SHA[:7]}'s golden")
 
 
 @pytest.mark.parametrize("site", sorted(MERGE_SITES))
@@ -605,14 +601,13 @@ def test_ac2_replica_merge_matches_head_and_reference(site):
         f"{site}: merged catalog differs from HEAD {HEAD_SHA[:7]}'s golden")
 
 
-@pytest.mark.parametrize("backend", ["duckdb", "sqlite"])
-def test_ac2_ac4_save_coref_duplicate_position_still_raises(backend):
-    """Conflict case with no golden rows: a duplicate (entity, pos) is a PK violation on both
-    backends at HEAD and must still RAISE (no silent failure on a memory path). HEAD leaves the
+def test_ac2_ac4_save_coref_duplicate_position_still_raises():
+    """Conflict case with no golden rows: a duplicate (entity, pos) is a PK violation at HEAD
+    and must still RAISE (no silent failure on a memory path). HEAD leaves the
     rows before the duplicate behind (executemany is not atomic); a set-based insert is — the
     partial state is deliberately NOT pinned."""
     from refmatrix.coref import Resolution
-    with _store(backend) as s:
+    with _store() as s:
         eid = _entities(s, "memory", ["dup_pos"])[0]
         r = Resolution(offset=7, pronoun="he", antecedent="A", confidence=0.5)
         with pytest.raises(Exception, match=r"(?i)constraint|unique|duplicate"):
@@ -644,7 +639,7 @@ def _helper_spy(monkeypatch) -> list:
 
 @pytest.mark.parametrize("op", ["bulk_link", "bulk_mark_tracked", "bulk_upsert_entity"])
 def test_r2_existing_arrow_branches_use_the_helper(op, monkeypatch):
-    with _store("duckdb") as s:
+    with _store() as s:
         concept = _entities(s, "concept", ["r2hub"])[0]
         ids = _entities(s, "doc", [f"r2_{i}" for i in range(50)])
         calls = _helper_spy(monkeypatch)
@@ -695,11 +690,10 @@ def _write_golden() -> None:
     os.environ["RMX_LOG"] = "0"
     sites = {}
     for site in sorted(STORE_SITES):
-        for backend in ("duckdb", "sqlite"):
-            got, ref, _ = _run_store_site(site, backend)
-            assert got["rows"] == ref, f"{site}/{backend}: HEAD disagrees with the reference"
-            sites[f"{site}/{backend}"] = _digest(got)
-            print(site, backend, sites[f"{site}/{backend}"], flush=True)
+        got, ref, _ = _run_store_site(site)
+        assert got["rows"] == ref, f"{site}: HEAD disagrees with the reference"
+        sites[f"{site}/duckdb"] = _digest(got)
+        print(site, sites[f"{site}/duckdb"], flush=True)
     for site in sorted(MERGE_SITES):
         d, ref, _ = _run_merge(site)
         ref(d)

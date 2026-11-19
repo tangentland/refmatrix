@@ -7,9 +7,8 @@ RED (fail at the r1 tree on an assertion):
   * `_clear_gmd_content_hashes` skipped unparseable / non-dict meta with an uncounted `continue`
     (finding #b1, a memory path): `clear_tracked_stamps` must report `gmd_hashes_skipped`.
   * `pagerank.store_scores` swallowed a `commit()` failure with `except Exception: pass` (#b1).
-    The failure here is REAL, not a patched commit: SQLite's `defer_foreign_keys` moves the FK
-    check of `pagerank.entity_id -> entities.id` to COMMIT, so a score for an id with no entity
-    makes `commit()` itself raise `IntegrityError`.
+    (Its test forced the failure through a backend-specific deferred FK check and went with that
+    backend in S1, 2026-11-19.)
   * `bulk_write` pinned an Arrow `int64` column and let `pa.array` truncate `1.5` to `1` silently;
     `True` died with an `ArrowTypeError` that names no column (#m1). It must reject both, naming
     the column, and still accept ints (and integral floats).
@@ -25,7 +24,6 @@ import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (sho
 import json
 import logging
 import shutil
-import sqlite3
 import tempfile
 import time as _real_time
 from contextlib import contextmanager
@@ -37,10 +35,10 @@ import pytest
 
 
 @contextmanager
-def _store(kind: str):
+def _store():
     from refmatrix.store import Store
     base = Path(rmx_sandbox.short_root("b178r2"))
-    s = Store(base / ".refmatrix", backend=kind)
+    s = Store(base / ".refmatrix")
     s.init()
     try:
         yield s
@@ -67,7 +65,7 @@ def _registered_rmx(duck) -> list[str]:
 
 
 # =========================================================================================
-# 1. m4 killer — dup-key upsert `updated_at`, DuckDB vs SQLite's row-by-row sequence
+# 1. m4 killer — dup-key upsert `updated_at` vs the row-by-row sequence (hand anchors)
 # =========================================================================================
 
 class _PinnedClock:
@@ -115,12 +113,12 @@ _UPSERT_SCENARIOS = {
 }
 
 
-def _upsert_run(kind: str, stored, batch, monkeypatch):
+def _upsert_run(stored, batch, monkeypatch):
     from refmatrix import store as store_mod
     clock = _PinnedClock(100.0)
     monkeypatch.setattr(store_mod, "time", clock)
     try:
-        with _store(kind) as s:
+        with _store() as s:
             if stored:
                 s.bulk_upsert_entity(stored)
             clock.now = 200.0
@@ -131,7 +129,7 @@ def _upsert_run(kind: str, stored, batch, monkeypatch):
             by_name = {r[1]: r for r in rows}
             id_of = {n: i for n, i in s._connect().execute(
                 "SELECT name, id FROM entities WHERE kind = 'doc'").fetchall()}
-            assert ids == [id_of[r[1]] for r in batch], f"{kind}: returned ids do not name rows"
+            assert ids == [id_of[r[1]] for r in batch], "returned ids do not name rows"
             return rows, by_name
     finally:
         monkeypatch.setattr(store_mod, "time", _real_time)
@@ -141,15 +139,12 @@ def _upsert_run(kind: str, stored, batch, monkeypatch):
 @pytest.mark.parametrize("scenario", sorted(_UPSERT_SCENARIOS))
 def test_m4_dup_key_upsert_updated_at_matches_the_row_by_row_sequence(scenario, monkeypatch):
     stored, batch, want_updated = _UPSERT_SCENARIOS[scenario]
-    ref_rows, _ = _upsert_run("sqlite", stored, batch, monkeypatch)
-    got_rows, got = _upsert_run("duckdb", stored, batch, monkeypatch)
-    # an anchor that is not the code under test: the expected bump, by hand
+    _got_rows, got = _upsert_run(stored, batch, monkeypatch)
+    # an anchor that is not the code under test: the expected bump, by hand (the full-row
+    # comparison against the other backend's row-by-row reference went with it in S1)
     assert got["a"][6] == want_updated, (
         f"{scenario}: DuckDB left updated_at={got['a'][6]} for key 'a'; the row-by-row "
         f"sequence leaves {want_updated} (the dup-key touch in bulk_upsert_entity, bug-178)")
-    assert got_rows == ref_rows, (
-        f"{scenario}: DuckDB set-based upsert differs from SQLite's row-by-row sequence\n"
-        f"  sqlite: {ref_rows}\n  duckdb: {got_rows}")
 
 
 # =========================================================================================
@@ -165,7 +160,7 @@ def _store_site_names():
 @pytest.mark.parametrize("site", _store_site_names())
 def test_m2_site_op_leaves_no_registered_bulk_view(site):
     from tests.test_bug178_bulk_write import STORE_SITES
-    with _store("duckdb") as s:
+    with _store() as s:
         op, _dump, _ref, _n = STORE_SITES[site](s)
         duck = s._connect()._duck
         before = _registered_rmx(duck)
@@ -180,7 +175,7 @@ def test_m2_site_op_leaves_no_registered_bulk_view(site):
 @pytest.mark.timeout(120)
 @pytest.mark.parametrize("op", ["bulk_link", "bulk_mark_tracked", "bulk_upsert_entity"])
 def test_m2_arrow_branch_ops_leave_no_registered_bulk_view(op):
-    with _store("duckdb") as s:
+    with _store() as s:
         concept = s.bulk_upsert_entity([("concept", "r2hub", None, None, None)])[0]
         ids = s.bulk_upsert_entity([("doc", f"r2_{i}", None, None, None) for i in range(50)])
         duck = s._connect()._duck
@@ -273,9 +268,8 @@ def test_m5_small_executemany_runs_counts_and_warns(n, caplog):
 # =========================================================================================
 
 @pytest.mark.timeout(60)
-@pytest.mark.parametrize("kind", ["duckdb", "sqlite"])
-def test_red_clear_tracked_stamps_counts_skipped_gmd_meta(kind):
-    with _store(kind) as s:
+def test_red_clear_tracked_stamps_counts_skipped_gmd_meta():
+    with _store() as s:
         s.bulk_upsert_entity([
             ("memory", "m_ok", None, None, {"gmd_content_hash": "h1", "gmd_pass2_done": True}),
             ("doc", "d_ok", None, None, {"gmd_content_hash": "h2", "keep": 1}),
@@ -299,60 +293,6 @@ def test_red_clear_tracked_stamps_counts_skipped_gmd_meta(kind):
     assert json.loads(metas["m_ok"]) == {} and json.loads(metas["d_ok"]) == {"keep": 1}
     assert metas["m_bad"] == "{gmd_content_hash"                 # left as is, but COUNTED
     assert metas["m_list"] == '["gmd_content_hash"]'
-
-
-# =========================================================================================
-# 5. RED — pagerank.store_scores lets a commit failure propagate
-# =========================================================================================
-
-def _pagerank_rows(con) -> list[tuple]:
-    return [tuple(r) for r in con.execute(
-        "SELECT entity_id, score, computed_at FROM pagerank ORDER BY entity_id").fetchall()]
-
-
-@pytest.mark.timeout(60)
-def test_red_store_scores_propagates_a_commit_failure():
-    from refmatrix import pagerank
-    with _store("sqlite") as s:
-        eid = s.bulk_upsert_entity([("doc", "pr_real", None, None, None)])[0]
-        con = s._connect()
-        assert isinstance(con, sqlite3.Connection)
-        con.commit()
-        # A prior SUCCESSFUL replace (bsd r2 #s1, kills m9): the failed replace below must leave
-        # these rows exactly as they were, and must not leave the connection in a transaction.
-        assert pagerank.store_scores(s, {eid: 0.5}, now=0.25) == 1
-        prior = _pagerank_rows(con)
-        assert prior == [(eid, 0.5, 0.25)], prior
-        # Real failure, nothing patched: the FK check moves to COMMIT, so the INSERT succeeds
-        # and commit() itself raises for the score whose entity does not exist.
-        con.execute("PRAGMA defer_foreign_keys = ON")
-        ghost = eid + 10_000
-        try:
-            try:
-                pagerank.store_scores(s, {eid: 1.0, ghost: 2.0}, now=1.0)
-            except sqlite3.IntegrityError as e:
-                raised = e
-                # Observed BEFORE the `finally` cleanup below, which would otherwise mask a
-                # missing rollback in store_scores (m9 survived r2 exactly that way).
-                assert not con.in_transaction, (
-                    "store_scores re-raised its commit failure but left the connection inside "
-                    "the failed transaction: every later commit on the daemon's long-lived "
-                    "connection trips over it (bug-178 bsd r2 #s1 — the rollback is missing)")
-                assert _pagerank_rows(con) == prior, (
-                    "the failed replace was not rolled back: the prior pagerank rows changed")
-            else:
-                raised = None
-                # prove the failure mode is real at HEAD too: the swallowed commit is the one
-                # that raises when asked again (so a RED here is the swallow, not the fixture)
-                with pytest.raises(sqlite3.IntegrityError, match="(?i)foreign key"):
-                    con.commit()
-        finally:
-            if con.in_transaction:
-                con.rollback()
-    assert raised is not None, (
-        "pagerank.store_scores returned success while its commit() failed with a FOREIGN KEY "
-        "IntegrityError — `except Exception: pass` swallowed it (bug-178 r1 #b1)")
-    assert "foreign key" in str(raised).lower(), raised
 
 
 # =========================================================================================

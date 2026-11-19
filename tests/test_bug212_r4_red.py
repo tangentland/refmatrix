@@ -241,7 +241,7 @@ def test_the_save_state_promote_fallback_refuses_a_git_tracked_catalog(tracked_r
 #            which pass no `read_only=True`;
 #   move  -- `.rename(` / `.replace(` / `.unlink(` / `os.replace|rename|remove|unlink(` /
 #            `shutil.move(` whose source or target is a catalog path: an expression whose text
-#            names a writer catalog (`catalog.duckdb`, `catalog.{slot}.duckdb`, `catalog.db`,
+#            names a writer catalog (`catalog.duckdb`, `catalog.{slot}.duckdb`,
 #            `db_path`), or a local bound to one;
 #   copy  -- `shutil.copy|copy2|copyfile|copyfileobj(` whose DESTINATION is a catalog path, and
 #            `<catalog path>.write_bytes(` (ch-bsd r5 m-3, L98, 2026-11-14: a copy onto a slot
@@ -257,9 +257,9 @@ CHECKED_OPENERS = {
 }
 # Library sites that open or replace a catalog for a caller, by the function name callers
 # call; every caller in src/ must be a checked site.
-LIBRARY_OPENERS = {
-    "migrate:migrate_catalog": "migrate_catalog",   # `rmx migrate-to-duckdb` (L95)
-}
+# S1 (2026-11-19) deleted the only one, `migrate:migrate_catalog` (`rmx migrate-to-duckdb`, L95),
+# with the second catalog backend; the mechanism stays for the next library opener.
+LIBRARY_OPENERS: "dict[str, str]" = {}
 UNCHECKED_ALLOWED = {
     # The daemon IS the single writer; a tracked catalog written through it is the accepted
     # route (lead decisions a1/a2; only bug-214's untracking removes it).
@@ -479,13 +479,13 @@ def _calls_in(module: str, qualname: str) -> set[str]:
 def test_the_census_scanner_sees_the_known_openers():
     """The scanner is proven to FIND opens before its silence means anything (a gate over a
     clean corpus cannot tell you it stopped checking): one known site from EACH family --
-    `cli:_store_rw` (store), `cli:compact` (raw, and move: its rename over the slot),
-    `migrate:migrate_catalog` (raw) -- plus the daemon's writer reopen (L95: a "sees" guard on
-    `cli:compact`)."""
+    `cli:_store_rw` (store), `cli:compact` (raw, and move: its rename over the slot) -- plus the
+    daemon's writer reopen (L95: a "sees" guard on `cli:compact`). S1 deleted the other raw
+    site this named, `migrate:migrate_catalog`."""
     seen = {(site, fam) for site, _, fam in _census()}
     for must in (("cli:_store_rw", "store"), ("verbs:local_write", "store"),
                  ("daemon:Daemon._reopen_writer", "store"), ("cli:compact", "raw"),
-                 ("cli:compact", "move"), ("migrate:migrate_catalog", "raw")):
+                 ("cli:compact", "move")):
         assert must in seen, f"the census scanner did not find {must}; it is broken"
 
 
@@ -535,7 +535,7 @@ def unlink_one(root):
     legacy.unlink()
 
 def os_replace(root, tmp):
-    os.replace(tmp, root / "catalog.db")
+    os.replace(tmp, root / "catalog.B.duckdb")
 
 def not_a_catalog(root):
     (root / "notes.txt").unlink()
@@ -575,8 +575,8 @@ def copyfile_aliased(root, src):
     _sh.copyfile(src, root / "catalog.duckdb")
 
 def copyfileobj_onto(root, fsrc):
-    with open(root / "catalog.db", "wb") as fdst:
-        shutil.copyfileobj(fsrc, open(root / "catalog.db", "wb"))
+    with open(root / "catalog.A.duckdb", "wb") as fdst:
+        shutil.copyfileobj(fsrc, open(root / "catalog.A.duckdb", "wb"))
 
 def write_bytes_onto(root):
     (root / "catalog.duckdb").write_bytes(b"")
@@ -673,15 +673,6 @@ def test_every_checked_opener_calls_the_one_store_level_check():
             missing.append(site)
     assert not missing, (f"checked openers that do not call the store-level check "
                          f"{sorted(checks)} (directly or via one wrapper): {missing}")
-
-
-def test_every_caller_of_a_library_opener_is_found():
-    """A library opener is allowed only because its callers check (L95: `migrate_catalog`
-    "once its caller checks"). Callers are found by a census of call sites, so a new caller
-    joins the checked set automatically; this pins that the census finds the known one."""
-    callers = _library_callers()
-    assert "cli:migrate_to_duckdb" in callers, \
-        f"the call-site census did not find cli:migrate_to_duckdb: {sorted(callers)}"
 
 
 def test_daemon_only_sites_are_called_only_from_the_daemon():
