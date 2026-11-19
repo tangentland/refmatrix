@@ -123,7 +123,9 @@ bsd-t05 r1 was DIRTY (1 BULLSHIT, 1 SKETCHY, 4 MEH). red-t05 wrote the REDs at `
   store lacks stays `singleton_unresolved`. The op's `compile_memories` call passes
   `exclude_mtypes=brief.EXCLUDE_MTYPES` (consolidate's defaults plus `brief`, `brief/*`), so
   the brief's own output never enters its plan; the corpus-side count still guards a caller
-  plan. {#fold-l189}
+  plan. Verify at `77d646ef` (mini, RED's 51 files with the five guards,
+  `workflow/review-output/t05-green-l189-verify.log`): 1187 passed, 2 failed, both bug-282.
+  {#fold-l189}
 - **#s-1, #m-3** were RED's (the G7 mirror probe; the dead-export guard's blind spots).
   {#fold-red}
 
