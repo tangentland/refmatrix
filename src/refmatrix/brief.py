@@ -528,13 +528,10 @@ GENERATOR = "memory-brief"
 
 _CLASS_ORDER = ("corroborated", "contradicted", "orphan-concept", "singleton")
 
-_BRIEF_RE = re.compile(
-    r"^### (?P<label>.+?) \{#(?P<anchor>[^}]+)\}\n\n(?P<finding>[^\n]+)\n"
-    r"(?:.*?^Evidence \(\d+\): (?P<evidence>[^\n]+))?",
-    re.M | re.S)
-
-# Both rendered forms carry the id: `[[name]] `11`` and `` `99` (unresolved) ``.
-_EV_ANY_RE = re.compile(r"`(\d+)`")
+# The index is ONE-directional: store -> GMD. `parse_gmd` / `_parse_evidence` (the GMD -> store
+# half task 8.3 built) had no production caller in src/, scripts/, eval/ or the templates, so
+# T0.5 deleted them under plan-6 Q1's rule for code no production path reaches (ch-bsd plan-8 r5
+# #b-3, ruling O2, 2026-11-19). The store is the source; regenerate the index from it.
 
 
 def _as_brief(b) -> "Brief":
@@ -632,9 +629,9 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
             resolved = [(e, names.get(e)) for e in b.evidence]
             unresolved = [e for e, n in resolved if not n]
             lines += [f'### {b.label} {{#{anchor}}}', '', b.finding, '']
-            # The id travels WITH the link. Without it the doc names the rows
-            # but cannot be read back into them, which is how the claimed round
-            # trip came to be faked by a literal in its own test (r1 #b-5).
+            # The id travels WITH the link, so a reader can resolve each cited
+            # row even where its name is gone (r1 #b-5). Nothing reads the doc
+            # back into the store: the index is one-directional (T0.5).
             ev = ", ".join(f'[[{n}]] `{e}`' if n else f'`{e}` (unresolved)'
                            for e, n in resolved)
             lines.append(f'Evidence ({len(resolved)}): {ev}.')
@@ -649,48 +646,3 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
                     lines.append(f'rel: evidence-for -> [[{n}]]')
             lines.append('')
     return "\n".join(lines).rstrip() + "\n"
-
-
-def parse_gmd(doc: str, *, names: "dict[int, str] | None" = None) -> list[dict]:
-    """Recover briefs from a rendered index — the other half of the trip.
-
-    `memory compile` states the contract: the index is regenerable from the
-    store and the store is rebuildable from the index. Without this half, a
-    brief index is a report that happens to look like a node.
-    """
-    out: list[dict] = []
-    # `render_gmd` writes `[[name]]`; invert the same map to get ids back. A
-    # caller with no map still recovers the unresolved (bare-id) entries.
-    ids_by_name = {v: k for k, v in (names or {}).items()}
-    sections = re.split(r"^## ", doc, flags=re.M)[1:]
-    for sec in sections:
-        head = sec.splitlines()[0]
-        m = re.match(r"^(\S+) \{#(\S+)\}", head)
-        if not m:
-            continue
-        cls = m.group(1)
-        if cls == "root":
-            continue
-        for bm in _BRIEF_RE.finditer(sec):
-            out.append({"class": cls, "label": bm.group("label").strip(),
-                        "finding": bm.group("finding").strip(),
-                        "anchor": bm.group("anchor"),
-                        "evidence": _parse_evidence(bm.group("evidence"),
-                                                    ids_by_name)})
-    return out
-
-
-def _parse_evidence(line: "str | None",
-                    ids_by_name: "dict[str, int]") -> list[int]:
-    """Recover evidence ids from a rendered `Evidence (N): …` line.
-
-    `evidence` is what `Brief.__post_init__` refuses to construct without and
-    what the module docstring calls "the whole contract" — and it was written
-    into the doc and never read back, so the round trip the plan claimed was
-    faked by a literal in the test (ch-bsd r1 #b-5). Both rendered forms now
-    carry the id, so no names map is needed to recover it.
-    """
-    if not line:
-        return []
-    return [int(x) for x in _EV_ANY_RE.findall(line)]
-

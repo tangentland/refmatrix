@@ -13928,9 +13928,10 @@ def memory_compile(scope, k, threshold, threshold_pct, mutual, beta, gamma,
               help="orphan-concept: how much talk counts as talked-about.")
 @click.option("--compile/--no-compile", "do_compile", default=False,
               show_default=True,
-              help="Run `memory compile` first so the plan-derived classes "
-                   "(corroborated, singleton) can run. Costs the clustering "
-                   "pass; without it those two classes are SKIPPED and say so.")
+              help="Have the daemon build a `memory compile` plan first so the "
+                   "plan-derived classes (corroborated, singleton) can run. Costs "
+                   "the clustering pass; without it those two classes are SKIPPED "
+                   "and say so.")
 @click.option("--scope", "compile_scope",
               type=click.Choice(_consolidate_mod.SCOPES),
               default=_consolidate_mod.DEFAULT_SCOPE, show_default=True,
@@ -13962,7 +13963,6 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
     Every brief names the entity ids it was derived from; there is no model in
     this path and nothing here is generated prose.
     """
-    from refmatrix import consolidate
     from refmatrix import verbs as _verbs
 
     _memory_intent("memory_brief")
@@ -13979,11 +13979,11 @@ def memory_brief(classes, min_members, min_dates, min_mentions, do_compile,
     # the pattern corpus that MCP could).
     kw["compile_scope"] = compile_scope
     if do_compile:
-        # A PLAN only, on the read replica in this process: briefs are a read,
-        # and the `memory_compile` op plans AND applies under the writer lock
-        # (#rm-stale-refs: this comment described the removed plan-as-data
-        # apply). The plan travels to the brief op as data.
-        kw["plan"] = consolidate.compile_memories(_read_store(), scope=compile_scope)
+        # A pass-through (T0.5 R5.3, ch-bsd plan-8 r5 #s-4, 2026-11-19): the verb's
+        # `memory_brief` op builds the plan on the snapshot the briefs read. This
+        # used to plan here, on the replica in the CLI process, which made the CLI
+        # the only surface that could reach corroborated / singleton.
+        kw["compile"] = True
     if save:
         kw["save"] = True
 

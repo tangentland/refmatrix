@@ -17,6 +17,14 @@ metadata:
 
 rel: part-of -> [[plan-8-derived-coverage-notes]]
 
+> **Superseded in part, 2026-11-19 (T0.5).** The round trip this task delivered is gone: the
+> brief index is one-directional (store → GMD). `brief.parse_gmd` and `_parse_evidence` had no
+> production caller, so T0.5 deleted them and their tests under plan-6 Q1's rule (ch-bsd plan-8
+> r5 #b-3, ruling O2). `render_gmd` and `rmx memory brief --gmd` stand. `status: complete` stays
+> as history. See [[plan-8-derived-coverage-notes#one-directional]]. {#superseded-note}
+
+rel: superseded-by -> [[task-t0-suite-trust-sweep#t0-5]]
+
 ## Requirements {#requirements}
 
 - `rmx memory brief --gmd` renders a `memory-briefs` GMD doc: frontmatter, `{#anchor}` on every heading, `rel:` edges from each brief to the memories it cites. Zero `tools/gmd/lint.py` errors.

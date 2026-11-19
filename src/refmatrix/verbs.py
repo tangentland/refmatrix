@@ -2132,6 +2132,10 @@ def _memory_payload(action: str, a: dict) -> dict:
             p["scope"] = a["compile_scope"]
         if a.get("save"):
             p["save"] = True
+        if a.get("compile"):
+            # T0.5 R5.3 (ch-bsd plan-8 r5 #s-4, 2026-11-19): the op builds the plan itself,
+            # on the snapshot it derives the briefs from. Only the switch crosses the wire.
+            p["compile"] = True
         return p
     return {}
 
@@ -2153,6 +2157,12 @@ _MEMORY_DESCRIPTIONS = {
                      "detectors read: memory (default; every memory except "
                      "impressions and `tag: pattern` docs) or pattern (impressions "
                      "only). Any other value is refused",
+    "compile": "brief only — build the `memory compile` plan (default knobs, on "
+               "`compile_scope`) inside the daemon so the plan-derived classes "
+               "corroborated and singleton run; without it they are reported under "
+               "`classes_not_run`. Costs the clustering pass. Refused together with `plan`",
+    "plan": "brief only — an already-built `memory compile` plan (its scope must equal "
+            "`compile_scope`). Refused together with `compile`",
 }
 
 
@@ -2184,11 +2194,19 @@ def memory(root: Path, action: typing.Literal[
            classes: list[str] | None = None, save: bool = False,
            plan: dict | None = None,
            compile_scope: typing.Literal["memory", "pattern"] | None = None,
+           compile: bool = False,
            timeout: float | None = None) -> dict:
     """One dispatcher over the CLI `rmx memory` group. recall/add reuse the
     dedicated verbs (recall forwards every recall knob it accepts); promote
     copies project→global; everything else routes to the daemon's memory_*
-    op with the project partition injected."""
+    op with the project partition injected.
+
+    brief's `compile` (T0.5 R5.3, ch-bsd plan-8 r5 #s-4, 2026-11-19) makes the
+    plan-derived classes verb-first: before it only the CLI could reach
+    `corroborated` / `singleton`, because only the CLI built a plan (in its own
+    process, then shipped it as `plan`), so an MCP caller got both under
+    `classes_not_run` unless it hand-built a plan. The plan is now built by the
+    `memory_brief` op on the snapshot the briefs read."""
     a = {k: v for k, v in locals().items() if k not in ("root", "action", "timeout")}
     if action == "brief" and scope is not None:
         # bug-200 m-1 (ch-bsd bug-197/198 r1, 2026-11-10): bug-198 renamed the
@@ -2200,6 +2218,13 @@ def memory(root: Path, action: typing.Literal[
             f"memory brief: `scope` is recall's project|global|both and is not read "
             f"by brief (got {scope!r}); pass the compile scope as "
             f"`compile_scope` (memory|pattern)")
+    if action == "brief" and compile and plan is not None:
+        # T0.5 ruling (2026-11-19): two plan sources in one call is refused, never
+        # resolved by picking one. Either would silently discard what the caller sent.
+        raise VerbArgsError(
+            "memory brief: `plan` and `compile` are exclusive; `compile` builds the plan "
+            "in the daemon from the snapshot the briefs read, `plan` supplies one already "
+            "built. Pass one, not both")
     if action == "brief" and compile_scope is not None:
         # Before ANY daemon call (bug-198): the Literal is a schema hint, not
         # a check — `Verb.run` (the MCP path) passes whatever the client sent.
@@ -2229,8 +2254,14 @@ def memory(root: Path, action: typing.Literal[
     # (ping, ping, memory_get × 3) against Q11's stated one attempt, and its
     # CLI twin 180.2 s (ch-bsd plan-3 r6 #b-2, bug-027).
     budgeted = is_read or action == "promote"
+    # A brief that compiles pays the clustering pass inside the op, which the
+    # 10 s read budget was never sized for: before T0.5 the CLI ran that pass in
+    # its own process, unbounded, and only the derivation met the budget. It
+    # gets what a compile gets (one attempt either way).
+    compiling = action == "brief" and bool(compile)
+    read_budget = MEMORY_COMPILE_TIMEOUT_S if compiling else MEMORY_READ_BUDGET_S
     import time as _time
-    budget = (float(timeout) if timeout is not None else MEMORY_READ_BUDGET_S) if budgeted else None
+    budget = (float(timeout) if timeout is not None else read_budget) if budgeted else None
     _deadline = (_time.monotonic() + budget) if budget else None
 
     def _left(default: float) -> float:
@@ -2273,7 +2304,7 @@ def memory(root: Path, action: typing.Literal[
     except KeyError as exc:
         raise VerbError(f"missing required arg for {action}: {exc}") from exc
     if is_read:
-        res = _call(root, op, payload, timeout=_left(MEMORY_READ_BUDGET_S), retries=0)
+        res = _call(root, op, payload, timeout=_left(read_budget), retries=0)
         if action == "get" and id is None and name and (res or {}).get("memory"):
             emit_memory_get_used(root, name, scope="project")
         return res
@@ -2282,7 +2313,11 @@ def memory(root: Path, action: typing.Literal[
     # of an mtype — the 271-card viascope cleanup — and its own daemon call had
     # carried 600 s before it was routed through this verb. Ignoring the
     # caller's timeout here would have cut that to 120 s the day it moved.
-    res = _call(root, op, payload, timeout=float(timeout) if timeout is not None else 120.0)
+    # A compiling `brief --save` gets ONE attempt, as `memory_compile` does: three
+    # 600 s attempts would be a half-hour wait (feedback_daemon_call_retries_multiply_timeouts).
+    res = _call(root, op, payload, timeout=float(timeout) if timeout is not None
+                else (MEMORY_COMPILE_TIMEOUT_S if compiling else 120.0),
+                retries=0 if compiling else 2)
     if action == "retag":
         # Task 3.7 #fam-taxonomy (r1 M6): MCP retags got no off-vocabulary note.
         from refmatrix import taxonomy as tax
