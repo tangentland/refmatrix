@@ -133,3 +133,4 @@
 2026-11-18T23:00:00Z commit=5eae7916 verdict=DIRTY findings=5 (1B/2S/2M) report=2026-11-18-2300-t04-r1-5eae7916.md
 2026-11-18T23:45:00Z commit=0038f810 verdict=GO findings=2 (0B/0S/2M) report=confirm-lite text (persisted as INDEX row)
 2026-11-19T11:45:00Z commit=61b0666c verdict=DIRTY findings=6 (1B/1S/4M) report=2026-11-19-1145-t05-r1-61b0666c.md
+2026-11-19T12:50:00Z commit=3f9ce2a3 verdict=NO-GO findings=1 (1B) report=2026-11-19-1250-t05-confirm-lite-3f9ce2a3.md
