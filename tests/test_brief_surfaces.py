@@ -88,7 +88,10 @@ def test_cli_and_verb_agree_on_every_brief_default_not_a_subset():
     cmd = cli_main
     for part in ("memory", "brief"):
         cmd = cmd.commands[part]
-    click_defaults = {p.name: p.default for p in cmd.params}
+    # The values the command's callback RECEIVES with no options given. `p.default` is
+    # click's `Sentinel.UNSET` for a `multiple=True` option without a default; the callback
+    # gets `()` -- and with M7 it gets `("contradicted",)`.
+    click_defaults = dict(cmd.make_context("brief", [], resilient_parsing=True).params)
 
     import inspect
     sig = inspect.signature(verbs.VERBS["rmx_memory"].fn)
