@@ -31,8 +31,7 @@ import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (sho
 
 @pytest.fixture
 def s(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    st = Store(tmp_path / ".refmatrix", backend="duckdb"); st.init()
+    st = Store(tmp_path / ".refmatrix"); st.init()
     yield st
     st.close()
 
@@ -62,7 +61,6 @@ def live(monkeypatch):
     for k, v in {"HOME": str(home), "RMX_HOME": str(home / ".refmatrix"),
                  "RMX_SHARED_MODELS": "0", "RMX_MODEL_SOCK": str(base / "m.sock")}.items():
         monkeypatch.setenv(k, v)
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = base / "p" / ".refmatrix"; root.parent.mkdir()
     _seed_two_partitions(root)
     pid = dm.spawn_daemon_subprocess(root, watch_root=[])
@@ -104,7 +102,6 @@ def test_cli_merge_with_the_daemon_up_is_refused(live, monkeypatch):
 def test_offline_cli_merge_runs_and_prints_the_repair(tmp_path, monkeypatch):
     """With no daemon there is no concurrent writer, so the offline merge stays available and
     still prints its fragment repair (pins the CLI print, M22/M23)."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
     _seed_two_partitions(root)
     monkeypatch.chdir(root.parent)
@@ -227,7 +224,6 @@ def test_r5_a_remap_only_change_in_an_unmoved_row_is_written(s):
 
 def test_r5_offline_merge_prints_remapped_and_the_manifest(tmp_path, monkeypatch):
     """#s5-2 / F4: the offline merge's report names `remapped` and the manifest path."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
     st = Store(root); st.init()
     with st.with_partition("src"):
@@ -256,7 +252,6 @@ def test_r5_cli_fence_refuses_a_busy_daemon_too(tmp_path, monkeypatch):
     """#m5-1: `ping` cannot tell busy from absent; the fence asks require_daemon, so a busy
     daemon (alive, not answering) is refused, not treated as offline."""
     from refmatrix import verbs as verbs_mod
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
     _seed_two_partitions(root)
     monkeypatch.chdir(root.parent)
@@ -299,7 +294,6 @@ def _seq_require(monkeypatch, seq):
 
 
 def _offline_root(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / "p" / ".refmatrix"; root.parent.mkdir()
     _seed_two_partitions(root)
     monkeypatch.chdir(root.parent)

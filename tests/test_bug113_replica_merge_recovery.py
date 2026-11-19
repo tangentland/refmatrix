@@ -52,7 +52,7 @@ def _store_catalog(tmp_path: Path, name: str = "s") -> Path:
     from refmatrix.store import Store
     root = tmp_path / name / ".refmatrix"
     root.mkdir(parents=True)
-    s = Store(root, partition="proj", backend="duckdb")
+    s = Store(root, partition="proj")
     s.init()
     s._connect()
     s.close()

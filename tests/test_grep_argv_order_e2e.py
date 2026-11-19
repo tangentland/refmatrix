@@ -61,7 +61,7 @@ def many_files(tmp_path):
     for n in names:
         (tmp_path / n).write_text("alpha\n" * N_LINES)
     from refmatrix.store import Store
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     s.close()
     return tmp_path, list(reversed(names))

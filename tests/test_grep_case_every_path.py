@@ -33,10 +33,9 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def daemon(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / "proj" / ".refmatrix"
     root.parent.mkdir()
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     d = Daemon(root)
     d.store = s
@@ -107,11 +106,10 @@ def test_the_daemon_rpc_without_i_is_case_sensitive(daemon, capsys):
 
 @pytest.fixture
 def proj(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     monkeypatch.setenv("RMX_GREP_NOTE", "0")
     p = tmp_path / "proj"
     p.mkdir()
-    s = Store(p / ".refmatrix", backend="duckdb")
+    s = Store(p / ".refmatrix")
     s.init()
     s.close()
     (p / "e.txt").write_text("ERROR here\n")
@@ -193,10 +191,9 @@ def test_word_reaches_the_in_process_read_paths(tmp_path, monkeypatch, layout):
     """`-w` on the replica (default) and direct paths, end to end. At r4 a
     mutation dropping `word=` from either in-process caller survived."""
     import shutil as _sh
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     proj = tmp_path / "proj"
     proj.mkdir()
-    s = Store(proj / ".refmatrix", backend="duckdb")
+    s = Store(proj / ".refmatrix")
     s.init()
     f = proj / "w.py"
     f.write_text("an error here\n")
@@ -260,10 +257,9 @@ def test_the_rpc_path_prints_the_unreadable_note(daemon, capsys):
 
 
 def test_the_in_process_path_prints_the_unreadable_note(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     proj = tmp_path / "proj"
     proj.mkdir()
-    s = Store(proj / ".refmatrix", backend="duckdb")
+    s = Store(proj / ".refmatrix")
     s.init()
     _seed_one_readable_one_gone(s, proj)
     s.close()

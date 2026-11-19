@@ -40,7 +40,7 @@ def tree(tmp_path):
     (sub / "s1.txt").write_text("alpha\nbeta\n")
     (sub / "s2.txt").write_text("beta\n")
     from refmatrix.store import Store
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     s.close()
     return tmp_path

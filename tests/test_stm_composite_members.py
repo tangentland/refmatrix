@@ -51,7 +51,7 @@ def make_store():
         base = Path(rmx_sandbox.short_root("mem.")).resolve()
         root = base / "proj" / ".refmatrix"
         root.mkdir(parents=True)
-        s = Store(root, backend="duckdb")
+        s = Store(root)
         s.init()
         eid = s.add_memory(name="mem_question_doc", content="A note about one question.",
                            mtype="feedback")

@@ -26,8 +26,7 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
     s.close()
@@ -195,14 +194,13 @@ def test_a_store_with_a_stamp_but_no_history_reports_no_history(store, tmp_path)
 def test_the_table_is_created_on_an_older_store(tmp_path, monkeypatch):
     """A store built before this column set exists must gain the table on
     open, not raise."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     s._connect().execute("DROP TABLE derive_history")
     s.close()
 
-    s2 = Store(root, backend="duckdb")
+    s2 = Store(root)
     s2.init()
     s2.stamp_derive("gmd")
     assert len(s2.derive_history(pass_name="gmd")) == 1

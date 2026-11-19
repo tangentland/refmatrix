@@ -96,7 +96,7 @@ def env():
     for i, b in enumerate(BODIES):
         (docs / f"doc-{i}.md").write_text(_doc(i, b), encoding="utf8")
     root = proj / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     ingest_gmd_paths(s, sorted(docs.glob("*.md")), as_memory=True,
                      memory_mtype_default="test/doc")

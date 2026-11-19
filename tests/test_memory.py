@@ -187,7 +187,6 @@ def test_duckdb_check_rebuild_accepts_memory_after_open(tmp_path, monkeypatch):
     memory upsert must succeed and existing rows must still be there
     with the same ids."""
     duckdb = pytest.importorskip("duckdb")
-    monkeypatch.setenv("RMX_BACKEND", "duckdb")
     root = tmp_path / ".refmatrix"
     root.mkdir()
 
@@ -469,7 +468,6 @@ def test_duckdb_kind_check_migration_idempotent(tmp_path, monkeypatch):
     leave the schema in the same state — the migration helper should
     short-circuit when the CHECK already permits 'memory'."""
     pytest.importorskip("duckdb")
-    monkeypatch.setenv("RMX_BACKEND", "duckdb")
     root = tmp_path / ".refmatrix"
 
     s1 = Store(root)

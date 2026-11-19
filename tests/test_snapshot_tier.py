@@ -42,7 +42,7 @@ def _bare_daemon(root: Path, store: Store) -> Daemon:
 
 def _duck_store(root: Path) -> Store:
     """Initialize a DuckDB-backed Store the daemon can CHECKPOINT + copy."""
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s._connect()
     return s
 

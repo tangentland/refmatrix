@@ -152,7 +152,7 @@ def _snapshot(tmp_path: Path, name: str, partitions: "list[str]") -> Path:
     src = tmp_path / f"src-{name}" / ".refmatrix"
     src.mkdir(parents=True)
     for part in partitions:
-        s = Store(src, partition=part, backend="duckdb")
+        s = Store(src, partition=part)
         s._connect()
         s.close()
     return src / "catalog.duckdb"

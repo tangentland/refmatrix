@@ -93,7 +93,7 @@ def gmd_store(tmp_path):
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "chat-alpha.md").write_text(GMD_DOC, encoding="utf8")
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     ingest_gmd_paths(s, [docs / "chat-alpha.md"], as_memory=True,
                      memory_mtype_default="test/session")

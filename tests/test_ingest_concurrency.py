@@ -292,7 +292,7 @@ def _bare_daemon_with_store(tmp_path):
     tier test helper shape so we can exercise mirror refresh end-to-end."""
     from refmatrix.daemon import Daemon
     from refmatrix.store import Store
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     s._connect()
     d = object.__new__(Daemon)
     d.root = tmp_path

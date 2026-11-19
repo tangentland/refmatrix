@@ -35,7 +35,6 @@ def project(monkeypatch):
     """A real store in a real tree, cwd'd into it, with a clean HOME so the
     global marker cannot leak in from the developer's own machine."""
     monkeypatch.delenv("RMX_LEARN", raising=False)
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     monkeypatch.delenv("REFMATRIX_ROOT", raising=False)
     monkeypatch.delenv("REFMATRIX_NO_TELEMETRY", raising=False)
     td = pathlib.Path(tempfile.mkdtemp(prefix="rmxT"))
@@ -44,7 +43,7 @@ def project(monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     root = td / "proj" / ".refmatrix"
     root.parent.mkdir()
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     s.close()
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)

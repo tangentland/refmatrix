@@ -43,7 +43,7 @@ def _root(base: Path, name: str, *, rows: int = 0, keep_ids: int | None = None,
     refuses those ALTERs on a table other entries depend on, e.g. `entities`; the type change
     goes on `c` because the CHECK depends on `a`)."""
     root = base / name / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     s.close()
     cat = root / "catalog.duckdb"

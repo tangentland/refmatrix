@@ -26,7 +26,7 @@ def _make_duck_root(tmp_path: Path) -> Path:
     """Initialize a minimal .refmatrix root with a DuckDB catalog so
     Store(read_only=True) has something to open. Uses the same Store
     constructor path the daemon does."""
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     s._connect()
     s.close()
     return tmp_path
@@ -37,7 +37,6 @@ def test_read_only_store_prefers_read_only_symlink_when_present(tmp_path, monkey
     `read_only.duckdb` symlink present, Store(read_only=True) opens that
     file, not the primary catalog. This is what gives CLI reads a
     lock-free path while the daemon owns the writer."""
-    monkeypatch.setenv("RMX_BACKEND", "duckdb")
     root = _make_duck_root(tmp_path)
     # Create a real second catalog file and symlink to it. We just need
     # Store to pick the symlink path — its contents don't have to be a
@@ -58,7 +57,6 @@ def test_read_only_store_falls_back_to_primary_when_no_symlink(tmp_path, monkeyp
     """Without the symlink (daemon down, fresh install),
     Store(read_only=True) opens the primary catalog file. The symlink
     optimization is purely additive."""
-    monkeypatch.setenv("RMX_BACKEND", "duckdb")
     root = _make_duck_root(tmp_path)
     primary = root / "catalog.duckdb"
 

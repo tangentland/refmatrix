@@ -122,7 +122,7 @@ def _build(*, ring: bool = True, docs: bool = True, memories: int = 0) -> dict:
     proj = base / "proj"
     proj.mkdir(parents=True)
     root = proj / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     try:
         if docs:
@@ -215,7 +215,7 @@ def calib():
     from refmatrix.store import Store
 
     c = _build(ring=False)
-    s = Store(c["root"], backend="duckdb")
+    s = Store(c["root"])
     try:
         def out_at(m: int) -> str:
             return scan_prompt(s, PROMPT, composite=False, max_tokens=m)

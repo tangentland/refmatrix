@@ -30,10 +30,9 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / "proj" / ".refmatrix"
     root.parent.mkdir()
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     yield s
     s.close()

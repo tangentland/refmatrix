@@ -12,7 +12,6 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
@@ -78,11 +77,10 @@ def test_bulk_link_preserves_weights_on_duckdb_only(store):
 def test_bulk_link_beats_per_row_link_on_throughput(tmp_path, monkeypatch):
     """Gate: bulk_link must be at least 2× faster than the equivalent per-row
     `link()` loop on a moderately-sized batch (the Arrow path is the win)."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     N = 2000
 
     def _build(name: str):
-        s = Store(tmp_path / name, backend="duckdb")
+        s = Store(tmp_path / name)
         s.init()
         cid = s.add_concept("hot")
         eids = [s.upsert_entity(kind="code", name=f"f{i}.py") for i in range(N)]

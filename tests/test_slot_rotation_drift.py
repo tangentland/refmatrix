@@ -27,7 +27,7 @@ def _rotate(root, slot="A"):
 @pytest.fixture
 def root(tmp_path):
     r = tmp_path / ".refmatrix"
-    s = Store(r, backend="duckdb")
+    s = Store(r)
     s.init()
     s.close()
     return r
@@ -35,38 +35,38 @@ def root(tmp_path):
 
 def test_writer_follows_the_active_marker(root):
     _rotate(root, "A")
-    assert Store(root, backend="duckdb").db_path.name == "catalog.A.duckdb"
+    assert Store(root).db_path.name == "catalog.A.duckdb"
     _rotate(root, "B")
-    assert Store(root, backend="duckdb").db_path.name == "catalog.B.duckdb"
+    assert Store(root).db_path.name == "catalog.B.duckdb"
 
 
 def test_unrotated_store_stays_on_the_legacy_file(root):
     """No marker = a store that never rotated. It must not be moved."""
-    assert Store(root, backend="duckdb").db_path.name == "catalog.duckdb"
+    assert Store(root).db_path.name == "catalog.duckdb"
 
 
 def test_marker_naming_a_missing_slot_falls_back(root):
     """A half-finished bootstrap must not conjure an empty slot out from under
     the daemon."""
     (root / "active").write_text("A")
-    assert Store(root, backend="duckdb").db_path.name == "catalog.duckdb"
+    assert Store(root).db_path.name == "catalog.duckdb"
 
 
 def test_garbage_marker_falls_back(root):
     (root / "active").write_text("nonsense")
-    assert Store(root, backend="duckdb").db_path.name == "catalog.duckdb"
+    assert Store(root).db_path.name == "catalog.duckdb"
 
 
 def test_a_write_with_no_daemon_lands_in_the_active_slot(tmp_path):
     """The end-to-end property. Write through a plain Store on a rotated
     store, then read the slot file back directly: the row must be there."""
     root = tmp_path / ".refmatrix"
-    s = Store(root, backend="duckdb"); s.init(); s.close()
+    s = Store(root); s.init(); s.close()
     # Promote the initialised catalog into slot A, as bootstrap does.
     (root / "catalog.duckdb").rename(root / "catalog.A.duckdb")
     (root / "active").write_text("A")
 
-    w = Store(root, backend="duckdb")
+    w = Store(root)
     w.init()
     assert w.db_path.name == "catalog.A.duckdb"
     eid = w.upsert_entity(kind="doc", name="written-without-a-daemon")
@@ -86,5 +86,5 @@ def test_dangling_read_only_symlink_is_not_bound(root):
     surfaced as a TypeError from _ensure_partition and dropped the daemon into
     its legacy-catalog fallback."""
     (root / "read_only.duckdb").symlink_to(root / "catalog.read.duckdb")  # no target
-    s = Store(root, backend="duckdb", read_only=True)
+    s = Store(root, read_only=True)
     assert s.db_path.name != "read_only.duckdb"

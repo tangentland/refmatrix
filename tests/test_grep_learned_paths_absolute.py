@@ -73,7 +73,7 @@ def test_the_delegate_teaches_nothing_and_prints_the_tool_output(
     proj = tmp_path / "proj"
     (proj / "sub").mkdir(parents=True)
     (proj / "sub" / "a.txt").write_text("x\nalpha here\nalpha:3\n")
-    s = Store(proj / ".refmatrix", backend="duckdb")
+    s = Store(proj / ".refmatrix")
     s.init()
     s.close()
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
@@ -101,7 +101,7 @@ def test_an_explicit_learn_on_a_delegated_call_says_it_was_ignored(tmp_path, mon
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "a.txt").write_text("alpha here\n")
-    Store(proj / ".refmatrix", backend="duckdb").init()
+    Store(proj / ".refmatrix").init()
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     monkeypatch.chdir(proj)
 

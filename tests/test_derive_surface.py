@@ -24,11 +24,10 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def proj(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     monkeypatch.setattr("refmatrix.daemon.ping", lambda *a, **k: False)
     d = tmp_path / "p"
     d.mkdir()
-    s = Store(d / ".refmatrix", backend="duckdb")
+    s = Store(d / ".refmatrix")
     s.init()
     s.close()
     monkeypatch.chdir(d)
@@ -37,7 +36,7 @@ def proj(tmp_path, monkeypatch):
 
 
 def _store(proj: Path) -> Store:
-    return Store(proj / ".refmatrix", backend="duckdb")
+    return Store(proj / ".refmatrix")
 
 
 def _gmd(dirpath: Path, name: str, body: str) -> Path:

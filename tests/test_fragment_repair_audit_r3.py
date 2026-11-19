@@ -25,8 +25,7 @@ import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (sho
 
 @pytest.fixture
 def s(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    st = Store(tmp_path / ".refmatrix", backend="duckdb"); st.init()
+    st = Store(tmp_path / ".refmatrix"); st.init()
     yield st
     st.close()
 
@@ -151,7 +150,6 @@ def live(monkeypatch):
     for k, v in {"HOME": str(home), "RMX_HOME": str(home / ".refmatrix"),
                  "RMX_SHARED_MODELS": "0", "RMX_MODEL_SOCK": str(base / "m.sock")}.items():
         monkeypatch.setenv(k, v)
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = base / "p" / ".refmatrix"; root.parent.mkdir()
     st = Store(root); st.init()
     with st.with_partition("src"):
