@@ -318,9 +318,16 @@ already DuckDB) are untouched and not listed. A re-pointed node that fails on Du
 
 ## Re-pointed tests that fail on DuckDB at base {#xfail}
 
-Filled in by the re-point commit (bug ids and E lines).
+None. The 16 re-pointed files ran at `900e7696` (src/ byte-identical to the base) on the mini
+lane (`scripts/lane-mini.sh`, slot rmxtest2, no `RMX_BACKEND` in the slot's env, so every
+Store took the DuckDB default): `205 passed in 36.70s` (157 re-pointed nodes + the 48 nodes in
+those files that never reached the pin). Log: `workflow/review-output/s1-red-repoint.log`. No
+bug-registry row and no xfail were needed.
 
 ## The RED tip {#tip}
 
-Filled in by the last RED commit.
+Collected at `900e7696` (the mechanical commit after it changes no node id): base 5392, tip
+5360. `base - tip` = 74 = the 48 deleted + the 26 renamed old ids, exactly; `tip - base` = 42 =
+the 26 renamed new ids + the 16 nodes of `tests/test_single_backend.py`, exactly
+(5392 - 48 - 26 + 26 + 16 = 5360). Checked as sets of node ids, not counts.
 
