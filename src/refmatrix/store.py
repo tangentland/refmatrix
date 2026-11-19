@@ -506,7 +506,7 @@ def _log_enabled() -> bool:
 
 # A single .refmatrix/ root can host multiple named partitions so several agents
 # can write to a shared store without colliding on (kind, name). Each entity
-# carries a partition_id; fragment files live under fragments/<partition>/.
+# carries a partition_id; its fragments are `bitmap_fragments` rows keyed by partition_id.
 
 
 def default_partition_name(root: "Path") -> str:
@@ -1156,16 +1156,6 @@ class Store:
                         self.db_path = symlink
             except OSError:
                 pass
-        # bitmaps_dir is the legacy per-(linkage, concept) layout, and
-        # `fragments/` the per-partition `.rb64` file layout. The catalog holds
-        # fragments as `bitmap_fragments` rows and reads neither; the two
-        # one-shot file moves at the end of `_connect` still run on every
-        # writer open, so both attributes stay (task S1, 2026-11-19: the caller
-        # census found those moves reached on DuckDB, so they were kept, not
-        # deleted). `repair_fragments` names any `fragments/` dir it leaves
-        # unread.
-        self.bitmaps_dir = self.root / "bitmaps"
-        self.fragments_dir = self.root / "fragments"
         self.queries_dir = self.root / "queries"
         # Active partition. Explicit arg wins, then the RMX_PARTITION env
         # override, then the project-scoped default (basename of the
@@ -1246,9 +1236,6 @@ class Store:
             self._connect()
         assert self._partition_id is not None
         return self._partition_id
-
-    def _partition_fragments_dir(self) -> Path:
-        return self.fragments_dir / self._partition_name
 
     @property
     def log_path(self) -> Path:
@@ -1416,13 +1403,6 @@ class Store:
             # populated the column as NULL). Safe to re-run: WHERE clause
             # skips rows already populated.
             self._backfill_canonical_name_if_needed()
-        # One-shot migration: collapse legacy per-(linkage, concept) .rb files
-        # into per-linkage BitMap64 fragment files. Runs at most once per
-        # catalog. (A file move on disk; the catalog's fragments are rows.)
-        self._migrate_legacy_bitmaps_if_needed()
-        # Move pre-partition fragments/<linkage>.rb64 into fragments/local/.
-        # Idempotent and a no-op once done.
-        self._migrate_fragments_to_partitions_if_needed()
         return self._conn
 
     def _migrate_entities_kind_check_if_needed(self) -> None:
@@ -1565,8 +1545,11 @@ class Store:
             raise ValueError(f"partition {new!r} already exists")
         # Move dirs first: if a target dir already exists, bail before
         # mutating the catalog so name and on-disk layout never diverge.
+        # Only `vectors/` is per-partition on disk: fragments are catalog rows
+        # keyed by partition id (the `fragments/` file arm went in task S1,
+        # bsd-s1 r1 #s-1, 2026-11-19).
         moves: list[tuple[Path, Path]] = []
-        for base in (self.fragments_dir, self.root / "vectors"):
+        for base in (self.root / "vectors",):
             src = base / old
             if src.is_dir():
                 dst = base / new
@@ -1652,7 +1635,7 @@ class Store:
             sub-tree gets moved/merged into `vectors/<dst>/`. Per-kind
             files are concatenated via lance.dataset.merge when both
             exist; otherwise the file is renamed.
-          * Bitmap fragment dirs under `fragments/<src>/`: same shape.
+          * Bitmap fragments: catalog rows, rebuilt by the fragment repair below.
           * Drop SRC `partitions` row when empty.
 
         `dry_run=True` returns the resolved counts without mutating.
@@ -1909,9 +1892,9 @@ class Store:
             pending_merged, pending_dropped = self._merge_pending_refs(
                 con, src_id, dst_id, [(se, de) for se, de, _k, _n in collisions])
 
-            # ---- on-disk side: vectors + fragments -----------------------
+            # ---- on-disk side: vectors (fragments are catalog rows) -------
             import shutil as _shutil
-            for base in (self.root / "vectors", self.fragments_dir):
+            for base in (self.root / "vectors",):
                 src_dir = base / src_name
                 if not src_dir.is_dir():
                     continue
@@ -2070,74 +2053,6 @@ class Store:
                 f"every table into a fresh file (see the cliquet repair)."
             )
         self._partition_id = row[0]
-
-    def _migrate_fragments_to_partitions_if_needed(self) -> None:
-        """Move pre-partition fragment files (fragments/<linkage>.rb64) into
-        fragments/<default-partition>/ so they're visible to a Store opened on
-        the default partition. Idempotent — once moved, subsequent calls find
-        nothing to do."""
-        if not self.fragments_dir.exists():
-            return
-        loose = [p for p in self.fragments_dir.glob("*.rb64") if p.is_file()]
-        if not loose:
-            return
-        target_dir = self.fragments_dir / default_partition_name(self.root)
-        target_dir.mkdir(parents=True, exist_ok=True)
-        for src in loose:
-            dst = target_dir / src.name
-            if dst.exists():
-                # A per-partition file already won — discard the loose copy.
-                src.unlink()
-            else:
-                src.replace(dst)
-
-    def _migrate_legacy_bitmaps_if_needed(self) -> None:
-        """If .refmatrix/bitmaps/ holds per-concept .rb files but
-        .refmatrix/fragments/ is empty (or missing fragment files for those
-        linkages), pack each linkage's per-concept bitmaps into a single
-        BitMap64 fragment, then delete the originals."""
-        if not self.bitmaps_dir.exists():
-            return
-        legacy_linkages = [
-            d for d in self.bitmaps_dir.iterdir()
-            if d.is_dir() and any(d.glob("*.rb"))
-        ]
-        if not legacy_linkages:
-            return
-        self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
-        for ld in legacy_linkages:
-            linkage = ld.name
-            frag_path = self._fragment_path(linkage)
-            if frag_path.exists():
-                # Already migrated for this linkage; skip but still clean up
-                # the legacy directory so the migration is idempotent.
-                for rb in ld.glob("*.rb"):
-                    rb.unlink()
-                try:
-                    ld.rmdir()
-                except OSError:
-                    pass
-                continue
-            frag = BitMap64()
-            for rb in ld.glob("*.rb"):
-                try:
-                    cid = int(rb.stem)
-                except ValueError:
-                    continue
-                bm = BitMap.deserialize(rb.read_bytes())
-                base = cid << _CONCEPT_SHIFT
-                for eid in bm:
-                    frag.add(base | eid)
-            if len(frag) > 0:
-                tmp = frag_path.with_suffix(".rb64.tmp")
-                tmp.write_bytes(frag.serialize())
-                tmp.replace(frag_path)
-            for rb in ld.glob("*.rb"):
-                rb.unlink()
-            try:
-                ld.rmdir()
-            except OSError:
-                pass
 
     def _read(self):
         """Return the connection used for SELECTs: the store's own connection.
@@ -4214,11 +4129,6 @@ class Store:
 
     # ---- bitmaps (Pilosa-style fragments) ---------------------------------
 
-    def _fragment_path(self, linkage: str) -> Path:
-        """The `.rb64` file path of a fragment under `fragments/<partition>/`: read only by
-        `_migrate_legacy_bitmaps_if_needed` (a file layout the catalog does not read)."""
-        return self._partition_fragments_dir() / f"{_canonical_verb(linkage)}.rb64"
-
     def _load_fragment(self, linkage: str) -> BitMap64:
         """Return the in-memory BitMap64 for a linkage, lazy-loading on first
         access. Mutating the returned object is fine — call flush_fragments()
@@ -4319,16 +4229,28 @@ class Store:
         return out
 
     def _unread_fragment_dirs(self) -> "list[str]":
-        """The directories under `fragments/`, which `repair_fragments` does NOT read: the
-        on-disk `.rb64` layout (the second backend's, and what `_connect`'s two one-shot file
-        moves write). Their bits are not in the catalog; the repair leaves them in place and
-        names them (`unread_dirs`), so an operator sees data the store is not serving.
+        """Every on-disk fragment layout dir under the store, which nothing in this rmx reads:
+        `fragments/<partition>/` (`<linkage>.rb64`, the second backend's layout) and the older
+        `bitmaps/<linkage>/` (`<concept id>.rb`). Each subdir is named, and the layout root
+        itself when it holds loose files. Their bits are not in the catalog; `repair_fragments`
+        leaves them in place and names them (`unread_dirs`), so an operator sees data the
+        store is not serving.
 
-        (Until task S1, 2026-11-19, the repair read these files on the second backend and
-        named only the dirs of partitions the catalog did not know, bug-105 r2 #s2-1.)"""
-        if not self.fragments_dir.is_dir():
-            return []
-        return sorted(str(d) for d in self.fragments_dir.iterdir() if d.is_dir())
+        Why (bsd-s1 r1 #b-1 and #s-1, ruling L191, 2026-11-19): S1 first kept the two
+        `_connect` file moves because the writer open reached them on DuckDB, but their only
+        product was another unread layout, and the `bitmaps/` move deleted its `.rb` originals.
+        Both moves went; this report is the honest residue, and it now names `bitmaps/` too.
+        (Until S1 the repair read `fragments/` on the second backend and named only the dirs of
+        partitions the catalog did not know, bug-105 r2 #s2-1.)"""
+        out: list[str] = []
+        for layout in (self.root / "fragments", self.root / "bitmaps"):
+            if not layout.is_dir():
+                continue
+            children = sorted(layout.iterdir())
+            if any(c.is_file() for c in children):
+                out.append(str(layout))
+            out.extend(str(c) for c in children if c.is_dir())
+        return out
 
     def _write_all_fragment_rows(self, rows: "dict[tuple[int, str], BitMap64]") -> None:
         """Replace EVERY persisted fragment with `rows` (empty bitmaps are not written)."""
@@ -8405,7 +8327,7 @@ class Store:
         return False
 
     def rebuild_index_from_log(self) -> dict:
-        """Wipe the catalog file + fragments and replay facts.log into a fresh
+        """Wipe the catalog file (fragments included) and replay facts.log into a fresh
         catalog. Convergent: re-running yields the same final state.
 
         Replay rules:
@@ -8427,12 +8349,12 @@ class Store:
             raise FileNotFoundError(self.log_path)
 
         # Wipe derived state. Close the connection first so no handle of this
-        # process holds the file being unlinked.
+        # process holds the file being unlinked. Fragments are catalog rows, so
+        # the unlink wipes them; a file-layout dir is left in place and named
+        # by `repair_fragments` (bsd-s1 r1 #s-1, 2026-11-19).
         self.close()
         if self.db_path.exists():
             self.db_path.unlink()
-        for f in self.fragments_dir.rglob("*.rb64"):
-            f.unlink()
         self._clear_fragment_caches()
 
         self.init()

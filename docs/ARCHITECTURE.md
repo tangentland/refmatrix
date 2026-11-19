@@ -137,7 +137,8 @@ reads DuckDB only. Convert it with refmatrix 0.84.0 (rmx migrate-to-duckdb), or
 move it aside and run rmx init`. It runs in `Store.__init__`, in the CLI group
 callback before any command (no output, write or daemon spawn comes first; the
 CLI prints it as its one `Error:` line, exit 1), and in the MCP root resolution
-(an `isError` reply; the server keeps serving). `catalog.db` beside a DuckDB
+(an `isError` reply; the server keeps serving). `rmx mcp` is the one exemption; it refuses
+per tool call. `catalog.db` beside a DuckDB
 catalog is ignored. `catalog.db` stays in `store.WRITER_CATALOG_FILES`, so the
 generated hooks still reach the refusal.
 

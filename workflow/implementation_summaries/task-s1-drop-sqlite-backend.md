@@ -31,7 +31,7 @@ branch. {#release-line}
 | where | what |
 |---|---|
 | `backend.py` | `select_backend`, the `Backend` ABC, `ConnLike`, `SQLiteBackend`, `import sqlite3`, `DuckDBConnection.executescript` / `row_factory` and `attach_file(db_type=)` deleted. `DuckDBBackend` is a plain class; its `kind` is read only by the daemon's two reporters. `bulk_write` keeps `sqlite_sql=`, accepted and ignored, for `pagerank.py`'s one call (D1 = b) |
-| `store.py` | `CATALOG_DDL`, `Store(backend=)`, the connect-time SQLite arm and `_migrate_to_partitions_if_needed` deleted; the 13 kind branches collapsed; the 9 `sqlite_sql=` kwargs gone; the file arms of the fragment load / flush / repair paths gone. NEW `refuse_legacy_catalog(root)` + `LegacyCatalogError` + `LAST_CONVERTING_RELEASE = "0.84.0"`; `Store.__init__` calls it first. `git_tracked_catalogs` / `refuse_tracked_catalog_open` lose `names` (its one caller was the deleted command). `repair_fragments`' `unread_dirs` lists the dirs under `fragments/` (`_unread_fragment_dirs`) |
+| `store.py` | `CATALOG_DDL`, `Store(backend=)`, the connect-time SQLite arm and `_migrate_to_partitions_if_needed` deleted; the 13 kind branches collapsed; the 9 `sqlite_sql=` kwargs gone; the file arms of the fragment load / flush / repair paths gone. NEW `refuse_legacy_catalog(root)` + `LegacyCatalogError` + `LAST_CONVERTING_RELEASE = "0.84.0"`; `Store.__init__` calls it first. `git_tracked_catalogs` / `refuse_tracked_catalog_open` lose `names` (its one caller was the deleted command). `repair_fragments`' `unread_dirs` names every on-disk layout dir, `fragments/` and `bitmaps/` (`_unread_fragment_dirs`). The two `_connect` file moves and their helpers went in the fold ([[#fold]]) |
 | `duckdb_catalog.py` | Header rewritten; the incident notes it cited from the SQLite DDL moved in (memory sidecar, bug-039 `derive_stamps`, task 15.2 `derive_history`, the FK list the app enforces). `TABLE_LOAD_ORDER` (migrate-only) deleted |
 | `migrate.py` | deleted, with `rmx migrate-to-duckdb` |
 | `cli.py` | The group callback runs `_refuse_legacy_root()` before any command except `mcp`; `_RmxGroup.invoke` turns `LegacyCatalogError` into one `Error:` line; `cli_entry` writes no `cli.log` under a refused root. The compact-path kind branch collapsed; the `replica disabled` lines print the daemon's reason instead of "non-duckdb backend". CLI tree regenerated |
@@ -58,9 +58,9 @@ first); `cli_entry`'s telemetry (no `cli.log` written under a refused root); `mc
 `catalog.db` stays in `WRITER_CATALOG_FILES`, so the generated hook text is unchanged and a
 legacy dir's hooks reach the refusal. {#refusal-sites}
 
-## Kept, against the spec's list {#kept}
+## Kept, against the spec's list, then deleted in the fold {#kept}
 
-R3 listed "its two `_migrate_*` moves" for deletion, subject to the caller proof. The proof
+Superseded by [[#fold]]: the moves are gone. As first shipped (`56a7ee04`): R3 listed "its two `_migrate_*` moves" for deletion, subject to the caller proof. The proof
 failed for both: `_migrate_legacy_bitmaps_if_needed` and
 `_migrate_fragments_to_partitions_if_needed` run at the end of EVERY writer `_connect`, both
 backends, at `1fadfb61` (:1684 :1687). So they stay, with their helpers (`_partition_fragments_dir`,
@@ -103,3 +103,27 @@ passed on the mini (`s1-green-tip.log`). RED reports M2 now fails all 6 new case
   one line, nothing created). Reported to the lead; a test would be RED's. {#m2}
 - Every command in a legacy dir is refused, `rmx version` and `rmx grep` included; `rmx mcp` is
   the one exemption (it refuses per call). {#scope}
+- The callback refuses whatever `_root()` resolves, so a command run from a legacy cwd that
+  targets ANOTHER root (`rmx init` from a subdirectory, `rmx init --path <fresh dir>`,
+  `rmx focus rebuild --root <other store>`, `rmx hub status`) is refused too. Accepted as design
+  (bsd-s1 r1 #m-2, L191): the line is loud and its own fix works; no fleet store is legacy.
+  {#scope-m2}
+
+## Fold: bsd-s1 r1 (ruling L191) {#fold}
+
+rel: derives-from -> [[bsd-s1-r1-be1c6b6c]]
+
+- **#b-1 + #s-1.** Deleted `_migrate_legacy_bitmaps_if_needed`,
+  `_migrate_fragments_to_partitions_if_needed`, their two calls at the end of `_connect`,
+  `_fragment_path`, `_partition_fragments_dir`, the `bitmaps_dir` and `fragments_dir`
+  attributes, and the `fragments/` arms in `rename_partition`, `merge_partition` and
+  `rebuild_index_from_log`. Their only product was another layout nothing reads, and the
+  `bitmaps/` move deleted its `.rb` originals. `_unread_fragment_dirs` stays and now names
+  `bitmaps/` dirs too, left in place. RED's
+  `test_the_repair_names_and_keeps_every_unread_file_layout_dir` [cli|store × dry-run|applied]
+  (59dfea5a) is the test that kills MX4. {#fold-b1}
+- **#m-1.** RED pinned the `backend.py` allow entry to its two exact lines; both lines are
+  unchanged. {#fold-m1}
+- **#m-2.** Accepted as design ([[#scope-m2]]). **#m-3.** ARCHITECTURE's refusal paragraph names
+  the `rmx mcp` exemption. **#b-2.** The lead's (29.2 spec amended). {#fold-rest}
+
