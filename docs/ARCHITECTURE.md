@@ -40,9 +40,8 @@ rel: related-to -> [[PERFORMANCE]]
 │                       Core Data Layer                                │
 │  store.py    DuckDB catalog + roaring bitmap fragments (BLOB)        │
 │              + memory_content sidecar + Lance dense vectors          │
-│  backend.py  SQLite vs DuckDB backend selection (new stores: DuckDB) │
-│  duckdb_catalog.py   native DuckDB schema (phase 3, current default) │
-│  migrate.py          one-shot SQLite → DuckDB migration              │
+│  backend.py  the one catalog backend: DuckDB connection layer        │
+│  duckdb_catalog.py   the DuckDB schema (CATALOG_DDL), the only one   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,9 +50,8 @@ rel: related-to -> [[PERFORMANCE]]
 | Module              | Purpose                                                     | Public surface                                    |
 |---------------------|-------------------------------------------------------------|---------------------------------------------------|
 | `store.py`          | Root abstraction: catalog + bitmap fragments                | `Store`, `Entity`                                 |
-| `backend.py`        | Catalog backend selection (SQLite vs DuckDB)                | `select_backend`, `SQLiteBackend`, `DuckDBBackend`|
+| `backend.py`        | The one catalog backend: DuckDB opener + connection wrapper | `DuckDBBackend`, `open_duckdb`, `bulk_write`      |
 | `duckdb_catalog.py` | Native DuckDB schema (CATALOG_DDL)                          | `init_catalog`                                    |
-| `migrate.py`        | One-shot SQLite → DuckDB migration                          | `migrate_catalog`                                 |
 | `ingest.py`         | Multi-source ingestion (metadata/tldr/tree/semantic)        | `ingest_path`                                     |
 | `ingest_gmd.py`     | GMD (Graph Markdown) parser + registration                  | `parse_gmd`, `ingest_gmd_paths`                   |
 | `sync.py`           | Incremental sync (file batches → re-ingest)                 | `enqueue`, `drain_queue`, `sync_files`, `sync_since` |
@@ -113,27 +111,35 @@ running daemon open no `Store` of their own.
 |-----------------------|-----------------------------------------------------------------------------|
 | In-memory shape       | `BitMap64` per `(partition, linkage_type)`                                  |
 | Packing               | `(concept_id << 32) | entity_id`                                            |
-| Disk layout (SQLite)  | `.refmatrix/fragments/<partition>/<linkage>.rb64`                           |
-| Disk layout (DuckDB)  | `bitmap_fragments` BLOB column, UPSERTed per linkage                        |
+| Disk layout           | `bitmap_fragments` BLOB column, UPSERTed per linkage                        |
 | Read                  | `load_bitmap(linkage, concept) → BitMap32` via range mask on the packed key |
 | Write                 | Lazy fragment load + dirty-set flush at transaction boundary                |
-| Atomic persistence    | DuckDB: single transaction; SQLite: write-rename per fragment file          |
+| Atomic persistence    | single DuckDB transaction                                                   |
 
-### Backend selection (`backend.py`) {#backend-selection-backend-py}
+### Catalog backend (`backend.py`) {#backend-selection-backend-py}
 
-The catalog has gone through three phases:
+The catalog has ONE backend: DuckDB, catalog and bitmap fragments in one file
+(`catalog.duckdb`, or the rotation slot `catalog.A.duckdb` / `catalog.B.duckdb`
+the `active` marker names). `backend.DuckDBBackend` opens it through
+`open_duckdb`; the schema is `duckdb_catalog.CATALOG_DDL`.
 
-1. **Phase 1 (SQLite + DuckDB view)** — SQLite owned writes and a read-only
-   DuckDB facade (`duckdb_view.py`) mounted it for analytics. The facade was never
-   switched on in production and was deleted on 2026-11-18 (task T0.4 R4.1,
-   plan-6 Q1).
-2. **Phase 2 (DuckDB catalog + SQLite fragments)** — DuckDB owns catalog
-   tables, bitmap fragments still on disk.
-3. **Phase 3 (DuckDB native)** — all catalog + bitmaps in one DuckDB file.
-   `migrate.py` performs the one-shot conversion. New stores default to DuckDB.
+History: SQLite owned the catalog first, with a read-only DuckDB facade
+(`duckdb_view.py`, deleted 2026-11-18, task T0.4 R4.1); then DuckDB owned the
+catalog with fragments still on disk; then everything moved into the DuckDB
+file and a `select_backend` autodetect kept legacy SQLite stores opening. Task
+S1 (2026-11-19, L182, Q52 = a) deleted the SQLite backend, the selector, the
+`RMX_BACKEND` switch and the `rmx migrate-to-duckdb` command.
 
-`backend.py:select_backend()` detects which phase a given `.refmatrix/`
-directory is in and dispatches accordingly.
+**The legacy refusal.** A store dir holding `catalog.db` and none of the DuckDB
+writer files is refused, never opened: `store.refuse_legacy_catalog` raises
+`LegacyCatalogError` with one line, `<path>: legacy SQLite catalog, this rmx
+reads DuckDB only. Convert it with refmatrix 0.84.0 (rmx migrate-to-duckdb), or
+move it aside and run rmx init`. It runs in `Store.__init__`, in the CLI group
+callback before any command (no output, write or daemon spawn comes first; the
+CLI prints it as its one `Error:` line, exit 1), and in the MCP root resolution
+(an `isError` reply; the server keeps serving). `catalog.db` beside a DuckDB
+catalog is ignored. `catalog.db` stays in `store.WRITER_CATALOG_FILES`, so the
+generated hooks still reach the refusal.
 
 ## Ingest pipeline {#ingest-pipeline}
 
@@ -246,7 +252,7 @@ tuning ablation in [[PERFORMANCE#benchmark-results]].
 
 ## Daemon / concurrency layer {#daemon-concurrency-layer}
 
-The catalog's storage engine (DuckDB or SQLite) holds a writer lock that
+The catalog's storage engine (DuckDB) holds a writer lock that
 blocks concurrent processes. With editor + watcher + CLI all wanting to
 touch the catalog, lock contention used to corrupt indexes. The daemon
 solves this by being the sole owner.
@@ -310,7 +316,7 @@ mutating/bulk ops run on `bg_pool`.
 The CLI is Click-based with subgroups:
 
 <!-- cli-tree:start -->
-Generated by `scripts/gen-cli-tree.py` from `refmatrix.cli.main` (213 visible commands); `tests/test_docs_generated.py` fails when this drifts from the code.
+Generated by `scripts/gen-cli-tree.py` from `refmatrix.cli.main` (212 visible commands); `tests/test_docs_generated.py` fails when this drifts from the code.
 
 ```
 rmx
@@ -446,7 +452,6 @@ rmx
 │   ├── search                     Case-insensitive substring search over memory name + content.
 │   └── sync-disk                  Alias of `rmx ingest-gmd --as-memory <dir>` — the memory bridge.
 ├── merge-verb-aliases             Fold legacy snake_case linkage verbs into their kebab canonical.
-├── migrate-to-duckdb              One-shot copy of the SQLite catalog into a native DuckDB catalo…
 ├── neighbors                      Walk linkages from a concept (depth-N closure).
 ├── noise                          Flag entities as noise (hidden from default queries; reaped by
 ├── pagerank                       Recompute the global PageRank prior over the concept⇄entity gra…

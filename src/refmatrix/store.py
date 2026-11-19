@@ -1,5 +1,5 @@
 """
-SQLite catalog + Pilosa-style fragment files for bitmap storage.
+DuckDB catalog + Pilosa-style bitmap fragments.
 
 Mental model (mirrors Pilosa):
 - Index    -> the whole .refmatrix/ directory
@@ -7,24 +7,27 @@ Mental model (mirrors Pilosa):
 - Row      -> a concept id
 - Column   -> an entity id
 
-One fragment file per linkage at .refmatrix/fragments/<linkage>.rb64,
-storing a single BitMap64 with bit positions packed as
-`(concept_id << 32) | entity_id`. Slicing a bitmap row out is a
-range-mask intersection (Pilosa-style). The catalog lives at
-.refmatrix/catalog.db and holds the id<->name maps, linkage metadata, and
-the entity_links shadow (kept in sync; used by SQL-side queries like
+One fragment per (partition, linkage), a row of the catalog's
+`bitmap_fragments` table holding a single serialized BitMap64 with bit
+positions packed as `(concept_id << 32) | entity_id`. Slicing a bitmap row
+out is a range-mask intersection (Pilosa-style). The catalog is
+.refmatrix/catalog.duckdb (or the rotation slot the `active` marker names)
+and holds the id<->name maps, linkage metadata, the fragments, and the
+entity_links shadow (kept in sync; used by SQL-side queries like
 density/top-N where bitmap iteration would be the slow path).
+
+One catalog backend since task S1 (2026-11-19): a store dir holding only the
+legacy pre-DuckDB catalog file is refused (`refuse_legacy_catalog`).
 """
 from __future__ import annotations
 
 import json
 import os
 import re
-import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, TYPE_CHECKING, cast
+from typing import Any, Iterable, Iterator, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from refmatrix.vectors import LanceVectorStore
@@ -38,9 +41,13 @@ _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
 
 # THE definition of "this `.refmatrix/` dir is a store": it holds a file a WRITER may hold --
 # a rotation slot (`catalog.A.duckdb` / `catalog.B.duckdb`, named by the `active` marker), the
-# pre-rotation `catalog.duckdb` (`DuckDBBackend.db_filename`), or the legacy SQLite
-# `catalog.db` (`SQLiteBackend.db_filename`). Reader files (`catalog.read.duckdb`,
-# `read_only.duckdb`) are copies of a writer's file and never make a store alone.
+# pre-rotation `catalog.duckdb` (`DuckDBBackend.db_filename`), or the legacy pre-DuckDB
+# catalog file (the last name). Reader files (`catalog.read.duckdb`, `read_only.duckdb`) are
+# copies of a writer's file and never make a store alone.
+#
+# The legacy name stays after task S1 (2026-11-19, R5): a dir holding only that file is still
+# a store, so the generated hooks' gate passes it, the CLI resolves it, and
+# `refuse_legacy_catalog` refuses it with one line instead of a hook silently skipping it.
 #
 # Named once here (bug-212, 2026-11-11) because two places need the same facts: the verb-layer
 # reader refuses a replica that IS one of these files (`verbs._writer_catalog_files`), and the
@@ -50,6 +57,49 @@ _CONCEPT_WORD_SPLIT_RE = re.compile(r"[\s_\-]+")
 # then ran `rmx sync` in that non-store dir, creating a store in it.
 WRITER_CATALOG_FILES: tuple[str, ...] = (
     "catalog.A.duckdb", "catalog.B.duckdb", "catalog.duckdb", "catalog.db")
+
+# The last release that carries the catalog conversion command the legacy-catalog refusal
+# names as its fix: `refmatrix.__version__` at task S1's base (1fadfb61), the release before
+# S1 deleted the command with the second backend.
+LAST_CONVERTING_RELEASE = "0.84.0"
+
+
+class LegacyCatalogError(RuntimeError):
+    """`refuse_legacy_catalog` refused a store dir whose only writer catalog is the legacy
+    pre-DuckDB file. The message is the one refusal line every entry prints (the CLI as its
+    `Error:` line, MCP as an `isError` reply, the daemon as its exit reason)."""
+
+
+def refuse_legacy_catalog(root: "Path | str") -> None:
+    """THE legacy-catalog check (task S1 R5, 2026-11-19, rulings L182 and L190): raise
+    `LegacyCatalogError` when the store dir `root` holds `catalog.db` and none of the DuckDB
+    writer files (`catalog.duckdb`, `catalog.A.duckdb`, `catalog.B.duckdb`). Reads two to four
+    `stat`s; creates and changes nothing.
+
+    Why: until S1 `backend.select_backend` autodetected that layout and opened it with the
+    second backend, so a legacy root silently got the dead backend, and a zero-byte
+    `catalog.db` was turned into a fresh catalog of it. S1 deleted that backend; opening such a
+    dir as DuckDB instead would create an empty `catalog.duckdb` beside the user's data and
+    answer every query with nothing. So the dir is refused, by name, with the fix.
+
+    `catalog.db` beside any DuckDB writer file does not make the dir legacy (a store converted
+    in place keeps the old file; a rotated store has no `catalog.duckdb`, only a slot).
+
+    Called by `Store.__init__` (every opener, the daemon's included), by the CLI group before
+    any command runs (`cli._refuse_legacy_root`: nothing is written and no daemon is spawned
+    first), by the CLI's telemetry write (no `cli.log` under a refused root), and by the MCP
+    root resolution (`mcp._resolve_root`: the call gets an error reply and the server keeps
+    serving)."""
+    root = Path(root)
+    legacy = root / "catalog.db"
+    if not legacy.exists():
+        return
+    if any((root / name).exists() for name in WRITER_CATALOG_FILES if name.endswith(".duckdb")):
+        return
+    raise LegacyCatalogError(
+        f"{legacy}: legacy SQLite catalog, this rmx reads DuckDB only. Convert it with "
+        f"refmatrix {LAST_CONVERTING_RELEASE} (rmx migrate-to-duckdb), or move it aside and "
+        f"run rmx init")
 
 
 # The repository-local variables `git rev-parse --local-env-vars` lists (git 2.x). A process a
@@ -105,17 +155,13 @@ def _run_git_check(args: list[str], *, root: Path, env: dict) -> "subprocess.Com
             f"out after {GIT_CHECK_TIMEOUT_S}s") from exc
 
 
-def git_tracked_catalogs(root: Path,
-                         names: "tuple[str, ...]" = WRITER_CATALOG_FILES) -> list[str]:
-    """The `names` (default: the `WRITER_CATALOG_FILES`) directly under the dir `root` that git
-    TRACKS, in `names`' order; `[]` when none is, when no `.git` exists at or above `root`, or
-    when git is not installed.
+def git_tracked_catalogs(root: Path) -> list[str]:
+    """The `WRITER_CATALOG_FILES` directly under the dir `root` that git TRACKS, in that
+    tuple's order; `[]` when none is, when no `.git` exists at or above `root`, or when git is
+    not installed.
 
-    `names` (bug-212 r7, ch-bsd r6 m-1, ruling L102, 2026-11-14): `migrate-to-duckdb --out`
-    asks about the ONE file it replaces (`names=(dst.name,)`), not about every writer-catalog
-    name in that folder -- r6's folder-wide question let `--out` rewrite a committed `x.duckdb`
-    and refused an untracked `foo.duckdb` beside a tracked `catalog.duckdb`. Every other caller
-    keeps the default.
+    (A `names` parameter let the catalog conversion command ask about the one file it
+    replaced, bug-212 r7, L102; task S1, 2026-11-19, deleted that command, its only caller.)
 
     Why (bug-212 r1, lead decision a2, 2026-11-13): fleet repos (cliquet, atldb,
     prep_prolific) commit their catalog files. The generated git hooks' gate lets a stale
@@ -148,6 +194,7 @@ def git_tracked_catalogs(root: Path,
             f"{inside.returncode} although {dotgit} exists: {said or '(git printed nothing)'}")
     if inside.stdout.strip() != "true":
         return []
+    names = WRITER_CATALOG_FILES
     ls = _run_git_check(["ls-files", "-z", "--", *names], root=root, env=env)
     if ls.returncode != 0:
         said = " ".join(ln.strip() for ln in ls.stderr.splitlines() if ln.strip())
@@ -158,14 +205,11 @@ def git_tracked_catalogs(root: Path,
     return [name for name in names if name in listed]
 
 
-def refuse_tracked_catalog_open(root: Path, target: Path,
-                                names: "tuple[str, ...]" = WRITER_CATALOG_FILES) -> None:
+def refuse_tracked_catalog_open(root: Path, target: Path) -> None:
     """THE tracked-catalog check: raise `TrackedCatalogRefused` -- one line, `refusing to open
     <target> read-write in-process: ...`, naming both remedies -- when git tracks a writer
     catalog of the store `root`, or when whether it does is unknown. `target` is the file the
-    caller is about to open read-write (its resolved `db_path`). `names` is passed to
-    `git_tracked_catalogs`: the default asks about every writer-catalog name in `root`;
-    `migrate-to-duckdb` passes only the name of the file it replaces (r7, L102).
+    caller is about to open read-write (its resolved `db_path`).
 
     Why one store-level function (bug-212 r4, ch-bsd r2 b-1, ruling L72, 2026-11-13): r2 put
     the refusal in `cli._store_rw()` as "the one in-process write control point". It was not:
@@ -179,7 +223,7 @@ def refuse_tracked_catalog_open(root: Path, target: Path,
     that finds no reader file falls to `cli._store_rw()` and gets this same line."""
     remedy = "start the daemon (rmx daemon start) so the daemon opens it instead"
     try:
-        tracked = git_tracked_catalogs(root, names)
+        tracked = git_tracked_catalogs(root)
     except TrackedCatalogCheckError as exc:
         raise TrackedCatalogRefused(
             f"refusing to open {target} read-write in-process: {exc}; untrack the catalog "
@@ -206,8 +250,8 @@ def _canonical_for_kind(kind: str, name: str) -> str | None:
     return canonicalize_name(name)
 
 
-# `bulk_upsert_entity`'s one upsert, shared by its DuckDB (Arrow) and SQLite
-# (executemany) forms so the two cannot drift (bug-178, 2026-11-09).
+# `bulk_upsert_entity`'s one upsert (bug-178, 2026-11-09): the column list, Arrow types and
+# conflict clause of its one set-based statement, named once.
 _ENTITY_UPSERT_COLS = (
     "partition_id, kind, name, path, tldr, meta, created_at, updated_at, "
     "protected, canonical_name")
@@ -487,244 +531,6 @@ def default_partition_name(root: "Path") -> str:
     except Exception:
         pass
     return p.parent.name or "default"
-
-CATALOG_DDL = """
-CREATE TABLE IF NOT EXISTS partitions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL UNIQUE,
-    root_path   TEXT,
-    kind        TEXT NOT NULL DEFAULT 'repo'
-                CHECK (kind IN ('repo','canon','agent-scratch')),
-    created_at  REAL NOT NULL,
-    meta        TEXT
-);
-
-CREATE TABLE IF NOT EXISTS entities (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    partition_id       INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    kind               TEXT NOT NULL CHECK (kind IN ('doc', 'code', 'concept', 'memory')),
-    path               TEXT,
-    name               TEXT NOT NULL,
-    tldr               TEXT,
-    meta               TEXT,
-    created_at         REAL NOT NULL,
-    updated_at         REAL NOT NULL,
-    protected          INTEGER NOT NULL DEFAULT 0,
-    noise              INTEGER NOT NULL DEFAULT 0,
-    canonical_name     TEXT,
-    vectors_updated_at REAL,
-    vectors_partition  TEXT,
-    UNIQUE(partition_id, kind, name)
-);
-CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
-CREATE INDEX IF NOT EXISTS idx_entities_path ON entities(path);
--- protected/noise/partition indexes are created in _connect() after the
--- conditional ALTER TABLE; CREATE INDEX here would fail on legacy schemas
--- where the columns don't yet exist (executescript runs all statements
--- top-to-bottom).
-
-CREATE TABLE IF NOT EXISTS concepts (
-    id          INTEGER PRIMARY KEY,            -- equals entities.id where kind='concept'
-    description TEXT,
-    FOREIGN KEY (id) REFERENCES entities(id) ON DELETE CASCADE
-);
-
--- Intuition memory layer (ADR-0001). Sidecar 1:1 with entities where
--- kind='memory'. Keeps the raw observation/note body off of the
--- entities row (which stays a thin metadata header consistent with
--- doc/code/concept) so a recall doesn't have to read content unless
--- explicitly asked, and so embedding extractors can pull content
--- directly without parsing entities.meta.
-CREATE TABLE IF NOT EXISTS memory_content (
-    entity_id   INTEGER PRIMARY KEY,
-    content     TEXT NOT NULL,
-    -- Free-form type tag: 'observation' / 'note' / 'decision' / 'feedback'
-    -- / ... — not constrained at the DB layer to keep the surface flexible
-    -- as new memory subtypes appear. Default 'observation' matches the
-    -- intuition import path.
-    mtype       TEXT NOT NULL DEFAULT 'observation',
-    tags        TEXT,           -- JSON array
-    metadata    TEXT,           -- JSON object
-    created_at  REAL NOT NULL,
-    updated_at  REAL NOT NULL,
-    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS linkage_types (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL UNIQUE,
-    directed    INTEGER NOT NULL DEFAULT 1,
-    inverse_of  INTEGER,
-    description TEXT,
-    FOREIGN KEY (inverse_of) REFERENCES linkage_types(id)
-);
-
-CREATE TABLE IF NOT EXISTS saved_queries (
-    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    name TEXT NOT NULL,
-    body TEXT NOT NULL,
-    created_at REAL NOT NULL,
-    PRIMARY KEY (partition_id, name)
-);
-
--- Forward index: O(links) entity -> bitmap membership lookup.
--- Lets us purge an entity from every bitmap it appears in without scanning
--- every (linkage, concept) bitmap on disk. Bitmaps remain the source of truth
--- for set algebra; this table is a maintained shadow.
-CREATE TABLE IF NOT EXISTS entity_links (
-    entity_id   INTEGER NOT NULL,
-    linkage_id  INTEGER NOT NULL,
-    concept_id  INTEGER NOT NULL,
-    weight      REAL,
-    PRIMARY KEY (entity_id, linkage_id, concept_id),
-    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE,
-    FOREIGN KEY (linkage_id) REFERENCES linkage_types(id),
-    FOREIGN KEY (concept_id) REFERENCES entities(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_entity_links_lk_concept
-    ON entity_links(linkage_id, concept_id);
-
--- Files we've successfully ingested, keyed by absolute path. Used by the
--- incremental sync to detect deletes.
-CREATE TABLE IF NOT EXISTS tracked_files (
-    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    path         TEXT NOT NULL,
-    mtime        REAL NOT NULL,
-    last_synced  REAL NOT NULL,
-    PRIMARY KEY (partition_id, path)
-);
-
--- WHICH CODE derived the graph in this partition, per ingest pass (bug-039).
--- `tracked_files` answers "did the FILES change"; it answered `35` while this
--- project's own store sat at a 1-bundle floor because the graph had not been
--- re-derived since 0.49.1 — ten days and several ingest changes earlier. A
--- derive carries no freshness signal of its own unless the deriving version is
--- written down, so every pass that writes derived state stamps itself here.
-CREATE TABLE IF NOT EXISTS derive_stamps (
-    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    pass_name    TEXT NOT NULL,
-    version      TEXT NOT NULL,
-    derived_at   REAL NOT NULL,
-    code_hash    TEXT,
-    PRIMARY KEY (partition_id, pass_name)
-);
-
--- WHAT each derive PRODUCED, append-only (task 15.2). `derive_stamps` answers
--- "which code built what is in the store NOW" and upserts, so there is nothing
--- to compare a derive against — and bug-039's own impact figures (31 -> 63
--- bundles, 206 -> 466 nodes) came from a hand-rolled harness that no longer
--- runs. `counts` is the partition's structural shape AFTER the pass, so two
--- derives diff directly and a derive that changed nothing is visibly a no-op.
---
--- Capped per (partition, pass): `global:queues` reached 3,196 rows unbounded
--- (bug-061), and an append-only table with no retention is that defect under a
--- new name. `pruned` records how many rows the insert evicted, so the drop is
--- visible in `rmx derive log` rather than silent.
-CREATE TABLE IF NOT EXISTS derive_history (
-    id           BIGINT PRIMARY KEY,
-    partition_id INTEGER NOT NULL REFERENCES partitions(id),
-    pass_name    TEXT NOT NULL,
-    version      TEXT NOT NULL,
-    code_hash    TEXT,
-    derived_at   REAL NOT NULL,
-    duration_s   REAL,
-    pruned       INTEGER NOT NULL DEFAULT 0,
-    counts       TEXT NOT NULL
-);
-
--- Evidence: where a linkage was sourced from. Optional; ingesters that know
--- the source location (e.g. semantic ingester walking ast nodes) populate it.
--- The `entity_links` row is authoritative for membership; this table is for
--- explainability and `rmx query --explain`.
-CREATE TABLE IF NOT EXISTS linkage_evidence (
-    entity_id   INTEGER NOT NULL,
-    linkage_id  INTEGER NOT NULL,
-    concept_id  INTEGER NOT NULL,
-    file        TEXT,
-    line        INTEGER,
-    span_end    INTEGER,
-    detail      TEXT,
-    FOREIGN KEY (entity_id)  REFERENCES entities(id)      ON DELETE CASCADE,
-    FOREIGN KEY (linkage_id) REFERENCES linkage_types(id),
-    FOREIGN KEY (concept_id) REFERENCES entities(id)      ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_evidence_entity
-    ON linkage_evidence(entity_id);
-CREATE INDEX IF NOT EXISTS idx_evidence_lookup
-    ON linkage_evidence(linkage_id, concept_id, entity_id);
-
--- Global PageRank prior (stage 2 of scan-prompt ranking). One centrality
--- score per node per partition, recomputed offline by `rmx pagerank`. Score
--- is the centrality RATIO (pr * N): an average node ≈ 1.0, hubs > 1. Read as
--- a query-agnostic salience prior; never on the write hot path.
-CREATE TABLE IF NOT EXISTS pagerank (
-    partition_id INTEGER NOT NULL DEFAULT 1 REFERENCES partitions(id),
-    entity_id    INTEGER NOT NULL,
-    score        REAL NOT NULL,
-    computed_at  REAL NOT NULL,
-    PRIMARY KEY (partition_id, entity_id),
-    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_pagerank_score
-    ON pagerank(partition_id, score);
-
--- Pronoun-deref sidecar (see coref.py). One row per resolved pronoun
--- occurrence; offsets index the exact content string that was resolved
--- (memory_content.content for memories). The resolved TEXT is never stored:
--- symbolic reads the counts, dense re-materializes the substitution at embed
--- time, and this table is the only persistent artifact.
-CREATE TABLE IF NOT EXISTS coref_resolutions (
-    partition_id INTEGER NOT NULL DEFAULT 1,
-    entity_id    INTEGER NOT NULL,
-    pos          INTEGER NOT NULL,
-    pronoun      TEXT NOT NULL,
-    antecedent   TEXT NOT NULL,
-    confidence   REAL NOT NULL,
-    PRIMARY KEY (partition_id, entity_id, pos)
-);
-
--- Central df-filtered pair inventory with document postings -- the cross-doc
--- substrate for coref (which documents share this pair) and the persisted
--- form of the phrase-tabulation threshold work. Compiled offline by
--- `rmx pairs compile --min-df N`; docs is a roaring-bitmap blob of entity
--- ids. Never on the write hot path.
-CREATE TABLE IF NOT EXISTS pair_index (
-    partition_id INTEGER NOT NULL DEFAULT 1,
-    pair_key     TEXT NOT NULL,
-    df           INTEGER NOT NULL,
-    docs         BLOB NOT NULL,
-    compiled_at  REAL NOT NULL,
-    PRIMARY KEY (partition_id, pair_key)
-);
-CREATE INDEX IF NOT EXISTS idx_pair_index_df
-    ON pair_index(partition_id, df);
-
--- `rel:` lines whose target did not resolve when their doc was ingested
--- (bug-216 R10, 2026-11-13). GMD ingest skips unchanged files, so a target
--- that appears LATER (a rule doc un-ignored, a doc written after its citer)
--- left the citing line dangling until someone edited the citer: 247 lines
--- cite the two rule docs alone. Ingesting a doc / memory / anchor whose name
--- equals `target_name` resolves the row (edge + evidence) and deletes it; a
--- purge of `source_id` deletes it; re-ingesting the citing file replaces its
--- rows. Rebuilt from facts.log (bug-216 R13, `rebuild_index_from_log`): `pending_ref` /
--- `pending_ref_delete` / `pending_refs_clear` events, source named by kind and
--- name, partition-qualified; a source's `tombstone` drops its rows; the
--- compaction dump re-emits the live rows. No PK or index: the table holds the
--- unresolved residue (hundreds of rows), and the writer keeps it duplicate-free
--- (`Store.add_pending_ref`).
-CREATE TABLE IF NOT EXISTS pending_refs (
-    partition_id INTEGER NOT NULL DEFAULT 1,
-    source_id    INTEGER NOT NULL,
-    linkage      TEXT NOT NULL,
-    target_name  TEXT NOT NULL,
-    ref          TEXT NOT NULL,
-    file         TEXT NOT NULL,
-    line         INTEGER NOT NULL,
-    weight       REAL,
-    detail       TEXT,
-    created_at   REAL NOT NULL
-);
-"""
 
 # A path-less concept -> the doc/memory whose GMD id is the concept's name
 # (bug-216 R7, 2026-11-13). Registered on first use (`Store.link_denotes`), so a
@@ -1281,20 +1087,23 @@ class Store:
         self,
         root: Path,
         partition: str | None = None,
-        backend: str | None = None,
         read_only: bool = False,
     ):
-        from refmatrix.backend import select_backend
+        from refmatrix.backend import DuckDBBackend
         self.root = Path(root).resolve()
-        self._backend = select_backend(backend, root=self.root)
+        # FIRST, before any attribute names a file (task S1 R5, 2026-11-19): a dir holding
+        # only the legacy pre-DuckDB catalog is refused, never opened (`refuse_legacy_catalog`).
+        refuse_legacy_catalog(self.root)
+        # One backend since task S1: no `backend=` argument, no environment switch, no
+        # autodetect. `_backend.kind` is read only by the daemon's two reporters.
+        self._backend = DuckDBBackend()
         # Read-only mode: open the backend connection in read-only mode and
         # skip every migration / ALTER / repair / backfill path. Used by
         # `--via-replica` CLI ops that open a frozen reader-slot file
         # without disturbing it. Writes raise via the backend driver.
         self._read_only: bool = bool(read_only)
-        # `db_path` historically pointed at catalog.db. Backend chooses the
-        # filename now; legacy SQLite stores stay at catalog.db, DuckDB-native
-        # stores use catalog.duckdb so the two can coexist during migration.
+        # The pre-rotation catalog file; a writer rebinds to its rotation slot
+        # just below, a reader to the snapshot.
         self.db_path = self.root / self._backend.db_filename
         # Rotation-slot policy (WRITERS). A rotated store keeps its live
         # catalog in `catalog.A.duckdb` / `catalog.B.duckdb` with an `active`
@@ -1313,7 +1122,7 @@ class Store:
         # reported success, mutated `catalog.duckdb`, and left the active slot
         # untouched. Resolving the marker HERE means one answer to "which file
         # is this store" for every caller.
-        if not self._read_only and self._backend.kind == "duckdb":
+        if not self._read_only:
             slot_path = self._active_slot_path()
             if slot_path is not None:
                 self.db_path = slot_path
@@ -1329,7 +1138,7 @@ class Store:
         # snapshot has been materialized the symlink path never gets hit.
         # Falls back to the primary file when neither exists (fresh
         # install, daemon never started).
-        if self._read_only and self._backend.kind == "duckdb":
+        if self._read_only:
             snap = self.root / "catalog.read.duckdb"
             try:
                 if snap.exists():
@@ -1347,8 +1156,14 @@ class Store:
                         self.db_path = symlink
             except OSError:
                 pass
-        # bitmaps_dir is the legacy per-(linkage, concept) layout. Kept as an
-        # attribute so the migration path can find and convert it.
+        # bitmaps_dir is the legacy per-(linkage, concept) layout, and
+        # `fragments/` the per-partition `.rb64` file layout. The catalog holds
+        # fragments as `bitmap_fragments` rows and reads neither; the two
+        # one-shot file moves at the end of `_connect` still run on every
+        # writer open, so both attributes stay (task S1, 2026-11-19: the caller
+        # census found those moves reached on DuckDB, so they were kept, not
+        # deleted). `repair_fragments` names any `fragments/` dir it leaves
+        # unread.
         self.bitmaps_dir = self.root / "bitmaps"
         self.fragments_dir = self.root / "fragments"
         self.queries_dir = self.root / "queries"
@@ -1363,7 +1178,7 @@ class Store:
             or default_partition_name(self.root)
         )
         self._partition_id: int | None = None
-        # Duck-typed across backends: sqlite3.Connection or backend ConnLike.
+        # The `DuckDBConnection` wrapper, opened lazily by `_connect`.
         self._conn: Any = None
         # See `deferred_links()`. None = direct mode (default); list =
         # buffering link/weighted_link calls for one bulk_link flush.
@@ -1483,7 +1298,7 @@ class Store:
         out: dict[int, tuple[str, str]] = {}
         con = self._read()
         self._connect()
-        CHUNK = 900   # stay under SQLite's variable limit
+        CHUNK = 900   # bounded IN-list: one prepared statement per 900 ids
         for i in range(0, len(ids), CHUNK):
             part = ids[i:i + CHUNK]
             ph = ",".join("?" * len(part))
@@ -1498,23 +1313,11 @@ class Store:
 
     def init(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        # Legacy `bitmaps/` dir is only read for migration off the
-        # historical per-(linkage, concept) layout. Stop creating it
-        # on fresh inits -- nothing writes there, and an empty dir
-        # next to fragments/ confuses operators looking for state.
-        # `bitmaps_dir` attribute stays so migration code can still
-        # find an existing one if a legacy store is upgraded.
-        # `fragments/` is also DuckDB-irrelevant (BLOBs in catalog),
-        # but the SQLite backend writes there.
-        if self._backend.kind == "sqlite":
-            self.fragments_dir.mkdir(exist_ok=True)
-            self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
+        # No `fragments/` or `bitmaps/` dir: fragments are catalog rows
+        # (`bitmap_fragments`), and the schema is created by `_connect`'s
+        # `init_catalog`.
         self.queries_dir.mkdir(exist_ok=True)
         with self._connect() as con:
-            if self._backend.kind == "sqlite":
-                # SQLite-only: ensure schema. DuckDB backend already ran the
-                # native DDL inside _connect()'s init_catalog path.
-                con.executescript(CATALOG_DDL)
             existing = {r[0] for r in con.execute("SELECT name FROM linkage_types")}
             for name, directed, inverse_name, desc in DEFAULT_LINKAGES:
                 if name in existing:
@@ -1549,9 +1352,8 @@ class Store:
         return cand if cand.exists() else None
 
     def _connect(self) -> Any:
-        # -> Any: the connection is sqlite3.Connection or DuckDBPyConnection
-        # depending on backend; both expose the same execute/fetch cursor
-        # surface. Never returns None.
+        # -> Any: the `DuckDBConnection` wrapper (backend.py). Never returns
+        # None.
         if self._conn is None:
             if self._read_only:
                 # Fast path: replica reader. Open the backend in read-only
@@ -1576,88 +1378,23 @@ class Store:
                     self._partition_id = 1
                 return self._conn
             con = self._backend.connect(self.db_path)
-            if self._backend.kind == "sqlite":
-                # Self-heal schema on first connect. CATALOG_DDL is fully
-                # idempotent (all CREATE TABLE/INDEX IF NOT EXISTS), so existing
-                # catalogs created before later schema additions transparently
-                # gain the new tables (e.g. linkage_evidence, tracked_files,
-                # entity_links).
-                sqlite_con = cast(sqlite3.Connection, con)
-                sqlite_con.executescript(CATALOG_DDL)
-                # ALTER TABLE isn't idempotent — add post-DDL columns conditionally.
-                # CATALOG_DDL deliberately omits the indexes for these columns
-                # because executescript runs top-to-bottom and would fail on a
-                # legacy schema before the ALTER below has a chance to add them.
-                cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
-                if "protected" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN protected INTEGER NOT NULL DEFAULT 0"
-                    )
-                if "noise" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN noise INTEGER NOT NULL DEFAULT 0"
-                    )
-                if "canonical_name" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN canonical_name TEXT"
-                    )
-                if "vectors_updated_at" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN vectors_updated_at REAL"
-                    )
-                if "vectors_partition" not in cols:
-                    con.execute(
-                        "ALTER TABLE entities ADD COLUMN vectors_partition TEXT"
-                    )
-                # Indexes that don't depend on partition_id are safe before
-                # the legacy migration; the partition-aware index waits until
-                # after _migrate_to_partitions_if_needed() has added the
-                # column.
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_protected ON entities(protected)"
-                )
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_noise ON entities(noise)"
-                )
-                con.commit()
-                self._conn = con
-                # Schema migration: pre-partition catalogs need partition_id added
-                # plus a table rebuild to swap UNIQUE/PK constraints. Runs at most
-                # once per catalog. Must come before the fragments migration so
-                # the resolved partition_id is stable.
-                self._migrate_to_partitions_if_needed()
-                # Now that partition_id is guaranteed to exist on entities (via the
-                # CATALOG_DDL fresh-schema path or the migration above), the
-                # partition-aware indexes are safe to create unconditionally.
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_partition "
-                    "ON entities(partition_id)"
-                )
-                con.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_entities_canonical "
-                    "ON entities(partition_id, kind, canonical_name)"
-                )
-                con.commit()
-            else:
-                # DuckDB native catalog: schema is created up-front via the
-                # native DDL (refmatrix.duckdb_catalog). All tables/indexes/
-                # columns are present from the start, so the SQLite legacy
-                # migration paths (partitions backfill, post-DDL CREATE INDEX)
-                # are not needed.
-                self._backend.init_catalog(con)
-                self._conn = con
-                # Post-DDL `entities` columns (canonical_name, vectors_updated_at,
-                # vectors_partition) are added by init_catalog itself through
-                # `duckdb_catalog.upgrade_catalog` — one schema for every DuckDB
-                # catalog builder, the Store included (bug-113).
-                # ADR-0001 / Phase B: relax the kind CHECK constraint on
-                # pre-Phase-B catalogs so 'memory' rows can land. DuckDB
-                # auto-names CHECK constraints; query duckdb_constraints
-                # to find the one that mentions 'doc'/'code'/'concept'
-                # but not 'memory', drop it, leave Python-side validation
-                # in upsert_entity as the kind whitelist. Idempotent: a
-                # post-migration catalog returns no matching row.
-                self._migrate_entities_kind_check_if_needed()
+            # The schema is created up-front by the native DDL
+            # (refmatrix.duckdb_catalog): every table, index and column is
+            # present from the start. Post-DDL `entities` columns
+            # (canonical_name, vectors_updated_at, vectors_partition) are
+            # added by init_catalog itself through
+            # `duckdb_catalog.upgrade_catalog` — one schema for every DuckDB
+            # catalog builder, the Store included (bug-113).
+            self._backend.init_catalog(con)
+            self._conn = con
+            # ADR-0001 / Phase B: relax the kind CHECK constraint on
+            # pre-Phase-B catalogs so 'memory' rows can land. DuckDB
+            # auto-names CHECK constraints; query duckdb_constraints
+            # to find the one that mentions 'doc'/'code'/'concept'
+            # but not 'memory', drop it, leave Python-side validation
+            # in upsert_entity as the kind whitelist. Idempotent: a
+            # post-migration catalog returns no matching row.
+            self._migrate_entities_kind_check_if_needed()
             # Ensure the active partition row exists and resolve the active
             # partition_id. Auto-creates the partition the first time a Store
             # is opened with a new name (a fresh `rmx init` lands you in the
@@ -1680,115 +1417,16 @@ class Store:
             # skips rows already populated.
             self._backfill_canonical_name_if_needed()
         # One-shot migration: collapse legacy per-(linkage, concept) .rb files
-        # into per-linkage BitMap64 fragments. Runs at most once per catalog.
+        # into per-linkage BitMap64 fragment files. Runs at most once per
+        # catalog. (A file move on disk; the catalog's fragments are rows.)
         self._migrate_legacy_bitmaps_if_needed()
         # Move pre-partition fragments/<linkage>.rb64 into fragments/local/.
         # Idempotent and a no-op once done.
         self._migrate_fragments_to_partitions_if_needed()
         return self._conn
 
-    def _migrate_to_partitions_if_needed(self) -> None:
-        """Add partition_id columns and rebuild entities/tracked_files/saved_queries
-        for the new UNIQUE/PK constraints. SQLite can't ALTER a UNIQUE/PK
-        constraint in place, so each affected table goes through the standard
-        12-step rebuild dance. All pre-existing rows backfill to partition_id=1
-        (the project-scoped default partition)."""
-        assert self._conn is not None
-        con = self._conn
-        ent_cols = {r[1] for r in con.execute("PRAGMA table_info(entities)")}
-        tf_cols = {r[1] for r in con.execute("PRAGMA table_info(tracked_files)")}
-        if "partition_id" in ent_cols and "partition_id" in tf_cols:
-            return
-        # Insert default partition before any FK-bearing rebuild references it.
-        # Pre-partition rows backfill to id=1 = the project-scoped default.
-        con.execute(
-            "INSERT OR IGNORE INTO partitions(id, name, kind, created_at) "
-            "VALUES (1, ?, 'repo', ?)",
-            (default_partition_name(self.root), time.time()),
-        )
-        # Must commit before PRAGMA foreign_keys = OFF — the pragma is
-        # silently ignored while a transaction is open.
-        con.commit()
-        con.execute("PRAGMA foreign_keys = OFF")
-        try:
-            if "partition_id" not in ent_cols:
-                # Carry forward post-0.3.3 columns the legacy ALTER added
-                # to the old table (canonical_name, vectors_updated_at) so
-                # the rebuild doesn't drop them on the way through.
-                con.executescript("""
-                    DROP TABLE IF EXISTS entities_new;
-                    CREATE TABLE entities_new (
-                        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-                        partition_id       INTEGER NOT NULL DEFAULT 1
-                                             REFERENCES partitions(id),
-                        kind               TEXT NOT NULL CHECK (kind IN ('doc','code','concept','memory')),
-                        path               TEXT,
-                        name               TEXT NOT NULL,
-                        tldr               TEXT,
-                        meta               TEXT,
-                        created_at         REAL NOT NULL,
-                        updated_at         REAL NOT NULL,
-                        protected          INTEGER NOT NULL DEFAULT 0,
-                        noise              INTEGER NOT NULL DEFAULT 0,
-                        canonical_name     TEXT,
-                        vectors_updated_at REAL,
-                        UNIQUE(partition_id, kind, name)
-                    );
-                    INSERT INTO entities_new
-                        (id, partition_id, kind, path, name, tldr, meta,
-                         created_at, updated_at, protected, noise,
-                         canonical_name, vectors_updated_at)
-                    SELECT id, 1, kind, path, name, tldr, meta,
-                           created_at, updated_at, protected, noise,
-                           canonical_name, vectors_updated_at
-                    FROM entities;
-                    DROP TABLE entities;
-                    ALTER TABLE entities_new RENAME TO entities;
-                    CREATE INDEX idx_entities_kind ON entities(kind);
-                    CREATE INDEX idx_entities_path ON entities(path);
-                    CREATE INDEX idx_entities_partition ON entities(partition_id);
-                    CREATE INDEX idx_entities_protected ON entities(protected);
-                    CREATE INDEX idx_entities_noise ON entities(noise);
-                """)
-            if "partition_id" not in tf_cols:
-                con.executescript("""
-                    DROP TABLE IF EXISTS tracked_files_new;
-                    CREATE TABLE tracked_files_new (
-                        partition_id INTEGER NOT NULL DEFAULT 1
-                                       REFERENCES partitions(id),
-                        path         TEXT NOT NULL,
-                        mtime        REAL NOT NULL,
-                        last_synced  REAL NOT NULL,
-                        PRIMARY KEY (partition_id, path)
-                    );
-                    INSERT INTO tracked_files_new (partition_id, path, mtime, last_synced)
-                    SELECT 1, path, mtime, last_synced FROM tracked_files;
-                    DROP TABLE tracked_files;
-                    ALTER TABLE tracked_files_new RENAME TO tracked_files;
-                """)
-            sq_cols = {r[1] for r in con.execute("PRAGMA table_info(saved_queries)")}
-            if "partition_id" not in sq_cols:
-                con.executescript("""
-                    DROP TABLE IF EXISTS saved_queries_new;
-                    CREATE TABLE saved_queries_new (
-                        partition_id INTEGER NOT NULL DEFAULT 1
-                                       REFERENCES partitions(id),
-                        name TEXT NOT NULL,
-                        body TEXT NOT NULL,
-                        created_at REAL NOT NULL,
-                        PRIMARY KEY (partition_id, name)
-                    );
-                    INSERT INTO saved_queries_new (partition_id, name, body, created_at)
-                    SELECT 1, name, body, created_at FROM saved_queries;
-                    DROP TABLE saved_queries;
-                    ALTER TABLE saved_queries_new RENAME TO saved_queries;
-                """)
-            con.commit()
-        finally:
-            con.execute("PRAGMA foreign_keys = ON")
-
     def _migrate_entities_kind_check_if_needed(self) -> None:
-        """DuckDB-only: relax the kind CHECK constraint on `entities` so
+        """Relax the kind CHECK constraint on `entities` so
         pre-Phase-B catalogs accept 'memory' rows. The DDL was tightened
         to allow 4 kinds in Phase B; existing stores baked the old 3-kind
         constraint into their catalog at init time and DuckDB 1.5 does
@@ -1803,8 +1441,6 @@ class Store:
         Idempotent: a post-migration catalog returns no matching row
         and the call is a no-op."""
         assert self._conn is not None
-        if self._backend.kind != "duckdb":
-            return
         con = self._conn
         try:
             rows = con.execute(
@@ -1967,8 +1603,8 @@ class Store:
                     (dst_id, src_id))
         key = "partition_id, source_id, linkage, target_name, file, line"
         for row in con.execute(
-                # min(), not any_value(): SQLite has no any_value (both backends
-                # run merge_partition).
+                # min() per column: a deterministic pick of one duplicate's
+                # values.
                 f"SELECT {key}, min(created_at) AS c, min(ref) AS ref, "
                 f"min(weight) AS w, min(detail) AS d, count(*) AS n "
                 f"FROM pending_refs WHERE partition_id=? GROUP BY {key} HAVING count(*) > 1",
@@ -2387,8 +2023,8 @@ class Store:
 
     def _ensure_partition(self) -> None:
         """Resolve self._partition_id, auto-creating the partition row if the
-        configured name is new. Always runs after _migrate_to_partitions_if_needed
-        so the partitions table is guaranteed to exist."""
+        configured name is new. Always runs after `init_catalog`, so the
+        partitions table is guaranteed to exist."""
         assert self._conn is not None
         con = self._conn
         # Ensure the active partition row exists. The active partition IS the
@@ -2507,7 +2143,7 @@ class Store:
         """Return the connection used for SELECTs: the store's own connection.
 
         Until 2026-11-18 an environment flag could route SELECTs through a
-        phase-1 sqlite_scanner facade over the SQLite catalog. Nothing set the
+        phase-1 scanner facade over the pre-DuckDB catalog. Nothing set the
         flag and the catalog is DuckDB-native, so plan-6 Q1 ("Delete") was
         executed by task T0.4 (R4.1) and the facade is gone. The method stays as
         the one SELECT entry point the read sites call.
@@ -2615,7 +2251,7 @@ class Store:
 
         Intended for the file-walk + metadata passes where N is in the
         thousands -- one set-based write (`backend.bulk_write`: an Arrow
-        batch on DuckDB, executemany on SQLite) cuts per-row cursor + COMMIT
+        batch and one statement) cuts per-row cursor + COMMIT
         overhead. Intra-batch duplicate keys merge in input order exactly as
         a row-by-row sequence would (bug-178, 2026-11-09).
         """
@@ -2630,12 +2266,11 @@ class Store:
              _canonical_for_kind(kind, name))
             for (kind, name, path, tldr, meta) in rows
         ]
-        # One set-based upsert through `bulk_write` (bug-178): on DuckDB an
-        # Arrow batch + one INSERT ... SELECT ... ON CONFLICT (DuckDB's
-        # `executemany` is per-row — ~1.3s per 1k-row chunk in profiling —
-        # and the writer lock is held the whole time); on SQLite the same
-        # statement row-wise via executemany. No RETURNING: the ids come from
-        # one keyed SELECT below.
+        # One set-based upsert through `bulk_write` (bug-178): an Arrow batch +
+        # one INSERT ... SELECT ... ON CONFLICT (DuckDB's `executemany` is
+        # per-row — ~1.3s per 1k-row chunk in profiling — and the writer lock
+        # is held the whole time). No RETURNING: the ids come from one keyed
+        # SELECT below.
         #
         # DuckDB rejects two rows for the same key inside ONE
         # `ON CONFLICT DO UPDATE`. Until bug-178 a batch with an intra-batch
@@ -2643,11 +2278,11 @@ class Store:
         # merge); it is now collapsed IN PYTHON to the row that sequential
         # merge would leave (see `_collapse_entity_payload`), plus a touch of
         # `updated_at` for keys the sequence would have touched but the
-        # collapsed row cannot prove. SQLite keeps the row-wise sequence.
+        # collapsed row cannot prove.
         has_dups = len({(p[1], p[2]) for p in payload}) != len(payload)
         write_rows = payload
         touch_rows: list[tuple] = []
-        if self._backend.kind == "duckdb" and has_dups:
+        if has_dups:
             write_rows, touch_rows = _collapse_entity_payload(payload)
         bulk_write(
             con,
@@ -2656,9 +2291,6 @@ class Store:
             f"{_ENTITY_UPSERT_CONFLICT}",
             _ENTITY_UPSERT_COLS.split(", "),
             write_rows,
-            sqlite_sql=(
-                f"INSERT INTO entities({_ENTITY_UPSERT_COLS}) "
-                f"VALUES (?,?,?,?,?,?,?,?,?,?) {_ENTITY_UPSERT_CONFLICT}"),
             types=_ENTITY_UPSERT_TYPES,
             view="_rmx_bulk_entities",
         )
@@ -2674,40 +2306,28 @@ class Store:
                        "name": "string", "updated_at": "float64"},
                 view="_rmx_bulk_entity_touch",
             )
-        # Look up the ids keyed by (kind, name). Under DuckDB, register the
-        # keys as an Arrow table and JOIN: one scan of `entities` regardless
-        # of batch size. The old `(kind, name) IN (...)` list forced callers
-        # to chunk, and each chunk's IN-list scanned the table -- O(chunks)
-        # scans, pathological when re-ingesting into a large existing store.
-        # SQLite keeps the IN-list (no Arrow registration there).
+        # Look up the ids keyed by (kind, name): register the keys as an Arrow
+        # table and JOIN, one scan of `entities` regardless of batch size. The
+        # old `(kind, name) IN (...)` list forced callers to chunk, and each
+        # chunk's IN-list scanned the table -- O(chunks) scans, pathological
+        # when re-ingesting into a large existing store.
         keys = [(kind, name) for (kind, name, *_rest) in rows]
-        if self._backend.kind == "duckdb":
-            import pyarrow as pa
-            ktbl = pa.table({
-                "kind": pa.array([k for (k, _n) in keys], type=pa.string()),
-                "name": pa.array([n for (_k, n) in keys], type=pa.string()),
-            })
-            con._duck.register("_rmx_id_keys", ktbl)
-            try:
-                id_rows = con._duck.execute(
-                    "SELECT e.kind, e.name, e.id FROM entities e "
-                    "JOIN _rmx_id_keys k "
-                    "ON e.kind = k.kind AND e.name = k.name "
-                    "WHERE e.partition_id = ?",
-                    [pid],
-                ).fetchall()
-            finally:
-                con._duck.unregister("_rmx_id_keys")
-        else:
-            placeholders = ",".join("(?,?)" for _ in keys)
-            flat: list = [pid]
-            for kind, name in keys:
-                flat.extend([kind, name])
-            id_rows = con.execute(
-                f"SELECT kind, name, id FROM entities "
-                f"WHERE partition_id=? AND (kind, name) IN ({placeholders})",
-                flat,
+        import pyarrow as pa
+        ktbl = pa.table({
+            "kind": pa.array([k for (k, _n) in keys], type=pa.string()),
+            "name": pa.array([n for (_k, n) in keys], type=pa.string()),
+        })
+        con._duck.register("_rmx_id_keys", ktbl)
+        try:
+            id_rows = con._duck.execute(
+                "SELECT e.kind, e.name, e.id FROM entities e "
+                "JOIN _rmx_id_keys k "
+                "ON e.kind = k.kind AND e.name = k.name "
+                "WHERE e.partition_id = ?",
+                [pid],
             ).fetchall()
+        finally:
+            con._duck.unregister("_rmx_id_keys")
         id_by_key = {(r[0], r[1]): r[2] for r in id_rows}
         ids: list[int] = [id_by_key[(k, n)] for (k, n) in keys]
         # Concepts need a row in the concepts table; insert any missing.
@@ -2723,8 +2343,6 @@ class Store:
                 "SELECT id, description FROM {view} ON CONFLICT(id) DO NOTHING",
                 ["id", "description"],
                 concept_payload,
-                sqlite_sql=("INSERT OR IGNORE INTO concepts(id, description) "
-                            "VALUES (?, ?)"),
                 types={"id": "int64", "description": "string"},
                 view="_rmx_bulk_concepts",
             )
@@ -3782,7 +3400,7 @@ class Store:
         if not wanted:
             return {n: [] for n in names}
         by_canon: dict[str, list[tuple[int, str]]] = {}
-        CHUNK = 900   # stay under SQLite's variable limit
+        CHUNK = 900   # bounded IN-list: one prepared statement per 900 ids
         r = self._read()
         for i in range(0, len(wanted), CHUNK):
             part = wanted[i:i + CHUNK]
@@ -3861,8 +3479,8 @@ class Store:
     # ---- dense vector wrappers (Lance-backed) -----------------------------
     #
     # The [dense] optional extra (pylance + numpy) is required for any of
-    # these to do real work. They lazy-import refmatrix.vectors so SQLite-
-    # only installs never pay the import cost. Calling without the extra
+    # these to do real work. They lazy-import refmatrix.vectors so installs
+    # without the extra never pay the import cost. Calling without the extra
     # raises ImportError with a clear message; the daemon catches that and
     # surfaces it as a graceful "dense not installed" response.
 
@@ -4279,14 +3897,13 @@ class Store:
         duplicate groups on `(partition_id, kind, name)` or `id`: that is
         data, not an index, and needs an operator. Returns
         `{rows, indexes, constraints}`. Runs under the caller's writer
-        lock; CHECKPOINTs at the end."""
-        if self._backend.kind != "duckdb":
-            # SQLite keeps real FOREIGN KEYs with ON DELETE CASCADE on
-            # entities(id): DROP TABLE would wipe concepts, memory bodies and
-            # links (ch-bsd plan-4 r1 #b-5). The phantom this repairs is a
-            # DuckDB ART artefact; there is nothing to rebuild on SQLite.
-            raise RepairAbort("entities rebuild is DuckDB-only (SQLite cascades "
-                              "FOREIGN KEYs on DROP TABLE); nothing was changed")
+        lock; CHECKPOINTs at the end.
+
+        DROP TABLE is safe here because the DuckDB schema declares no FOREIGN
+        KEYs (duckdb_catalog.py's header note): nothing cascades from
+        `entities`. (A guard refused the rebuild on the second backend, whose
+        cascading FOREIGN KEYs would have wiped concepts, memory bodies and
+        links, ch-bsd plan-4 r1 #b-5; task S1, 2026-11-19, deleted both.)"""
         con = self._connect()
         dups = con.execute(
             "SELECT partition_id, kind, name, COUNT(*) AS n FROM entities "
@@ -4304,26 +3921,18 @@ class Store:
             raise RepairAbort(
                 f"{len(dup_ids)} duplicate id(s) in entities (e.g. {dup_ids[0][0]}) — "
                 f"not an index phantom; resolve by hand before rebuilding")
-        duck = self._backend.kind == "duckdb"
-        if duck:
-            cols = con.execute(
-                "SELECT column_name, data_type, is_nullable, column_default "
-                "FROM information_schema.columns WHERE table_name='entities' "
-                "ORDER BY ordinal_position").fetchall()
-            existing_idx = [r[0] for r in con.execute(
-                "SELECT index_name FROM duckdb_indexes() WHERE table_name='entities'"
-            ).fetchall()]
-        else:
-            cols = [(r[1], r[2], "NO" if r[3] else "YES", r[4])
-                    for r in con.execute("PRAGMA table_info(entities)").fetchall()]
-            existing_idx = [r[1] for r in con.execute("PRAGMA index_list(entities)").fetchall()
-                            if str(r[1]).startswith("idx_entities_")]
+        cols = con.execute(
+            "SELECT column_name, data_type, is_nullable, column_default "
+            "FROM information_schema.columns WHERE table_name='entities' "
+            "ORDER BY ordinal_position").fetchall()
+        existing_idx = [r[0] for r in con.execute(
+            "SELECT index_name FROM duckdb_indexes() WHERE table_name='entities'"
+        ).fetchall()]
         names = [c[0] for c in cols]
         defs = []
         for name, dtype, nullable, default in cols:
             if name == "id":
-                d = (f"DEFAULT {default}" if (duck and default) else
-                     ("AUTOINCREMENT" if not duck else ""))
+                d = f"DEFAULT {default}" if default else ""
                 defs.append(f"id INTEGER PRIMARY KEY {d}".rstrip())
                 continue
             line = f"{name} {dtype}"
@@ -4354,11 +3963,10 @@ class Store:
         for idx, expr in wanted:
             con.execute(f"CREATE INDEX IF NOT EXISTS {idx} ON entities({expr})")
         con.commit()
-        if duck:
-            try:
-                con.execute("CHECKPOINT")
-            except Exception:
-                pass
+        try:
+            con.execute("CHECKPOINT")
+        except Exception:
+            pass
         return {"rows": int(n), "indexes": len(wanted),
                 "constraints": ["PRIMARY KEY", "UNIQUE"],
                 "indexes_before": sorted(existing_idx)}
@@ -4415,7 +4023,6 @@ class Store:
             "FROM {view} v WHERE entities.id = v.id",
             ["canonical_name", "id"],
             payload,
-            sqlite_sql="UPDATE entities SET canonical_name=? WHERE id=?",
             types={"canonical_name": "string", "id": "int64"},
             view="_rmx_bulk_canonical",
         )
@@ -4444,7 +4051,7 @@ class Store:
         return (row["kind"], row["name"]) if row else None
 
     @staticmethod
-    def _row_to_entity(row: Any) -> Entity:  # sqlite3.Row or backend duck-typed row
+    def _row_to_entity(row: Any) -> Entity:  # backend.py's `_DuckRow`
         keys = row.keys()
         return Entity(
             id=row["id"],
@@ -4563,33 +4170,23 @@ class Store:
         """Load a bitmap fragment by its RAW (non-canonicalized) key in the
         active partition. Needed only by the alias merge: `_load_fragment`
         canonicalizes its key, so it can no longer reach a legacy fragment."""
-        if self._backend.kind == "duckdb":
-            con = self._connect()
-            row = con._duck.execute(
-                "SELECT blob FROM bitmap_fragments "
-                "WHERE partition_id=? AND linkage=?",
-                [self._partition_id, linkage_raw],
-            ).fetchone()
-            if not row or row[0] is None:
-                return None
-            return BitMap64.deserialize(bytes(row[0]))
-        p = self._partition_fragments_dir() / f"{linkage_raw}.rb64"
-        if not p.exists():
+        con = self._connect()
+        row = con._duck.execute(
+            "SELECT blob FROM bitmap_fragments "
+            "WHERE partition_id=? AND linkage=?",
+            [self._partition_id, linkage_raw],
+        ).fetchone()
+        if not row or row[0] is None:
             return None
-        return BitMap64.deserialize(p.read_bytes())
+        return BitMap64.deserialize(bytes(row[0]))
 
     def _drop_legacy_fragment_raw(self, linkage_raw: str) -> None:
         """Delete a legacy fragment by RAW key in the active partition + evict
         any cache entry under that key."""
-        if self._backend.kind == "duckdb":
-            self._connect()._duck.execute(
-                "DELETE FROM bitmap_fragments WHERE partition_id=? AND linkage=?",
-                [self._partition_id, linkage_raw],
-            )
-        else:
-            p = self._partition_fragments_dir() / f"{linkage_raw}.rb64"
-            if p.exists():
-                p.unlink()
+        self._connect()._duck.execute(
+            "DELETE FROM bitmap_fragments WHERE partition_id=? AND linkage=?",
+            [self._partition_id, linkage_raw],
+        )
         self._fragments.pop(linkage_raw, None)
 
     def _merge_fragment_all_partitions(self, legacy: str, canon: str) -> int:
@@ -4618,6 +4215,8 @@ class Store:
     # ---- bitmaps (Pilosa-style fragments) ---------------------------------
 
     def _fragment_path(self, linkage: str) -> Path:
+        """The `.rb64` file path of a fragment under `fragments/<partition>/`: read only by
+        `_migrate_legacy_bitmaps_if_needed` (a file layout the catalog does not read)."""
         return self._partition_fragments_dir() / f"{_canonical_verb(linkage)}.rb64"
 
     def _load_fragment(self, linkage: str) -> BitMap64:
@@ -4625,31 +4224,20 @@ class Store:
         access. Mutating the returned object is fine — call flush_fragments()
         (or close()) to persist.
 
-        Backend differences:
-        - SQLite: fragment persists as `fragments/<partition>/<linkage>.rb64`
-          on disk; lazy-loaded by file read.
-        - DuckDB: fragment persists as a BLOB row in `bitmap_fragments`
-          keyed by (partition_id, linkage); lazy-loaded by SELECT.
+        A fragment persists as a BLOB row in `bitmap_fragments` keyed by
+        (partition_id, linkage); it is lazy-loaded by SELECT.
         """
         linkage = _canonical_verb(linkage)
         if linkage in self._fragments:
             return self._fragments[linkage]
-        if self._backend.kind == "duckdb":
-            self._connect()  # ensures partition_id is resolved
-            row = self._read_raw_blob(linkage)
-            frag = BitMap64.deserialize(row) if row else BitMap64()
-        else:
-            self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
-            p = self._fragment_path(linkage)
-            if p.exists():
-                frag = BitMap64.deserialize(p.read_bytes())
-            else:
-                frag = BitMap64()
+        self._connect()  # ensures partition_id is resolved
+        row = self._read_raw_blob(linkage)
+        frag = BitMap64.deserialize(row) if row else BitMap64()
         self._fragments[linkage] = frag
         return frag
 
     def _read_raw_blob(self, linkage: str) -> bytes | None:
-        """DuckDB-only: fetch the raw bitmap blob for (active partition,
+        """Fetch the raw bitmap blob for (active partition,
         linkage), or None if no row exists. Split out so the deserialization
         and BitMap64() fallback live in _load_fragment."""
         con = self._connect()
@@ -4668,9 +4256,8 @@ class Store:
         calls it after ingest and on close, so a long-lived Store recomputes
         those denominators once per write batch instead of once per read.
 
-        SQLite path writes to `fragments/<partition>/<linkage>.rb64` on disk
-        (atomic via tmp + rename); DuckDB path UPSERTs the BLOB into the
-        `bitmap_fragments` table. Empty fragments are removed in both modes.
+        Each dirty fragment's BLOB is UPSERTed into the `bitmap_fragments`
+        table; an empty fragment's row is deleted.
         """
         self._invalidate_content_rank_caches()
         bindings = self._dirty_bindings()
@@ -4690,29 +4277,10 @@ class Store:
         """Persist the dirty fragments of the currently bound partition."""
         if not self._dirty_fragments:
             return
-        if self._backend.kind == "duckdb":
-            self._flush_fragments_duckdb()
-            return
-        self._partition_fragments_dir().mkdir(parents=True, exist_ok=True)
-        for raw in list(self._dirty_fragments):
-            # Fold a raw-alias dirty entry to its canonical cache + path key.
-            linkage = _canonical_verb(raw)
-            frag = self._fragments.get(linkage)
-            if frag is None:
-                self._dirty_fragments.discard(raw)
-                continue
-            p = self._fragment_path(linkage)
-            if len(frag) == 0:
-                if p.exists():
-                    p.unlink()
-            else:
-                tmp = p.with_suffix(".rb64.tmp")
-                tmp.write_bytes(frag.serialize())
-                tmp.replace(p)
-            self._dirty_fragments.discard(raw)
+        self._flush_fragments_duckdb()
 
     def _flush_fragments_duckdb(self) -> None:
-        """DuckDB persistence path for flush_fragments: UPSERT (or DELETE on
+        """The persistence path for flush_fragments: UPSERT (or DELETE on
         empty) the BLOB row for each dirty linkage in the active partition."""
         con = self._connect()
         pid = self._partition_id
@@ -4741,58 +4309,36 @@ class Store:
             self._dirty_fragments.discard(raw)
 
     def _read_all_fragment_rows(self) -> "dict[tuple[int, str], BitMap64]":
-        """Every persisted fragment as {(partition_id, linkage): BitMap64}, in both backends."""
+        """Every persisted fragment as {(partition_id, linkage): BitMap64}."""
         con = self._connect()
         out: dict = {}
-        if self._backend.kind == "duckdb":
-            for pid, linkage, blob in con._duck.execute(
-                "SELECT partition_id, linkage, blob FROM bitmap_fragments"
-            ).fetchall():
-                out[(int(pid), linkage)] = BitMap64.deserialize(bytes(blob))
-            return out
-        names = dict(con.execute("SELECT name, id FROM partitions").fetchall())
-        self._repair_files_read = []
-        self._repair_unread_dirs = []
-        if self.fragments_dir.exists():
-            for d in self.fragments_dir.iterdir():
-                if not d.is_dir():
-                    continue
-                if d.name not in names:
-                    # A directory for a partition the catalog does not know: its bits cannot
-                    # be attributed, so it is left on disk untouched and reported.
-                    self._repair_unread_dirs.append(str(d))
-                    continue
-                for f in d.glob("*.rb64"):
-                    out[(int(names[d.name]), f.stem)] = BitMap64.deserialize(f.read_bytes())
-                    self._repair_files_read.append(f)
+        for pid, linkage, blob in con._duck.execute(
+            "SELECT partition_id, linkage, blob FROM bitmap_fragments"
+        ).fetchall():
+            out[(int(pid), linkage)] = BitMap64.deserialize(bytes(blob))
         return out
+
+    def _unread_fragment_dirs(self) -> "list[str]":
+        """The directories under `fragments/`, which `repair_fragments` does NOT read: the
+        on-disk `.rb64` layout (the second backend's, and what `_connect`'s two one-shot file
+        moves write). Their bits are not in the catalog; the repair leaves them in place and
+        names them (`unread_dirs`), so an operator sees data the store is not serving.
+
+        (Until task S1, 2026-11-19, the repair read these files on the second backend and
+        named only the dirs of partitions the catalog did not know, bug-105 r2 #s2-1.)"""
+        if not self.fragments_dir.is_dir():
+            return []
+        return sorted(str(d) for d in self.fragments_dir.iterdir() if d.is_dir())
 
     def _write_all_fragment_rows(self, rows: "dict[tuple[int, str], BitMap64]") -> None:
         """Replace EVERY persisted fragment with `rows` (empty bitmaps are not written)."""
         con = self._connect()
-        if self._backend.kind == "duckdb":
-            con._duck.execute("DELETE FROM bitmap_fragments")
-            for (pid, linkage), bm in sorted(rows.items()):
-                if len(bm):
-                    con._duck.execute(
-                        "INSERT INTO bitmap_fragments(partition_id, linkage, blob) "
-                        "VALUES (?, ?, ?)", [pid, linkage, bm.serialize()])
-            return
-        names = {i: n for n, i in con.execute("SELECT name, id FROM partitions").fetchall()}
-        written = set()
-        for (pid, linkage), bm in rows.items():
-            if not len(bm) or pid not in names:
-                continue
-            d = self.fragments_dir / names[pid]
-            d.mkdir(parents=True, exist_ok=True)
-            tmp = d / f"{linkage}.rb64.tmp"
-            tmp.write_bytes(bm.serialize())
-            tmp.replace(d / f"{linkage}.rb64")
-            written.add(d / f"{linkage}.rb64")
-        # Remove only files this repair READ and did not rewrite (never an unread directory).
-        for f in getattr(self, "_repair_files_read", []):
-            if f not in written and f.exists():
-                f.unlink()
+        con._duck.execute("DELETE FROM bitmap_fragments")
+        for (pid, linkage), bm in sorted(rows.items()):
+            if len(bm):
+                con._duck.execute(
+                    "INSERT INTO bitmap_fragments(partition_id, linkage, blob) "
+                    "VALUES (?, ?, ?)", [pid, linkage, bm.serialize()])
 
     def repair_fragments(self, *, dry_run: bool = True,
                          manifest_dir: "Path | None" = None,
@@ -4943,7 +4489,7 @@ class Store:
             "dropped_dead_concept": dropped_dead_concept, "links_skipped": links_skipped,
             "links_dead_concept": links_dead_concept, "links_dead_entity": links_dead_entity,
             "remapped": remapped_bits,
-            "unread_dirs": list(getattr(self, "_repair_unread_dirs", [])),
+            "unread_dirs": self._unread_fragment_dirs(),
             "manifest": str(manifest) if manifest else None,
         }
 
@@ -5226,7 +4772,7 @@ class Store:
         `items` is a list of `(linkage_name, concept_id, entity_id, weight)`
         tuples. Bitmap fragments are updated in-process (one pass); the
         relational `entity_links` shadow is written in a single SQL
-        statement — Arrow batch under DuckDB, `executemany` under SQLite.
+        statement (`bulk_write`: one Arrow batch).
         Returns the number of bitmap bits newly added.
 
         Default weight policy is FIRST-WINS: on conflict the existing row is
@@ -5276,10 +4822,9 @@ class Store:
                 )
 
         con = self._connect()
-        # One set-based write through `bulk_write` (bug-178): an Arrow batch
-        # on DuckDB (no per-row binder), executemany on SQLite. The conflict
-        # policy is the mode's: FIRST-WINS (`DO NOTHING` / `OR IGNORE`) or
-        # LAST-NON-NULL-WINS on the deduped batch.
+        # One set-based write through `bulk_write` (bug-178): an Arrow batch,
+        # no per-row binder. The conflict policy is the mode's: FIRST-WINS
+        # (`DO NOTHING`) or LAST-NON-NULL-WINS on the deduped batch.
         conflict = (
             "ON CONFLICT(entity_id, linkage_id, concept_id) DO UPDATE SET "
             "weight = CASE WHEN excluded.weight IS NULL "
@@ -5292,12 +4837,6 @@ class Store:
                else "ON CONFLICT(entity_id, linkage_id, concept_id) DO NOTHING"),
             ["entity_id", "linkage_id", "concept_id", "weight"],
             [(it[2], linkage_ids[it[0]], it[1], it[3]) for it in items],
-            sqlite_sql=(
-                "INSERT INTO entity_links(entity_id, linkage_id, concept_id, weight) "
-                "VALUES (?,?,?,?) " + conflict
-            ) if update_weight else (
-                "INSERT OR IGNORE INTO entity_links"
-                "(entity_id, linkage_id, concept_id, weight) VALUES (?,?,?,?)"),
             types={"entity_id": "int64", "linkage_id": "int64",
                    "concept_id": "int64", "weight": "float64"},
             view="_rmx_bulk_links",
@@ -5351,9 +4890,6 @@ class Store:
             "ON CONFLICT(entity_id, linkage_id, concept_id) DO NOTHING",
             ["entity_id", "linkage_id", "concept_id"],
             [(eid, lid, concept_id) for eid in dict.fromkeys(ids)],
-            sqlite_sql=(
-                "INSERT OR IGNORE INTO entity_links(entity_id, linkage_id, concept_id) "
-                "VALUES (?,?,?)"),
             types={"entity_id": "int64", "linkage_id": "int64", "concept_id": "int64"},
             view="_rmx_link_many",
         )
@@ -6835,10 +6371,9 @@ class Store:
         # A purged citer's unresolved `rel:` lines go with it (bug-216 R10): a
         # later ingest of their target must not write an edge from a dead id.
         con.execute("DELETE FROM pending_refs WHERE source_id=?", (entity_id,))
-        # Memory sidecar (no-op for non-memory rows; sqlite has FK CASCADE
-        # set but the daemon does not turn PRAGMA foreign_keys on, and
-        # DuckDB's memory_content has no FK clause at all — so the explicit
-        # DELETE is what guarantees the sidecar row goes away).
+        # Memory sidecar (no-op for non-memory rows; DuckDB's memory_content
+        # has no FK clause at all — so the explicit DELETE is what guarantees
+        # the sidecar row goes away).
         con.execute("DELETE FROM memory_content WHERE entity_id=?", (entity_id,))
         con.execute(
             "DELETE FROM tracked_files WHERE partition_id=? AND path = "
@@ -7286,7 +6821,7 @@ class Store:
         """Mark many `(abs_path, mtime)` pairs tracked in one batched write.
 
         Bulk equivalent of `mark_tracked`: a single Arrow `INSERT...SELECT`
-        (DuckDB) or one `executemany` (SQLite) plus one `_maybe_commit`,
+        plus one `_maybe_commit`,
         instead of a per-row INSERT + `con.commit()` each. Used by gated
         ingest passes that mark thousands of files at once (e.g. the
         `pysem:` markers for the `--semantic` Python pass) — per-row
@@ -7304,8 +6839,6 @@ class Store:
             "SELECT partition_id, path, mtime, last_synced FROM {view} " + conflict,
             ["partition_id", "path", "mtime", "last_synced"],
             [(self._partition_id, r[0], float(r[1]), now) for r in rows],
-            sqlite_sql=("INSERT INTO tracked_files(partition_id, path, mtime, last_synced) "
-                        "VALUES (?,?,?,?) " + conflict),
             types={"partition_id": "int64", "path": "string", "mtime": "float64",
                    "last_synced": "float64"},
             view="_rmx_bulk_tracked",
@@ -7870,7 +7403,6 @@ class Store:
             "UPDATE entities SET meta = v.meta FROM {view} v WHERE entities.id = v.id",
             ["meta", "id"],
             payload,
-            sqlite_sql="UPDATE entities SET meta=? WHERE id=?",
             types={"meta": "string", "id": "int64"},
             view="_rmx_bulk_gmd_meta",
         )
@@ -7900,8 +7432,6 @@ class Store:
             f"SELECT {', '.join(cols)} FROM {{view}}",
             cols,
             rows,
-            sqlite_sql=(f"INSERT INTO coref_resolutions ({', '.join(cols)}) "
-                        "VALUES (?,?,?,?,?,?)"),
             types={"partition_id": "int64", "entity_id": "int64", "pos": "int64",
                    "pronoun": "string", "antecedent": "string", "confidence": "float64"},
             view="_rmx_bulk_coref",
@@ -7979,8 +7509,6 @@ class Store:
             f"SELECT {', '.join(cols)} FROM {{view}}",
             cols,
             rows,
-            sqlite_sql=(f"INSERT INTO pair_index ({', '.join(cols)}) "
-                        "VALUES (?,?,?,?,?)"),
             types={"partition_id": "int64", "pair_key": "string", "df": "int64",
                    "docs": "binary", "compiled_at": "float64"},
             view="_rmx_bulk_pairs",
@@ -8877,7 +8405,7 @@ class Store:
         return False
 
     def rebuild_index_from_log(self) -> dict:
-        """Wipe catalog.db + fragments and replay facts.log into a fresh
+        """Wipe the catalog file + fragments and replay facts.log into a fresh
         catalog. Convergent: re-running yields the same final state.
 
         Replay rules:
@@ -8898,8 +8426,8 @@ class Store:
         if not self.log_path.exists():
             raise FileNotFoundError(self.log_path)
 
-        # Wipe derived state. Close current connection so the file unlink is
-        # safe on platforms where SQLite holds open handles.
+        # Wipe derived state. Close the connection first so no handle of this
+        # process holds the file being unlinked.
         self.close()
         if self.db_path.exists():
             self.db_path.unlink()

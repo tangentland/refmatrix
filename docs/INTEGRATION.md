@@ -152,7 +152,9 @@ never retyped:
   daemon takes the write.
 - **Otherwise a writer catalog must be present and NOT tracked by git**:
   `catalog.A.duckdb`, `catalog.B.duckdb`, `catalog.duckdb` or `catalog.db`, for which
-  `git ls-files` prints nothing.
+  `git ls-files` prints nothing. A dir holding only the legacy `catalog.db` passes the gate,
+  and the `rmx sync` it runs is refused with one line naming the file (task S1,
+  [[ARCHITECTURE#backend-selection-backend-py]]): the hook reports it as a failed sync.
   - A checkout with no catalog exits 0 silently. That covers a worktree or clone that has only
     a tracked `.refmatrix/CLAUDE.md`.
   - A checkout whose catalog git tracks also exits 0 silently, whether it is the main
@@ -185,14 +187,10 @@ check, `store.refuse_tracked_catalog_open` (bug-212 r2-r5, rulings L72, L82 and 
   serves `rmx sync` (`--files`, `--since`, `--flush-queue`, `-i`), `rmx ingest`,
   `rmx memory add`, `rmx ingest-gmd --as-memory` (the memory bridge), `rmx tldr-warm`, and the
   daemon-down repair commands.
-- The same wrapper, called directly by the two commands that open the file without a `Store`:
-  - `rmx compact`, which checks before it pings or stops the daemon, so a tracked catalog
-    never costs the daemon it names as the remedy;
-  - `rmx migrate-to-duckdb`, which asks git about the DESTINATION FILE ITSELF before
-    `migrate.migrate_catalog` replaces it (`names=(dst.name,)`, in the destination's
-    directory). The default destination is the store's own `catalog.duckdb`. `--out` onto any
-    committed file is refused, whatever its name. `--out` to an untracked file runs, even
-    from a tracked store or beside a tracked catalog.
+- The same wrapper, called directly by `rmx compact`, which opens the file without a
+  `Store`. It checks before it pings or stops the daemon, so a tracked catalog never costs the
+  daemon it names as the remedy. (`rmx migrate-to-duckdb`, the second such command, went with
+  the SQLite backend in task S1, 2026-11-19.)
 - `verbs.local_write` serves every no-daemon verb write (`rmx add concept|entity`,
   `rmx protect`, `rmx noise`, ...). It also serves `rmx init`, `rmx partition drop`,
   `rmx focus change-subject`, the MCP `rmx_memory_add` fallback and the save-state promote,
@@ -503,8 +501,7 @@ rmx
 ├── vacuum                     drop zero-linkage concepts + stale tracked_files
 ├── prune-noise                mark/drop concepts by DF thresholds
 ├── export / import            JSON dump / restore
-├── dump-log / rebuild         rebuild bitmaps from append-only log
-└── migrate-to-duckdb          one-shot SQLite → DuckDB native catalog
+└── dump-log / rebuild         rebuild bitmaps from append-only log
 ```
 
 ## Onboarding checklist for a new project {#onboarding-checklist-for-a-new-project}

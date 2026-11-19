@@ -1099,7 +1099,7 @@ class RmxRetriever:
         workers: int = 1,
     ) -> dict[str, dict[str, float]]:
         if workers <= 1 or self.scorer == "tf_rrf":
-            # Sequential. tf_rrf path hits SQLite per query — not fork-safe.
+            # Sequential. tf_rrf path hits the catalog per query — not fork-safe.
             out: dict[str, dict[str, float]] = {}
             for qid, qtext in queries.items():
                 out[qid] = self.retrieve(qtext, top_k=top_k)
