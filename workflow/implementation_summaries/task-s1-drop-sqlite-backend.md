@@ -86,6 +86,10 @@ reads; deleting them is a separate decision. {#kept-moves}
   bug-282; both lanes: the wall-clock census' stale `< 4.0` entry, `test_models_offline`'s
   hub-constant check). `./scripts/lint-gmd.sh` 0 errors. {#verify-body}
 
+**Tip `7d9cdca8`** (RED's 89ffc465 M2 backstop cases + 68653aeb verb-parity S1 batch,
+cherry-picked): `test_verb_parity.py`, `test_single_backend.py`, `test_bug212_r4_red.py` 235
+passed on the mini (`s1-green-tip.log`). RED reports M2 now fails all 6 new cases. {#verify-tip}
+
 ## For the lead {#for-the-lead}
 
 - **Verb parity, RED side.** `test_legacy_shrinks_by_exactly_the_batched_paths` pins
