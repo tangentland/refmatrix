@@ -21,7 +21,10 @@ Goldens (AC-2): `tests/fixtures/bug178_head_golden.json` holds a sha256 of each 
 row dump produced by the src tree at HEAD_SHA (rows keyed by NAME, not by sequence-allocated id,
 so a helper that consumes sequence values differently is not a false failure). Regenerate ONLY
 with src/ byte-identical to HEAD_SHA:
-    PYTHONPATH=src python tests/test_bug178_bulk_write.py --write-golden
+    PYTHONPATH=src:tests/sandbox_site RMX_SANDBOX_ROOT=$(mktemp -d /tmp/rmx-XXXXXXXX) \
+        python tests/test_bug178_bulk_write.py --write-golden
+(T1 step 0b, 2026-11-19: its roots come from `rmx_sandbox.short_root`, which needs a sandbox
+root and refuses to fall back to `/tmp`.)
 Each AC-2 test ALSO checks an explicitly-named reference implementation (`_ref_*`), so the
 equivalence has an anchor that is not the code under test.
 
