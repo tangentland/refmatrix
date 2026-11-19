@@ -486,6 +486,17 @@ with this task as owner ([[task-t0-suite-trust-sweep#r4-5-derive-hold]]). Once t
 are neutral. This task's release makes both and deletes both entries: [[#ac-29]]. They are
 pass-file edits, so they ride deploy B below, never deploy A. {#r7-t0-docstrings}
 
+**S1's held `sqlite_sql` lines wait for this requirement too** (ruling L187, S1 D1 = b; ch-bsd S1
+r1 #b-2, 2026-11-19). S1 dropped the SQLite backend but left the derive-pass modules
+byte-identical: `pagerank.py`'s one `bulk_write(..., sqlite_sql=...)` call stays (a keyword
+argument is CODE, so the edit is real, not neutral, and flips `pagerank` fleet-wide), with five
+comment lines in `pagerank.py`, one in `ingest.py` and one in `vectors.py` that name SQLite; and
+`backend.bulk_write` keeps its `sqlite_sql` parameter, accepted and unused, for that caller. All
+eight are allow-listed in `tests/test_single_backend.py` (`ALLOW`, owner "29.2 R7 deploy B").
+Deploy B makes those edits and deletes the parameter and the entries: [[#ac-30]]. {#r7-s1-sqlite}
+
+rel: derives-from -> [[task-s1-drop-sqlite-backend#d1]]
+
 **What the fleet shows, and in what order things are deployed.** {#r7-release}
 
 - After the deploy that carries this requirement, every existing stamp has the tag `p1` and is
@@ -795,6 +806,16 @@ Each AC is a test that is RED at the task's start commit, unless marked (charact
   fails if an entry's line no longer holds its phrase, so the edit cannot land without the
   deletion. Mutations: restore one entry (the pass-module test goes red); put `for now` back
   into `vectors.py`'s docstring with the entry gone (the deferral guard goes red). {#ac-29}
+- **AC-30: S1's held SQLite lines are gone** ([[#r7-s1-sqlite]]; ruling L187). After this task's
+  deploy-B commit: `pagerank.py`'s `bulk_write` call passes no `sqlite_sql=`;
+  `backend.bulk_write` has no `sqlite_sql` parameter (a call that passes it is a `TypeError`);
+  the seven SQLite comment lines in `pagerank.py`, `ingest.py` and `vectors.py` say what is true
+  of the one DuckDB backend; and `tests/test_single_backend.py`'s `ALLOW` holds no entry whose
+  owner is "29.2 R7 deploy B". The S1 census guard (AC-3 there) then passes with no pass-module
+  entry at all. The `pagerank.py` call edit is real, so `pagerank` is among deploy B's
+  re-derived passes ([[#r7-release]] step 3, already listed). Mutations: restore the keyword on
+  the call (the `TypeError` test goes red); restore one entry (the census's stale-entry check
+  goes red). {#ac-30}
 - **AC-17: no mixin hides its host.** No strict module contains a `self` parameter annotated
   `Any`, and the count of `# type: ignore` in the store module family is 0. `Store.__mro__`
   (class names, in order) equals the list recorded at the start commit, and
@@ -905,6 +926,7 @@ Names after the 29.5 split are resolved by symbol ([[#split]]).
 | the verbs module, the daemon op registry, the CLI `derive` group, the store derive module (`derive_history` and its readers) | R8: `rmx_derive_rehash`, `derive_rehash`, `rmx derive rehash`; the rehash mark and the readers that skip it |
 | `tests/test_derive_rehash.py` | create: AC-24 to AC-28 |
 | `src/refmatrix/session_ingest.py`, `src/refmatrix/vectors.py` (module docstrings only), `tests/test_deferrals_clean.py` | AC-29, in deploy B: the two docstring edits T0.4 held, the two allow-list entries deleted, the no-pass-module-entry test |
+| `src/refmatrix/pagerank.py` (one call + five comment lines), `src/refmatrix/ingest.py` and `src/refmatrix/vectors.py` (one comment line each), `src/refmatrix/backend.py` (`bulk_write`'s `sqlite_sql` parameter), `tests/test_single_backend.py` (`ALLOW`) | AC-30, in deploy B: S1's held SQLite lines (L187) |
 | `.claude/PROJECT_PROFILE.md` (`#commands`, the Deploy line), `docs/SYSTEM.md` (the derive section), the generated CLI tree | the deploy checklist: R7's window as [[#r7-release]] lists it (deploy A; `rmx derive rehash --apply` with its output kept; deploy B; the forced re-derive of the affected passes and of every `left` pass, with the exact command per pass; no memory compile; the stamp-time check; bug-096 and bug-241 fixed first). Standing lines: `rmx derive rehash --apply` after EVERY deploy that touches a pass file and after a Python upgrade (which ships with no pass-file change); a later release that makes a real edit to a pass file closes with the same re-derive |
 | `tests/test_type_gate.py`, `tests/fixtures/type_gate/` | create: AC-1 to AC-5, AC-13 |
 | `tests/test_bug235_pql_count.py` | create: AC-6 to AC-8 |
