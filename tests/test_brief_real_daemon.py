@@ -21,6 +21,8 @@ import pytest
 
 import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+from tests.test_brief_detectors import LONERS, SUBJECT, seed_compilable
+from tests.test_memory_compile_scope import _cli, spawn  # noqa: F401 (spawn is a fixture)
 
 RMX = dev_rmx()
 
@@ -181,3 +183,48 @@ def test_bug127_no_test_opens_the_catalog_its_daemon_holds():
                     hits.append(f"{fn.name}:{node.lineno}")
     assert not hits, ("tests open Store() on the catalog their own daemon holds (bug-127); "
                       f"reach it through the daemon op instead: {hits}")
+
+
+# ── T0.5 R5.3 / AC-5.2: `compile` is verb-first ─────────────────────────────
+
+def _brief_via(surface: str, root: Path) -> dict:
+    """One `brief` with the plan switch on, through one entry point a user calls."""
+    from refmatrix import mcp, verbs
+    if surface == "verb":
+        return verbs.memory(root, "brief", compile=True)
+    if surface == "cli":
+        code, out = _cli("memory", "brief", "--compile", "--json")
+        assert code == 0, f"`rmx memory brief --compile --json` exited {code}:\n{out}"
+        return json.loads(out)
+    reply = mcp.handle_message({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "rmx_memory",
+                   "arguments": {"action": "brief", "compile": True, "root": str(root)}}})
+    result = reply["result"]
+    text = result["content"][0]["text"]
+    assert not result["isError"], text
+    return json.loads(text)
+
+
+@pytest.mark.parametrize("surface", ["verb", "cli", "mcp"])
+def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spawn, surface):
+    """AC-5.2 (ch-bsd plan-8 r5 #s-4): the verb, the CLI and the MCP `rmx_memory` brief
+    action, each with `compile` on, over a REAL spawned daemon serving a seeded throwaway
+    store, return `corroborated` (the four-day subject) and `singleton` (the fourteen
+    loners), and neither sits in `classes_not_run`. Before T0.5 only the CLI built the plan:
+    the verb had no `compile` parameter, and MCP dropped the unknown key and answered with
+    both classes under `classes_not_run`. The CLI case is the regression guard for the
+    pass-through: it must keep working once the CLI stops planning in its own process."""
+    ctx = spawn(seed_compilable)
+    res = _brief_via(surface, ctx.root)
+    stats = res.get("stats") or {}
+    not_run = stats.get("classes_not_run") or {}
+    assert "corroborated" not in not_run and "singleton" not in not_run, not_run
+    names = {str(k): v for k, v in (res.get("names") or {}).items()}
+    by_cls: dict = {}
+    for b in res.get("briefs") or []:
+        by_cls.setdefault(b["class"], []).append(b)
+    assert [sorted(names.get(str(e)) for e in b["evidence"])
+            for b in by_cls.get("corroborated", [])] == [sorted(SUBJECT)], (
+        by_cls.get("corroborated"), stats)
+    assert sorted(b["label"] for b in by_cls.get("singleton", [])) == sorted(LONERS), stats

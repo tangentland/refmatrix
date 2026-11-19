@@ -146,6 +146,12 @@ SHAPE_DIFFERENCES = {
                               "per action (co_occur / top: \"mentions\")",
     ("rmx_memory_compile", "exclude_mtypes"): "click multiple=True () vs verb None (None = "
                                               "consolidate.DEFAULT_EXCLUDE_MTYPES)",
+    # T0.5 R5.5: the `memory brief` action's two None defaults, compared by
+    # tests/test_brief_surfaces.py against the value each resolves to.
+    ("rmx_memory", "classes"): "`memory brief --class`: click multiple=True () vs verb None "
+                               "(both = every brief class)",
+    ("rmx_memory", "compile_scope"): "`memory brief --scope`: verb None defers to "
+                                     "consolidate.DEFAULT_SCOPE, which click shows ('memory')",
 }
 
 
@@ -931,11 +937,14 @@ CLI_ACTION_INVOKE = {
     ("memory", "promote"): (["memory", "promote", "x"], {"id": 4242},
                             {"action": "promote", "name": "x"}, "4242"),
     # bug-198: the CLI's `--scope` reaches the verb as the brief's own
-    # `compile_scope`, never as recall's `scope`.
-    ("memory", "brief"): (["memory", "brief", "--scope", "pattern", "--json"],
+    # `compile_scope`, never as recall's `scope`. T0.5 R5.3: `--compile` is a
+    # pass-through to the verb's `compile`, so the CLI builds no plan of its own
+    # (`plan` stays None), and no `--class` means the verb's None (M7).
+    ("memory", "brief"): (["memory", "brief", "--scope", "pattern", "--compile", "--json"],
                           {"briefs": [{"class": "singleton", "label": "CANARY-brief",
                                        "finding": "f", "evidence": [1]}], "stats": {}},
-                          {"action": "brief", "compile_scope": "pattern", "scope": None},
+                          {"action": "brief", "compile_scope": "pattern", "scope": None,
+                           "compile": True, "plan": None, "classes": None},
                           "CANARY-brief"),
     ("memory", "forget"): (["memory", "forget", "x", "--yes"], {"forgotten": True},
                            {"action": "forget", "name": "x"}, "forgot"),

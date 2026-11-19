@@ -23,8 +23,20 @@ tests enforce:
     bug appeared at four call sites because each one grew its own copy.
   * Skips are counted. `feedback_no_silent_failures` applies here: an
     unembedded or unreadable row is reported, never quietly dropped.
+  * The plan-derived classes are reached through the WIRING (T0.5 R5.1, ch-bsd
+    plan-8 r5 #b-2): the "every class" test builds its plan with the real
+    `consolidate.compile_memories` over a seeded store and hands it to
+    `compile_briefs`. Before T0.5 that test passed no plan, so `corroborated`
+    and `singleton` sat in `classes_not_run` and mutation C1 (corroborated's
+    call replaced by `[]`) left the whole file green.
+  * `brief` exports nothing production never reaches (T0.5 R5.2 / AC-5.3,
+    ruling O2): `parse_gmd` / `_parse_evidence` were deleted under plan-6 Q1's
+    rule, and a no-dead-exports guard pins it.
 """
 from __future__ import annotations
+
+import ast
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -60,6 +72,56 @@ def store(tmp_path, monkeypatch):
     s.init()
     yield s
     s.close()
+
+
+# A memory set the REAL `consolidate.compile_memories` clusters at its DEFAULT knobs (the
+# knobs `memory brief --compile` and the verb's `compile=True` plan with): four near-parallel
+# vectors written on four distinct authored days (one subject, corroborated) and fourteen
+# mutually orthogonal rows (each joins no subject: singletons). Fourteen, so the four's six
+# pairs are under 5% of the 153 and the 95th-percentile auto threshold lands at 0.0 -- with
+# fewer it climbs to ~0.9997 and the cluster rests on float noise. No `mentions`: the concept
+# leg stays empty and cannot weld the singletons together.
+SUBJECT = ("corr-0", "corr-1", "corr-2", "corr-3")
+SUBJECT_DAYS = ("2026-10-01", "2026-10-03", "2026-10-05", "2026-10-07")
+LONERS = tuple(f"lone-{j}" for j in range(14))
+SEED_DIM = 32
+
+
+def _seed_vec(*components: float) -> np.ndarray:
+    v = np.zeros(SEED_DIM, dtype="float32")
+    for i, c in enumerate(components):
+        v[i] = c
+    return v / (np.linalg.norm(v) or 1.0)
+
+
+def seed_compilable(s: Store, part: str) -> dict[str, int]:
+    """Write `SUBJECT` + `LONERS` with vectors into `part`; returns name -> id. Shared with
+    tests/test_brief_real_daemon.py, whose daemon-served store gets the same corpus."""
+    ids: dict[str, int] = {}
+    vecs: dict[str, np.ndarray] = {}
+    with s.with_partition(part):
+        for i, (name, day) in enumerate(zip(SUBJECT, SUBJECT_DAYS)):
+            ids[name] = s.add_memory(name, f"the daemon owns the catalog, take {i}",
+                                     mtype="project", metadata={"created": day})
+            vecs[name] = _seed_vec(1.0, 0.02 * (i + 1))
+        for j, name in enumerate(LONERS):
+            ids[name] = s.add_memory(name, f"an unrelated note {j}", mtype="project",
+                                     metadata={"created": "2026-10-02"})
+            vecs[name] = _seed_vec(*([0.0] * (2 + j) + [1.0]))
+        s.upsert_vector([ids[n] for n in vecs], np.vstack([vecs[n] for n in vecs]),
+                        kind="memory", dim=SEED_DIM)
+        s.flush_fragments()
+    return ids
+
+
+@pytest.fixture
+def compiled(store):
+    """`store` seeded with `seed_compilable`, plus the plan the REAL `compile_memories` builds
+    over it at its default knobs. No hand-written plan (T0.5 R5.1)."""
+    ids = seed_compilable(store, PART)
+    with store.with_partition(PART):
+        plan = consolidate.compile_memories(store)
+    return store, ids, plan
 
 
 # ── the evidence contract ──────────────────────────────────────────────────
@@ -233,7 +295,16 @@ def test_brief_reuses_consolidates_exclusion_constants_rather_than_copying_them(
 
 # ── the whole run ──────────────────────────────────────────────────────────
 
-def test_compile_brief_returns_every_class_and_a_reconciled_skip_count(store):
+def test_compile_brief_returns_every_class_and_a_reconciled_skip_count(compiled):
+    """All FOUR classes, from a plan the real `compile_memories` built (T0.5 R5.1, AC-5.1).
+
+    This test used to pass no plan and assert two classes, so `corroborated` and `singleton`
+    were never reached and mutation C1 survived (ch-bsd plan-8 r5 #b-2). Each class is pinned
+    to the rows that must produce it, so a detector whose call is replaced by `[]` (C1-C4)
+    fails here by name."""
+    store, ids, plan = compiled
+    assert [sorted(m["name"] for m in c["members"]) for c in plan["clusters"]] == \
+        [sorted(SUBJECT)], f"the seed no longer clusters as designed: {plan['stats']}"
     with store.with_partition(PART):
         c = store.add_concept("orphan-term")
         for i in range(4):
@@ -242,11 +313,20 @@ def test_compile_brief_returns_every_class_and_a_reconciled_skip_count(store):
         a = store.add_memory("claim-a", "X", mtype="project")
         b = store.add_memory("claim-b", "not X", mtype="project")
         store.link("contradicts", a, b)
-        result = brief.compile_briefs(store, min_mentions=3)
-    classes = {b.cls for b in result["briefs"]}
-    assert "orphan-concept" in classes
-    assert "contradicted" in classes
-    assert "skipped" in result["stats"]
+        orphan = store.get_entity_by_id(c).name   # add_concept canonicalises the name
+        result = brief.compile_briefs(store, plan=plan, min_mentions=3)
+    by_cls: dict = {}
+    for br in result["briefs"]:
+        by_cls.setdefault(br.cls, []).append(br)
+    assert set(by_cls) == {"corroborated", "singleton", "contradicted", "orphan-concept"}, (
+        sorted(by_cls), result["stats"].get("classes_not_run"))
+    assert result["stats"]["classes_not_run"] == {}, result["stats"]["classes_not_run"]
+    assert [sorted(br.evidence) for br in by_cls["corroborated"]] == \
+        [sorted(ids[n] for n in SUBJECT)]
+    assert sorted(br.label for br in by_cls["singleton"]) == sorted(LONERS)
+    assert [sorted(br.evidence) for br in by_cls["contradicted"]] == [sorted([a, b])]
+    assert [br.label for br in by_cls["orphan-concept"]] == [orphan]
+    assert result["stats"]["skipped"] == sum(result["stats"]["skipped_by"].values())
     assert isinstance(result["stats"]["skipped"], int)
 
 
@@ -274,3 +354,100 @@ def test_operational_memories_never_appear_in_any_class(store):
         for eid in b.evidence:
             ent = store.get_entity_by_id(eid)
             assert not str(ent.name).startswith("session-"), b
+
+
+# ── no dead exports (T0.5 R5.2 / AC-5.3, ruling O2) ────────────────────────
+
+REPO = Path(__file__).resolve().parents[1]
+BRIEF_PY = REPO / "src" / "refmatrix" / "brief.py"
+
+# Every function of `brief.py` that code OUTSIDE it in `src/` calls, each with the caller that
+# makes it production. The guard computes this set from `src/` and requires it to EQUAL the
+# list, so the list cannot exempt dead code: a name here that lost its caller fails, and a new
+# external caller has to be written down with its reason.
+ENTRY_POINTS = {
+    "compile_briefs": "daemon `_op_memory_brief` derives every brief through it (the verb, "
+                      "the CLI and MCP all reach it there)",
+    "render_gmd": "CLI `rmx memory brief --gmd` renders the index with it",
+}
+
+
+def _brief_aliases(tree: ast.AST) -> tuple[set, set]:
+    """Names a caller binds to the module (`from refmatrix import brief as brief_mod`,
+    `import refmatrix.brief as b`), and names it imports from it directly."""
+    aliases: set = set()
+    direct: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "refmatrix.brief" and a.asname:
+                    aliases.add(a.asname)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "refmatrix":
+                aliases |= {a.asname or a.name for a in node.names if a.name == "brief"}
+            elif node.module == "refmatrix.brief":
+                direct |= {a.name for a in node.names}
+    return aliases, direct
+
+
+def dead_brief_functions(brief_src: str, caller_srcs: list[str]) -> tuple[list, set]:
+    """`(dead, roots)`: module-level functions of `brief_src` that nothing in `caller_srcs`
+    reaches, directly or through other `brief` functions and classes; and the functions the
+    callers name directly (the roots). A private helper reached only from a dead function is
+    dead too: that is how `_parse_evidence` is named beside `parse_gmd`."""
+    tree = ast.parse(brief_src)
+    defs = {n.name: n for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    funcs = {k for k, n in defs.items() if not isinstance(n, ast.ClassDef)}
+    # module-level statements (constants, aliases) run on import: what they name is live
+    seeds = {n.id for stmt in tree.body if stmt.__class__ not in
+             (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+             for n in ast.walk(stmt) if isinstance(n, ast.Name)}
+    roots: set = set()
+    for src in caller_srcs:
+        t = ast.parse(src)
+        aliases, direct = _brief_aliases(t)
+        roots |= direct
+        roots |= {n.attr for n in ast.walk(t) if isinstance(n, ast.Attribute)
+                  and isinstance(n.value, ast.Name) and n.value.id in aliases}
+    reached: set = set()
+    todo = [n for n in seeds | roots if n in defs]
+    while todo:
+        name = todo.pop()
+        if name in reached:
+            continue
+        reached.add(name)
+        todo += [n.id for n in ast.walk(defs[name])
+                 if isinstance(n, ast.Name) and n.id in defs and n.id not in reached]
+    return sorted(funcs - reached), roots & funcs
+
+
+def _src_callers() -> list[str]:
+    return [p.read_text() for p in sorted((REPO / "src").rglob("*.py")) if p != BRIEF_PY]
+
+
+def test_brief_exports_no_function_production_never_calls():
+    """AC-5.3: every function in `brief.py` is reached from `src/`, and the set `src/` calls
+    from outside is exactly `ENTRY_POINTS`. At `b2bf3c36` this named `parse_gmd` and
+    `_parse_evidence` (the store <- GMD direction, no production caller; ruling O2)."""
+    dead, roots = dead_brief_functions(BRIEF_PY.read_text(), _src_callers())
+    assert not dead, (f"brief.py functions no production path reaches (plan-6 Q1: delete them, "
+                      f"or name the caller in ENTRY_POINTS): {dead}")
+    assert roots == set(ENTRY_POINTS), (
+        f"src/ calls {sorted(roots)} from outside brief.py; ENTRY_POINTS declares "
+        f"{sorted(ENTRY_POINTS)}")
+    assert all(why.strip() for why in ENTRY_POINTS.values())
+
+
+def test_the_dead_export_guard_names_a_planted_dead_function():
+    """Rule 5's must-fail case (mutation M5.3): a `parse_gmd` stub re-added to the real
+    `brief.py`, with a private helper only it calls, is named -- both of them -- while a planted
+    function some caller does reach is not. A guard that stopped looking fails here."""
+    planted = BRIEF_PY.read_text() + (
+        "\n\ndef parse_gmd(doc):\n    return _planted_helper(doc)\n"
+        "\n\ndef _planted_helper(doc):\n    return [doc]\n"
+        "\n\ndef planted_live(x):\n    return x\n")
+    caller = "from refmatrix import brief as bm\nbm.planted_live(1)\n"
+    dead, roots = dead_brief_functions(planted, _src_callers() + [caller])
+    assert "parse_gmd" in dead and "_planted_helper" in dead, dead
+    assert "planted_live" not in dead and "planted_live" in roots, (dead, roots)

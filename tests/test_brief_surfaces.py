@@ -30,11 +30,20 @@ def _no_live_cli_log(monkeypatch):
                         lambda root, **kw: None, raising=False)
 
 
-from refmatrix import brief, daemon as daemon_mod, verbs
+from refmatrix import brief, consolidate, daemon as daemon_mod, verbs
 import refmatrix.mcp as mcp
 
 
-BRIEF_PARAMS = ("min_members", "min_dates", "min_mentions", "classes", "save")
+# Every parameter the `brief` action reads. `compile` (T0.5 R5.3, ch-bsd plan-8 r5 #s-4) is the
+# verb-first plan switch: before it, only the CLI could reach `corroborated` / `singleton`,
+# because only the CLI built the plan.
+BRIEF_PARAMS = ("min_members", "min_dates", "min_mentions", "classes", "save", "compile",
+                "compile_scope")
+# verb param -> click param, where they are spelled differently
+_CLICK_NAME = {"compile": "do_compile"}
+# A verb default of None DEFERS; what it resolves to is what the CLI default must equal. Each
+# key is a declared shape difference in test_verb_parity.SHAPE_DIFFERENCES (T0.5 R5.5).
+_NONE_RESOLVES_TO = {"classes": (), "compile_scope": consolidate.DEFAULT_SCOPE}
 
 
 # ── the verb exists and carries the whole surface ──────────────────────────
@@ -67,8 +76,14 @@ def test_brief_routes_to_a_daemon_op_that_exists():
 
 def test_cli_and_verb_agree_on_every_brief_default_not_a_subset():
     """plan-3's parity test compared zero of memory_recall's params and called
-    itself a gate. Count what is compared."""
+    itself a gate. Count what is compared -- and count it only where an assertion
+    RUNS (T0.5 R5.5, ch-bsd plan-8 r5 #m-10): this loop used to bump `compared`
+    and then `continue` past a None verb default, so `classes` counted as
+    compared while nothing compared it, and mutation M7 (CLI `--class` defaulting
+    to `("contradicted",)`) stayed green. A None default is now a declared shape
+    difference with the value it resolves to, and that value is asserted."""
     from refmatrix.cli import main as cli_main
+    from tests.test_verb_parity import SHAPE_DIFFERENCES
 
     cmd = cli_main
     for part in ("memory", "brief"):
@@ -79,17 +94,30 @@ def test_cli_and_verb_agree_on_every_brief_default_not_a_subset():
     sig = inspect.signature(verbs.VERBS["rmx_memory"].fn)
 
     compared = 0
+    bad = []
     for name in BRIEF_PARAMS:
-        if name not in click_defaults:
+        cname = _CLICK_NAME.get(name, name)
+        if name not in sig.parameters:
+            bad.append(f"{name}: the rmx_memory verb has no such parameter")
             continue
-        compared += 1
+        if cname not in click_defaults:
+            bad.append(f"{name}: `rmx memory brief` has no option {cname!r}")
+            continue
         verb_default = sig.parameters[name].default
-        click_default = click_defaults[name]
-        if verb_default is None:          # verb defers to the module default
-            continue
-        assert click_default == verb_default, (
-            f"{name}: click={click_default!r} verb={verb_default!r}")
-    assert compared >= 4, (
+        click_default = click_defaults[cname]
+        if verb_default is None:
+            if ("rmx_memory", name) not in SHAPE_DIFFERENCES:
+                bad.append(f"{name}: verb None vs click {click_default!r} is not a declared "
+                           f"shape difference")
+                continue
+            verb_default = _NONE_RESOLVES_TO[name]
+            if isinstance(click_default, list):
+                click_default = tuple(click_default)
+        if click_default != verb_default:
+            bad.append(f"{name}: click={click_default!r} verb={verb_default!r}")
+        compared += 1
+    assert not bad, "\n" + "\n".join(bad)
+    assert compared == len(BRIEF_PARAMS), (
         f"only {compared} of {len(BRIEF_PARAMS)} brief params were compared — "
         f"a parity test that checks a subset is not a parity test")
 
