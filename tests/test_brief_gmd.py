@@ -1,9 +1,10 @@
-"""The brief index as GMD — and the round trip that proves it is regenerable.
+"""The brief index as GMD — regenerable from the store, byte-stable per input.
 
-RED first for task 8.3 (plan-8). `memory compile` states the contract this
-follows: "the index is regenerable from the store, and the store is rebuildable
-from the index." A derived doc that cannot survive that trip is a report, not a
-node in the graph, and the next session cannot cite it.
+RED first for task 8.3 (plan-8), whose round trip (the store rebuildable from
+the index) is superseded: `brief.parse_gmd` had no production caller and was
+deleted with its tests (T0.5 R5.2, ruling O2, 2026-11-19). The brief index is
+ONE-directional, store -> GMD; what stays pinned here is that the render is a
+valid, deterministic, order-independent GMD doc whose edges resolve.
 
 The direction of the edge matters and has bitten this repo once already.
 `consolidate.render_gmd` emits `catalogs` from the container to its members
@@ -129,7 +130,7 @@ def test_an_empty_brief_set_still_renders_a_valid_document(tmp_path):
     assert "no briefs" in doc.lower()
 
 
-# ── the round trip ─────────────────────────────────────────────────────────
+# ── determinism ────────────────────────────────────────────────────────────
 
 def test_render_is_deterministic_for_the_same_input():
     briefs = [_b(cls="orphan-concept", label="b", finding="f", evidence=[2]),
@@ -158,29 +159,3 @@ def test_render_is_order_independent_so_a_rerun_does_not_churn_the_file():
     labels = [l for l in first.splitlines() if l.startswith("### ")]
     assert labels == ["### z {#orphan-concept-z}", "### a {#singleton-a}",
                       "### b {#singleton-b}", "### c {#singleton-c}"]
-
-
-def test_parse_gmd_recovers_every_brief_the_render_wrote():
-    """The store is rebuildable from the index."""
-    briefs = [_b(cls="singleton", label="lonely", finding="touched once",
-                 evidence=[4]),
-              _b(cls="orphan-concept", label="fast_exit",
-                 finding="mentioned by 9, defined by none", evidence=[1, 2])]
-    names = {1: "m-one", 2: "m-two", 4: "lonely"}
-    doc = _render(briefs, names=names)
-    back = brief.parse_gmd(doc)
-    assert [(b["class"], b["label"]) for b in back] == [
-        ("orphan-concept", "fast_exit"), ("singleton", "lonely")]
-    assert back[0]["finding"] == "mentioned by 9, defined by none"
-
-
-def test_render_parse_render_is_byte_identical():
-    briefs = [_b(cls="contradicted", label="a vs b", finding="unresolved",
-                 evidence=[1, 2])]
-    names = {1: "a", 2: "b"}
-    once = _render(briefs, names=names)
-    twice = brief.render_gmd(
-        [brief.Brief(cls=d["class"], label=d["label"], finding=d["finding"],
-                     evidence=[1, 2]) for d in brief.parse_gmd(once)],
-        names=names)
-    assert once == twice

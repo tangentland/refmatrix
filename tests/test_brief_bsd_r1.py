@@ -161,33 +161,12 @@ def test_brief_mtypes_are_in_the_exclusion_set():
     assert any("brief" in p for p in brief.EXCLUDE_MTYPES), brief.EXCLUDE_MTYPES
 
 
-# ── #b-5: the GMD round trip must recover evidence ─────────────────────────
-
-def test_parse_gmd_recovers_evidence_ids():
-    """`evidence` is 'the whole contract' per the module docstring, and was
-    written into the doc and never read back. The round-trip test smuggled a
-    literal `[1, 2]` back in."""
-    b = brief.Brief(cls="contradicted", label="a vs b", finding="unresolved",
-                    evidence=[11, 22])
-    doc = brief.render_gmd([b], names={11: "mem-a", 22: "mem-b"})
-    back = brief.parse_gmd(doc)
-    assert back[0]["evidence"] == [11, 22], back
-
-
-def test_parse_gmd_recovers_an_unresolved_evidence_id():
-    b = brief.Brief(cls="singleton", label="x", finding="f", evidence=[7, 99])
-    doc = brief.render_gmd([b], names={7: "known"})
-    assert brief.parse_gmd(doc)[0]["evidence"] == [7, 99]
-
-
-def test_round_trip_needs_no_smuggled_literal():
-    briefs = [brief.Brief(cls="singleton", label="s", finding="f", evidence=[3])]
-    names = {3: "mem-c"}
-    once = brief.render_gmd(briefs, names=names)
-    rebuilt = [brief.Brief(cls=d["class"], label=d["label"],
-                           finding=d["finding"], evidence=d["evidence"])
-               for d in brief.parse_gmd(once)]
-    assert brief.render_gmd(rebuilt, names=names) == once
+# ── #b-5: the GMD round trip — removed with its direction ──────────────────
+#
+# The three `parse_gmd` tests that lived here went with `brief.parse_gmd` and
+# `_parse_evidence` (T0.5 R5.2, ruling O2): no production path read the index
+# back, so the brief index is one-directional, store -> GMD. Evidence is still
+# pinned where it is written: test_brief_gmd.py's unresolved-evidence carriers.
 
 
 # ── #m-17: an unrecognised class must not be silent ────────────────────────

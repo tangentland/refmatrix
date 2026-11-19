@@ -21,6 +21,8 @@ import pytest
 
 import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
+from tests.test_brief_detectors import LONERS, SUBJECT, UNEMBEDDED, seed_compilable
+from tests.test_memory_compile_scope import _cli, spawn  # noqa: F401 (spawn is a fixture)
 
 RMX = dev_rmx()
 
@@ -181,3 +183,167 @@ def test_bug127_no_test_opens_the_catalog_its_daemon_holds():
                     hits.append(f"{fn.name}:{node.lineno}")
     assert not hits, ("tests open Store() on the catalog their own daemon holds (bug-127); "
                       f"reach it through the daemon op instead: {hits}")
+
+
+# ── T0.5 R5.3 / AC-5.2: `compile` is verb-first ─────────────────────────────
+
+def _brief_via(surface: str, root: Path, *, save: bool = False) -> dict:
+    """One `brief` with a plan, through one entry point a user calls: the `compile` switch on
+    the verb, the CLI and MCP, or (`verb-plan`) a caller-built plan -- a FRESH dry-run
+    `rmx_memory_compile` verb's plan handed to the verb as `plan=`. `save` persists the briefs
+    on the same surface."""
+    from refmatrix import mcp, verbs
+    if surface == "verb":
+        return verbs.memory(root, "brief", compile=True, save=save)
+    if surface == "verb-plan":
+        plan = verbs.memory_compile(root)["plan"]
+        return verbs.memory(root, "brief", plan=plan, save=save)
+    if surface == "cli":
+        argv = ("memory", "brief", "--compile", "--json") + (("--save",) if save else ())
+        code, out = _cli(*argv)
+        assert code == 0, f"`rmx {' '.join(argv)}` exited {code}:\n{out}"
+        return json.loads(out)
+    reply = mcp.handle_message({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "rmx_memory",
+                   "arguments": {"action": "brief", "compile": True, "save": save,
+                                 "root": str(root)}}})
+    result = reply["result"]
+    text = result["content"][0]["text"]
+    assert not result["isError"], text
+    return json.loads(text)
+
+
+def _check_brief(res: dict) -> dict:
+    """The seeded corpus's answer, whatever the surface: one corroborated subject, fourteen
+    singletons, nothing under `classes_not_run`, and the three unembedded memories counted --
+    `skipped_by` is exactly `{"unembedded": 3}` and `skipped` is its sum. Returns the stats."""
+    stats = res.get("stats") or {}
+    not_run = stats.get("classes_not_run") or {}
+    assert "corroborated" not in not_run and "singleton" not in not_run, not_run
+    names = {str(k): v for k, v in (res.get("names") or {}).items()}
+    by_cls: dict = {}
+    for b in res.get("briefs") or []:
+        by_cls.setdefault(b["class"], []).append(b)
+    assert [sorted(names.get(str(e)) for e in b["evidence"])
+            for b in by_cls.get("corroborated", [])] == [sorted(SUBJECT)], (
+        by_cls.get("corroborated"), stats)
+    assert sorted(b["label"] for b in by_cls.get("singleton", [])) == sorted(LONERS), stats
+    skipped_by = stats.get("skipped_by") or {}
+    assert skipped_by.get("unembedded") == len(UNEMBEDDED), stats
+    assert skipped_by == {"unembedded": len(UNEMBEDDED)}, stats
+    assert stats.get("skipped") == sum(skipped_by.values()), stats
+    return stats
+
+
+@pytest.mark.parametrize("rebrief_after_save", [False, True], ids=["fresh", "after-save"])
+@pytest.mark.parametrize("surface", ["verb", "cli", "mcp", "verb-plan"])
+def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(
+        spawn, surface, rebrief_after_save):
+    """AC-5.2 (ch-bsd plan-8 r5 #s-4): the verb, the CLI and the MCP `rmx_memory` brief
+    action, each with `compile` on, over a REAL spawned daemon serving a seeded throwaway
+    store, return `corroborated` (the four-day subject) and `singleton` (the fourteen
+    loners), and neither sits in `classes_not_run`. Before T0.5 only the CLI built the plan:
+    the verb had no `compile` parameter, and MCP dropped the unknown key and answered with
+    both classes under `classes_not_run`. The CLI case is the regression guard for the
+    pass-through: it must keep working once the CLI stops planning in its own process.
+
+    bsd-t05 r1 #b-1: the three memories with no vector are COUNTED on every surface and for a
+    caller-supplied plan too (`skipped_by["unembedded"] == 3`, inside `skipped`), and the CLI
+    table says so on its "counted, not dropped" line. At `61b0666c` they were in
+    `stats.memories` and in nothing else: `skipped: 0`, `skipped_by: {}`.
+
+    bsd-t05 confirm-lite #b-1-r2 (L189), `after-save`: the plan's documented workflow --
+    brief with `--save`, then brief again. The saved brief rows are the brief's OWN output,
+    outside its corpus, so the second brief reads the same `stats.memories` and still counts
+    exactly the three. At `3f9ce2a3` it counted the fifteen saved (unembedded) brief rows too:
+    `skipped_by: {'unembedded': 18}`. For `verb-plan` the second plan is a fresh dry-run
+    `memory_compile`, which DOES carry the saved rows."""
+    from refmatrix import daemon as dm
+    ctx = spawn(seed_compilable)
+    first = _brief_via(surface, ctx.root, save=rebrief_after_save)
+    stats = _check_brief(first)
+    if rebrief_after_save:
+        assert first.get("saved") == len(first.get("briefs") or []) == 1 + len(LONERS), first
+        # the saved rows reach the read path only through a snapshot
+        snap = dm.call(ctx.root, "snapshot", {"force": True}, timeout=60, retries=0)
+        assert snap.get("ok"), snap
+        second = _brief_via(surface, ctx.root)
+        again = _check_brief(second)
+        assert again.get("memories") == stats.get("memories"), (stats, again)
+    if surface == "cli":
+        code, out = _cli("memory", "brief", "--compile")
+        assert code == 0, out
+        line = next((ln for ln in out.splitlines() if "counted, not dropped" in ln), "")
+        assert f"unembedded={len(UNEMBEDDED)}" in line, out
+
+
+# ── `plan` with `compile` is refused, loudly (T0.5 ruling, 2026-11-19) ─────
+
+_A_PLAN = {"scope": "memory", "clusters": [], "unclustered": []}
+
+
+def _names_both(text: str) -> bool:
+    return "exclusive" in text and "`plan`" in text and "`compile`" in text
+
+
+def test_the_verb_refuses_plan_with_compile_before_any_daemon_call():
+    """Two plan sources in one call: refused with the typed args error, never resolved by
+    picking one. The root has NO store and no daemon, so a verb that reached for the daemon
+    first answers with a daemon error instead of the refusal (mutation G5)."""
+    from refmatrix import verbs
+    root = Path(rmx_sandbox.short_root("bnp.")) / "proj" / ".refmatrix"
+    with pytest.raises(verbs.VerbArgsError) as e:
+        verbs.memory(root, "brief", plan=_A_PLAN, compile=True)
+    assert _names_both(str(e.value)), str(e.value)
+
+
+def test_mcp_brief_with_plan_and_compile_is_an_error_naming_both():
+    """The same refusal over the MCP `rmx_memory` tool: `isError`, and the text names both
+    parameters. No daemon behind the root, as above."""
+    from refmatrix import mcp
+    root = Path(rmx_sandbox.short_root("bnm.")) / "proj" / ".refmatrix"
+    reply = mcp.handle_message({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "rmx_memory",
+                   "arguments": {"action": "brief", "plan": _A_PLAN, "compile": True,
+                                 "root": str(root)}}})
+    result = reply["result"]
+    text = result["content"][0]["text"]
+    assert result["isError"], text
+    assert _names_both(text), text
+
+
+def test_the_memory_brief_op_refuses_plan_with_compile_itself(spawn):
+    """Any caller of the op, not only the verb: a direct `memory_brief` op call with both, on
+    a REAL spawned daemon, answers `ok: False` naming both. Without the op's own check the
+    compile plan silently replaces the caller's (mutation G6)."""
+    from refmatrix import daemon as dm
+    ctx = spawn(seed_compilable)
+    resp = dm.call(ctx.root, "memory_brief",
+                   {"partition": ctx.part, "plan": _A_PLAN, "compile": True},
+                   timeout=60, retries=0)
+    assert resp.get("ok") is False, resp
+    assert _names_both(str(resp.get("error"))), resp
+
+
+def test_a_compiling_brief_gets_the_compile_budget_in_one_attempt(spawn, monkeypatch):
+    """The clustering pass runs inside the op now, which the 10 s read budget was never sized
+    for: a compiling brief's one `memory_brief` call carries MORE than the read budget (up to
+    `MEMORY_COMPILE_TIMEOUT_S`) and is one attempt; a plain brief stays inside the read budget.
+    Observed at the transport (`tests.timing.record_transport`, the 29.4 class-B observer) on a
+    REAL daemon, so no test waits out either budget (rule 6). Mutation G8 (the compiling budget
+    back to `MEMORY_READ_BUDGET_S`) fails here."""
+    from refmatrix import daemon as dm, verbs
+    from tests.timing import record_transport
+    ctx = spawn(seed_compilable)
+    calls = record_transport(monkeypatch, dm)
+    verbs.memory(ctx.root, "brief", compile=True)
+    verbs.memory(ctx.root, "brief")
+    briefs = [c for c in calls if c["op"] == "memory_brief"]
+    assert len(briefs) == 2, calls
+    compiling, plain = briefs
+    assert compiling["retries"] == 0 and plain["retries"] == 0, briefs
+    assert verbs.MEMORY_READ_BUDGET_S < compiling["timeout"] <= verbs.MEMORY_COMPILE_TIMEOUT_S, \
+        briefs
+    assert plain["timeout"] <= verbs.MEMORY_READ_BUDGET_S, briefs

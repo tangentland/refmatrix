@@ -241,6 +241,7 @@ def corroborated(plan: dict, *, dates: dict[int, float],
 
 
 def singleton(plan: dict, *, name_to_id: dict[str, int],
+              outside: "set[str] | frozenset[str]" = frozenset(),
               count_skips: bool = False):
     """Memories that joined no subject — a topic the corpus touched once.
 
@@ -254,21 +255,31 @@ def singleton(plan: dict, *, name_to_id: dict[str, int],
     BOTH detectors into one `skipped` and the CLI renders that breakdown, so a
     detector that skips without a reason key makes the sentence unanswerable —
     it printed a literal `(?)` (ch-bsd r4 #s-2-r4).
+
+    `name_to_id` is the brief's CORPUS. `outside` names rows that exist in the
+    store but lie outside that corpus (the brief's own saved `brief/*` output a
+    caller plan may still carry): they are neither a singleton nor a skip,
+    because the report never claimed them (bsd-t05 confirm #b-1-r2,
+    2026-11-19: a save-then-brief counted its own 15 rows). Only a name the
+    store does not have at all is `singleton_unresolved`.
     """
     out: list[Brief] = []
     skipped = 0
     by_reason: Counter = Counter()
     for name in plan.get("unclustered") or []:
         eid = name_to_id.get(name)
+        if eid is None and name in outside:
+            continue
         if eid is None:
             # Emitting here would mean a brief with no evidence. Count it —
             # and say WHY, because `compile_briefs` sums every detector's
             # skips into one number and only `contradicted` used to explain
             # itself. When this branch fired the CLI printed a literal `(?)`
-            # (ch-bsd r4 #s-2-r4). The realistic cause is snapshot skew: the
-            # plan is built from the CLI's replica read while `name_to_id`
-            # comes from the daemon's store, so a name can be in one and not
-            # the other.
+            # (ch-bsd r4 #s-2-r4). The realistic cause is snapshot skew, and
+            # only for a CALLER-supplied `plan`: one built elsewhere (an older
+            # snapshot, another process) can name a row this store no longer
+            # has. Under `compile` the op builds the plan and `name_to_id` from
+            # one snapshot, so they cannot skew (bsd-t05 r1 #m-2, 2026-11-19).
             skipped += 1
             by_reason["singleton_unresolved"] += 1
             continue
@@ -422,6 +433,51 @@ def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,
 
 # ── the run ────────────────────────────────────────────────────────────────
 
+def _plan_unplaced(plan: dict, rows: "dict[int, dict]") -> dict[str, int]:
+    """`{reason: n}` for the brief's OWN corpus rows the plan placed nowhere.
+
+    Placed = the member names of every cluster plus `unclustered`; a corpus row
+    outside both is a row neither plan-derived detector can see, and rule 3
+    says count it (bsd-t05 r1 #b-1, 2026-11-19). The count is over `rows`, the
+    corpus `stats.memories` states, never over the plan's: the plan of a
+    caller (a dry-run `memory compile`) also covers the brief's saved
+    `brief/*` output, and reading its `unembedded` counted a save-then-brief's
+    15 rows as 18 skips (bsd-t05 confirm #b-1-r2, L189, 2026-11-19).
+
+    The reason splits the count. A plan names no unembedded row, only how many
+    it had (`compile_memories` clusters only rows with a vector), so at most
+    that many unplaced rows are `unembedded`; the rest are `not_in_plan`, rows
+    the plan never saw (written after it was built, or a hand-built plan with
+    no stats). Both sum to the unplaced count, so `skipped` balances. The
+    <2-embedded early return puts every row in `unclustered`, and a
+    concept-only plan places every row, so neither counts anything."""
+    placed = {m.get("name") for c in plan.get("clusters") or []
+              for m in c.get("members") or []}
+    placed |= set(plan.get("unclustered") or [])
+    n = sum(1 for r in rows.values() if r["name"] not in placed)
+    st = plan.get("stats") or {}
+    emb, cand = st.get("embedded"), st.get("candidates")
+    plan_unembedded = max(0, int(cand) - int(emb)) if emb is not None and cand is not None \
+        else 0
+    out = {"unembedded": min(n, plan_unembedded)}
+    out["not_in_plan"] = n - out["unembedded"]
+    return {k: v for k, v in out.items() if v}
+
+
+def _names_in_store(store: "Store", names: Iterable[str]) -> set[str]:
+    """Which of `names` are memory rows of the active partition at all."""
+    names = sorted(set(names))
+    found: set[str] = set()
+    con = store._read()
+    for start in range(0, len(names), 500):
+        chunk = names[start:start + 500]
+        ph = ",".join("?" * len(chunk))
+        found |= {str(r[0]) for r in con.execute(
+            f"SELECT name FROM entities WHERE partition_id=? AND kind='memory' "
+            f"AND name IN ({ph})", [store._partition_id, *chunk]).fetchall()}
+    return found
+
+
 def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                    min_members: int = MIN_MEMBERS,
                    min_dates: int = MIN_DATES,
@@ -468,9 +524,15 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
         if plan is None:
             for c in ("corroborated", "singleton"):
                 if c in wanted:
-                    not_run[c] = ("needs a `memory compile` plan; pass plan= "
-                                  "or run `rmx memory compile` first")
+                    # bsd-t05 r1 #m-2 (2026-11-19): name the switch that runs
+                    # it. "Run `rmx memory compile` first" never helped: no op
+                    # reads a stored plan.
+                    not_run[c] = ("needs a `memory compile` plan; pass compile=true "
+                                  "(CLI `--compile`) or a caller-built plan=")
         else:
+            for why_unplaced, n in _plan_unplaced(plan, rows).items():
+                skipped += n
+                skipped_by[why_unplaced] = skipped_by.get(why_unplaced, 0) + n
             if "corroborated" in wanted:
                 dates = memory_dates(store, rows)
                 briefs += corroborated(plan, dates=dates,
@@ -479,7 +541,9 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                 ran.append("corroborated")
             if "singleton" in wanted:
                 name_to_id = {r["name"]: r["id"] for r in rows.values()}
+                strays = [n for n in plan.get("unclustered") or [] if n not in name_to_id]
                 got, sk, why = singleton(plan, name_to_id=name_to_id,
+                                         outside=_names_in_store(store, strays),
                                          count_skips=True)
                 briefs += got
                 skipped += sk
@@ -528,13 +592,10 @@ GENERATOR = "memory-brief"
 
 _CLASS_ORDER = ("corroborated", "contradicted", "orphan-concept", "singleton")
 
-_BRIEF_RE = re.compile(
-    r"^### (?P<label>.+?) \{#(?P<anchor>[^}]+)\}\n\n(?P<finding>[^\n]+)\n"
-    r"(?:.*?^Evidence \(\d+\): (?P<evidence>[^\n]+))?",
-    re.M | re.S)
-
-# Both rendered forms carry the id: `[[name]] `11`` and `` `99` (unresolved) ``.
-_EV_ANY_RE = re.compile(r"`(\d+)`")
+# The index is ONE-directional: store -> GMD. `parse_gmd` / `_parse_evidence` (the GMD -> store
+# half task 8.3 built) had no production caller in src/, scripts/, eval/ or the templates, so
+# T0.5 deleted them under plan-6 Q1's rule for code no production path reaches (ch-bsd plan-8 r5
+# #b-3, ruling O2, 2026-11-19). The store is the source; regenerate the index from it.
 
 
 def _as_brief(b) -> "Brief":
@@ -632,9 +693,9 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
             resolved = [(e, names.get(e)) for e in b.evidence]
             unresolved = [e for e, n in resolved if not n]
             lines += [f'### {b.label} {{#{anchor}}}', '', b.finding, '']
-            # The id travels WITH the link. Without it the doc names the rows
-            # but cannot be read back into them, which is how the claimed round
-            # trip came to be faked by a literal in its own test (r1 #b-5).
+            # The id travels WITH the link, so a reader can resolve each cited
+            # row even where its name is gone (r1 #b-5). Nothing reads the doc
+            # back into the store: the index is one-directional (T0.5).
             ev = ", ".join(f'[[{n}]] `{e}`' if n else f'`{e}` (unresolved)'
                            for e, n in resolved)
             lines.append(f'Evidence ({len(resolved)}): {ev}.')
@@ -649,48 +710,3 @@ def render_gmd(briefs: Iterable[Brief], *, names: "dict[int, str] | None" = None
                     lines.append(f'rel: evidence-for -> [[{n}]]')
             lines.append('')
     return "\n".join(lines).rstrip() + "\n"
-
-
-def parse_gmd(doc: str, *, names: "dict[int, str] | None" = None) -> list[dict]:
-    """Recover briefs from a rendered index — the other half of the trip.
-
-    `memory compile` states the contract: the index is regenerable from the
-    store and the store is rebuildable from the index. Without this half, a
-    brief index is a report that happens to look like a node.
-    """
-    out: list[dict] = []
-    # `render_gmd` writes `[[name]]`; invert the same map to get ids back. A
-    # caller with no map still recovers the unresolved (bare-id) entries.
-    ids_by_name = {v: k for k, v in (names or {}).items()}
-    sections = re.split(r"^## ", doc, flags=re.M)[1:]
-    for sec in sections:
-        head = sec.splitlines()[0]
-        m = re.match(r"^(\S+) \{#(\S+)\}", head)
-        if not m:
-            continue
-        cls = m.group(1)
-        if cls == "root":
-            continue
-        for bm in _BRIEF_RE.finditer(sec):
-            out.append({"class": cls, "label": bm.group("label").strip(),
-                        "finding": bm.group("finding").strip(),
-                        "anchor": bm.group("anchor"),
-                        "evidence": _parse_evidence(bm.group("evidence"),
-                                                    ids_by_name)})
-    return out
-
-
-def _parse_evidence(line: "str | None",
-                    ids_by_name: "dict[str, int]") -> list[int]:
-    """Recover evidence ids from a rendered `Evidence (N): …` line.
-
-    `evidence` is what `Brief.__post_init__` refuses to construct without and
-    what the module docstring calls "the whole contract" — and it was written
-    into the doc and never read back, so the round trip the plan claimed was
-    faked by a literal in the test (ch-bsd r1 #b-5). Both rendered forms now
-    carry the id, so no names map is needed to recover it.
-    """
-    if not line:
-        return []
-    return [int(x) for x in _EV_ANY_RE.findall(line)]
-

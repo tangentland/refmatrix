@@ -51,6 +51,16 @@ A derivation pass, a sibling of `consolidate.py`, emitting **briefs** — `kind=
 `brief/<class>` mtype namespace, plus a regenerable GMD index on disk — the same both-directions contract `memory compile` already honors ("the index is
 regenerable from the store, and the store is rebuildable from the index").
 
+**2026-11-19: the brief index is one-directional (store → GMD).** {#one-directional}
+The GMD → store half (`brief.parse_gmd` and `_parse_evidence`, task 8.3) never had a production
+caller in `src/`, `scripts/`, `eval/` or the templates, so T0.5 deleted it under plan-6 Q1's rule
+for code no production path reaches (ch-bsd plan-8 r5 #b-3, ruling O2). The store is the source;
+the index is regenerated from it with `rmx memory brief --gmd`, and the "rebuildable from the
+index" half of the contract above no longer holds for briefs. A guard in
+`tests/test_brief_detectors.py` fails if `brief.py` grows a function nothing in `src/` reaches.
+
+rel: derives-from -> [[task-t0-suite-trust-sweep#t0-5]]
+
 ### Note classes {#classes}
 
 Each class is one detector over signal that already exists. A note carries its evidence ids; a

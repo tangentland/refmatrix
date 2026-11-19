@@ -5707,14 +5707,18 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
 
     DERIVATION IS A READ and runs on the read path, not under the writer lock.
     It decodes a couple of linkage fragments and runs two small SQL queries.
-    The two plan-derived classes need a `memory compile` plan, which arrives
-    here as DATA (`plan`): `memory brief --compile` plans on the read replica
-    in the CLI process with `consolidate.compile_memories` — a read, not the
-    `memory_compile` op, which plans AND applies under `_store_lock` — and
-    ships the plan with the request. `scope` (default `memory`) names the
+    The two plan-derived classes need a `memory compile` plan. `compile=True`
+    builds it HERE, with `consolidate.compile_memories` at its default knobs
+    (exclusions: `brief.EXCLUDE_MTYPES`, so the brief's own rows stay out),
+    inside the same read closure the briefs derive in, so plan and briefs read
+    one snapshot and nothing but the switch crosses the wire (T0.5 R5.3, ch-bsd
+    plan-8 r5 #s-4, 2026-11-19: before it the CLI planned in its own process and
+    shipped the plan, so only the CLI reached `corroborated` / `singleton`). It
+    is a read, not the `memory_compile` op, which plans AND applies under
+    `_store_lock`. A caller-built plan may still arrive as DATA (`plan`);
+    `plan` with `compile` is refused. `scope` (default `memory`) names the
     compile corpus every detector reads, and it must match the plan's
-    (26.6 r1 remedy #rm-one-corpus / #rm-stale-refs, 2026-11-10: this docstring
-    named the removed `_op_memory_compile_apply`).
+    (26.6 r1 remedy #rm-one-corpus / #rm-stale-refs, 2026-11-10).
 
     `save=True` is the only write, and it takes `_store_lock` — one memory row
     per brief in the `brief/<class>` namespace, so a brief is recallable by
@@ -5726,6 +5730,11 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
     kw = {k: args[k] for k in
           ("min_members", "min_dates", "min_mentions", "classes", "scope")
           if args.get(k) is not None}
+    compiling = bool(args.get("compile"))
+    if compiling and args.get("plan") is not None:
+        # The verb refuses this first; the op refuses it too, for any other caller.
+        raise ValueError("memory_brief: `plan` and `compile` are exclusive; pass one, "
+                         "not both")
     if args.get("plan") is not None:
         kw["plan"] = args["plan"]
     # ONE read closure for both the derivation and the id->name map `--gmd`
@@ -5736,14 +5745,32 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
     # could resolve against a newer catalog than the brief was derived from
     # (ch-bsd r3, answer to Q2).
     def _derive(s):
-        res = brief_mod.compile_briefs(s, **kw)
+        run_kw = kw
+        if compiling:
+            from refmatrix.consolidate import DEFAULT_SCOPE, compile_memories
+            # The brief's own output never enters its plan (26.6 one corpus;
+            # bsd-t05 confirm #b-1-r2, L189, 2026-11-19: at default exclusions
+            # a save-then-brief planned over its 15 saved `brief/*` rows).
+            # `brief.EXCLUDE_MTYPES` IS consolidate's defaults plus `brief`,
+            # `brief/*`: the union, defined once in brief.py.
+            run_kw = {**kw, "plan": compile_memories(
+                s, scope=kw.get("scope", DEFAULT_SCOPE),
+                exclude_mtypes=brief_mod.EXCLUDE_MTYPES)}
+        # The plan's unembedded rows reach the brief stats through
+        # `compile_briefs` (skipped_by["unembedded"]), the one place both plan
+        # sources pass, so they are counted once (bsd-t05 r1 #b-1, 2026-11-19).
+        res = brief_mod.compile_briefs(s, **run_kw)
         bs = res.get("briefs") or []
         ids = sorted({int(e) for b in bs
                       for e in (b.as_dict() if hasattr(b, "as_dict") else b
                                 ).get("evidence") or []})
         return res, _names_for(s, ids)
 
-    result, names = _read_with_fallback(d, part, _derive)
+    # The clustering pass takes seconds; on the shared mirror it would hold the
+    # one reader lock against every other read, so a compiling brief gets its
+    # own snapshot Store (`private`, ch-bsd r9 #b-2's mechanism). One call
+    # (bsd-t05 r1 #m-1, 2026-11-19: an if/else here was shaped by a test double).
+    result, names = _read_with_fallback(d, part, _derive, private=compiling)
     briefs = result.get("briefs") or []
     payload = {
         "briefs": [b.as_dict() if hasattr(b, "as_dict") else b for b in briefs],
