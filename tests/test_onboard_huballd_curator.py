@@ -9,11 +9,12 @@ from pathlib import Path
 import pytest
 
 from refmatrix import gmd_curator, launchctl
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 @pytest.fixture
 def home(monkeypatch):
-    d = tempfile.mkdtemp(prefix="rh", dir="/tmp")
+    d = rmx_sandbox.short_root("rh")
     monkeypatch.setenv("RMX_HOME", d)
     yield Path(d)
     shutil.rmtree(d, ignore_errors=True)

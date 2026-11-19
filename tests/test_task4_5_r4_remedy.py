@@ -40,13 +40,14 @@ from refmatrix import session_launchctl as slc
 from refmatrix.store import Store
 from tests.fake_rmx import identity_binary, script_binary
 from tests.test_plan4_remedy_r3 import _draining_process, _age
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 _DEPLOYED = "/deployed/bin/rmx"   # a path rendered INTO a fixture plist; never executed
 
 
 @pytest.fixture
 def root():
-    base = Path(tempfile.mkdtemp(prefix="rmx45-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmx45-"))
     r = base / ".refmatrix"; r.mkdir()
     Store(r).init()
     try:

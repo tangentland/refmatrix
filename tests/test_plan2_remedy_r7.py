@@ -23,6 +23,7 @@ import pytest
 from refmatrix import hub as hub_mod
 from refmatrix import modelsrv, reranker
 from refmatrix.subproc import recv_frame, send_frame
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 class _FakeModelSock:
@@ -80,7 +81,7 @@ class _FakeModelSock:
 
 @pytest.fixture
 def fake_models(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="rmxm-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxm-"))
     path = base / "models.sock"
     monkeypatch.setenv("RMX_MODEL_SOCK", str(path))
     monkeypatch.setenv("RMX_SHARED_MODELS", "1")

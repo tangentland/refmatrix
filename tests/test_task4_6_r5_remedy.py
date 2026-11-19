@@ -46,11 +46,12 @@ from tests.fake_rmx import deploy_tree, identity_binary, script_binary
 from tests.test_plan4_remedy_r3 import _draining_process, _launchd_fakes
 from tests.test_task4_5_r4_remedy import _fake_launchd
 from tests.test_upgrade import _bump, _git, _init_repo
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 @pytest.fixture
 def root():
-    base = Path(tempfile.mkdtemp(prefix="rmx46-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmx46-"))
     r = base / "proj" / ".refmatrix"
     r.mkdir(parents=True)
     try:
@@ -822,7 +823,7 @@ def test_hub_ui_supervise_installs_a_plist_naming_the_hubs_binary(tmp_path, monk
     # the hub process starts as the binary (export happens at `rmx hub start`)
     monkeypatch.setattr(hub_mod.Hub, "run", lambda self, **kw: None)
     assert CliRunner().invoke(cli_mod.main, ["hub", "start", "--no-detach", "--no-http"]).exit_code == 0
-    proj = Path(tempfile.mkdtemp(prefix="rmx46ui-", dir="/tmp"))
+    proj = Path(rmx_sandbox.short_root("rmx46ui-"))
     try:
         children: list = []
 

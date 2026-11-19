@@ -8,7 +8,7 @@ ahead of `origin/develop` (bug-225, workflow/bug_registry.md). The fix reads
 `git symbolic-ref --short refs/remotes/origin/HEAD` first and falls back to the
 list only when origin/HEAD is unset or names a ref that does not resolve.
 
-Every test drives REAL git repos under a short `mkdtemp(dir="/tmp")` root: a
+Every test drives REAL git repos under a short `rmx_sandbox.short_root` root: a
 bare "remote" with `master` and `develop` (develop 3 commits ahead), a clone of
 it, and a feature branch 2 commits ahead of develop. Git is never mocked; the
 only environment change pins git's identity and hides the user's global/system
@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from refmatrix import handoff
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 FEATURE = ["feature commit 1", "feature commit 2"]
 DEVELOP = ["develop commit 1", "develop commit 2", "develop commit 3"]
@@ -74,7 +75,7 @@ def repos(hermetic_git):
     """(base, work): a bare remote with master + develop (develop 3 ahead), and a
     clone `work` checked out on `feature`, 2 commits ahead of origin/develop.
     origin/HEAD in the clone is whatever `git clone` set: origin/master."""
-    base = Path(tempfile.mkdtemp(prefix="b225-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b225-")).resolve()
     try:
         remote, seed, work = base / "remote.git", base / "seed", base / "work"
         _git(base, "init", "-q", "--bare", "-b", "master", str(remote))
@@ -577,7 +578,7 @@ def test_r2_m1_cli_save_state_console_prints_trunk_error(repos, monkeypatch):
 
 @pytest.fixture
 def nongit(hermetic_git, monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="b225n-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b225n-")).resolve()
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(base))
     d = base / "plain"
     d.mkdir()
@@ -787,7 +788,7 @@ def test_r3_s1c_guard_real_missing_sha_is_not_found(main_and_master):
 @pytest.fixture
 def trunkless(hermetic_git):
     """A local-only repo: no remote, one branch `trunkless`, no main or master."""
-    base = Path(tempfile.mkdtemp(prefix="b225t-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b225t-")).resolve()
     try:
         work = base / "work"
         _git(base, "init", "-q", "-b", "trunkless", str(work))

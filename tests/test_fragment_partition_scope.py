@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from refmatrix.store import Store
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 
 @pytest.fixture
@@ -243,7 +244,7 @@ def test_repair_fragments_op_through_the_dispatcher(monkeypatch):
     from refmatrix import daemon as dm
 
     monkeypatch.delenv("RMX_BACKEND", raising=False)
-    base = Path(tempfile.mkdtemp(prefix="rmxf-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("rmxf-"))
     root = base / ".refmatrix"
     d = dm.Daemon(root)
     d.store = Store(root, backend="duckdb"); d.store.init()

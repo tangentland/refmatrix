@@ -44,6 +44,7 @@ from refmatrix import embedder as embedder_mod
 from refmatrix import modelsrv
 from refmatrix import recall as recall_mod
 from refmatrix import subproc
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 
 _SRC = Path(recall_mod.__file__).resolve().parent.parent
 
@@ -94,7 +95,7 @@ _HUB = textwrap.dedent("""
 def rig(monkeypatch):
     """A short socket dir, the stub scripts, the counting in-process model, the stub
     private worker, and a clean process-wide embed client (restored afterwards)."""
-    base = Path(tempfile.mkdtemp(prefix="r37r2-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("r37r2-"))
     sock = base / "models.sock"
     stub = base / "stub_worker.py"
     stub.write_text(_STUB_WORKER)
