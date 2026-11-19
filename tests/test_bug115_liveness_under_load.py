@@ -13,11 +13,11 @@ work), and the daemon runs a queued request whose caller has already given up.
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
 import os
 import socket
 import subprocess
-import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -217,7 +217,7 @@ def _silent_server(path: Path):
 def test_call_does_not_resend_a_request_the_daemon_already_has(monkeypatch):
     """A socket timeout means the daemon RECEIVED the request and is still working (or
     queued). Re-sending it doubles the work and triples the caller's wait."""
-    base = Path(tempfile.mkdtemp(prefix="b115-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("b115-"))
     sock = base / "s.sock"
     monkeypatch.setattr(dm, "socket_path", lambda root: sock)
     srv, seen = _silent_server(sock)
@@ -233,7 +233,7 @@ def test_call_does_not_resend_a_request_the_daemon_already_has(monkeypatch):
 
 
 def test_call_tells_the_daemon_how_long_it_will_wait(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="b116-", dir="/tmp"))
+    base = Path(rmx_sandbox.short_root("b116-"))
     sock = base / "s.sock"
     monkeypatch.setattr(dm, "socket_path", lambda root: sock)
     srv, seen = _silent_server(sock)

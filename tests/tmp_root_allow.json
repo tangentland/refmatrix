@@ -4,14 +4,6 @@
   {
    "key": "tests/sandbox_site/rmx_sandbox.py::make_root::tempfile.mkdtemp(prefix=prefix, dir='/tmp')",
    "reason": "the sandbox root itself (task 23.0 AC-5): every other test root moves UNDER it, so it is the one root that must be a short /tmp mkdtemp; permanent"
-  },
-  {
-   "key": "tests/test_bug115_liveness_under_load.py::test_call_does_not_resend_a_request_the_daemon_already_has::tempfile.mkdtemp(prefix='b115-', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
-  },
-  {
-   "key": "tests/test_bug115_liveness_under_load.py::test_call_tells_the_daemon_how_long_it_will_wait::tempfile.mkdtemp(prefix='b116-', dir='/tmp')",
-   "reason": "left at task-29.4 #r5 (bug-229): a /tmp test root in a file that does not call spawn_daemon_subprocess; the list starts with these sites and only shrinks -- move it to rmx_sandbox.short_root(prefix) when its file is next touched"
   }
  ]
 }
