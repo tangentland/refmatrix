@@ -115,7 +115,12 @@ bsd-t05 r1 was DIRTY (1 BULLSHIT, 1 SKETCHY, 4 MEH). red-t05 wrote the REDs at `
 
 Verify at the fold tip: see [[#fold-verify]].
 
-Result: pending. {#fold-verify}
+Result at `468885f7` (mini lane, 90 files: RED's set, `test_read_path_partition_and_budget.py`,
+every test that drives the `memory` CLI or the memory verb, and the five repo guards;
+`workflow/review-output/t05-green-fold-verify.log`): **1793 passed, 2 failed**, both bug-282
+(`test_mcp_session_pointer` owner walk, mini only, E `assert 0 == 2`). The six fold REDs pass
+(`t05-green-fold-1.log`: brief detectors, real daemon, surfaces and read-path files, 59 passed).
+{#fold-verify}
 
 ## Release {#release}
 
