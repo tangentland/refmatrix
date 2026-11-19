@@ -94,8 +94,10 @@ def _snapshot(proj: Path) -> dict[str, str]:
             out[rel] = f"link:{os.readlink(p)}"
         elif p.is_dir():
             out[rel] = "dir"
-        else:
+        elif p.is_file():
             out[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+        else:
+            out[rel] = "special"                     # a socket (rmxd.sock) or a fifo: not read
     return out
 
 
