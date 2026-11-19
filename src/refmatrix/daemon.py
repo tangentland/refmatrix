@@ -5755,10 +5755,13 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
                                 ).get("evidence") or []})
         return res, _names_for(s, ids)
 
-    # The clustering pass takes seconds; on the shared mirror it would hold the
-    # one reader lock against every other read, so a compiling brief gets its
-    # own snapshot Store (`private`, ch-bsd r9 #b-2's mechanism).
-    result, names = _read_with_fallback(d, part, _derive, private=compiling)
+    if compiling:
+        # The clustering pass takes seconds; on the shared mirror it would hold
+        # the one reader lock against every other read, so a compiling brief
+        # gets its own snapshot Store (`private`, ch-bsd r9 #b-2's mechanism).
+        result, names = _read_with_fallback(d, part, _derive, private=True)
+    else:
+        result, names = _read_with_fallback(d, part, _derive)
     briefs = result.get("briefs") or []
     payload = {
         "briefs": [b.as_dict() if hasattr(b, "as_dict") else b for b in briefs],
