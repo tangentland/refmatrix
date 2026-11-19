@@ -5748,6 +5748,9 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
         if compiling:
             from refmatrix.consolidate import DEFAULT_SCOPE, compile_memories
             run_kw = {**kw, "plan": compile_memories(s, scope=kw.get("scope", DEFAULT_SCOPE))}
+        # The plan's unembedded rows reach the brief stats through
+        # `compile_briefs` (skipped_by["unembedded"]), the one place both plan
+        # sources pass, so they are counted once (bsd-t05 r1 #b-1, 2026-11-19).
         res = brief_mod.compile_briefs(s, **run_kw)
         bs = res.get("briefs") or []
         ids = sorted({int(e) for b in bs
@@ -5755,13 +5758,11 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
                                 ).get("evidence") or []})
         return res, _names_for(s, ids)
 
-    if compiling:
-        # The clustering pass takes seconds; on the shared mirror it would hold
-        # the one reader lock against every other read, so a compiling brief
-        # gets its own snapshot Store (`private`, ch-bsd r9 #b-2's mechanism).
-        result, names = _read_with_fallback(d, part, _derive, private=True)
-    else:
-        result, names = _read_with_fallback(d, part, _derive)
+    # The clustering pass takes seconds; on the shared mirror it would hold the
+    # one reader lock against every other read, so a compiling brief gets its
+    # own snapshot Store (`private`, ch-bsd r9 #b-2's mechanism). One call
+    # (bsd-t05 r1 #m-1, 2026-11-19: an if/else here was shaped by a test double).
+    result, names = _read_with_fallback(d, part, _derive, private=compiling)
     briefs = result.get("briefs") or []
     payload = {
         "briefs": [b.as_dict() if hasattr(b, "as_dict") else b for b in briefs],

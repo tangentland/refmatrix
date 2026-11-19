@@ -265,10 +265,11 @@ def singleton(plan: dict, *, name_to_id: dict[str, int],
             # and say WHY, because `compile_briefs` sums every detector's
             # skips into one number and only `contradicted` used to explain
             # itself. When this branch fired the CLI printed a literal `(?)`
-            # (ch-bsd r4 #s-2-r4). The realistic cause is snapshot skew: the
-            # plan is built from the CLI's replica read while `name_to_id`
-            # comes from the daemon's store, so a name can be in one and not
-            # the other.
+            # (ch-bsd r4 #s-2-r4). The realistic cause is snapshot skew, and
+            # only for a CALLER-supplied `plan`: one built elsewhere (an older
+            # snapshot, another process) can name a row this store no longer
+            # has. Under `compile` the op builds the plan and `name_to_id` from
+            # one snapshot, so they cannot skew (bsd-t05 r1 #m-2, 2026-11-19).
             skipped += 1
             by_reason["singleton_unresolved"] += 1
             continue
@@ -422,6 +423,29 @@ def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,
 
 # ── the run ────────────────────────────────────────────────────────────────
 
+def _plan_unembedded(plan: dict) -> int:
+    """Memories the plan saw but placed nowhere: no cluster, not `unclustered`.
+
+    `compile_memories` clusters only rows with a vector, so an unembedded row
+    joins no subject and is not in `unclustered` either: neither plan-derived
+    detector can see it. It was in `stats.memories` and in nothing else
+    (`skipped: 0`) on every surface (bsd-t05 r1 #b-1, 2026-11-19); rule 3 says
+    count it. Counted ONCE: with fewer than two embedded rows `compile_memories`
+    returns early with EVERY row in `unclustered` (unembedded ones included),
+    they become singletons, and none is a skip. So the count is the plan's
+    `unembedded` capped by the rows it left unplaced (`candidates` minus cluster
+    members minus `unclustered`), which also keeps a concept-only plan (every
+    row "unembedded", every row placed) at zero."""
+    st = plan.get("stats") or {}
+    n = int(st.get("unembedded") or 0)
+    if n <= 0 or st.get("candidates") is None:
+        return max(n, 0)
+    placed = {m.get("name") for c in plan.get("clusters") or []
+              for m in c.get("members") or []}
+    placed |= set(plan.get("unclustered") or [])
+    return max(0, min(n, int(st["candidates"]) - len(placed)))
+
+
 def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                    min_members: int = MIN_MEMBERS,
                    min_dates: int = MIN_DATES,
@@ -468,9 +492,16 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
         if plan is None:
             for c in ("corroborated", "singleton"):
                 if c in wanted:
-                    not_run[c] = ("needs a `memory compile` plan; pass plan= "
-                                  "or run `rmx memory compile` first")
+                    # bsd-t05 r1 #m-2 (2026-11-19): name the switch that runs
+                    # it. "Run `rmx memory compile` first" never helped: no op
+                    # reads a stored plan.
+                    not_run[c] = ("needs a `memory compile` plan; pass compile=true "
+                                  "(CLI `--compile`) or a caller-built plan=")
         else:
+            n = _plan_unembedded(plan)
+            if n:
+                skipped += n
+                skipped_by["unembedded"] = skipped_by.get("unembedded", 0) + n
             if "corroborated" in wanted:
                 dates = memory_dates(store, rows)
                 briefs += corroborated(plan, dates=dates,
