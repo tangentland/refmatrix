@@ -442,9 +442,14 @@ ALLOW = [
      r"SQLite", "D1=b: pass module byte-identical", "29.2 R7 deploy B"),
     ("src/refmatrix/vectors.py", r"^SQLite-only installs don't pay the import cost\.$",
      r"SQLite", "D1=b: pass module byte-identical", "29.2 R7 deploy B"),
-    ("src/refmatrix/backend.py", r"\bsqlite_sql\b", r"\bsqlite_sql\b",
-     "D1=b: bulk_write keeps `sqlite_sql`, accepted and unused, for pagerank.py's one call",
-     "29.2 R7 deploy B"),
+    # bulk_write keeps `sqlite_sql`, accepted and unused, for pagerank.py's one call: its
+    # parameter line and its one docstring line, each pinned exactly (bsd-s1 r1 #m-1, L191: a
+    # token-only entry let a re-added `if sqlite_sql: con.executemany(sqlite_sql, rows)` pass).
+    ("src/refmatrix/backend.py", r'^    sqlite_sql: "str \| None" = None,$', r"\bsqlite_sql\b",
+     "D1=b: bulk_write's kept parameter, for pagerank.py's one call", "29.2 R7 deploy B"),
+    ("src/refmatrix/backend.py",
+     r"^    The keyword `sqlite_sql` is accepted and ignored\. Task S1 \(2026-11-19\)$",
+     r"\bsqlite_sql\b", "D1=b: the kept parameter's docstring line", "29.2 R7 deploy B"),
     # R5: a legacy dir is still a store, so the generated hooks' store gate reaches the refusal
     # and their text is unchanged.
     ("src/refmatrix/store.py", r"^\s*\"catalog\.A\.duckdb\", \"catalog\.B\.duckdb\", "

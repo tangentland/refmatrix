@@ -13,20 +13,24 @@ and the canonical verb on the entity_links side (M14), plus unpinned operator ou
 S1 (2026-11-19, one catalog backend) deleted M12's test and M24's CLI listing of unread
 fragment dirs with the file-fragment layout.
 """
+import hashlib
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-from pyroaring import BitMap64
+from pyroaring import BitMap, BitMap64
 
 from refmatrix import cli as cli_mod
 from refmatrix import daemon as dm
 from refmatrix.store import Store
 import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
+from tests.test_bug212_hooks_in_worktrees import _base_env, _entry
 
 
 @pytest.fixture
@@ -154,6 +158,93 @@ def test_repair_files_a_legacy_snake_verb_link_under_the_canonical_kebab_name(s,
 
 
 # ---- M24 / M25: the operator sees every counter --------------------------------------------------
+
+def _tree_digests(d: Path) -> dict:
+    return {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(d.rglob("*")) if p.is_file()}
+
+
+def _named(planted: Path, store_root: Path, reported: "list[str]") -> bool:
+    """`planted` is named: a reported entry is the planted dir itself or an ancestor of it
+    strictly inside the store (`fragments/` / `bitmaps/` as a whole)."""
+    for e in reported:
+        ep = Path(e)
+        if ep == planted or (ep in planted.parents and store_root in ep.parents):
+            return True
+    return False
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("dry_run", [True, False], ids=["dry-run", "applied"])
+@pytest.mark.parametrize("entry", ["cli", "store"])
+def test_the_repair_names_and_keeps_every_unread_file_layout_dir(entry, dry_run):
+    """bsd-s1 r1 #b-1 (ruling L191, 2026-11-19): since S1 nothing reads the on-disk fragment
+    layouts, `fragments/<partition>/*.rb64` and the older `bitmaps/<linkage>/<cid>.rb`. On a
+    real DuckDB store holding both, `rmx repair-index --fragments` (and the store method it
+    runs with no daemon) NAMES both dirs in the unread-dirs report, leaves both byte-identical,
+    and leaves `bitmap_fragments` as it was. RED at GREEN be1c6b6c: the writer `_connect`'s kept
+    `_migrate_legacy_bitmaps_if_needed` deletes the `.rb` files (no `bitmaps/` dir is ever
+    named). Replaces the deleted `test_cli_repair_lists_unread_dirs`."""
+    base = Path(rmx_sandbox.short_root("r4u-")).resolve()
+    try:
+        root = base / "p" / ".refmatrix"
+        root.parent.mkdir()
+        st = Store(root); st.init()
+        c = st.add_concept("k")
+        e = st.upsert_entity(kind="doc", name="a.md")
+        st.link("mentions", c, e)
+        st.flush_fragments()
+        part = st.partition_name
+        packed = st._pack(c, e)
+        before_rows = _rows(st)
+        st.close()
+        assert before_rows, "fixture: no bitmap_fragments rows"
+        frag_dir = root / "fragments" / part
+        frag_dir.mkdir(parents=True)
+        (frag_dir / "x.rb64").write_bytes(BitMap64([packed]).serialize())
+        bm_dir = root / "bitmaps" / "mentions"
+        bm_dir.mkdir(parents=True)
+        (bm_dir / f"{c}.rb").write_bytes(BitMap([e]).serialize())
+        planted = {"fragments": frag_dir, "bitmaps": bm_dir}
+        before_files = {k: _tree_digests(d) for k, d in planted.items()}
+
+        if entry == "cli":
+            env = {**_base_env(), "REFMATRIX_ROOT": str(root), "COLUMNS": "1000"}
+            argv = ["repair-index", "--fragments"] + (["--dry-run"] if dry_run else [])
+            r = subprocess.run([sys.executable, str(_entry(base)), *argv], cwd=str(root.parent),
+                               env=env, capture_output=True, text=True, timeout=90)
+            text = f"exit {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+            assert r.returncode == 0, text
+            prefix = "unread, left in place:"
+            reported = [ln.split(prefix, 1)[1].strip() for ln in r.stdout.splitlines()
+                        if prefix in ln]
+            ro = Store(root, read_only=True)
+            try:
+                after_rows = _rows(ro)
+            finally:
+                ro.close()
+        else:
+            st = Store(root)
+            try:
+                rep = st.repair_fragments(dry_run=dry_run, manifest_dir=base / "m")
+                after_rows = _rows(st)
+            finally:
+                st.close()
+            reported = list(rep.get("unread_dirs") or [])
+            text = f"repair_fragments returned {rep}"
+        where = f"[{entry}, dry_run={dry_run}]"
+        unnamed = [k for k, d in planted.items() if not _named(d, root, reported)]
+        assert not unnamed, (f"{where} the unread-dirs report does not name the {unnamed} "
+                             f"layout dir(s); reported {reported}\n{text}")
+        moved = {k: (before_files[k], _tree_digests(d) if d.is_dir() else None)
+                 for k, d in planted.items() if (_tree_digests(d) if d.is_dir() else None)
+                 != before_files[k]}
+        assert not moved, f"{where} changed or removed a planted unread dir: {moved}\n{text}"
+        assert after_rows == before_rows, (
+            f"{where} changed bitmap_fragments: {before_rows} -> {after_rows}\n{text}")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
 
 def test_daemon_repair_log_line_names_every_counter(live, monkeypatch):
     r = dm.call(live, "repair_fragments", {"dry_run": True}, timeout=120.0)
