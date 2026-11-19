@@ -113,9 +113,12 @@ bsd-t05 r1 was DIRTY (1 BULLSHIT, 1 SKETCHY, 4 MEH). red-t05 wrote the REDs at `
 - **L189 (bsd-t05 confirm-lite #b-1-r2).** The r1 count read the PLAN's corpus: after
   `brief --save`, the next compiling brief counted its 15 saved `brief/*` rows as unembedded
   (18 vs 3). Now `compile_briefs` counts over its OWN corpus rows (`brief._plan_unplaced`):
-  a row whose name is in no cluster and not in `unclustered` is skipped, as `unembedded`
-  when the plan embedded fewer rows than it considered, else `not_in_plan` (a row the plan
-  never saw). `_plan_unembedded` is gone. `singleton` neither emits nor counts an
+  a row whose name is in no cluster and not in `unclustered` is skipped. Up to the plan's own
+  unembedded count (`candidates - embedded`) they are `unembedded`; the rest are `not_in_plan`
+  (rows the plan never saw). This splits the count rather than labelling all of it by one
+  test (the ruling's either/or), because a plan with unembedded rows plus rows written after
+  it (`test_compile_brief_returns_every_class_and_a_reconciled_skip_count`) must report 3
+  `unembedded`, not 9. `_plan_unembedded` is gone. `singleton` neither emits nor counts an
   `unclustered` name that exists in the store outside the brief's corpus; only a name the
   store lacks stays `singleton_unresolved`. The op's `compile_memories` call passes
   `exclude_mtypes=brief.EXCLUDE_MTYPES` (consolidate's defaults plus `brief`, `brief/*`), so

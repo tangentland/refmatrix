@@ -433,8 +433,8 @@ def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,
 
 # ── the run ────────────────────────────────────────────────────────────────
 
-def _plan_unplaced(plan: dict, rows: "dict[int, dict]") -> "tuple[int, str]":
-    """`(n, reason)`: the brief's OWN corpus rows the plan placed nowhere.
+def _plan_unplaced(plan: dict, rows: "dict[int, dict]") -> dict[str, int]:
+    """`{reason: n}` for the brief's OWN corpus rows the plan placed nowhere.
 
     Placed = the member names of every cluster plus `unclustered`; a corpus row
     outside both is a row neither plan-derived detector can see, and rule 3
@@ -444,10 +444,12 @@ def _plan_unplaced(plan: dict, rows: "dict[int, dict]") -> "tuple[int, str]":
     `brief/*` output, and reading its `unembedded` counted a save-then-brief's
     15 rows as 18 skips (bsd-t05 confirm #b-1-r2, L189, 2026-11-19).
 
-    The reason is `unembedded` when the plan embedded fewer rows than it
-    considered (`compile_memories` clusters only rows with a vector), else
-    `not_in_plan`: a row the plan never saw, e.g. written after it was built.
-    The <2-embedded early return puts every row in `unclustered`, and a
+    The reason splits the count. A plan names no unembedded row, only how many
+    it had (`compile_memories` clusters only rows with a vector), so at most
+    that many unplaced rows are `unembedded`; the rest are `not_in_plan`, rows
+    the plan never saw (written after it was built, or a hand-built plan with
+    no stats). Both sum to the unplaced count, so `skipped` balances. The
+    <2-embedded early return puts every row in `unclustered`, and a
     concept-only plan places every row, so neither counts anything."""
     placed = {m.get("name") for c in plan.get("clusters") or []
               for m in c.get("members") or []}
@@ -455,8 +457,11 @@ def _plan_unplaced(plan: dict, rows: "dict[int, dict]") -> "tuple[int, str]":
     n = sum(1 for r in rows.values() if r["name"] not in placed)
     st = plan.get("stats") or {}
     emb, cand = st.get("embedded"), st.get("candidates")
-    unembedded = emb is not None and cand is not None and int(emb) < int(cand)
-    return n, ("unembedded" if unembedded else "not_in_plan")
+    plan_unembedded = max(0, int(cand) - int(emb)) if emb is not None and cand is not None \
+        else 0
+    out = {"unembedded": min(n, plan_unembedded)}
+    out["not_in_plan"] = n - out["unembedded"]
+    return {k: v for k, v in out.items() if v}
 
 
 def _names_in_store(store: "Store", names: Iterable[str]) -> set[str]:
@@ -525,8 +530,7 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                     not_run[c] = ("needs a `memory compile` plan; pass compile=true "
                                   "(CLI `--compile`) or a caller-built plan=")
         else:
-            n, why_unplaced = _plan_unplaced(plan, rows)
-            if n:
+            for why_unplaced, n in _plan_unplaced(plan, rows).items():
                 skipped += n
                 skipped_by[why_unplaced] = skipped_by.get(why_unplaced, 0) + n
             if "corroborated" in wanted:
