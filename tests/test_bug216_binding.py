@@ -22,6 +22,7 @@ Every store is a throwaway under a short `/tmp` mkdtemp root.
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import os
 import shutil
 import tempfile
@@ -55,7 +56,7 @@ A_MD = _gmd("a", "Intro.\n\n## Cite {#cite}\n\nCitation section.\n\n"
 
 @pytest.fixture
 def env():
-    base = Path(tempfile.mkdtemp(prefix="b216b", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216b")).resolve()
     proj = base / "proj"
     (proj / "docs").mkdir(parents=True)
     root = proj / ".refmatrix"

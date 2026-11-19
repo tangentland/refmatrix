@@ -27,6 +27,7 @@ as the busy daemon (`busy_store`, r5).
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
 import shutil
 import subprocess
@@ -65,7 +66,7 @@ def ignored_sqlite_repo():
     """Repo A: a store holding a SQLite `catalog.db`, IGNORED by git (`.refmatrix/`), so the
     source store is not tracked. Repo B: a store whose `catalog.duckdb` is COMMITTED. No
     daemon. Short resolved `/tmp` root."""
-    base = Path(tempfile.mkdtemp(prefix="b212m-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212m-")).resolve()
     a = Repo(base)
     try:
         a.proj.mkdir()
@@ -124,7 +125,7 @@ def test_migrate_out_to_an_untracked_path_from_a_tracked_store_is_allowed(sqlite
     destination is written, and the tracked store's catalogs are byte-identical. At c854bad it
     is refused, because the check asks about the source store."""
     repo = sqlite_tracked_repo
-    out_dir = Path(tempfile.mkdtemp(prefix="b212o-", dir="/tmp")).resolve()
+    out_dir = Path(rmx_sandbox.short_root("b212o-")).resolve()
     try:
         probe = subprocess.run(["git", "-C", str(out_dir), "rev-parse", "--git-dir"],
                                env=_base_env(), capture_output=True, text=True)

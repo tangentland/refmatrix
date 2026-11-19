@@ -17,6 +17,7 @@ check refuses a second `duckdb.connect(<file>)` site.
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import ast
 import os
 import shutil
@@ -396,7 +397,7 @@ def test_a_replace_during_connect_is_detected_and_retried(tmp_path, monkeypatch)
 
 def test_stale_close_warning_reaches_the_daemon_log(tmp_path):
     from refmatrix import daemon as dm
-    root = Path(__import__("tempfile").mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
+    root = Path(rmx_sandbox.short_root("rmx")) / ".refmatrix"
     root.mkdir()
     d = dm.Daemon(root)
     d.log_fh = (root / "rmxd.log").open("a", encoding="utf-8")
@@ -616,9 +617,9 @@ def test_serve_forever_attaches_the_backend_log_and_detaches_it_on_shutdown(tmp_
     import subprocess
     import sys
     import tempfile
-    root = Path(tempfile.mkdtemp(prefix="rmx", dir="/tmp")) / ".refmatrix"
+    root = Path(rmx_sandbox.short_root("rmx")) / ".refmatrix"
     root.mkdir()
-    home = Path(tempfile.mkdtemp(prefix="rmxh", dir="/tmp"))
+    home = Path(rmx_sandbox.short_root("rmxh"))
     env = dict(os.environ, HOME=str(home), RMX_HOME=str(home / ".refmatrix"),
                HF_HUB_OFFLINE="1", PYTHONPATH=str(SRC.parent))
     r = subprocess.run([sys.executable, "-c", _SERVE_CHILD, str(root)], env=env,

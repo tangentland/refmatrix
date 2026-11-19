@@ -31,6 +31,7 @@ store. Stand-in: the sleeping `git` shim (m-3 only).
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import ast
 import re
 import hashlib
@@ -936,7 +937,7 @@ else:
 def ignored_store_repo():
     """A repo with two commits and a real store whose catalog git IGNORES (the store gate and
     the tracked-catalog check both let a sync through), no daemon. Short resolved `/tmp` root."""
-    base = Path(tempfile.mkdtemp(prefix="b212d-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212d-")).resolve()
     r = Repo(base)
     try:
         r.proj.mkdir()

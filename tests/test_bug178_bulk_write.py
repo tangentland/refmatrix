@@ -30,6 +30,7 @@ you name it differently, change these two constants (and only these) in the GREE
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import ast
 import hashlib
 import json
@@ -132,7 +133,7 @@ def _assert_no_duckdb_executemany(s: _Spy, site: str) -> None:
 # ---- throwaway stores (short root: macOS sun_path) ---------------------------------------
 
 def _short_dir(prefix: str = "b178") -> Path:
-    return Path(tempfile.mkdtemp(prefix=prefix, dir="/tmp"))
+    return Path(rmx_sandbox.short_root(prefix))
 
 
 @contextmanager
@@ -709,5 +710,5 @@ def _write_golden() -> None:
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write-golden"]:
         sys.exit(__doc__)
-    os.environ.setdefault("RMX_HOME", tempfile.mkdtemp(prefix="b178h", dir="/tmp"))
+    os.environ.setdefault("RMX_HOME", rmx_sandbox.short_root("b178h"))
     _write_golden()

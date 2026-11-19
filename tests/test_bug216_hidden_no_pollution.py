@@ -29,6 +29,7 @@ Every store is a throwaway under a short `/tmp` mkdtemp root; no live `.refmatri
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import shutil
 import tempfile
 from pathlib import Path
@@ -58,7 +59,7 @@ LAYOUTS = ("dot-claude", "visible")
 
 
 def _make(layout: str = "dot-claude") -> dict:
-    base = Path(tempfile.mkdtemp(prefix="b216h", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b216h")).resolve()
     proj = base / "proj"
     mem = (proj / ".claude" / "projects" / "x" / "memory" if layout == "dot-claude"
            else proj / "notes" / "memory")

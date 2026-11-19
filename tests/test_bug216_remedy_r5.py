@@ -18,6 +18,7 @@ Throwaway stores under short `/tmp` mkdtemp roots only; no live `.refmatrix/` is
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import json
 import os
 import re
@@ -38,7 +39,7 @@ from tests.test_bug216_remedy_r4 import _seed_vectors, _vector_ids
 
 @pytest.fixture
 def base():
-    b = Path(tempfile.mkdtemp(prefix="b216u", dir="/tmp")).resolve()
+    b = Path(rmx_sandbox.short_root("b216u")).resolve()
     yield b
     shutil.rmtree(b)
 

@@ -29,6 +29,7 @@ Throwaway stores under short `/tmp` mkdtemp roots only; no live `.refmatrix/` is
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import os
 import shutil
 import stat
@@ -50,7 +51,7 @@ DIM = 4
 
 @pytest.fixture
 def base():
-    b = Path(tempfile.mkdtemp(prefix="b216t", dir="/tmp")).resolve()
+    b = Path(rmx_sandbox.short_root("b216t")).resolve()
     yield b
     for p in b.rglob("*"):                          # undo any read-only fixture dirs
         if p.is_dir():

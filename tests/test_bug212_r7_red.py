@@ -21,6 +21,7 @@ job (the wait shortened through the existing `RMX_BRIDGE_WAIT_S`, nothing patche
 """
 from __future__ import annotations
 
+import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (short_root)
 import shutil
 import subprocess
 import tempfile
@@ -58,7 +59,7 @@ def two_migrate_repos():
     """Repo A: a SQLite `catalog.db` store, IGNORED by git (the migrate source). Repo B: commits
     a DuckDB file `x.duckdb` at its top level AND a store whose `.refmatrix/catalog.duckdb` is
     tracked. No daemon. Short resolved `/tmp` root."""
-    base = Path(tempfile.mkdtemp(prefix="b212n-", dir="/tmp")).resolve()
+    base = Path(rmx_sandbox.short_root("b212n-")).resolve()
     a = Repo(base)
     try:
         a.proj.mkdir()
