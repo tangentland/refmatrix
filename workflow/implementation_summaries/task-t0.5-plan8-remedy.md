@@ -73,7 +73,15 @@ The seven RED tests pass. Verify set (RED's set, every test that imports `refmat
 calls the `rmx_memory` verb or touches the brief, and the five repo guards) at the GREEN tip:
 see [[#verify-result]]. {#verify-lead}
 
-Result: pending the lane run. {#verify-result}
+Result at `fa3f887f` (mini lane, 46 files, `workflow/review-output/t05-green-verify-1.log`):
+**1044 passed, 2 failed**. The two failures are bug-282 (open, mini lane only, same E line
+`assert 0 == 2`): `test_mcp_session_pointer::test_owner_is_the_nearest_claude_ancestor_when_claude_pid_is_unset`
+and `::test_owner_walk_reaches_claude_through_a_deep_chain`. The same file on the local lane at
+the same sha: 62 passed (`workflow/review-output/t05-green-local-pointer.log`). The seven RED
+tests pass, `test_brief_real_daemon`'s `[cli]` case included. An earlier run
+(`t05-green-1.log`, `53ec47b0`) caught three `test_brief_surfaces` failures from passing
+`private=` to `_read_with_fallback` on the non-compiling path, where the tests' doubles take
+three positional arguments; `32c406e1` asks for `private` only when compiling. {#verify-result}
 
 ## Release {#release}
 
