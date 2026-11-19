@@ -23,8 +23,6 @@ rel: part-of -> [[plan-8-derived-coverage-notes]]
 > r5 #b-3, ruling O2). `render_gmd` and `rmx memory brief --gmd` stand. `status: complete` stays
 > as history. See [[plan-8-derived-coverage-notes#one-directional]]. {#superseded-note}
 
-rel: superseded-by -> [[task-t0-suite-trust-sweep#t0-5]]
-
 ## Requirements {#requirements}
 
 - `rmx memory brief --gmd` renders a `memory-briefs` GMD doc: frontmatter, `{#anchor}` on every heading, `rel:` edges from each brief to the memories it cites. Zero `tools/gmd/lint.py` errors.

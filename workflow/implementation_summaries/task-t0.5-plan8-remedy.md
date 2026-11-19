@@ -15,6 +15,8 @@ rel: implements -> [[task-t0-suite-trust-sweep#t0-5]]
 rel: implements -> [[plan-6-deferrals-docs-benchmark#q1]]
 rel: amends -> [[plan-8-derived-coverage-notes#proposed-approach]]
 rel: depends-on -> [[self-audit]]
+rel: supersedes -> [[task-8.3-plan-8-derived-coverage-notes]]
+rel: derives-from -> [[bsd-t05-r1-61b0666c]]
 
 Branch `task-t0.5-plan8-remedy` in `/Volumes/littlebig/refmatrix-t05-green`, at RED tip
 `f3443130` (red-t05: `f81fe570`, `f3443130`). GREEN changes `src/` and docs only; no test was
@@ -82,6 +84,38 @@ tests pass, `test_brief_real_daemon`'s `[cli]` case included. An earlier run
 (`t05-green-1.log`, `53ec47b0`) caught three `test_brief_surfaces` failures from passing
 `private=` to `_read_with_fallback` on the non-compiling path, where the tests' doubles take
 three positional arguments; `32c406e1` asks for `private` only when compiling. {#verify-result}
+
+## Fold: bsd-t05 r1 (L188) {#fold-r1}
+
+bsd-t05 r1 was DIRTY (1 BULLSHIT, 1 SKETCHY, 4 MEH). red-t05 wrote the REDs at `f97977b8`
+(tests and registry only); GREEN's fold is `fa6d6f3e` plus this doc commit. {#fold-r1-lead}
+
+- **#b-1: unembedded rows counted.** `compile_memories` clusters only rows with a vector, so
+  an unembedded memory was in `stats.memories` and in no brief and no skip count, on every
+  surface. `brief._plan_unembedded(plan)` counts them, and `compile_briefs` adds the count to
+  `skipped` and `skipped_by["unembedded"]` whenever it has a plan. Both plan sources pass
+  through `compile_briefs` (the op hands its compiled plan to it), so this is the one place
+  and nothing is counted twice. The count is the plan's `stats["unembedded"]` capped by the
+  rows the plan left unplaced (`candidates` minus cluster members minus `unclustered`). That
+  handles `consolidate.compile_memories`' early return (fewer than 2 embedded rows put every
+  row, unembedded ones included, in `unclustered`, so they become singletons, not skips), and
+  a concept-only plan (every row "unembedded", every row placed) counts zero. The CLI's
+  existing "N row(s) skipped (unembedded=3) — counted, not dropped" line reports it.
+  {#fold-b-1}
+- **#m-1.** `_op_memory_brief` is back to one call,
+  `_read_with_fallback(d, part, _derive, private=compiling)`; RED graduated the
+  `test_brief_surfaces` fakes to the `_daemon()` harness. {#fold-m-1}
+- **#m-2.** The `classes_not_run` hint now reads "needs a `memory compile` plan; pass
+  compile=true (CLI `--compile`) or a caller-built plan=". The singleton skip comment says
+  snapshot skew applies only to a caller plan. {#fold-m-2}
+- **#m-4.** Task 8.3's spec keeps its prose note and drops the non-standard
+  `rel: superseded-by`; this summary carries `rel: supersedes` instead. {#fold-m-4}
+- **#s-1, #m-3** were RED's (the G7 mirror probe; the dead-export guard's blind spots).
+  {#fold-red}
+
+Verify at the fold tip: see [[#fold-verify]].
+
+Result: pending. {#fold-verify}
 
 ## Release {#release}
 
