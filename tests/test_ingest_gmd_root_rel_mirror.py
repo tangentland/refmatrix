@@ -25,7 +25,7 @@ from refmatrix.ingest_gmd import ingest_gmd_paths
 
 
 def _seed_store(tmp_path):
-    s = Store(tmp_path / ".refmatrix", backend="sqlite")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     return s
 

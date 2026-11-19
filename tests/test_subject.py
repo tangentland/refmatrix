@@ -67,7 +67,6 @@ def test_latest_session_strips_subject_suffix(tmp_path):
 # ---- durable store ops ----
 
 def _store(tmp_path, monkeypatch):
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     s = Store(tmp_path / ".refmatrix")
     s.init()
     return s
@@ -112,7 +111,6 @@ def test_subject_leaves_unknown_is_empty(tmp_path, monkeypatch):
 
 def _cli_env(monkeypatch, tmp_path):
     root = tmp_path / ".refmatrix"
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     monkeypatch.setenv("REFMATRIX_ROOT", str(root))
     monkeypatch.setenv("RMX_PARTITION", default_partition_name(root))
     monkeypatch.setenv("RMX_SESSION", "clisess")

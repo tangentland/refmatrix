@@ -11,14 +11,12 @@ from refmatrix.store import Store, default_partition_name
 
 def test_fresh_init_creates_default_partition(tmp_path, monkeypatch):
     """A brand-new Store starts with a single project-scoped partition
-    (id=1, named after the project dir) and fragments live under
-    fragments/<that-name>/. Existing read/write APIs work unchanged because
-    the default partition is implicit.
+    (id=1, named after the project dir). Existing read/write APIs work
+    unchanged because the default partition is implicit.
 
-    Pinned to SQLite: the per-partition fragment file layout is
-    SQLite-only. DuckDB persists fragments as BLOB rows (see the BLOB
-    persistence tests in test_duckdb_fragments.py)."""
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
+    Re-pointed to DuckDB in S1 (2026-11-19): the assertion on the old
+    per-partition fragment FILE went with that layout; DuckDB persists
+    fragments as BLOB rows (test_duckdb_fragments.py)."""
     s = Store(tmp_path / ".refmatrix")
     s.init()
     default = default_partition_name(tmp_path / ".refmatrix")
@@ -37,9 +35,6 @@ def test_fresh_init_creates_default_partition(tmp_path, monkeypatch):
     s.link("mentions", cid, eid)
     s.close()
 
-    # Fragment file landed under the per-partition subdir.
-    assert (s.root / "fragments" / default / "mentions.rb64").exists()
-
 
 # --- legacy migration ------------------------------------------------------
 
@@ -52,10 +47,9 @@ def test_two_partitions_stay_isolated(tmp_path, monkeypatch):
     partitions can hold entities with the same (kind, name) and never see
     each other's data through the partition-scoped APIs.
 
-    Pinned to SQLite: the final fragments/<partition>/ on-disk assertion
-    is SQLite-layout-specific. DuckDB stores both partitions as BLOB rows
-    in `bitmap_fragments`, which the DuckDB-specific tests cover."""
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
+    Re-pointed to DuckDB in S1 (2026-11-19): the final on-disk assertion
+    on fragments/<partition>/ files went with that layout; DuckDB stores
+    both partitions as BLOB rows in `bitmap_fragments`."""
     root = tmp_path / ".refmatrix"
     Store(root).init()
 
@@ -100,17 +94,14 @@ def test_two_partitions_stay_isolated(tmp_path, monkeypatch):
     assert sa.get_saved_query("doc-gap") is not None
     assert sb.get_saved_query("doc-gap") is None
 
-    # Close both — flush_fragments() persists to per-partition subdirs.
     sa.close()
     sb.close()
-    assert (root / "fragments" / "agent-a" / "mentions.rb64").exists()
-    assert (root / "fragments" / "agent-b" / "mentions.rb64").exists()
 
 
 def test_rename_partition_moves_rows_and_dirs(tmp_path, monkeypatch):
-    """rename_partition updates the catalog row, keeps entity data resolvable
-    (entities key off partition id, not name), and moves the fragment dir."""
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
+    """rename_partition updates the catalog row and keeps entity data resolvable
+    (entities key off partition id, not name). The fragment-dir move went with
+    the file layout in S1 (2026-11-19)."""
     root = tmp_path / ".refmatrix"
     s = Store(root, partition="old-name")
     s.init()
@@ -118,7 +109,6 @@ def test_rename_partition_moves_rows_and_dirs(tmp_path, monkeypatch):
     e = s.upsert_entity(kind="code", name="x.py")
     s.link("mentions", cid, e)
     s.close()
-    assert (root / "fragments" / "old-name").exists()
 
     s2 = Store(root, partition="old-name")
     s2.rename_partition("old-name", "new-name")
@@ -130,13 +120,10 @@ def test_rename_partition_moves_rows_and_dirs(tmp_path, monkeypatch):
     )]
     assert "new-name" in names and "old-name" not in names
     assert s3.get_entity("concept", "parser") is not None
-    assert (root / "fragments" / "new-name").exists()
-    assert not (root / "fragments" / "old-name").exists()
     s3.close()
 
 
 def test_rename_partition_rejects_existing_target(tmp_path, monkeypatch):
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     root = tmp_path / ".refmatrix"
     for name in ("a", "b"):
         st = Store(root, partition=name)

@@ -65,7 +65,6 @@ def _unit(*components: float) -> np.ndarray:
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     s = Store(root)
