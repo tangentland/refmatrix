@@ -228,3 +228,74 @@ def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spaw
             for b in by_cls.get("corroborated", [])] == [sorted(SUBJECT)], (
         by_cls.get("corroborated"), stats)
     assert sorted(b["label"] for b in by_cls.get("singleton", [])) == sorted(LONERS), stats
+
+
+# ── `plan` with `compile` is refused, loudly (T0.5 ruling, 2026-11-19) ─────
+
+_A_PLAN = {"scope": "memory", "clusters": [], "unclustered": []}
+
+
+def _names_both(text: str) -> bool:
+    return "exclusive" in text and "`plan`" in text and "`compile`" in text
+
+
+def test_the_verb_refuses_plan_with_compile_before_any_daemon_call():
+    """Two plan sources in one call: refused with the typed args error, never resolved by
+    picking one. The root has NO store and no daemon, so a verb that reached for the daemon
+    first answers with a daemon error instead of the refusal (mutation G5)."""
+    from refmatrix import verbs
+    root = Path(rmx_sandbox.short_root("bnp.")) / "proj" / ".refmatrix"
+    with pytest.raises(verbs.VerbArgsError) as e:
+        verbs.memory(root, "brief", plan=_A_PLAN, compile=True)
+    assert _names_both(str(e.value)), str(e.value)
+
+
+def test_mcp_brief_with_plan_and_compile_is_an_error_naming_both():
+    """The same refusal over the MCP `rmx_memory` tool: `isError`, and the text names both
+    parameters. No daemon behind the root, as above."""
+    from refmatrix import mcp
+    root = Path(rmx_sandbox.short_root("bnm.")) / "proj" / ".refmatrix"
+    reply = mcp.handle_message({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "rmx_memory",
+                   "arguments": {"action": "brief", "plan": _A_PLAN, "compile": True,
+                                 "root": str(root)}}})
+    result = reply["result"]
+    text = result["content"][0]["text"]
+    assert result["isError"], text
+    assert _names_both(text), text
+
+
+def test_the_memory_brief_op_refuses_plan_with_compile_itself(spawn):
+    """Any caller of the op, not only the verb: a direct `memory_brief` op call with both, on
+    a REAL spawned daemon, answers `ok: False` naming both. Without the op's own check the
+    compile plan silently replaces the caller's (mutation G6)."""
+    from refmatrix import daemon as dm
+    ctx = spawn(seed_compilable)
+    resp = dm.call(ctx.root, "memory_brief",
+                   {"partition": ctx.part, "plan": _A_PLAN, "compile": True},
+                   timeout=60, retries=0)
+    assert resp.get("ok") is False, resp
+    assert _names_both(str(resp.get("error"))), resp
+
+
+def test_a_compiling_brief_gets_the_compile_budget_in_one_attempt(spawn, monkeypatch):
+    """The clustering pass runs inside the op now, which the 10 s read budget was never sized
+    for: a compiling brief's one `memory_brief` call carries MORE than the read budget (up to
+    `MEMORY_COMPILE_TIMEOUT_S`) and is one attempt; a plain brief stays inside the read budget.
+    Observed at the transport (`tests.timing.record_transport`, the 29.4 class-B observer) on a
+    REAL daemon, so no test waits out either budget (rule 6). Mutation G8 (the compiling budget
+    back to `MEMORY_READ_BUDGET_S`) fails here."""
+    from refmatrix import daemon as dm, verbs
+    from tests.timing import record_transport
+    ctx = spawn(seed_compilable)
+    calls = record_transport(monkeypatch, dm)
+    verbs.memory(ctx.root, "brief", compile=True)
+    verbs.memory(ctx.root, "brief")
+    briefs = [c for c in calls if c["op"] == "memory_brief"]
+    assert len(briefs) == 2, calls
+    compiling, plain = briefs
+    assert compiling["retries"] == 0 and plain["retries"] == 0, briefs
+    assert verbs.MEMORY_READ_BUDGET_S < compiling["timeout"] <= verbs.MEMORY_COMPILE_TIMEOUT_S, \
+        briefs
+    assert plain["timeout"] <= verbs.MEMORY_READ_BUDGET_S, briefs
