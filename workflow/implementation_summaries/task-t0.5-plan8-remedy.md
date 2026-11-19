@@ -110,6 +110,17 @@ bsd-t05 r1 was DIRTY (1 BULLSHIT, 1 SKETCHY, 4 MEH). red-t05 wrote the REDs at `
   snapshot skew applies only to a caller plan. {#fold-m-2}
 - **#m-4.** Task 8.3's spec keeps its prose note and drops the non-standard
   `rel: superseded-by`; this summary carries `rel: supersedes` instead. {#fold-m-4}
+- **L189 (bsd-t05 confirm-lite #b-1-r2).** The r1 count read the PLAN's corpus: after
+  `brief --save`, the next compiling brief counted its 15 saved `brief/*` rows as unembedded
+  (18 vs 3). Now `compile_briefs` counts over its OWN corpus rows (`brief._plan_unplaced`):
+  a row whose name is in no cluster and not in `unclustered` is skipped, as `unembedded`
+  when the plan embedded fewer rows than it considered, else `not_in_plan` (a row the plan
+  never saw). `_plan_unembedded` is gone. `singleton` neither emits nor counts an
+  `unclustered` name that exists in the store outside the brief's corpus; only a name the
+  store lacks stays `singleton_unresolved`. The op's `compile_memories` call passes
+  `exclude_mtypes=brief.EXCLUDE_MTYPES` (consolidate's defaults plus `brief`, `brief/*`), so
+  the brief's own output never enters its plan; the corpus-side count still guards a caller
+  plan. {#fold-l189}
 - **#s-1, #m-3** were RED's (the G7 mirror probe; the dead-export guard's blind spots).
   {#fold-red}
 

@@ -5708,7 +5708,8 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
     DERIVATION IS A READ and runs on the read path, not under the writer lock.
     It decodes a couple of linkage fragments and runs two small SQL queries.
     The two plan-derived classes need a `memory compile` plan. `compile=True`
-    builds it HERE, with `consolidate.compile_memories` at its default knobs,
+    builds it HERE, with `consolidate.compile_memories` at its default knobs
+    (exclusions: `brief.EXCLUDE_MTYPES`, so the brief's own rows stay out),
     inside the same read closure the briefs derive in, so plan and briefs read
     one snapshot and nothing but the switch crosses the wire (T0.5 R5.3, ch-bsd
     plan-8 r5 #s-4, 2026-11-19: before it the CLI planned in its own process and
@@ -5747,7 +5748,14 @@ def _op_memory_brief(d: Daemon, args: dict) -> dict:
         run_kw = kw
         if compiling:
             from refmatrix.consolidate import DEFAULT_SCOPE, compile_memories
-            run_kw = {**kw, "plan": compile_memories(s, scope=kw.get("scope", DEFAULT_SCOPE))}
+            # The brief's own output never enters its plan (26.6 one corpus;
+            # bsd-t05 confirm #b-1-r2, L189, 2026-11-19: at default exclusions
+            # a save-then-brief planned over its 15 saved `brief/*` rows).
+            # `brief.EXCLUDE_MTYPES` IS consolidate's defaults plus `brief`,
+            # `brief/*`: the union, defined once in brief.py.
+            run_kw = {**kw, "plan": compile_memories(
+                s, scope=kw.get("scope", DEFAULT_SCOPE),
+                exclude_mtypes=brief_mod.EXCLUDE_MTYPES)}
         # The plan's unembedded rows reach the brief stats through
         # `compile_briefs` (skipped_by["unembedded"]), the one place both plan
         # sources pass, so they are counted once (bsd-t05 r1 #b-1, 2026-11-19).

@@ -241,6 +241,7 @@ def corroborated(plan: dict, *, dates: dict[int, float],
 
 
 def singleton(plan: dict, *, name_to_id: dict[str, int],
+              outside: "set[str] | frozenset[str]" = frozenset(),
               count_skips: bool = False):
     """Memories that joined no subject — a topic the corpus touched once.
 
@@ -254,12 +255,21 @@ def singleton(plan: dict, *, name_to_id: dict[str, int],
     BOTH detectors into one `skipped` and the CLI renders that breakdown, so a
     detector that skips without a reason key makes the sentence unanswerable —
     it printed a literal `(?)` (ch-bsd r4 #s-2-r4).
+
+    `name_to_id` is the brief's CORPUS. `outside` names rows that exist in the
+    store but lie outside that corpus (the brief's own saved `brief/*` output a
+    caller plan may still carry): they are neither a singleton nor a skip,
+    because the report never claimed them (bsd-t05 confirm #b-1-r2,
+    2026-11-19: a save-then-brief counted its own 15 rows). Only a name the
+    store does not have at all is `singleton_unresolved`.
     """
     out: list[Brief] = []
     skipped = 0
     by_reason: Counter = Counter()
     for name in plan.get("unclustered") or []:
         eid = name_to_id.get(name)
+        if eid is None and name in outside:
+            continue
         if eid is None:
             # Emitting here would mean a brief with no evidence. Count it —
             # and say WHY, because `compile_briefs` sums every detector's
@@ -423,27 +433,44 @@ def orphan_concept(store: "Store", *, min_mentions: int = MIN_MENTIONS,
 
 # ── the run ────────────────────────────────────────────────────────────────
 
-def _plan_unembedded(plan: dict) -> int:
-    """Memories the plan saw but placed nowhere: no cluster, not `unclustered`.
+def _plan_unplaced(plan: dict, rows: "dict[int, dict]") -> "tuple[int, str]":
+    """`(n, reason)`: the brief's OWN corpus rows the plan placed nowhere.
 
-    `compile_memories` clusters only rows with a vector, so an unembedded row
-    joins no subject and is not in `unclustered` either: neither plan-derived
-    detector can see it. It was in `stats.memories` and in nothing else
-    (`skipped: 0`) on every surface (bsd-t05 r1 #b-1, 2026-11-19); rule 3 says
-    count it. Counted ONCE: with fewer than two embedded rows `compile_memories`
-    returns early with EVERY row in `unclustered` (unembedded ones included),
-    they become singletons, and none is a skip. So the count is the plan's
-    `unembedded` capped by the rows it left unplaced (`candidates` minus cluster
-    members minus `unclustered`), which also keeps a concept-only plan (every
-    row "unembedded", every row placed) at zero."""
-    st = plan.get("stats") or {}
-    n = int(st.get("unembedded") or 0)
-    if n <= 0 or st.get("candidates") is None:
-        return max(n, 0)
+    Placed = the member names of every cluster plus `unclustered`; a corpus row
+    outside both is a row neither plan-derived detector can see, and rule 3
+    says count it (bsd-t05 r1 #b-1, 2026-11-19). The count is over `rows`, the
+    corpus `stats.memories` states, never over the plan's: the plan of a
+    caller (a dry-run `memory compile`) also covers the brief's saved
+    `brief/*` output, and reading its `unembedded` counted a save-then-brief's
+    15 rows as 18 skips (bsd-t05 confirm #b-1-r2, L189, 2026-11-19).
+
+    The reason is `unembedded` when the plan embedded fewer rows than it
+    considered (`compile_memories` clusters only rows with a vector), else
+    `not_in_plan`: a row the plan never saw, e.g. written after it was built.
+    The <2-embedded early return puts every row in `unclustered`, and a
+    concept-only plan places every row, so neither counts anything."""
     placed = {m.get("name") for c in plan.get("clusters") or []
               for m in c.get("members") or []}
     placed |= set(plan.get("unclustered") or [])
-    return max(0, min(n, int(st["candidates"]) - len(placed)))
+    n = sum(1 for r in rows.values() if r["name"] not in placed)
+    st = plan.get("stats") or {}
+    emb, cand = st.get("embedded"), st.get("candidates")
+    unembedded = emb is not None and cand is not None and int(emb) < int(cand)
+    return n, ("unembedded" if unembedded else "not_in_plan")
+
+
+def _names_in_store(store: "Store", names: Iterable[str]) -> set[str]:
+    """Which of `names` are memory rows of the active partition at all."""
+    names = sorted(set(names))
+    found: set[str] = set()
+    con = store._read()
+    for start in range(0, len(names), 500):
+        chunk = names[start:start + 500]
+        ph = ",".join("?" * len(chunk))
+        found |= {str(r[0]) for r in con.execute(
+            f"SELECT name FROM entities WHERE partition_id=? AND kind='memory' "
+            f"AND name IN ({ph})", [store._partition_id, *chunk]).fetchall()}
+    return found
 
 
 def compile_briefs(store: "Store", *, plan: "dict | None" = None,
@@ -498,10 +525,10 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                     not_run[c] = ("needs a `memory compile` plan; pass compile=true "
                                   "(CLI `--compile`) or a caller-built plan=")
         else:
-            n = _plan_unembedded(plan)
+            n, why_unplaced = _plan_unplaced(plan, rows)
             if n:
                 skipped += n
-                skipped_by["unembedded"] = skipped_by.get("unembedded", 0) + n
+                skipped_by[why_unplaced] = skipped_by.get(why_unplaced, 0) + n
             if "corroborated" in wanted:
                 dates = memory_dates(store, rows)
                 briefs += corroborated(plan, dates=dates,
@@ -510,7 +537,9 @@ def compile_briefs(store: "Store", *, plan: "dict | None" = None,
                 ran.append("corroborated")
             if "singleton" in wanted:
                 name_to_id = {r["name"]: r["id"] for r in rows.values()}
+                strays = [n for n in plan.get("unclustered") or [] if n not in name_to_id]
                 got, sk, why = singleton(plan, name_to_id=name_to_id,
+                                         outside=_names_in_store(store, strays),
                                          count_skips=True)
                 briefs += got
                 skipped += sk
