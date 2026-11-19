@@ -116,8 +116,8 @@ def _env() -> dict:
     return env
 
 
-def _cli(base: Path, proj: Path, argv: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(_entry(base)), *argv], cwd=str(proj),
+def _cli(base: Path, cwd: Path, argv: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(_entry(base)), *argv], cwd=str(cwd),
                           env=_env(), capture_output=True, text=True, timeout=120)
 
 
@@ -207,14 +207,23 @@ def _refusal_problems(line: str, legacy: Path) -> list[str]:
     return [f"the line lacks {m!r}" for m in missing]
 
 
+# entry -> (argv, run from): "proj" runs in the legacy project, so the CLI's own root
+# resolution sees the legacy store; "elsewhere" runs in a separate plain dir and names the
+# legacy project by argument, so ONLY the opener's check (`Store.__init__`) can refuse it.
+# `{proj}` in argv is the legacy project's path.
 CLI_ENTRIES = {
-    "read-verb": ["query", "mentions:s1_probe"],
-    "sync": ["sync", "--files", "note.md"],
-    "init": ["init"],
+    "read-verb": (["query", "mentions:s1_probe"], "proj"),
+    "sync": (["sync", "--files", "note.md"], "proj"),
+    "init": (["init"], "proj"),
     # Not in the spec's list, added by RED: the one CLI entry whose whole job is to spawn a
     # daemon. With the CLI-side check dropped (AC-4 M4) the daemon is forked before any Store
     # refuses, and this case sees it.
-    "daemon-start": ["daemon", "start", "--no-watch"],
+    "daemon-start": (["daemon", "start", "--no-watch"], "proj"),
+    # AC-4 M2 (the lead, 2026-11-19): every entry above is refused by the CLI's root check
+    # before any Store opens, so dropping the refusal from `Store.__init__` survived them. A
+    # user who inits a legacy project from another directory reaches only that backstop.
+    "init-path-elsewhere": (["init", "--path", "{proj}", "--no-hooks", "--no-agents"],
+                            "elsewhere"),
 }
 
 
@@ -230,13 +239,18 @@ def test_a_legacy_catalog_alone_is_refused_by_the_cli(legacy_root, entry):
     legacy = store / "catalog.db"
     _entry(base)                                    # written before the snapshot: not proj
     (proj / "note.md").write_text("# a note `rmx sync --files` would index\n")
+    elsewhere = base / "elsewhere"                  # a plain dir: no .refmatrix anywhere above
+    elsewhere.mkdir()
+    template, run_from = CLI_ENTRIES[entry]
+    argv = [a.replace("{proj}", str(proj)) for a in template]
     before = _snapshot(proj)
     t0 = time.time()
-    r = _cli(base, proj, CLI_ENTRIES[entry])
+    r = _cli(base, proj if run_from == "proj" else elsewhere, argv)
     after = _snapshot(proj)
     daemon = _daemon_evidence(store, t0)
     text = _text(r)
-    where = f"[{kind}] `rmx {' '.join(CLI_ENTRIES[entry])}` on a dir holding only catalog.db"
+    where = (f"[{kind}] `rmx {' '.join(argv)}` (cwd {run_from}) on a dir holding only "
+             f"catalog.db")
     assert TRACEBACK not in r.stderr, f"{where} crashed\n{text}"
     assert not daemon, f"{where} started a daemon: {daemon}\n{text}"
     assert r.returncode != 0, f"{where} exited 0: the legacy catalog was opened, not refused\n{text}"
@@ -299,6 +313,36 @@ def test_the_daemon_check_sees_a_real_daemon_start():
             _stop_any_daemon(store)
         finally:
             shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("read_only", [False, True], ids=["read-write", "read-only"])
+def test_a_legacy_catalog_alone_is_refused_by_a_library_store_open(legacy_root, read_only):
+    """AC-4 M2's backstop: library code (a script, the daemon, any opener the CLI's root check
+    never sees) that constructs `Store(<legacy root>)` gets the typed `LegacyCatalogError`
+    carrying the path, the phrase and the fix, and the dir is left byte-identical. At the base
+    the constructor returns a store bound to the file as SQLite."""
+    from refmatrix import store as store_mod
+    kind, base, proj, store = legacy_root
+    legacy = store / "catalog.db"
+    before = _snapshot(proj)
+    raised: "BaseException | None" = None
+    try:
+        s = store_mod.Store(store, read_only=read_only)
+    except Exception as exc:                         # inspected below, never swallowed
+        raised = exc
+    else:
+        s.close()
+    changed = _diff(before, _snapshot(proj))
+    where = f"[{kind}] Store({legacy.parent}, read_only={read_only})"
+    assert raised is not None, \
+        f"{where} returned a store: the legacy catalog was not refused by the opener"
+    err_type = getattr(store_mod, "LegacyCatalogError", None)
+    assert err_type is not None and isinstance(raised, err_type), \
+        f"{where} raised {type(raised).__name__}: {raised!r}, not store.LegacyCatalogError"
+    problems = _refusal_problems(str(raised), legacy)
+    assert not problems, f"{where}: {problems}\nmessage: {raised}"
+    assert not changed, f"{where} changed the project: {changed}"
 
 
 # =============================================================================================
