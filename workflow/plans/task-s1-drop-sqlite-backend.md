@@ -5,14 +5,14 @@ title: "Task S1: drop the SQLite catalog backend"
 tags: [task, s1, store, backend, sqlite, duckdb, deletion]
 metadata:
   node_type: task
-  status: approved-pending-lead
+  status: approved
   created: 2026-11-18
 ---
 
 # Task S1: drop the SQLite catalog backend {#root}
 
 > Queue row S1 (L182, Q52 = a). After T0.4, before 29.5. Large change: RED and GREEN in separate
-> hands, mutations on the `src/` change, one ch-bsd pass. One open decision: [[#d1]].
+> hands, mutations on the `src/` change, one ch-bsd pass. [[#d1]] = (b) (user, 2026-11-19; L187).
 
 rel: part-of -> [[plan-of-plans#queue]]
 rel: derives-from -> [[pop-finished#q52]]
@@ -95,6 +95,8 @@ fleet store whenever it lands. **(a)** edit it in S1: a store-changing release w
 (L107). **(b, rec)** S1 leaves `pagerank.py`, `ingest.py` and `vectors.py` byte-identical;
 `bulk_write` keeps `sqlite_sql`, accepted and unused, for that one caller; the 7 lines are
 allow-listed in [[#ac-3]], owner 29.2 R7 deploy B, which edits them and deletes the parameter.
+
+**Decided (b)**, 2026-11-19 (the user: "I agree, go"; [[plan-of-plans#rulings]] L187). {#d1-decided}
 
 ## Acceptance {#acceptance}
 
