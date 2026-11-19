@@ -195,6 +195,48 @@ def test_the_context_op_holds_no_shared_mirror_lock_while_scoring(tmp_path):
     assert free == [True], free
 
 
+def test_a_compiling_brief_never_plans_under_the_mirror_use_lock(tmp_path, monkeypatch):
+    """T0.5 (bsd-t05 r1 #s-1, probe P3 adopted): `memory brief` with `compile` runs the
+    clustering pass inside the op, seconds on a real corpus. On the shared mirror that pass
+    would hold the mirror's single use-lock against every other read -- r9 #b-2's defect, on
+    the context op above. A CALL-THROUGH observer over `consolidate.compile_memories` (the real
+    function still plans; registered as an observer) tries the use-lock, non-blocking, from a
+    second thread just before planning: it must be free. Mutation G7 (the compiling path drops
+    `private=True`) survived every other test and fails here."""
+    from refmatrix import consolidate, daemon as dm
+    from tests.test_brief_detectors import seed_compilable
+
+    d, s = _daemon(tmp_path)
+    seed_compilable(s, "pa")
+    s._conn.commit()
+    d._snapshot_catalog(force=True)
+    assert d._mem_mirror.refresh() is True
+    real = consolidate.compile_memories
+    free: list[bool] = []
+
+    def observed(store, **kw):
+        got: list[bool] = []
+
+        def probe():
+            lk = d._mem_mirror.acquire_use()
+            ok = lk.acquire(blocking=False)
+            got.append(ok)
+            if ok:
+                lk.release()
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join()
+        free.append(got[0])
+        return real(store, **kw)
+
+    monkeypatch.setattr(consolidate, "compile_memories", observed)
+    out = dm.OPS["memory_brief"](d, {"partition": "pa", "compile": True})
+    s.close()
+    assert free == [True], free
+    assert (out.get("stats") or {}).get("by_class", {}).get("corroborated") == 1, out.get("stats")
+
+
 # ---- #b-2 ----------------------------------------------------------------
 
 class _Client:

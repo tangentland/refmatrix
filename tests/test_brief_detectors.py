@@ -80,10 +80,14 @@ def store(tmp_path, monkeypatch):
 # mutually orthogonal rows (each joins no subject: singletons). Fourteen, so the four's six
 # pairs are under 5% of the 153 and the 95th-percentile auto threshold lands at 0.0 -- with
 # fewer it climbs to ~0.9997 and the cluster rests on float noise. No `mentions`: the concept
-# leg stays empty and cannot weld the singletons together.
+# leg stays empty and cannot weld the singletons together. Plus three memories with NO
+# vector (bsd-t05 r1 #b-1): `compile_memories` clusters embedded rows only, so these join no
+# subject and are not in the plan's `unclustered` either; a brief must COUNT them
+# (`skipped_by["unembedded"]`), never let them vanish between `stats.memories` and the briefs.
 SUBJECT = ("corr-0", "corr-1", "corr-2", "corr-3")
 SUBJECT_DAYS = ("2026-10-01", "2026-10-03", "2026-10-05", "2026-10-07")
 LONERS = tuple(f"lone-{j}" for j in range(14))
+UNEMBEDDED = ("unemb-0", "unemb-1", "unemb-2")
 SEED_DIM = 32
 
 
@@ -95,8 +99,9 @@ def _seed_vec(*components: float) -> np.ndarray:
 
 
 def seed_compilable(s: Store, part: str) -> dict[str, int]:
-    """Write `SUBJECT` + `LONERS` with vectors into `part`; returns name -> id. Shared with
-    tests/test_brief_real_daemon.py, whose daemon-served store gets the same corpus."""
+    """Write `SUBJECT` + `LONERS` with vectors and `UNEMBEDDED` without into `part`; returns
+    name -> id. Shared with tests/test_brief_real_daemon.py and
+    tests/test_read_path_partition_and_budget.py, whose stores get the same corpus."""
     ids: dict[str, int] = {}
     vecs: dict[str, np.ndarray] = {}
     with s.with_partition(part):
@@ -110,6 +115,9 @@ def seed_compilable(s: Store, part: str) -> dict[str, int]:
             vecs[name] = _seed_vec(*([0.0] * (2 + j) + [1.0]))
         s.upsert_vector([ids[n] for n in vecs], np.vstack([vecs[n] for n in vecs]),
                         kind="memory", dim=SEED_DIM)
+        for name in UNEMBEDDED:
+            ids[name] = s.add_memory(name, f"a note nobody embedded ({name})", mtype="project",
+                                     metadata={"created": "2026-10-09"})
         s.flush_fragments()
     return ids
 
@@ -326,8 +334,21 @@ def test_compile_brief_returns_every_class_and_a_reconciled_skip_count(compiled)
     assert sorted(br.label for br in by_cls["singleton"]) == sorted(LONERS)
     assert [sorted(br.evidence) for br in by_cls["contradicted"]] == [sorted([a, b])]
     assert [br.label for br in by_cls["orphan-concept"]] == [orphan]
+    # A caller-supplied plan counts the rows it could not cluster, like the compiling op
+    # (bsd-t05 r1 #b-1): the three unembedded memories are skipped WITH a reason.
+    assert result["stats"]["skipped_by"].get("unembedded") == len(UNEMBEDDED), result["stats"]
     assert result["stats"]["skipped"] == sum(result["stats"]["skipped_by"].values())
     assert isinstance(result["stats"]["skipped"], int)
+
+
+def test_a_class_that_did_not_run_says_how_to_run_it(store):
+    """bsd-t05 r1 #m-2: the hint for a plan-derived class that did not run names the switch
+    that runs it (`compile=true`, CLI `--compile`) or a caller plan (`plan=`). It used to say
+    "or run `rmx memory compile` first", which does nothing for a brief: no op reads a stored
+    plan."""
+    hint = brief.compile_briefs(store)["stats"]["classes_not_run"]["corroborated"]
+    assert ("compile=true" in hint.lower() and "--compile" in hint and "plan=" in hint
+            and "rmx memory compile` first" not in hint), hint
 
 
 def test_every_emitted_brief_has_evidence_that_resolves_to_a_real_row(store):
@@ -390,36 +411,90 @@ def _brief_aliases(tree: ast.AST) -> tuple[set, set]:
     return aliases, direct
 
 
+_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _refs(trees) -> tuple[set, set]:
+    """(Names, attribute names) used anywhere under `trees`."""
+    names: set = set()
+    attrs: set = set()
+    for t in trees:
+        for n in ast.walk(t):
+            if isinstance(n, ast.Name):
+                names.add(n.id)
+            elif isinstance(n, ast.Attribute):
+                attrs.add(n.attr)
+    return names, attrs
+
+
 def dead_brief_functions(brief_src: str, caller_srcs: list[str]) -> tuple[list, set]:
-    """`(dead, roots)`: module-level functions of `brief_src` that nothing in `caller_srcs`
-    reaches, directly or through other `brief` functions and classes; and the functions the
-    callers name directly (the roots). A private helper reached only from a dead function is
-    dead too: that is how `_parse_evidence` is named beside `parse_gmd`."""
+    """`(dead, roots)`: what in `brief_src` nothing in `caller_srcs` reaches, and the functions
+    the callers name directly (the roots).
+
+    The graph's nodes are module-level functions, classes, each METHOD of a class (as
+    `Class.method`), and module-level bindings (`X = ...`). A walk starts at the callers' roots
+    and at module-level statements that are not bindings (they run on import), and follows the
+    Names each reached node uses. A private helper reached only from a dead function is dead too:
+    that is how `_parse_evidence` was named beside `parse_gmd`. bsd-t05 r1 #m-3 closed two blind
+    spots of the first version:
+    - a reached class no longer reaches every method: a method is reached when the class is and
+      it is a dunder, or its name is used as an attribute by production code or by a reached
+      node (B1: a dead `_Reader.from_gmd` kept its helper alive);
+    - a module-level binding's right-hand side is walked only when the binding itself is
+      reached (B2: an unread `_FORMATS = {"gmd": parse_gmd}` kept `parse_gmd` alive)."""
     tree = ast.parse(brief_src)
-    defs = {n.name: n for n in tree.body
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
-    funcs = {k for k, n in defs.items() if not isinstance(n, ast.ClassDef)}
-    # module-level statements (constants, aliases) run on import: what they name is live
-    seeds = {n.id for stmt in tree.body if stmt.__class__ not in
-             (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-             for n in ast.walk(stmt) if isinstance(n, ast.Name)}
+    body: dict = {}          # node key -> the subtrees its references come from
+    funcs: set = set()
+    classes: set = set()
+    methods: dict = {}       # "Class.method" -> (class name, method name)
+    on_import: list = []
+    for st in tree.body:
+        if isinstance(st, _DEFS):
+            funcs.add(st.name)
+            body.setdefault(st.name, []).append(st)
+        elif isinstance(st, ast.ClassDef):
+            classes.add(st.name)
+            body.setdefault(st.name, []).extend(
+                [*st.decorator_list, *st.bases, *st.keywords,
+                 *(b for b in st.body if not isinstance(b, _DEFS))])
+            for b in st.body:
+                if isinstance(b, _DEFS):
+                    key = f"{st.name}.{b.name}"
+                    methods[key] = (st.name, b.name)
+                    body[key] = [b]
+        elif isinstance(st, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = st.targets if isinstance(st, ast.Assign) else [st.target]
+            for t in targets:
+                for n in ast.walk(t):
+                    if isinstance(n, ast.Name):
+                        body.setdefault(n.id, []).extend([st.value] if st.value else [])
+        else:
+            on_import.append(st)
     roots: set = set()
+    attrs: set = set()
     for src in caller_srcs:
         t = ast.parse(src)
         aliases, direct = _brief_aliases(t)
         roots |= direct
         roots |= {n.attr for n in ast.walk(t) if isinstance(n, ast.Attribute)
                   and isinstance(n.value, ast.Name) and n.value.id in aliases}
+        attrs |= _refs([t])[1]
     reached: set = set()
-    todo = [n for n in seeds | roots if n in defs]
-    while todo:
-        name = todo.pop()
-        if name in reached:
-            continue
-        reached.add(name)
-        todo += [n.id for n in ast.walk(defs[name])
-                 if isinstance(n, ast.Name) and n.id in defs and n.id not in reached]
-    return sorted(funcs - reached), roots & funcs
+    todo = list(roots | _refs(on_import)[0])
+    while True:
+        while todo:
+            key = todo.pop()
+            if key in reached or key not in body:
+                continue
+            reached.add(key)
+            names, used = _refs(body[key])
+            attrs |= used
+            todo += [n for n in names if n in body and n not in reached]
+        todo = [k for k, (cls, m) in methods.items() if k not in reached and cls in reached
+                and ((m.startswith("__") and m.endswith("__")) or m in attrs)]
+        if not todo:
+            break
+    return sorted((funcs | classes | set(methods)) - reached), roots & funcs
 
 
 def _src_callers() -> list[str]:
@@ -440,9 +515,14 @@ def test_brief_exports_no_function_production_never_calls():
 
 
 def test_the_dead_export_guard_names_a_planted_dead_function():
-    """Rule 5's must-fail case (mutation M5.3): a `parse_gmd` stub re-added to the real
-    `brief.py`, with a private helper only it calls, is named -- both of them -- while a planted
-    function some caller does reach is not. A guard that stopped looking fails here."""
+    """Rule 5's must-fail cases, each planted into the REAL `brief.py`:
+    - M5.3: a `parse_gmd` stub with a private helper only it calls -- both named;
+    - B1 (bsd-t05 r1 #m-3): a dead method of a class production DOES reach, and the helper only
+      that method calls -- both named (the first guard counted every name inside a reached class
+      as reached);
+    - B2 (#m-3): `parse_gmd` named only in a module-level dict nothing reads -- named (the first
+      guard seeded the walk from every module-level statement);
+    and, as the control, a planted function and a planted class some caller reaches are not."""
     planted = BRIEF_PY.read_text() + (
         "\n\ndef parse_gmd(doc):\n    return _planted_helper(doc)\n"
         "\n\ndef _planted_helper(doc):\n    return [doc]\n"
@@ -451,3 +531,22 @@ def test_the_dead_export_guard_names_a_planted_dead_function():
     dead, roots = dead_brief_functions(planted, _src_callers() + [caller])
     assert "parse_gmd" in dead and "_planted_helper" in dead, dead
     assert "planted_live" not in dead and "planted_live" in roots, (dead, roots)
+
+    b1 = BRIEF_PY.read_text() + (
+        "\n\nclass _PlantedReader:\n"
+        "    def __init__(self, doc):\n        self.doc = doc\n"
+        "    def planted_read(self):\n        return self.doc\n"
+        "    def planted_from_gmd(self):\n        return _planted_method_helper(self.doc)\n"
+        "\n\ndef _planted_method_helper(doc):\n    return [doc]\n")
+    caller = "from refmatrix import brief as bm\nbm._PlantedReader('x').planted_read()\n"
+    dead, _roots = dead_brief_functions(b1, _src_callers() + [caller])
+    assert "_PlantedReader.planted_from_gmd" in dead, dead
+    assert "_planted_method_helper" in dead, dead
+    assert "_PlantedReader" not in dead and "_PlantedReader.planted_read" not in dead, dead
+    assert "_PlantedReader.__init__" not in dead, dead
+
+    b2 = BRIEF_PY.read_text() + (
+        "\n\ndef parse_gmd(doc):\n    return [doc]\n"
+        "\n\n_PLANTED_FORMATS = {\"gmd\": parse_gmd}\n")
+    dead, _roots = dead_brief_functions(b2, _src_callers())
+    assert "parse_gmd" in dead, dead

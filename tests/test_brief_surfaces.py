@@ -14,6 +14,8 @@ count of parameters — a test that silently compares a subset fails here.
 """
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 @pytest.fixture(autouse=True)
@@ -172,111 +174,115 @@ def test_the_cli_never_opens_a_write_store_directly():
 
 
 # ── the daemon op ──────────────────────────────────────────────────────────
+#
+# T0.5 (bsd-t05 r1 #m-1, 2026-11-19): these ran on fakes of `daemon._read_with_fallback`,
+# `brief.compile_briefs` and the Store (registry rows 75-79). The read-path fake patched the very
+# function whose use is the claim, and its 3-positional signature bent `src/` (GREEN `32c406e1`
+# split one `private=` call to fit it). They now run the REAL op on r9 #b-2's real daemon shell
+# (`_daemon`: real DuckDB, a real snapshot, a real `_MemMirror`), with a lock that records its
+# acquisitions standing in for nothing: it IS the daemon's `_store_lock`, observed.
 
-class _FakeCon:
-    """`_names_for` reads entity names to build the id->name map --gmd links
-    against (ch-bsd r2 #b-2-r2d). No names in this fixture, so: empty."""
+class _RecordingLock:
+    """A real `threading.Lock` that counts acquisitions -- the writer lock, observed."""
 
-    def execute(self, sql, params=None):
+    def __init__(self):
+        self._lk = threading.Lock()
+        self.acquired = 0
+
+    def acquire(self, blocking=True, timeout=-1):
+        ok = self._lk.acquire(blocking, timeout)
+        self.acquired += int(ok)
+        return ok
+
+    def release(self):
+        self._lk.release()
+
+    def locked(self):
+        return self._lk.locked()
+
+    def __enter__(self):
+        self.acquire()
         return self
 
-    def fetchall(self):
-        return []
+    def __exit__(self, *a):
+        self.release()
+        return False
 
 
-class _FakeStore:
-    def __init__(self):
-        self.saved: list[dict] = []
-        self._partition_name = "memory-proj"
-        self._partition_id = 1
+def _brief_daemon(tmp_path):
+    """The real shell, a corpus with one orphan concept, a fresh snapshot and mirror, and the
+    writer lock swapped for its recording twin AFTER setup (setup's own locking is not the
+    op's)."""
+    from tests.test_read_path_partition_and_budget import _daemon
 
-    def _read(self):
-        return _FakeCon()
-
-    def add_memory(self, name, content, mtype="observation", tags=None,
-                   metadata=None, protected=False):
-        self.saved.append({"name": name, "mtype": mtype, "content": content})
-        return len(self.saved)
-
-
-def test_the_op_derives_briefs_on_the_read_path(monkeypatch):
-    """Derivation is a read; it must not take the writer lock."""
-    called: dict = {}
-
-    def fake_compile(store, **kw):
-        called.update(kw)
-        return {"briefs": [brief.Brief(cls="singleton", label="x",
-                                       finding="f", evidence=[1])],
-                "stats": {"skipped": 0}, "params": {}}
-
-    monkeypatch.setattr(brief, "compile_briefs", fake_compile)
-    reads: list[str] = []
-
-    def fake_read(d, partition, fn):
-        reads.append(partition)
-        return fn(_FakeStore())      # fn is now the combined derive closure
-
-    monkeypatch.setattr(daemon_mod, "_read_with_fallback", fake_read)
-    out = daemon_mod.OPS["memory_brief"](
-        object(), {"partition": "memory-proj", "min_mentions": 3})
-    # ONE read-path call: derivation and the id->name map share a closure, so
-    # they see ONE snapshot and take the lock at most once in the boot window
-    # (ch-bsd r3, answer to Q2).
-    assert reads == ["memory-proj"]
-    assert out["stats"]["skipped"] == 0
-    assert len(out["briefs"]) == 1
-    assert called["min_mentions"] == 3
+    d, s = _daemon(tmp_path)
+    with s.with_partition("pa"):
+        c = s.add_concept("orphan_term")
+        for i in range(4):
+            m = s.add_memory(f"om{i}", f"talks about orphan_term {i}", mtype="project")
+            s.link("mentions", c, m)
+        s.flush_fragments()
+    s._conn.commit()
+    d._snapshot_catalog(force=True)
+    assert d._mem_mirror.refresh() is True
+    d._store_lock = _RecordingLock()
+    return d, s
 
 
-def test_saving_writes_one_memory_row_per_brief_under_the_writer_lock(monkeypatch):
-    fake = _FakeStore()
-
-    def fake_compile(store, **kw):
-        return {"briefs": [brief.Brief(cls="singleton", label="lonely",
-                                       finding="touched once", evidence=[4])],
-                "stats": {"skipped": 0}, "params": {}}
-
-    monkeypatch.setattr(brief, "compile_briefs", fake_compile)
-    monkeypatch.setattr(daemon_mod, "_read_with_fallback",
-                        lambda d, p, fn: fn(fake))
-
-    locks: list[str] = []
-
-    class _D:
-        _store_lock = _CtxRecorder(locks)
-        def _st(self): return _PartCtx(fake)
-        def _request_snapshot(self): locks.append("snapshot")
-
-    out = daemon_mod.OPS["memory_brief"](
-        _D(), {"partition": "memory-proj", "save": True})
-    assert out["saved"] == 1
-    assert fake.saved[0]["mtype"] == "brief/singleton"
-    assert "lock" in locks
-    assert "snapshot" in locks
+def _memory_count(s, part):
+    with s.with_partition(part):
+        return len(s._read().execute(
+            "SELECT e.id FROM entities e WHERE e.partition_id=? AND e.kind='memory'",
+            (s._partition_id,)).fetchall())
 
 
-def test_not_saving_writes_nothing(monkeypatch):
-    fake = _FakeStore()
-    monkeypatch.setattr(brief, "compile_briefs", lambda store, **kw: {
-        "briefs": [brief.Brief(cls="singleton", label="x", finding="f",
-                               evidence=[1])],
-        "stats": {"skipped": 0}, "params": {}})
-    monkeypatch.setattr(daemon_mod, "_read_with_fallback",
-                        lambda d, p, fn: fn(fake))
-    out = daemon_mod.OPS["memory_brief"](object(), {"partition": "memory-proj"})
-    assert fake.saved == []
+def test_the_op_derives_briefs_on_the_read_path(tmp_path):
+    """Derivation is a read: the op answers without taking the writer lock, the knobs reach
+    the detectors (`params`), and the id->name map covers every evidence id (one closure,
+    one snapshot: ch-bsd r3, answer to Q2)."""
+    d, s = _brief_daemon(tmp_path)
+    try:
+        out = daemon_mod.OPS["memory_brief"](d, {"partition": "pa", "min_mentions": 3})
+    finally:
+        s.close()
+    assert d._store_lock.acquired == 0, "a non-saving brief took the writer lock"
+    assert [b["class"] for b in out["briefs"]] == ["orphan-concept"], out
+    assert out["params"]["min_mentions"] == 3, out["params"]
+    ev = {str(e) for b in out["briefs"] for e in b["evidence"]}
+    assert ev and ev <= set(out["names"]), (ev, out["names"])
+    assert out["saved"] == 0
+
+
+def test_saving_writes_one_memory_row_per_brief_under_the_writer_lock(tmp_path):
+    d, s = _brief_daemon(tmp_path)
+    try:
+        before = _memory_count(s, "pa")
+        out = daemon_mod.OPS["memory_brief"](
+            d, {"partition": "pa", "min_mentions": 3, "save": True})
+        after = _memory_count(s, "pa")
+        with s.with_partition("pa"):
+            rows = s._read().execute(
+                "SELECT mc.mtype FROM entities e JOIN memory_content mc "
+                "ON mc.entity_id = e.id WHERE e.partition_id=? AND e.name LIKE 'brief-%'",
+                (s._partition_id,)).fetchall()
+    finally:
+        s.close()
+    assert out["saved"] == len(out["briefs"]) == 1, out
+    assert after - before == 1
+    assert [r[0] for r in rows] == ["brief/orphan-concept"], rows
+    assert d._store_lock.acquired >= 1, "the save did not take the writer lock"
+    assert d._snapshot_dirty is True, "the save did not request a snapshot"
+
+
+def test_not_saving_writes_nothing(tmp_path):
+    d, s = _brief_daemon(tmp_path)
+    try:
+        before = _memory_count(s, "pa")
+        out = daemon_mod.OPS["memory_brief"](d, {"partition": "pa", "min_mentions": 3})
+        after = _memory_count(s, "pa")
+    finally:
+        s.close()
+    assert out["briefs"], "nothing derived; the test is vacuous"
+    assert after == before
     assert out.get("saved", 0) == 0
-
-
-class _CtxRecorder:
-    def __init__(self, log): self.log = log
-    def __enter__(self): self.log.append("lock"); return self
-    def __exit__(self, *a): return False
-
-
-class _PartCtx:
-    def __init__(self, store): self._store = store
-    def with_partition(self, name): return self
-    def __enter__(self): return self._store
-    def __exit__(self, *a): return False
-    def __getattr__(self, item): return getattr(self._store, item)
+    assert d._snapshot_dirty is False

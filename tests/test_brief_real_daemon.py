@@ -21,7 +21,7 @@ import pytest
 
 import rmx_sandbox  # tests/sandbox_site, on sys.path via tests/conftest.py (task-29.4 #r5)
 from devbin import dev_env, dev_rmx  # bug-253: the dev rmx, defined once (tests/devbin.py)
-from tests.test_brief_detectors import LONERS, SUBJECT, seed_compilable
+from tests.test_brief_detectors import LONERS, SUBJECT, UNEMBEDDED, seed_compilable
 from tests.test_memory_compile_scope import _cli, spawn  # noqa: F401 (spawn is a fixture)
 
 RMX = dev_rmx()
@@ -188,10 +188,15 @@ def test_bug127_no_test_opens_the_catalog_its_daemon_holds():
 # ── T0.5 R5.3 / AC-5.2: `compile` is verb-first ─────────────────────────────
 
 def _brief_via(surface: str, root: Path) -> dict:
-    """One `brief` with the plan switch on, through one entry point a user calls."""
+    """One `brief` with a plan, through one entry point a user calls: the `compile` switch on
+    the verb, the CLI and MCP, or (`verb-plan`) a caller-built plan -- the dry-run
+    `rmx_memory_compile` verb's plan handed to the verb as `plan=`."""
     from refmatrix import mcp, verbs
     if surface == "verb":
         return verbs.memory(root, "brief", compile=True)
+    if surface == "verb-plan":
+        plan = verbs.memory_compile(root)["plan"]
+        return verbs.memory(root, "brief", plan=plan)
     if surface == "cli":
         code, out = _cli("memory", "brief", "--compile", "--json")
         assert code == 0, f"`rmx memory brief --compile --json` exited {code}:\n{out}"
@@ -206,7 +211,7 @@ def _brief_via(surface: str, root: Path) -> dict:
     return json.loads(text)
 
 
-@pytest.mark.parametrize("surface", ["verb", "cli", "mcp"])
+@pytest.mark.parametrize("surface", ["verb", "cli", "mcp", "verb-plan"])
 def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spawn, surface):
     """AC-5.2 (ch-bsd plan-8 r5 #s-4): the verb, the CLI and the MCP `rmx_memory` brief
     action, each with `compile` on, over a REAL spawned daemon serving a seeded throwaway
@@ -214,7 +219,12 @@ def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spaw
     loners), and neither sits in `classes_not_run`. Before T0.5 only the CLI built the plan:
     the verb had no `compile` parameter, and MCP dropped the unknown key and answered with
     both classes under `classes_not_run`. The CLI case is the regression guard for the
-    pass-through: it must keep working once the CLI stops planning in its own process."""
+    pass-through: it must keep working once the CLI stops planning in its own process.
+
+    bsd-t05 r1 #b-1: the three memories with no vector are COUNTED on every surface and for a
+    caller-supplied plan too (`skipped_by["unembedded"] == 3`, inside `skipped`), and the CLI
+    table says so on its "counted, not dropped" line. At `61b0666c` they were in
+    `stats.memories` and in nothing else: `skipped: 0`, `skipped_by: {}`."""
     ctx = spawn(seed_compilable)
     res = _brief_via(surface, ctx.root)
     stats = res.get("stats") or {}
@@ -228,6 +238,14 @@ def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spaw
             for b in by_cls.get("corroborated", [])] == [sorted(SUBJECT)], (
         by_cls.get("corroborated"), stats)
     assert sorted(b["label"] for b in by_cls.get("singleton", [])) == sorted(LONERS), stats
+    skipped_by = stats.get("skipped_by") or {}
+    assert skipped_by.get("unembedded") == len(UNEMBEDDED), stats
+    assert stats.get("skipped") == sum(skipped_by.values()), stats
+    if surface == "cli":
+        code, out = _cli("memory", "brief", "--compile")
+        assert code == 0, out
+        line = next((ln for ln in out.splitlines() if "counted, not dropped" in ln), "")
+        assert f"unembedded={len(UNEMBEDDED)}" in line, out
 
 
 # ── `plan` with `compile` is refused, loudly (T0.5 ruling, 2026-11-19) ─────
