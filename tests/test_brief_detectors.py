@@ -341,6 +341,55 @@ def test_compile_brief_returns_every_class_and_a_reconciled_skip_count(compiled)
     assert isinstance(result["stats"]["skipped"], int)
 
 
+def test_a_caller_plan_counts_only_the_briefs_own_corpus(store):
+    """bsd-t05 confirm-lite #b-1-r2 (L189): a caller plan (here the real `compile_memories` at
+    its defaults, which is what a dry-run `memory compile` hands over) covers rows OUTSIDE the
+    brief's corpus -- the brief's own saved output (`brief/*`). Two of them unembedded, one
+    embedded and placed in `unclustered`. None is a memory of the corpus the report states
+    (`stats.memories`), so none is counted: the skip is exactly the three unembedded corpus
+    rows, and the placed `brief/*` row is neither a singleton nor an unresolved one. At
+    `3f9ce2a3` this counted the plan's corpus: `{'unembedded': 5, 'singleton_unresolved': 1}`."""
+    seed_compilable(store, PART)
+    with store.with_partition(PART):
+        for i in range(2):
+            store.add_memory(f"brief-singleton-saved-{i}", "joined no subject",
+                             mtype="brief/singleton")
+        e = store.add_memory("brief-corroborated-saved", "converge", mtype="brief/corroborated")
+        store.upsert_vector([e], _seed_vec(*([0.0] * 16 + [1.0]))[None, :],
+                            kind="memory", dim=SEED_DIM)
+        plan = consolidate.compile_memories(store)
+        assert "brief-corroborated-saved" in plan["unclustered"], plan["unclustered"]
+        assert plan["stats"]["unembedded"] == len(UNEMBEDDED) + 2, plan["stats"]
+        result = brief.compile_briefs(store, plan=plan)
+    st = result["stats"]
+    assert st["skipped_by"] == {"unembedded": len(UNEMBEDDED)}, st
+    assert st["skipped"] == len(UNEMBEDDED), st
+    assert st["memories"] == len(SUBJECT) + len(LONERS) + len(UNEMBEDDED), st
+    assert sorted(b.label for b in result["briefs"] if b.cls == "singleton") == sorted(LONERS)
+
+
+def test_a_stale_caller_plan_counts_the_corpus_row_it_never_saw(store):
+    """#b-1-r2's other half: a corpus row the caller plan does not place -- written AFTER the
+    plan, which had embedded every one of its candidates -- is counted, under `not_in_plan`
+    (it is missing from the plan, not unembedded in it). At `3f9ce2a3` the count came from the
+    plan's own stats, which cannot know the row exists: `skipped_by: {}`."""
+    ids = seed_compilable(store, PART)
+    with store.with_partition(PART):
+        store.upsert_vector([ids[n] for n in UNEMBEDDED],
+                            np.vstack([_seed_vec(*([0.0] * (16 + j) + [1.0]))
+                                       for j in range(len(UNEMBEDDED))]),
+                            kind="memory", dim=SEED_DIM)
+        plan = consolidate.compile_memories(store)
+        assert plan["stats"]["embedded"] == plan["stats"]["candidates"], plan["stats"]
+        store.add_memory("late-note", "written after the plan", mtype="project")
+        result = brief.compile_briefs(store, plan=plan)
+    st = result["stats"]
+    assert st["skipped_by"] == {"not_in_plan": 1}, st
+    assert st["skipped"] == 1, st
+    assert sorted(b.label for b in result["briefs"] if b.cls == "singleton") == \
+        sorted(LONERS + UNEMBEDDED)
+
+
 def test_a_class_that_did_not_run_says_how_to_run_it(store):
     """bsd-t05 r1 #m-2: the hint for a plan-derived class that did not run names the switch
     that runs it (`compile=true`, CLI `--compile`) or a caller plan (`plan=`). It used to say

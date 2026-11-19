@@ -187,46 +187,37 @@ def test_bug127_no_test_opens_the_catalog_its_daemon_holds():
 
 # ── T0.5 R5.3 / AC-5.2: `compile` is verb-first ─────────────────────────────
 
-def _brief_via(surface: str, root: Path) -> dict:
+def _brief_via(surface: str, root: Path, *, save: bool = False) -> dict:
     """One `brief` with a plan, through one entry point a user calls: the `compile` switch on
-    the verb, the CLI and MCP, or (`verb-plan`) a caller-built plan -- the dry-run
-    `rmx_memory_compile` verb's plan handed to the verb as `plan=`."""
+    the verb, the CLI and MCP, or (`verb-plan`) a caller-built plan -- a FRESH dry-run
+    `rmx_memory_compile` verb's plan handed to the verb as `plan=`. `save` persists the briefs
+    on the same surface."""
     from refmatrix import mcp, verbs
     if surface == "verb":
-        return verbs.memory(root, "brief", compile=True)
+        return verbs.memory(root, "brief", compile=True, save=save)
     if surface == "verb-plan":
         plan = verbs.memory_compile(root)["plan"]
-        return verbs.memory(root, "brief", plan=plan)
+        return verbs.memory(root, "brief", plan=plan, save=save)
     if surface == "cli":
-        code, out = _cli("memory", "brief", "--compile", "--json")
-        assert code == 0, f"`rmx memory brief --compile --json` exited {code}:\n{out}"
+        argv = ("memory", "brief", "--compile", "--json") + (("--save",) if save else ())
+        code, out = _cli(*argv)
+        assert code == 0, f"`rmx {' '.join(argv)}` exited {code}:\n{out}"
         return json.loads(out)
     reply = mcp.handle_message({
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {"name": "rmx_memory",
-                   "arguments": {"action": "brief", "compile": True, "root": str(root)}}})
+                   "arguments": {"action": "brief", "compile": True, "save": save,
+                                 "root": str(root)}}})
     result = reply["result"]
     text = result["content"][0]["text"]
     assert not result["isError"], text
     return json.loads(text)
 
 
-@pytest.mark.parametrize("surface", ["verb", "cli", "mcp", "verb-plan"])
-def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spawn, surface):
-    """AC-5.2 (ch-bsd plan-8 r5 #s-4): the verb, the CLI and the MCP `rmx_memory` brief
-    action, each with `compile` on, over a REAL spawned daemon serving a seeded throwaway
-    store, return `corroborated` (the four-day subject) and `singleton` (the fourteen
-    loners), and neither sits in `classes_not_run`. Before T0.5 only the CLI built the plan:
-    the verb had no `compile` parameter, and MCP dropped the unknown key and answered with
-    both classes under `classes_not_run`. The CLI case is the regression guard for the
-    pass-through: it must keep working once the CLI stops planning in its own process.
-
-    bsd-t05 r1 #b-1: the three memories with no vector are COUNTED on every surface and for a
-    caller-supplied plan too (`skipped_by["unembedded"] == 3`, inside `skipped`), and the CLI
-    table says so on its "counted, not dropped" line. At `61b0666c` they were in
-    `stats.memories` and in nothing else: `skipped: 0`, `skipped_by: {}`."""
-    ctx = spawn(seed_compilable)
-    res = _brief_via(surface, ctx.root)
+def _check_brief(res: dict) -> dict:
+    """The seeded corpus's answer, whatever the surface: one corroborated subject, fourteen
+    singletons, nothing under `classes_not_run`, and the three unembedded memories counted --
+    `skipped_by` is exactly `{"unembedded": 3}` and `skipped` is its sum. Returns the stats."""
     stats = res.get("stats") or {}
     not_run = stats.get("classes_not_run") or {}
     assert "corroborated" not in not_run and "singleton" not in not_run, not_run
@@ -240,7 +231,46 @@ def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(spaw
     assert sorted(b["label"] for b in by_cls.get("singleton", [])) == sorted(LONERS), stats
     skipped_by = stats.get("skipped_by") or {}
     assert skipped_by.get("unembedded") == len(UNEMBEDDED), stats
+    assert skipped_by == {"unembedded": len(UNEMBEDDED)}, stats
     assert stats.get("skipped") == sum(skipped_by.values()), stats
+    return stats
+
+
+@pytest.mark.parametrize("rebrief_after_save", [False, True], ids=["fresh", "after-save"])
+@pytest.mark.parametrize("surface", ["verb", "cli", "mcp", "verb-plan"])
+def test_compile_reaches_the_plan_derived_classes_through_every_entry_point(
+        spawn, surface, rebrief_after_save):
+    """AC-5.2 (ch-bsd plan-8 r5 #s-4): the verb, the CLI and the MCP `rmx_memory` brief
+    action, each with `compile` on, over a REAL spawned daemon serving a seeded throwaway
+    store, return `corroborated` (the four-day subject) and `singleton` (the fourteen
+    loners), and neither sits in `classes_not_run`. Before T0.5 only the CLI built the plan:
+    the verb had no `compile` parameter, and MCP dropped the unknown key and answered with
+    both classes under `classes_not_run`. The CLI case is the regression guard for the
+    pass-through: it must keep working once the CLI stops planning in its own process.
+
+    bsd-t05 r1 #b-1: the three memories with no vector are COUNTED on every surface and for a
+    caller-supplied plan too (`skipped_by["unembedded"] == 3`, inside `skipped`), and the CLI
+    table says so on its "counted, not dropped" line. At `61b0666c` they were in
+    `stats.memories` and in nothing else: `skipped: 0`, `skipped_by: {}`.
+
+    bsd-t05 confirm-lite #b-1-r2 (L189), `after-save`: the plan's documented workflow --
+    brief with `--save`, then brief again. The saved brief rows are the brief's OWN output,
+    outside its corpus, so the second brief reads the same `stats.memories` and still counts
+    exactly the three. At `3f9ce2a3` it counted the fifteen saved (unembedded) brief rows too:
+    `skipped_by: {'unembedded': 18}`. For `verb-plan` the second plan is a fresh dry-run
+    `memory_compile`, which DOES carry the saved rows."""
+    from refmatrix import daemon as dm
+    ctx = spawn(seed_compilable)
+    first = _brief_via(surface, ctx.root, save=rebrief_after_save)
+    stats = _check_brief(first)
+    if rebrief_after_save:
+        assert first.get("saved") == len(first.get("briefs") or []) == 1 + len(LONERS), first
+        # the saved rows reach the read path only through a snapshot
+        snap = dm.call(ctx.root, "snapshot", {"force": True}, timeout=60, retries=0)
+        assert snap.get("ok"), snap
+        second = _brief_via(surface, ctx.root)
+        again = _check_brief(second)
+        assert again.get("memories") == stats.get("memories"), (stats, again)
     if surface == "cli":
         code, out = _cli("memory", "brief", "--compile")
         assert code == 0, out
