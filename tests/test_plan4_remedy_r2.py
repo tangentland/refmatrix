@@ -274,27 +274,33 @@ def test_daemon_graceful_stop_exists_and_the_hub_delegates(monkeypatch):
 
 # ---- #b-4 foreground gate is typed -----------------------------------------------------
 
-def test_foreground_start_refuses_a_busy_daemon_without_reaping_it(monkeypatch):
-    """The gate is a helper so this test never reaches `serve_forever` (a
-    RED run that did took the pytest process over — bug-009 shape)."""
-    import inspect
+def test_foreground_start_refuses_a_busy_daemon_without_reaping_it():
+    """bug-009 / #b-4 through the entry point: `serve_foreground(root,
+    supervised=False)` on a silent busy daemon raises the typed `busy`
+    refusal, leaves the daemon alive and its socket in place. It runs in a
+    subprocess with a bound: a gate regressed to the bare `ping` shape reaps
+    the daemon and falls into `serve_forever`, which must FAIL this test, not
+    take the pytest process over or hang it."""
     d = _SilentDaemon(seeded=True)
     try:
+        code = ("import sys; from pathlib import Path; from refmatrix import daemon as dm; "
+                "dm.serve_foreground(Path(sys.argv[1]), supervised=False)")
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path), RMX_SUPERVISED="0")
+        env.pop("XPC_SERVICE_NAME", None)
         t0 = time.monotonic()
-        with pytest.raises(RuntimeError, match="busy"):
-            dm.refuse_unsupervised_start(d.root)
-        assert time.monotonic() - t0 < 4.0
+        p = subprocess.Popen([sys.executable, "-c", code, str(d.root)], env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            _, err = p.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            p.kill(); p.communicate()
+            pytest.fail("serve_foreground did not refuse: it started serving (the gate reaped the busy daemon)")
+        assert p.returncode != 0 and "busy" in err, err[-600:]
+        assert time.monotonic() - t0 < 15.0
         assert d.proc.poll() is None, "the busy predecessor was reaped"
         assert dm.socket_path(d.root).exists()
     finally:
         d.close()
-    # Read from disk and slice by NAME, never `inspect.getsource`: that slices
-    # the current file with an already-loaded `co_firstlineno` and silently
-    # reads a different function when `src/` is edited mid-suite
-    # (ch-bsd r4 #m-4-r4 — it is what produced the phantom 6th failure).
-    from tests.conftest import source_of
-    src = source_of(dm, "serve_foreground")
-    assert "refuse_unsupervised_start(root)" in src and "elif ping(root)" not in src
 
 
 def test_unsupervised_gate_lets_an_absent_root_serve_and_refuses_a_live_one(tmp_path):
