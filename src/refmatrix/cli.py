@@ -111,12 +111,18 @@ class _RmxGroup(click.Group):
     `sync` and `cctree` raise it and must not depend on click. Click's standalone `main()`
     prints only ClickExceptions cleanly, so the conversion lives here, at the one place every
     subcommand's invocation passes through -- not in each command, where a missed one would be
-    a traceback again (the pattern the audit named: loudness is a census of entry points)."""
+    a traceback again (the pattern the audit named: loudness is a census of entry points).
+
+    The legacy-catalog refusal (`store.LegacyCatalogError`, task S1 R5, 2026-11-19) is
+    converted here for the same reason. The group callback refuses the store `_root()`
+    resolves before any command runs (`_refuse_legacy_root`); a command that opens ANOTHER
+    root (`rmx init --path <dir>`) meets the refusal in `Store.__init__`, mid-command, and
+    still prints one `Error:` line instead of a traceback."""
 
     def invoke(self, ctx: click.Context):
         try:
             return super().invoke(ctx)
-        except _workdir.WorkingDirectoryGone as exc:
+        except (_workdir.WorkingDirectoryGone, _store_mod.LegacyCatalogError) as exc:
             raise click.ClickException(str(exc)) from exc
 
 
