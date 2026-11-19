@@ -11,8 +11,7 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def duck_store(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
     s.close()
@@ -39,14 +38,13 @@ def test_link_writes_to_bitmap_fragments_blob(duck_store):
 
 
 def test_fragment_persists_across_reopen(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend="duckdb"); s.init()
+    s = Store(tmp_path / ".refmatrix"); s.init()
     parser = s.add_concept("parser")
     foo = s.upsert_entity(kind="code", name="src/foo.py")
     s.link("defines", parser, foo)
     s.close()
 
-    s2 = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s2 = Store(tmp_path / ".refmatrix")
     bm = s2.load_bitmap("defines", parser)
     assert foo in bm
     s2.close()
@@ -65,10 +63,9 @@ def test_unlink_to_empty_removes_blob_row(duck_store):
 
 
 def test_fragments_are_partition_scoped(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / ".refmatrix"
-    sa = Store(root, partition="agent-a", backend="duckdb"); sa.init()
-    sb = Store(root, partition="agent-b", backend="duckdb"); sb.init()
+    sa = Store(root, partition="agent-a"); sa.init()
+    sb = Store(root, partition="agent-b"); sb.init()
 
     ca = sa.add_concept("parser")
     ea = sa.upsert_entity(kind="code", name="src/foo.py")
@@ -83,7 +80,7 @@ def test_fragments_are_partition_scoped(tmp_path, monkeypatch):
 
     # Two rows in bitmap_fragments — one per partition, both keyed
     # `mentions`. Inspect via a fresh connection so we see committed state.
-    inspect = Store(root, partition="agent-a", backend="duckdb")
+    inspect = Store(root, partition="agent-a")
     rows = _blob_rows(inspect)
     assert sorted((r[0], r[1]) for r in rows) == [
         (sa.partition_id, "mentions"),
@@ -95,8 +92,7 @@ def test_fragments_are_partition_scoped(tmp_path, monkeypatch):
 def test_no_fragment_files_created_on_pure_duckdb(tmp_path, monkeypatch):
     """A pure DuckDB store does not write per-partition fragment files —
     the BLOB rows in `bitmap_fragments` are the only persistence."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend="duckdb"); s.init()
+    s = Store(tmp_path / ".refmatrix"); s.init()
     parser = s.add_concept("parser")
     foo = s.upsert_entity(kind="code", name="src/foo.py")
     s.link("defines", parser, foo)
@@ -108,8 +104,7 @@ def test_no_fragment_files_created_on_pure_duckdb(tmp_path, monkeypatch):
 
 
 def test_load_bitmap_uses_persisted_blob(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend="duckdb"); s.init()
+    s = Store(tmp_path / ".refmatrix"); s.init()
     parser = s.add_concept("parser")
     a = s.upsert_entity(kind="code", name="a.py")
     b = s.upsert_entity(kind="code", name="b.py")
@@ -117,7 +112,7 @@ def test_load_bitmap_uses_persisted_blob(tmp_path, monkeypatch):
     s.link("defines", parser, b)
     s.close()
 
-    s2 = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s2 = Store(tmp_path / ".refmatrix")
     out = s2.load_bitmap("defines", parser)
     assert set(out) == {a, b}
     s2.close()

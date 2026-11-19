@@ -491,8 +491,9 @@ def project_partition(root: Path) -> str:
 
 
 def _writer_catalog_files(root: Path) -> "list[Path]":
-    """Every file a WRITER may hold for this store: the rotation slots and the pre-rotation
-    `catalog.duckdb` / `catalog.db`. `snapshot_read` refuses a replica that is any of them.
+    """Every file a WRITER may hold for this store: the rotation slots, the pre-rotation
+    `catalog.duckdb` and the legacy pre-DuckDB file. `snapshot_read` refuses a replica that
+    is any of them.
     The names are `store.WRITER_CATALOG_FILES`, the one list the git hooks' store gate is
     rendered from too (bug-212, 2026-11-11)."""
     from refmatrix.store import WRITER_CATALOG_FILES
@@ -526,8 +527,7 @@ def snapshot_read(root: Path, fn: "Callable[[Any], dict]", *, partition: str) ->
     st = discovery.daemon_status(root, retries=0)
     s = Store(root, partition=partition, read_only=True)
     if not st.get("up") and not st.get("busy"):
-        primary = s._active_slot_path() if s._backend.kind == "duckdb" else None
-        primary = primary or (s.root / s._backend.db_filename)
+        primary = s._active_slot_path() or (s.root / s._backend.db_filename)
         if not primary.exists():
             raise VerbError(f"no refmatrix catalog at {root} ({primary.name} missing) — "
                             f"run `rmx init` first")
@@ -3683,8 +3683,8 @@ LEGACY_UNPAIRED: dict[tuple[str, ...], tuple[str, str]] = {
               ("checkpoint",), ("compact",), ("compact-log",), ("repair-index",),
               ("vacuum",), ("prune-noise",), ("untrack",), ("merge-verb-aliases",),
               ("audit-same-as",), ("queue",), ("queue", "clear")),
-    **_legacy("maintenance", "catalog migration, export and import",
-              ("migrate-to-duckdb",), ("export",), ("import",), ("dump-log",)),
+    **_legacy("maintenance", "catalog export and import",
+              ("export",), ("import",), ("dump-log",)),
     # -- harness: telemetry, logs, eval conditions and debugging.
     **_legacy("harness", "telemetry, log and debug inspection",
               ("telemetry",), ("cli-log",), ("log",), ("cctree",),

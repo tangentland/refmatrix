@@ -23,7 +23,7 @@ def test_is_relevant_filters_unsupported_and_ignored(tmp_path):
     assert is_relevant(Path("notes.bin")) is False
     assert is_relevant(Path(".git/HEAD")) is False
     assert is_relevant(Path("node_modules/foo/bar.py")) is False
-    assert is_relevant(Path(".refmatrix/catalog.db")) is False
+    assert is_relevant(Path(".refmatrix/catalog.duckdb")) is False
     assert is_relevant(Path("__pycache__/x.py")) is False
 
 

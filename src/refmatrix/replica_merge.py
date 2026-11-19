@@ -4,7 +4,7 @@ catalog file.
 Drift class: rows written outside the daemon's facts.log replay protocol
 end up only in the writer slot and never reach the inactive slot. Once
 both slots have accumulated unlogged writes (because of mid-cycle slot
-swaps, direct-write callsites, sqlite import paths, etc.), neither slot
+swaps, direct-write callsites, catalog import paths, etc.), neither slot
 is a superset and naive reseed in either direction loses data.
 
 Recovery semantics:

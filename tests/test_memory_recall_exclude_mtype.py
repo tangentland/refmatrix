@@ -23,8 +23,7 @@ from click.testing import CliRunner
 from refmatrix.store import Store
 
 
-def _store(tmp_path, monkeypatch, backend="sqlite"):
-    monkeypatch.setenv("RMX_BACKEND", backend)
+def _store(tmp_path, monkeypatch):
     s = Store(tmp_path / ".refmatrix")
     s.init()
     return s

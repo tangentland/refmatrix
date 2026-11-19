@@ -1,20 +1,16 @@
-"""Catalog backend abstraction (phase-2b of the DuckDB migration).
+"""The catalog connection layer: the one DuckDB backend refmatrix reads.
 
-The legacy Store talked directly to a sqlite3 connection. To let the same
-Store run on top of a native DuckDB catalog, we factor connection
-management + DDL bootstrap into Backend implementations:
+`DuckDBBackend` opens the store's DuckDB catalog (`catalog.duckdb`, or the
+rotation slot the Store resolves) through `open_duckdb` and bootstraps the
+schema from refmatrix.duckdb_catalog. `DuckDBConnection` wraps the raw
+connection in the small DB-API surface Store uses
+(`.execute(sql, params).fetchone()/fetchall()`, `.commit()`, `.close()`,
+rows readable by index or column name).
 
-- `SQLiteBackend` wraps the original behavior (PRAGMA WAL, foreign_keys,
-  busy_timeout, executescript-based DDL) and is the default.
-- `DuckDBBackend` opens `catalog.duckdb` and bootstraps the mirror schema
-  from refmatrix.duckdb_catalog. Returned connections expose a
-  sqlite3-shaped surface (`.execute(sql, params).fetchone()/fetchall()`,
-  `.commit()`, `.close()`, dict-or-tuple row access) so the rest of Store
-  doesn't have to branch on backend kind.
-
-Selection: DuckDB is the default (since 2026-05-16). SQLite is opt-in only —
-`RMX_BACKEND=sqlite` / constructor arg — or autodetected for a legacy store
-whose `.refmatrix/catalog.db` already exists.
+One backend since task S1 (2026-11-19, L182, Q52 = a): the second backend,
+its selector, the environment switch and the on-open autodetect are gone. A
+store dir holding only the legacy catalog file is refused by
+`store.refuse_legacy_catalog`, never opened.
 """
 from __future__ import annotations
 
@@ -22,12 +18,10 @@ import itertools
 import logging
 import numbers
 import os
-import sqlite3
 import threading
 import weakref
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Protocol, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import duckdb
 
@@ -94,11 +88,12 @@ def _file_id(path: str) -> "tuple[int, int] | None":
 
 
 def attach_file(con, path: "os.PathLike | str", alias: str, *,
-                read_only: bool = True, db_type: "str | None" = None) -> None:
+                read_only: bool = True) -> None:
     """THE rendering of `ATTACH '<file>' AS <alias> (...)` — the snapshot
-    mirror, the slot merge/audit, the sqlite migration and view all ATTACH
-    files; one place quotes the path and names the options."""
-    opts = [f"TYPE {db_type}"] if db_type else []
+    mirror and the slot merge/audit ATTACH files; one place quotes the path
+    and names the options. (The `db_type` option went with the catalog
+    conversion command in task S1, 2026-11-19: it was its only caller.)"""
+    opts: list[str] = []
     if read_only:
         opts.append("READ_ONLY")
     quoted = str(path).replace("'", "''")
@@ -387,106 +382,12 @@ def release_duckdb(con) -> None:
     con.close()
 
 
-def select_backend(
-    name: str | None = None,
-    *,
-    root: "os.PathLike | str | None" = None,
-) -> "Backend":
-    """Resolve which backend to use.
-
-    Resolution order:
-        1. Explicit `name` kwarg (constructor arg).
-        2. `RMX_BACKEND` env var.
-        3. Autodetect from `root` if provided:
-              .refmatrix/catalog.duckdb exists -> duckdb
-              .refmatrix/catalog.db      exists -> sqlite  (keeps legacy stores working)
-        4. Default: duckdb (DuckDB became the default 2026-05-16; SQLite
-           stays opt-in via env or constructor for legacy callers).
-    """
-    explicit = name or os.environ.get("RMX_BACKEND")
-    if explicit:
-        kind = explicit.lower()
-    elif root is not None:
-        from pathlib import Path
-        r = Path(root)
-        if (r / "catalog.duckdb").exists():
-            kind = "duckdb"
-        elif (r / "catalog.db").exists():
-            kind = "sqlite"
-        else:
-            kind = "duckdb"
-    else:
-        kind = "duckdb"
-    if kind == "sqlite":
-        return SQLiteBackend()
-    if kind == "duckdb":
-        return DuckDBBackend()
-    raise ValueError(f"unknown RMX_BACKEND: {kind!r} (expected 'sqlite' or 'duckdb')")
-
-
-class Backend(ABC):
-    kind: str
-    db_filename: str
-
-    @abstractmethod
-    def connect(self, db_path: Path, read_only: bool = False) -> "ConnLike":
-        """Open a connection to the catalog at `db_path`. Must return a
-        connection whose `execute()` produces sqlite3-shaped cursors.
-        `read_only` is honored by DuckDB; SQLite ignores it (WAL readers
-        don't block)."""
-
-    @abstractmethod
-    def init_catalog(self, con: "ConnLike") -> None:
-        """Bootstrap the schema if it isn't there yet. Idempotent."""
-
-
-class ConnLike(Protocol):
-    """Structural type for catalog connections. sqlite3.Connection and
-    DuckDBConnection both satisfy it; nothing instantiates it."""
-
-    def execute(self, *args: Any, **kwargs: Any) -> Any: ...
-
-    def commit(self) -> None: ...
-
-    def close(self) -> None: ...
-
-
-# ---------- SQLite ---------------------------------------------------------
-
-
-class SQLiteBackend(Backend):
-    kind = "sqlite"
-    db_filename = "catalog.db"
-
-    def connect(self, db_path: Path,
-                read_only: bool = False) -> sqlite3.Connection:
-        con = sqlite3.connect(db_path, check_same_thread=False)
-        con.execute("PRAGMA foreign_keys = ON")
-        con.execute("PRAGMA journal_mode = WAL")
-        con.execute("PRAGMA busy_timeout = 5000")
-        con.row_factory = sqlite3.Row
-        # Portability shim: DuckDB has GREATEST/LEAST as scalar functions,
-        # SQLite does not. Store SQL uses GREATEST so the same string works
-        # under both backends. SQLite's `MAX(a, b)` is also scalar but DuckDB
-        # treats MAX as aggregate-only — sticking with GREATEST avoids the
-        # collision.
-        con.create_function("GREATEST", 2, lambda a, b: a if a >= b else b)
-        con.create_function("LEAST", 2, lambda a, b: a if a <= b else b)
-        return con
-
-    def init_catalog(self, con: Any) -> None:
-        # SQLiteBackend doesn't own the SQLite DDL — store.py still drives it
-        # via CATALOG_DDL.executescript() because the legacy migration path
-        # (partitions backfill, ALTER TABLE adds, etc.) is interleaved.
-        # Calling this is a no-op for parity with DuckDBBackend.
-        pass
-
-
 # ---------- DuckDB --------------------------------------------------------
 
 
 class _DuckRow:
-    """sqlite3.Row-shaped wrapper around a DuckDB result row."""
+    """A DuckDB result row readable by index, by column name, and as an
+    iterable — the row shape Store's read sites use."""
 
     __slots__ = ("_cols", "_vals", "_lookup")
 
@@ -513,8 +414,8 @@ class _DuckRow:
 
 
 class _DuckCursor:
-    """sqlite3.Cursor-shaped view over a DuckDB result. Supports the subset
-    Store actually uses: fetchone, fetchall, iteration, lastrowid."""
+    """A DB-API cursor view over a DuckDB result. Supports the subset Store
+    actually uses: fetchone, fetchall, iteration, lastrowid."""
 
     def __init__(self, result, lastrowid: int | None = None):
         if result is None or result.description is None:
@@ -546,22 +447,19 @@ class _DuckCursor:
 
 
 class DuckDBConnection:
-    """Adapts a `duckdb.DuckDBPyConnection` to the subset of the sqlite3
-    Connection surface that refmatrix.store relies on. Specifically:
+    """Adapts a `duckdb.DuckDBPyConnection` to the subset of the DB-API
+    connection surface that refmatrix.store relies on. Specifically:
 
     - `.execute(sql, params=())` returns a `_DuckCursor`.
-    - `.executescript(script)` splits on `;` and runs each statement.
     - `.commit()` is a no-op (DuckDB autocommits in default mode).
     - `.close()` closes the underlying connection.
-    - `row_factory` is a writable attribute for sqlite3 parity, ignored.
 
-    Parameter style: SQLite uses `?`; DuckDB also accepts `?` for prepared
-    statements, so the SQL strings in store.py port straight across.
+    Parameter style: store.py's SQL uses `?` placeholders, which DuckDB
+    accepts for prepared statements.
     """
 
     def __init__(self, duck_conn):
         self._duck = duck_conn
-        self.row_factory = None  # ignored; sqlite3 parity
 
     def execute(self, sql: str, params: Iterable[Any] | tuple = ()) -> _DuckCursor:
         result = self._duck.execute(sql, list(params) if params else None)
@@ -570,7 +468,7 @@ class DuckDBConnection:
     def executemany(
         self, sql: str, seq_of_params: Iterable[Iterable[Any]]
     ) -> _DuckCursor:
-        """sqlite3-parity `executemany`, FENCED (bug-178 R3, 2026-11-09).
+        """DB-API `executemany`, FENCED (bug-178 R3, 2026-11-09).
 
         DuckDB runs `executemany` as one statement per row under the store's
         single writer lock: a viascope reingest sat minutes in
@@ -599,14 +497,6 @@ class DuckDBConnection:
         result = self._duck.executemany(sql, params)
         return _DuckCursor(result)
 
-    def executescript(self, script: str) -> None:
-        # Split on ';' that aren't inside a string literal. Store's scripts
-        # don't contain string literals with embedded semicolons today, so
-        # a naive split is sufficient.
-        for stmt in script.split(";"):
-            if stmt.strip():
-                self._duck.execute(stmt)
-
     def commit(self) -> None:
         # DuckDB autocommits each statement by default. No-op for parity.
         pass
@@ -618,7 +508,7 @@ class DuckDBConnection:
         return self
 
     def __exit__(self, *exc):
-        # Match sqlite3.Connection: context exit commits/rolls back but does
+        # DB-API context semantics: context exit commits/rolls back but does
         # NOT close. Store keeps the connection alive across many `with` blocks.
         if exc[0] is None:
             self.commit()
@@ -698,11 +588,11 @@ def bulk_write(
     types: "Mapping[str, Any] | None" = None,
     view: str = "_rmx_bulk",
 ) -> int:
-    """Write `rows` with ONE set-based statement on DuckDB; `executemany` on
-    SQLite. Returns the number of input rows (0 = no-op, nothing executed).
+    """Write `rows` with ONE set-based statement. Returns the number of input
+    rows (0 = no-op, nothing executed).
 
-    DuckDB (`DuckDBConnection` wrapper, or a raw `DuckDBPyConnection` as
-    replica_merge holds): `rows` (row-major, one value per `columns` entry)
+    The connection is a `DuckDBConnection` wrapper, or a raw
+    `DuckDBPyConnection` as replica_merge holds: `rows` (row-major, one value per `columns` entry)
     become one Arrow table, registered under a per-call unique name derived
     from `view`; every `{view}` in `sql` is replaced by that name and `sql`
     runs once (`INSERT ... SELECT ... FROM {view}` / `UPDATE ... FROM
@@ -711,11 +601,11 @@ def bulk_write(
     "int64" / "string" / "float64") where inference would be wrong or
     null-typed.
 
-    SQLite (`sqlite3.Connection`): `sqlite_sql` — the per-row `VALUES (?..)`
-    statement with the same conflict policy — runs via `executemany`, the
-    legacy backend's batched path (bug-178 changes nothing there). A SQLite
-    connection without `sqlite_sql` raises: a DuckDB-only caller reached the
-    wrong backend, which must not degrade into a silent skip.
+    The keyword `sqlite_sql` is accepted and ignored. Task S1 (2026-11-19)
+    deleted the second backend that ran it; pagerank.py's one call still
+    passes it because that module is a derive pass whose code hash must not
+    move in S1 (D1 = b, L187). 29.2 R7 deploy B edits that call and deletes
+    the keyword.
 
     Errors from the statement propagate unchanged (constraint violations
     included); a set-based statement is atomic, so a failure leaves none of
@@ -729,13 +619,6 @@ def bulk_write(
     if not rows:
         return 0
     cols = list(columns)
-    if isinstance(con, sqlite3.Connection):
-        if sqlite_sql is None:
-            raise TypeError(
-                "bulk_write: a SQLite connection reached a DuckDB-only bulk write "
-                f"(no sqlite_sql given): {' '.join(sql.split())[:120]}")
-        con.executemany(sqlite_sql, rows)
-        return len(rows)
     if isinstance(con, DuckDBConnection):
         duck = con._duck
     elif isinstance(con, duckdb.DuckDBPyConnection):
@@ -743,11 +626,10 @@ def bulk_write(
     else:
         raise TypeError(
             f"bulk_write: unsupported connection type {type(con).__name__!r} "
-            "(expected DuckDBConnection, duckdb.DuckDBPyConnection or "
-            "sqlite3.Connection)")
+            "(expected DuckDBConnection or duckdb.DuckDBPyConnection)")
     if "{view}" not in sql:
         raise ValueError(
-            "bulk_write: the DuckDB statement must read the batch FROM {view}: "
+            "bulk_write: the statement must read the batch FROM {view}: "
             f"{' '.join(sql.split())[:120]}")
     for i, r in enumerate(rows):
         if len(r) != len(cols):
@@ -780,7 +662,12 @@ def bulk_write(
     return len(rows)
 
 
-class DuckDBBackend(Backend):
+class DuckDBBackend:
+    """THE catalog backend. `kind` survives only as a reported value (the
+    daemon's open log line and its status field); no code branches on it
+    since task S1 (2026-11-19). `db_filename` is the pre-rotation catalog
+    file; the Store resolves a rotation slot over it."""
+
     kind = "duckdb"
     db_filename = "catalog.duckdb"
 

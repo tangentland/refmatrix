@@ -19,7 +19,7 @@ from refmatrix.store import Store
 
 def _seed(tmp_path):
     """Store with two tracked trees: one to untrack, one that must survive."""
-    s = Store(tmp_path / ".refmatrix", backend="sqlite")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     keep = tmp_path / "src" / "app.py"
     keep.parent.mkdir(parents=True)
@@ -124,6 +124,6 @@ def test_cli_untrack_dry_run_then_apply(tmp_path, monkeypatch):
     assert r2.exit_code == 0, r2.output
     assert "untracked" in r2.output
 
-    s2 = Store(tmp_path / ".refmatrix", backend="sqlite")
+    s2 = Store(tmp_path / ".refmatrix")
     assert s2.get_entity("code", junk[0]) is None
     assert s2.get_entity("code", keep) is not None

@@ -111,12 +111,18 @@ class _RmxGroup(click.Group):
     `sync` and `cctree` raise it and must not depend on click. Click's standalone `main()`
     prints only ClickExceptions cleanly, so the conversion lives here, at the one place every
     subcommand's invocation passes through -- not in each command, where a missed one would be
-    a traceback again (the pattern the audit named: loudness is a census of entry points)."""
+    a traceback again (the pattern the audit named: loudness is a census of entry points).
+
+    The legacy-catalog refusal (`store.LegacyCatalogError`, task S1 R5, 2026-11-19) is
+    converted here for the same reason. The group callback refuses the store `_root()`
+    resolves before any command runs (`_refuse_legacy_root`); a command that opens ANOTHER
+    root (`rmx init --path <dir>`) meets the refusal in `Store.__init__`, mid-command, and
+    still prints one `Error:` line instead of a traceback."""
 
     def invoke(self, ctx: click.Context):
         try:
             return super().invoke(ctx)
-        except _workdir.WorkingDirectoryGone as exc:
+        except (_workdir.WorkingDirectoryGone, _store_mod.LegacyCatalogError) as exc:
             raise click.ClickException(str(exc)) from exc
 
 
@@ -227,17 +233,15 @@ def _active_slot_path() -> Path | None:
     return p if p.exists() else None
 
 
-def _refuse_tracked_catalog_open(root: Path, target: Path,
-                                 names: "tuple[str, ...]" = _store_mod.WRITER_CATALOG_FILES
-                                 ) -> None:
+def _refuse_tracked_catalog_open(root: Path, target: Path) -> None:
     """The store-level tracked-catalog check (`store.refuse_tracked_catalog_open`) as one
     `Error:` line, exit 1 -- the CLI's ONE wrapper, called by every CLI site that opens or
-    replaces a writer catalog in-process: `_store_rw()`, `compact`, `migrate-to-duckdb`
-    (bug-212 r4/r5, rulings L72 and L95). `verbs.local_write` makes the same refusal a
-    `VerbError` for the verb layer. `names` is threaded through to the store check (r7,
-    L102: `migrate-to-duckdb` asks only about the file it replaces)."""
+    replaces a writer catalog in-process: `_store_rw()` and `compact` (bug-212 r4/r5, rulings
+    L72 and L95; the catalog conversion command that was the third went with task S1,
+    2026-11-19). `verbs.local_write` makes the same refusal a `VerbError` for the verb
+    layer."""
     try:
-        _store_mod.refuse_tracked_catalog_open(root, target, names)
+        _store_mod.refuse_tracked_catalog_open(root, target)
     except _store_mod.TrackedCatalogRefused as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -954,6 +958,34 @@ def main(partition: str | None):
     """Roaring-bitmap reference matrix for docs, code, concepts."""
     global _partition_override
     _partition_override = partition
+    # Runs before any subcommand body (click invokes the group callback first), so a refused
+    # store gets its one line before a command prints, writes or spawns anything (S1 R5).
+    if click.get_current_context().invoked_subcommand != "mcp":
+        _refuse_legacy_root()
+
+
+def _refuse_legacy_root() -> None:
+    """The legacy-catalog refusal (`store.refuse_legacy_catalog`, task S1 R5, 2026-11-19,
+    rulings L182 and L190) for the store this invocation resolves, as one `Error:` line,
+    exit 1, no traceback.
+
+    Called from the group callback, i.e. before ANY command runs: `daemon start` exports its
+    service binary and prints a note before it reads its root, and forks the daemon after, so
+    a check inside the commands would come after output or after a spawn. One exemption:
+    `rmx mcp`, whose server resolves a store per tool call (`mcp._resolve_root` refuses there,
+    and the server keeps serving other stores).
+
+    A working directory that is gone resolves no store here; the command that needs one fails
+    at its own cwd read with its own `Error:` line (bug-212, `_RmxGroup`), and one that needs
+    none (`rmx version`) still runs."""
+    try:
+        root = _root()
+    except _workdir.WorkingDirectoryGone:
+        return
+    try:
+        _store_mod.refuse_legacy_catalog(root)
+    except _store_mod.LegacyCatalogError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 # ---- init / info ----------------------------------------------------------
@@ -4122,57 +4154,6 @@ def daemon_launchctl_print(watch: bool, watch_roots: tuple[Path, ...],
     click.echo(data.decode())
 
 
-@main.command("migrate-to-duckdb")
-@click.option(
-    "--out", "out_path",
-    type=click.Path(dir_okay=False, path_type=Path),
-    default=None,
-    help="Destination DuckDB file (defaults to <root>/catalog.duckdb).",
-)
-@click.option(
-    "--overwrite", is_flag=True,
-    help="Replace the destination if it already exists.",
-)
-def migrate_to_duckdb(out_path: Path | None, overwrite: bool):
-    """One-shot copy of the SQLite catalog into a native DuckDB catalog.
-
-    Phase-2 of the DuckDB migration: makes a `.refmatrix/catalog.duckdb`
-    alongside the existing `catalog.db`. The SQLite catalog is unchanged
-    and remains the system of record until phase-2b flips writes over.
-    """
-    from refmatrix.migrate import migrate_catalog
-
-    root = _root()
-    src = root / "catalog.db"
-    if not src.exists():
-        raise click.ClickException(
-            f"no SQLite catalog at {src}. Run `rmx init` first."
-        )
-    dst = out_path or (root / "catalog.duckdb")
-    # Before `migrate_catalog` unlinks and rebuilds `dst` with the raw `open_duckdb` (bug-212
-    # r5, ch-bsd r4 b-1, L95, 2026-11-14), the check asks about the directory of the file
-    # being REPLACED (r6, ch-bsd r5 s-1, L98): r5 asked about the source store, so `--out`
-    # into another repo's committed catalog went through, and `--out` to an untracked path
-    # from a tracked store was refused. The default `dst` (<root>/catalog.duckdb) is unchanged.
-    # And it asks about `dst` ITSELF (r7, ch-bsd r6 m-1, L102), not every writer-catalog name in
-    # that folder: a committed `x.duckdb` is refused, an untracked `foo.duckdb` beside a tracked
-    # `catalog.duckdb` is allowed.
-    _refuse_tracked_catalog_open(dst.parent.resolve(), dst.resolve(), names=(dst.name,))
-    fragments_dir = root / "fragments"
-    counts = migrate_catalog(
-        src, dst,
-        overwrite=overwrite,
-        fragments_dir=fragments_dir if fragments_dir.is_dir() else None,
-    )
-    table = Table(show_header=True)
-    table.add_column("table")
-    table.add_column("rows", justify="right")
-    for name, n in counts.items():
-        table.add_row(name, str(n))
-    console.print(table)
-    console.print(f"[green]wrote[/] {dst}")
-
-
 @main.command("merge-verb-aliases")
 def merge_verb_aliases():
     """Fold legacy snake_case linkage verbs into their kebab canonical.
@@ -4208,7 +4189,6 @@ def merge_verb_aliases():
         s = _store_rw()
         results = []
         active = s.db_path
-        is_duckdb = s._backend.kind == "duckdb"
         try:
             for legacy, canon in _VERB_ALIASES.items():
                 results.append(s.merge_verb_alias(legacy, canon))
@@ -4220,22 +4200,18 @@ def merge_verb_aliases():
                 except Exception as e:
                     console.print(f"[yellow]warn:[/] post-merge log snapshot "
                                   f"failed: {e}")
-            # DuckDB only: flush WAL into the main file so the snapshot copy is
-            # self-contained. SQLite has no CHECKPOINT statement (and no
-            # snapshot tier — its WAL is the read path), so it's skipped.
-            if is_duckdb:
-                s._connect().execute("CHECKPOINT")
+            # Flush the WAL into the main file so the snapshot copy is
+            # self-contained.
+            s._connect().execute("CHECKPOINT")
         finally:
             s.close()
-        # DuckDB snapshot-tier refresh (mirrors the daemon's _snapshot_catalog)
-        # so lock-free readers see the merged graph immediately. SQLite stores
-        # have no catalog.read.duckdb; the in-method commit is enough.
-        if is_duckdb:
-            snap = root / "catalog.read.duckdb"
-            if active.exists():
-                tmp = snap.with_name(snap.name + ".merge.tmp")
-                shutil.copy2(active, tmp)
-                os.replace(tmp, snap)
+        # Snapshot-tier refresh (mirrors the daemon's _snapshot_catalog) so
+        # lock-free readers see the merged graph immediately.
+        snap = root / "catalog.read.duckdb"
+        if active.exists():
+            tmp = snap.with_name(snap.name + ".merge.tmp")
+            shutil.copy2(active, tmp)
+            os.replace(tmp, snap)
 
     table = Table(show_header=True)
     table.add_column("legacy")
@@ -9155,7 +9131,8 @@ def replica_status():
         raise click.ClickException(resp.get("error", "daemon error"))
     r = resp["result"]
     if not r.get("enabled"):
-        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        console.print(
+            f"[yellow]replica disabled[/] ({r.get('reason') or 'no reason given'})")
         return
     console.print(f"[bold]writer slot:[/] {r['writer_slot']}  "
                   f"-> {r['writer_path']}")
@@ -9198,7 +9175,8 @@ def replica_refresh():
         raise click.ClickException(resp.get("error", "daemon error"))
     r = resp["result"]
     if not r.get("enabled"):
-        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        console.print(
+            f"[yellow]replica disabled[/] ({r.get('reason') or 'no reason given'})")
         return
     if not r.get("ok"):
         raise click.ClickException(f"replica refresh failed: {r.get('error')}")
@@ -9247,7 +9225,8 @@ def replica_audit(as_json):
         click.echo(_json.dumps(report, indent=2))
         return
     if not report.get("enabled"):
-        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        console.print(
+            f"[yellow]replica disabled[/] ({report.get('reason') or 'no reason given'})")
         return
     drift = report.get("drift_detected")
     color = "red" if drift else "green"
@@ -9332,7 +9311,8 @@ def replica_merge(dry_run, as_json, yes):
         raise click.ClickException(resp.get("error", "daemon error"))
     report = resp["result"]
     if not report.get("enabled"):
-        console.print("[yellow]replica disabled[/] (non-duckdb backend)")
+        console.print(
+            f"[yellow]replica disabled[/] ({report.get('reason') or 'no reason given'})")
         return
     if not report.get("ok"):
         raise click.ClickException(f"merge failed: {report.get('error')}")
@@ -10449,7 +10429,7 @@ def dump_log():
 
     The log is a name-keyed JSONL stream that's safe to commit and merge
     across branches. Run once to bootstrap an existing repo, then commit
-    facts.log and gitignore catalog.db / fragments/."""
+    facts.log and gitignore the catalog files (`catalog*.duckdb`)."""
     s = _store()
     counts = s.dump_catalog_to_log()
     console.print(f"[green]wrote[/] {s.log_path}")
@@ -10514,8 +10494,8 @@ def compact_log(force: bool):
 
 @main.command("rebuild")
 @click.option("--from-log", "from_log", is_flag=True,
-              help="Replay facts.log into a fresh catalog. Wipes catalog.db "
-                   "and fragments/ first.")
+              help="Replay facts.log into a fresh catalog. Wipes the catalog "
+                   "file (fragments included) first.")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
 def rebuild(from_log: bool, yes: bool):
     """Rebuild derived state. Currently only --from-log is supported."""
@@ -10530,7 +10510,7 @@ def rebuild(from_log: bool, yes: bool):
         )
     if not yes:
         click.confirm(
-            f"This will delete {s.db_path} and every fragment file, then "
+            f"This will delete {s.db_path} (fragments included), then "
             f"replay {s.log_path}. Proceed?",
             abort=True,
         )
@@ -15315,20 +15295,29 @@ def cli_entry() -> None:
         except Exception:
             out_bytes = None          # accounting never fails the command
         try:
-            _tel.log_cli_invocation(
-                # No cwd, no walk: the row goes where `_root()` sends a cwd with no project
-                # (`REFMATRIX_ROOT`, else the global store), marked with why.
-                _root() if cwd is not None else _root_without_cwd(),
-                argv=argv,
-                cwd=cwd,
-                cwd_error=cwd_error,
-                exit_code=exit_code,
-                latency_ms=latency_ms,
-                error=error,
-                pid=pid,
-                out_bytes=out_bytes,
-                outcome=outcome,
-            )
+            # No cwd, no walk: the row goes where `_root()` sends a cwd with no project
+            # (`REFMATRIX_ROOT`, else the global store), marked with why.
+            log_root = _root() if cwd is not None else _root_without_cwd()
+            refused = False
+            try:
+                _store_mod.refuse_legacy_catalog(log_root)
+            except _store_mod.LegacyCatalogError:
+                # A refused legacy store is never written to, not even its `cli.log`
+                # (S1 R5): the refusal line was this run's whole output.
+                refused = True
+            if not refused:
+                _tel.log_cli_invocation(
+                    log_root,
+                    argv=argv,
+                    cwd=cwd,
+                    cwd_error=cwd_error,
+                    exit_code=exit_code,
+                    latency_ms=latency_ms,
+                    error=error,
+                    pid=pid,
+                    out_bytes=out_bytes,
+                    outcome=outcome,
+                )
         except Exception:
             pass
 

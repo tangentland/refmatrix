@@ -22,8 +22,9 @@ row; every linkage type (`defines`, `calls`, `mentions`, `imports`, `is_a`,
 
 The conceptual model mirrors [Pilosa](https://github.com/FeatureBaseDB/featurebase)
 (index → field → row → column) but storage is in-process via
-[pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) plus a SQLite or
-DuckDB catalog. No server, no HTTP, single-binary CLI. A long-lived per-store
+[pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) plus a DuckDB
+catalog (the one backend since task S1; a legacy SQLite-only store dir is
+refused by name, see [[ARCHITECTURE#backend-selection-backend-py]]). No server, no HTTP, single-binary CLI. A long-lived per-store
 daemon (Unix socket) serializes all access so concurrent CLI clients and
 filesystem-watcher writes never race on the catalog.
 
@@ -41,7 +42,7 @@ rmx query "specifies:Zone AND NOT defines:Zone"
 
 | Layer    | What lives here                       | Backed by                          |
 |----------|---------------------------------------|------------------------------------|
-| Catalog  | entities, concepts, linkage types     | SQLite or DuckDB (`.refmatrix/`)   |
+| Catalog  | entities, concepts, linkage types     | DuckDB (`.refmatrix/`)             |
 | Bitmaps  | per-(linkage, concept) entity sets    | pyroaring `BitMap64` fragments     |
 | Evidence | file:line provenance for each linkage | catalog `linkage_evidence` table   |
 
@@ -179,7 +180,7 @@ over a stable column space rather than as cache lookups.
    hooks. From here, edits trigger incremental `rmx sync` automatically.
 4. **`rmx daemon start`** (optional but recommended): owns the catalog lock,
    serves a Unix socket for all read/write ops, embeds the file watcher.
-   Without it, every CLI invocation pays SQLite/DuckDB open cost.
+   Without it, every CLI invocation pays the DuckDB open cost.
 5. **Queries** route through the daemon when present; otherwise the CLI
    opens the catalog directly (read-only ops only — writes need the daemon
    if one is running).

@@ -27,7 +27,7 @@ from refmatrix.store import Store
 def _daemon(root):
     from refmatrix.daemon import Daemon, _FairLock
 
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     d = object.__new__(Daemon)
     d.root = root

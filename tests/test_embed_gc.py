@@ -20,7 +20,7 @@ from refmatrix.store import Store
 
 
 def _seed_store(tmp_path):
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     return s
 

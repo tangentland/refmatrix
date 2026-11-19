@@ -174,19 +174,6 @@ def test_fast_exit_queues_the_boot_repair(tmp_path, monkeypatch):
     assert body["table"] == "entities" and body["op"] == "watch flush"
 
 
-# ---- #b-5 DuckDB-only -------------------------------------------------------------
-
-def test_rebuild_entities_refuses_sqlite(tmp_path, monkeypatch):
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
-    s = Store(tmp_path / ".refmatrix"); s.init()
-    s.add_memory(name="m", content="b", mtype="project")
-    c = s.add_concept("alpha")
-    with pytest.raises(RepairAbort, match="DuckDB"):
-        s.rebuild_entities_indexes()
-    assert s.get_memory("m") is not None
-    s.close()
-
-
 # ---- #b-6 versions visible; fleet relaunch ----------------------------------------------
 
 def test_hub_status_shows_each_daemons_version_and_flags_stale(monkeypatch):

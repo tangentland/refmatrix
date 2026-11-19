@@ -11,7 +11,6 @@ from refmatrix.store import Store, default_partition_name
 
 
 def _root(tmp_path, monkeypatch):
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     monkeypatch.setenv("RMX_SESSION", "mcpsess")
     root = tmp_path / ".refmatrix"
     Store(root).init()

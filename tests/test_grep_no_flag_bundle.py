@@ -31,7 +31,7 @@ def proj(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     p = tmp_path / "proj"
     p.mkdir()
-    s = Store(p / ".refmatrix", backend="duckdb")
+    s = Store(p / ".refmatrix")
     s.init()
     s.close()
     (p / "t.txt").write_text("alpha one\nbeta two\ngamma three\n")

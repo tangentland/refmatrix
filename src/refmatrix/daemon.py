@@ -1884,21 +1884,20 @@ class Daemon:
         # to delete all rows from index" surfaces on the next op that
         # tries to touch entity_links — invalidating the database until
         # restart. ~1s startup cost on a 100k-row table; cheap insurance.
-        if self.store._backend.kind == "duckdb":
-            try:
-                r = self.store.repair_entity_links_index()
-                self._log(
-                    f"repaired idx_entity_links_lk_concept "
-                    f"rows={r.get('row_count', '?')}"
-                )
-            except Exception as e:
-                self._log(f"repair_entity_links_index failed: {e}")
-            # A read surface queued an entities rebuild (task 4.1): run it
-            # now, single-writer, before anything is served.
-            try:
-                self._run_pending_repair()
-            except Exception as e:  # noqa: BLE001 — logged, boot continues
-                self._log(f"pending repair failed: {e!r}; marker kept")
+        try:
+            r = self.store.repair_entity_links_index()
+            self._log(
+                f"repaired idx_entity_links_lk_concept "
+                f"rows={r.get('row_count', '?')}"
+            )
+        except Exception as e:
+            self._log(f"repair_entity_links_index failed: {e}")
+        # A read surface queued an entities rebuild (task 4.1): run it
+        # now, single-writer, before anything is served.
+        try:
+            self._run_pending_repair()
+        except Exception as e:  # noqa: BLE001 — logged, boot continues
+            self._log(f"pending repair failed: {e!r}; marker kept")
 
         if self.watch_root is not None:
             self._start_watcher()
@@ -1932,7 +1931,6 @@ class Daemon:
         # every write from line one targets the rotation-tracked slot.
         active_path = self._replica_file(self._active_slot)
         if (self.store is not None
-                and self.store._backend.kind == "duckdb"
                 and active_path.exists()
                 and self.store.db_path != active_path):
             try:
@@ -2445,10 +2443,8 @@ class Daemon:
         new drift surface appears. Cost: ~1-5s under _store_lock per
         tick on a 100k-500k entity_links table -- non-trivial under
         CLI-priority workloads.
-
-        DuckDB backend only -- SQLite has no equivalent drift.
         """
-        if self.store is None or self.store._backend.kind != "duckdb":
+        if self.store is None:
             return
         if interval_s is None:
             interval_s = float(
@@ -2823,7 +2819,7 @@ class Daemon:
         on a file the writer is never attached to, so there's zero lock
         contention even mid-rotation. Falls back to the rotation reader
         slot (`_reader_slot`) when no snapshot has been taken yet, which
-        keeps the bootstrap window and SQLite-only deploys working."""
+        keeps the bootstrap window working."""
         snap = self._snapshot_file()
         if snap.exists():
             self._set_read_only_link_to(snap.name)
@@ -2867,10 +2863,10 @@ class Daemon:
         background snapshot tick is the normal driver; ad-hoc calls
         through `_op_snapshot(force=True)` bypass the debounce.
 
-        DuckDB-only. SQLite stores skip silently — SQLite WAL already
-        gives many-readers-one-writer concurrency without snapshotting."""
-        if self.store is None or self.store._backend.kind != "duckdb":
-            return {"skipped": "non-duckdb"}
+        Skipped (`{"skipped": "no store"}`) only before the daemon has
+        opened its store."""
+        if self.store is None:
+            return {"skipped": "no store"}
         now = time.monotonic()
         debounce_s = float(
             os.environ.get("RMX_SNAPSHOT_DEBOUNCE_MS", "250") or "250"
@@ -2942,9 +2938,8 @@ class Daemon:
         write op fires; on wake, sleeps `RMX_SNAPSHOT_DEBOUNCE_MS` to
         coalesce burst writes, then runs `_snapshot_catalog(force=True)`.
 
-        Disabled on SQLite backend (no need). Disabled by setting
-        RMX_SNAPSHOT_DEBOUNCE_MS=0."""
-        if self.store is None or self.store._backend.kind != "duckdb":
+        Disabled by setting RMX_SNAPSHOT_DEBOUNCE_MS=0."""
+        if self.store is None:
             return
         debounce_ms = float(
             os.environ.get("RMX_SNAPSHOT_DEBOUNCE_MS", "250") or "250"
@@ -3065,7 +3060,7 @@ class Daemon:
         """One-shot migration of legacy single-file `catalog.duckdb` into the
         A/B rotation pair. Runs at most once per .refmatrix root."""
         import shutil
-        if self.store is None or self.store._backend.kind != "duckdb":
+        if self.store is None:
             return
         a = self._replica_file("A")
         b = self._replica_file("B")
@@ -3224,8 +3219,7 @@ class Daemon:
                 with self._store_lock:
                     repaired = False
                     if (pre_repair_threshold > 0
-                            and len(paths) >= pre_repair_threshold
-                            and self._st()._backend.kind == "duckdb"):
+                            and len(paths) >= pre_repair_threshold):
                         try:
                             self._st().repair_entity_links_index()
                             repaired = True
@@ -4277,8 +4271,6 @@ def _op_checkpoint(d: Daemon, args: dict) -> dict:
     table after `prune-noise --drop` (DuckDB FATAL during the next
     DELETE — "Failed to delete all rows from index"). Drop+recreate
     self-heals without losing data."""
-    if d._st()._backend.kind != "duckdb":
-        return {"checkpointed": False, "reason": "not a duckdb backend"}
     with d._store_lock:
         con = d._st()._connect()._duck
         con.execute("DROP INDEX IF EXISTS idx_entity_links_lk_concept")
@@ -4395,8 +4387,8 @@ def _op_snapshot(d: Daemon, args: dict) -> dict:
     """Materialize a fresh `catalog.read.duckdb` and swing the
     `read_only.duckdb` symlink onto it. Bypasses the debounce when
     `force=True` (default) so CLI callers get a guaranteed-fresh
-    snapshot. Returns `{snapshot_path, size, source}` or `{skipped: ...}`
-    on SQLite backends / non-DuckDB stores."""
+    snapshot. Returns `{snapshot_path, size, source}`, or `{skipped: ...}`
+    before the daemon has opened its store."""
     return d._snapshot_catalog(force=bool(args.get("force", True)))
 
 
@@ -5892,8 +5884,8 @@ def _op_replica_audit(d: Daemon, args: dict) -> dict:
     the store's existing writer connection (its main DB is the writer
     slot) and ATTACH the other slot read-only on it for the comparison."""
     from refmatrix import replica_merge as rm
-    if d.store is None or d.store._backend.kind != "duckdb":
-        return {"enabled": False, "reason": "non-duckdb backend"}
+    if d.store is None:
+        return {"enabled": False, "reason": "the daemon has no store open"}
     a_path = d._replica_file("A")
     b_path = d._replica_file("B")
     if not (a_path.exists() and b_path.exists()):
@@ -5951,8 +5943,8 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
     from refmatrix import replica_merge as rm
     import shutil as _shutil
 
-    if d.store is None or d.store._backend.kind != "duckdb":
-        return {"enabled": False, "reason": "non-duckdb backend"}
+    if d.store is None:
+        return {"enabled": False, "reason": "the daemon has no store open"}
     dry_run = bool(args.get("dry_run"))
 
     a_path = d._replica_file("A")
@@ -6222,7 +6214,7 @@ def _op_replica_merge(d: Daemon, args: dict) -> dict:
 def _op_replica_status(d: Daemon, args: dict) -> dict:
     """Report rotation state: writer + reader slots, file paths + sizes,
     last-refresh timestamp + latency, refresh-thread liveness."""
-    enabled = d.store is not None and d.store._backend.kind == "duckdb"
+    enabled = d.store is not None
     # Authoritative writer = the slot the store is actually open on;
     # the `active` marker can drift behind a swap that failed to persist.
     active = (d._writer_slot_from_store()

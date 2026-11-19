@@ -247,7 +247,7 @@ def _resolve_read_only_path(s, tmp_path):
     against the bare-store fixture."""
     snap = tmp_path / "catalog.read.duckdb"
     link = tmp_path / "read_only.duckdb"
-    if s._read_only and s._backend.kind == "duckdb":
+    if s._read_only:   # one backend since S1 (2026-11-19): no kind test
         if snap.exists():
             s.db_path = snap
         elif link.exists() or link.is_symlink():
@@ -292,7 +292,7 @@ def _bare_daemon_with_store(tmp_path):
     tier test helper shape so we can exercise mirror refresh end-to-end."""
     from refmatrix.daemon import Daemon
     from refmatrix.store import Store
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     s._connect()
     d = object.__new__(Daemon)
     d.root = tmp_path

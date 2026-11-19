@@ -1,18 +1,20 @@
-"""Native DuckDB catalog schema (phase-2 of the DuckDB migration).
+"""THE catalog schema: the one DuckDB DDL every catalog builder applies.
 
-Mirrors the SQLite `CATALOG_DDL` from refmatrix.store, with a few mechanical
-adjustments DuckDB requires:
+The Store (`backend.DuckDBBackend.init_catalog`), the replica-merge target
+(replica_merge.py) and every test store bootstrap through `init_catalog`
+below. Until task S1 (2026-11-19) a second backend kept its own copy of this
+schema in store.py; that copy carried the incident notes several tables
+here pointed at. S1 deleted it and moved those notes into this file, beside
+the tables they explain.
 
-- `INTEGER PRIMARY KEY AUTOINCREMENT` → an explicit `SEQUENCE` plus
-  `DEFAULT nextval('<seq>')` on the column. DuckDB has no AUTOINCREMENT.
-- `ON DELETE CASCADE` is dropped from FOREIGN KEY constraints. DuckDB does
-  not support cascade actions; the Store already issues the matching
-  DELETEs manually (see store.py — every entity-delete path also deletes
-  from entity_links, concepts, tracked_files, etc.).
+Shape rules:
 
-Everything else (CHECK, UNIQUE, FOREIGN KEY, indexes, ON CONFLICT, RETURNING,
-INSERT OR IGNORE, PRAGMA table_info) works the same in DuckDB as in SQLite,
-so the surrounding query code can stay unchanged.
+- Ids come from an explicit `SEQUENCE` plus `DEFAULT nextval('<seq>')` on
+  the column (DuckDB has no AUTOINCREMENT); `init_catalog`'s
+  `sequence_starts` positions them for a merge target.
+- No FOREIGN KEY clauses (see the note at the top of `CATALOG_DDL`): the
+  Store issues every cascade DELETE itself (store.py — every entity-delete
+  path also deletes from entity_links, concepts, tracked_files, etc.).
 """
 from __future__ import annotations
 
@@ -27,14 +29,22 @@ SEQUENCES = (
 )
 
 CATALOG_DDL = """
--- DuckDB-specific note: FOREIGN KEY clauses are intentionally omitted on
--- this schema. DuckDB enforces FKs conservatively — UPDATEs on a parent
--- row trigger the check even when the FK column isn't being modified, and
--- bulk INSERTs into self-referential tables fail per-row before the parent
--- is visible. SQLite-side store.py already issues every cascade DELETE
--- explicitly (delete_entity, prune_noise, vacuum, etc.), so app-level
--- enforcement is unchanged. The constraints are documented in store.py
--- alongside the SQLite CATALOG_DDL.
+-- FOREIGN KEY clauses are intentionally omitted on this schema. DuckDB
+-- enforces FKs conservatively — UPDATEs on a parent row trigger the check
+-- even when the FK column isn't being modified, and bulk INSERTs into
+-- self-referential tables fail per-row before the parent is visible.
+-- store.py issues every cascade DELETE explicitly (delete_entity,
+-- prune_noise, vacuum, etc.), so the references are enforced in the app.
+-- The references the app keeps (the second backend's schema declared them
+-- until task S1 deleted it, 2026-11-19):
+--   * the `partition_id` of entities, saved_queries, tracked_files,
+--     derive_stamps, derive_history and pagerank -> partitions(id);
+--   * concepts(id), memory_content(entity_id), pagerank(entity_id) ->
+--     entities(id), deleted with the entity;
+--   * entity_links and linkage_evidence: entity_id and concept_id ->
+--     entities(id), deleted with either entity; linkage_id ->
+--     linkage_types(id);
+--   * linkage_types(inverse_of) -> linkage_types(id).
 
 CREATE TABLE IF NOT EXISTS partitions (
     id          INTEGER PRIMARY KEY DEFAULT nextval('seq_partitions_id'),
@@ -84,11 +94,19 @@ CREATE TABLE IF NOT EXISTS concepts (
     description TEXT
 );
 
--- Intuition memory layer (ADR-0001). Sidecar for entities with
--- kind='memory'. See sqlite CATALOG_DDL for full rationale.
+-- Intuition memory layer (ADR-0001). Sidecar 1:1 with entities where
+-- kind='memory'. Keeps the raw observation/note body off of the
+-- entities row (which stays a thin metadata header consistent with
+-- doc/code/concept) so a recall doesn't have to read content unless
+-- explicitly asked, and so embedding extractors can pull content
+-- directly without parsing entities.meta.
 CREATE TABLE IF NOT EXISTS memory_content (
     entity_id   INTEGER PRIMARY KEY,
     content     TEXT NOT NULL,
+    -- Free-form type tag: 'observation' / 'note' / 'decision' / 'feedback'
+    -- / ... — not constrained at the DB layer to keep the surface flexible
+    -- as new memory subtypes appear. Default 'observation' matches the
+    -- intuition import path.
     mtype       TEXT NOT NULL DEFAULT 'observation',
     tags        TEXT,
     metadata    TEXT,
@@ -130,9 +148,12 @@ CREATE TABLE IF NOT EXISTS tracked_files (
     PRIMARY KEY (partition_id, path)
 );
 
--- WHICH CODE derived this partition's graph, per ingest pass (bug-039). See
--- the SQLite CATALOG_DDL for the incident: `tracked_files` answers "did the
--- FILES change" and cannot see a graph derived by older passes.
+-- WHICH CODE derived the graph in this partition, per ingest pass (bug-039).
+-- `tracked_files` answers "did the FILES change"; it answered `35` while this
+-- project's own store sat at a 1-bundle floor because the graph had not been
+-- re-derived since 0.49.1 — ten days and several ingest changes earlier. A
+-- derive carries no freshness signal of its own unless the deriving version is
+-- written down, so every pass that writes derived state stamps itself here.
 CREATE TABLE IF NOT EXISTS derive_stamps (
     partition_id INTEGER NOT NULL DEFAULT 1,
     pass_name    TEXT NOT NULL,
@@ -142,11 +163,17 @@ CREATE TABLE IF NOT EXISTS derive_stamps (
     PRIMARY KEY (partition_id, pass_name)
 );
 
--- WHAT each derive PRODUCED, append-only and capped per (partition, pass)
--- (task 15.2). See the SQLite CATALOG_DDL for the reasoning; the shapes must
--- stay in step, and this file is the one the DuckDB backend actually applies —
--- adding the table to only one of the two is how a fresh store gets a schema
--- the code expects and does not have.
+-- WHAT each derive PRODUCED, append-only (task 15.2). `derive_stamps` answers
+-- "which code built what is in the store NOW" and upserts, so there is nothing
+-- to compare a derive against — and bug-039's own impact figures (31 -> 63
+-- bundles, 206 -> 466 nodes) came from a hand-rolled harness that no longer
+-- runs. `counts` is the partition's structural shape AFTER the pass, so two
+-- derives diff directly and a derive that changed nothing is visibly a no-op.
+--
+-- Capped per (partition, pass): `global:queues` reached 3,196 rows unbounded
+-- (bug-061), and an append-only table with no retention is that defect under a
+-- new name. `pruned` records how many rows the insert evicted, so the drop is
+-- visible in `rmx derive log` rather than silent.
 CREATE TABLE IF NOT EXISTS derive_history (
     id           BIGINT PRIMARY KEY,
     partition_id INTEGER NOT NULL DEFAULT 1,
@@ -174,11 +201,9 @@ CREATE INDEX IF NOT EXISTS idx_evidence_lookup
     ON linkage_evidence(linkage_id, concept_id, entity_id);
 
 -- Phase-3: bitmap fragments live as BLOB rows instead of per-partition
--- files on disk. Serialized BitMap64 (pyroaring) bytes go in `blob`. The
--- SQLite backend still uses fragments/<partition>/<linkage>.rb64 files;
--- this table is DuckDB-only. Empty bitmaps are not stored — the row is
--- DELETEd on flush when the fragment becomes empty (matches the file
--- backend's behavior of unlinking the file).
+-- files on disk. Serialized BitMap64 (pyroaring) bytes go in `blob`. Empty
+-- bitmaps are not stored — the row is DELETEd on flush when the fragment
+-- becomes empty.
 CREATE TABLE IF NOT EXISTS bitmap_fragments (
     partition_id INTEGER NOT NULL,
     linkage      TEXT NOT NULL,
@@ -258,32 +283,19 @@ CREATE TABLE IF NOT EXISTS pending_refs (
 );
 """
 
-# Tables in the order they need to be (re-)populated so foreign keys resolve.
-TABLE_LOAD_ORDER = (
-    "partitions",
-    "linkage_types",
-    "entities",
-    "concepts",
-    "memory_content",
-    "entity_links",
-    "tracked_files",
-    "linkage_evidence",
-    "saved_queries",
-)
-
-
 def init_catalog(con, *, sequence_starts: dict[str, int] | None = None) -> None:
     """Create sequences + tables on a fresh DuckDB connection.
 
-    `sequence_starts` lets a migration pre-position each sequence at the
-    next free id (max(id_in_source) + 1) so that bulk-loaded rows with
-    explicit ids and post-migration `nextval` calls never collide. DuckDB
-    can't `ALTER SEQUENCE ... RESTART` once a table column DEFAULTs to it,
-    and `DROP SEQUENCE` is blocked by the dependency, so we have to set the
-    start at create time.
+    `sequence_starts` lets a merge target (replica_merge.py) pre-position
+    each sequence at the next free id (max(id_in_source) + 1) so that
+    bulk-loaded rows with explicit ids and later `nextval` calls never
+    collide. DuckDB can't `ALTER SEQUENCE ... RESTART` once a table column
+    DEFAULTs to it, and `DROP SEQUENCE` is blocked by the dependency, so we
+    have to set the start at create time.
 
     Re-running on the same connection is safe — sequences and tables use
-    `IF NOT EXISTS`. Migration callers should ensure the file is fresh.
+    `IF NOT EXISTS`. A caller passing `sequence_starts` should ensure the
+    file is fresh.
     """
     starts = sequence_starts or {}
     for _table, _col, seq in SEQUENCES:
@@ -295,8 +307,8 @@ def init_catalog(con, *, sequence_starts: dict[str, int] | None = None) -> None:
 
 # Columns `entities` gained after catalogs already existed, in the order they
 # were added. THE list: a fresh catalog and an upgraded one both end with these
-# columns appended by ALTER, so every DuckDB catalog (Store, merge target,
-# sqlite->duckdb migration) has one column set in one order. bug-113: the
+# columns appended by ALTER, so every DuckDB catalog (Store, merge target)
+# has one column set in one order. bug-113: the
 # Store ALTERed `vectors_partition` in on open while `init_catalog` — the
 # replica-merge target's builder — never did, and `INSERT INTO entities SELECT
 # ae.*` from a Store-built slot failed "13 columns but 14 values".

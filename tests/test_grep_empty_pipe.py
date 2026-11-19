@@ -48,7 +48,7 @@ def proj(tmp_path):
     d = tmp_path / "t"
     d.mkdir()
     (d / "src.py").write_text("hello world\nhello again\n")
-    s = Store(d / ".refmatrix", backend="duckdb")
+    s = Store(d / ".refmatrix")
     s.init()
     c = s.add_concept("hello", description="seeded")
     e = s.upsert_entity(kind="code", name="src.py", path=str(d / "src.py"))

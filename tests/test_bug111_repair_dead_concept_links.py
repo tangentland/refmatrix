@@ -19,8 +19,7 @@ from refmatrix.store import Store, _CONCEPT_SHIFT
 
 @pytest.fixture
 def s(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    st = Store(tmp_path / ".refmatrix", backend="duckdb"); st.init()
+    st = Store(tmp_path / ".refmatrix"); st.init()
     yield st
     st.close()
 

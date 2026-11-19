@@ -737,9 +737,12 @@ _TASK_3_7_BATCH_C = frozenset({
 })
 # Task 26.6 R-D: `memory compile` gained the `rmx_memory_compile` verb (19.4 R1's op half).
 _TASK_26_6 = frozenset({('memory', 'compile')})
+# Task S1 R2 (2026-11-19): `migrate-to-duckdb` is deleted with the second catalog backend; the
+# path leaves LEGACY_UNPAIRED because the command is gone, not because it gained a verb.
+_TASK_S1 = frozenset({('migrate-to-duckdb',)})
 LEGACY_BASELINE = (_BASELINE_3_4 - _TASK_3_7_BATCH_A - _TASK_3_7_BATCH_B - _TASK_3_7_BATCH_C
-                   - _TASK_26_6)
-LEGACY_BASELINE_SIZE = 91
+                   - _TASK_26_6 - _TASK_S1)
+LEGACY_BASELINE_SIZE = 90
 _USER_QUOTE = "internal harness/testing cli only commands"
 
 
@@ -902,6 +905,7 @@ def test_legacy_unpaired_carries_a_category_and_can_only_shrink():
     assert not (_TASK_3_7_BATCH_A & _TASK_3_7_BATCH_B)
     assert _TASK_3_7_BATCH_C <= _BASELINE_3_4 and len(_TASK_3_7_BATCH_C) == 15
     assert not (_TASK_3_7_BATCH_C & (_TASK_3_7_BATCH_A | _TASK_3_7_BATCH_B))
+    assert _TASK_S1 <= _BASELINE_3_4 and len(_TASK_S1) == 1
     assert len(LEGACY_BASELINE) == LEGACY_BASELINE_SIZE
     legacy = set(verbs.LEGACY_UNPAIRED)
     grown = sorted(legacy - LEGACY_BASELINE)
@@ -1327,7 +1331,7 @@ def test_action_shape_differences_name_real_click_options():
 
 
 def test_legacy_shrinks_by_exactly_the_batched_paths():
-    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92; task 26.6 R-D: - 1 (`memory compile`) = 91,
-    nothing else moved."""
+    """C6 / AC-G5: 140 - 22 - 11 - 15 = 92; task 26.6 R-D: - 1 (`memory compile`) = 91;
+    task S1 R2: - 1 (`migrate-to-duckdb`, deleted) = 90, nothing else moved."""
     assert set(verbs.LEGACY_UNPAIRED) == set(LEGACY_BASELINE), sorted(
         set(verbs.LEGACY_UNPAIRED) ^ set(LEGACY_BASELINE))

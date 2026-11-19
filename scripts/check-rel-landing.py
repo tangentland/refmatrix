@@ -65,11 +65,8 @@ def _open_copy(catalog: Path, tmp: Path):
     wal = catalog.with_name(catalog.name + ".wal")
     if wal.exists():
         shutil.copy2(wal, dst.with_name(dst.name + ".wal"))
-    with open(dst, "rb") as fh:
-        head = fh.read(16)
-    if head.startswith(b"SQLite format 3"):
-        import sqlite3
-        return sqlite3.connect(f"file:{dst}?mode=ro", uri=True)
+    # One catalog format since task S1 (2026-11-19): a file that is not DuckDB fails in
+    # `duckdb.connect`, naming the file.
     import duckdb
     return duckdb.connect(str(dst), read_only=True)
 

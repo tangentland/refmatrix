@@ -61,6 +61,18 @@ def _unknown_project(project: str) -> Exception:
 
 
 def _resolve_root(args: dict) -> Path:
+    """The store an MCP call targets (`_target_root`), refused when it is a legacy-catalog
+    dir: `store.refuse_legacy_catalog` raises `LegacyCatalogError`, which the dispatcher
+    replies as `isError` carrying the refusal line, and the server keeps serving other calls
+    (task S1 R5, 2026-11-19, ruling L190). Checked here, before any verb runs, so nothing is
+    dialled, spawned or written for a refused store."""
+    from refmatrix.store import refuse_legacy_catalog
+    root = _target_root(args)
+    refuse_legacy_catalog(root)
+    return root
+
+
+def _target_root(args: dict) -> Path:
     """The store an MCP call targets (task 25.1 R10, bug-181, user decision 2026-11-09):
 
     - `root` given → that store (it wins; `project` is not consulted);
@@ -301,7 +313,7 @@ def _channel_patterns() -> list[str]:
     pats = ["global:*"]
     try:
         from refmatrix import discovery
-        name = discovery.store_name(_resolve_root({}))
+        name = discovery.store_name(_target_root({}))
         if name:
             pats.insert(0, f"proj:{name}:*")
     except Exception:

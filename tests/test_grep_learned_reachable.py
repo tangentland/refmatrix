@@ -47,13 +47,12 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def daemon(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     monkeypatch.delenv("RMX_LEARN", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
     root = tmp_path / "proj" / ".refmatrix"
     root.parent.mkdir()
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     d = Daemon(root)
     d.store = s
@@ -193,7 +192,7 @@ def test_both_cli_read_paths_find_the_learned_concept(daemon, monkeypatch, layou
 
     assert res.exit_code == 0, f"{layout}: fell through to no-indexed-matches\n{res.output}"
     assert "sample.py" in res.output
-    daemon.store = Store(daemon.root, backend="duckdb")
+    daemon.store = Store(daemon.root)
 
 
 # ---- the filters and the regex mode are unchanged -----------------------

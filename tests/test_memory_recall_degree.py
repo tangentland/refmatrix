@@ -32,7 +32,6 @@ def seeded(tmp_path, monkeypatch):
     a context bundle has something to walk. Seed lands in
     `memory-proj` to match what `_apply_memory_partition_default()`
     picks for a project rooted at tmp_path/proj."""
-    monkeypatch.setenv("RMX_BACKEND", "sqlite")
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     s = Store(root)

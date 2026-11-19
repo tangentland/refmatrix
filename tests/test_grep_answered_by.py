@@ -49,11 +49,10 @@ def no_daemon(monkeypatch):
 @pytest.fixture
 def project(tmp_path, monkeypatch, no_daemon):
     """A real store under a real project tree, cwd'd into it."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     monkeypatch.delenv("REFMATRIX_NO_TELEMETRY", raising=False)
     monkeypatch.delenv("REFMATRIX_ROOT", raising=False)
     root = tmp_path / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     s.close()
     monkeypatch.chdir(tmp_path)
@@ -90,7 +89,7 @@ def both_read_paths(request, project):
 
 def _seed_index(root: Path, concept: str, file_rel: str, line: int) -> None:
     """Put one concept + one evidence row in the index so a grep can hit it."""
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     c = s.add_concept(concept, description="seeded for the index case")
     e = s.upsert_entity(kind="code", name=file_rel, path=str(root.parent / file_rel))
     s.link("defines", c, e)
@@ -248,9 +247,8 @@ def test_summarize_reports_pre_field_rows_as_unknown(tmp_path, monkeypatch):
     and nothing holds the paths, so eligibility is unrecoverable. A reader that
     folded them into `floor` would invent the very number this field exists to
     measure."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     legacy = {"ts": "2026-09-01T10:00:00", "kind": "grep", "body": "alpha",
               "source": "grep-replica", "invocation": "hook", "cardinality": 3,

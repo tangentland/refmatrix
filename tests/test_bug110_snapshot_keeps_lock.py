@@ -47,7 +47,7 @@ def _bare_daemon(root: Path, store: Store) -> Daemon:
 
 
 def test_second_writer_is_refused_before_and_after_a_snapshot(tmp_path):
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     s._connect()
     try:
         before = _second_writer(s.db_path)
@@ -71,7 +71,7 @@ def test_snapshot_is_a_readable_copy_of_the_writer(tmp_path):
     """The fix changes HOW the bytes are copied; the snapshot must still open and match."""
     import duckdb
 
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     con = s._connect()
     con.execute("CREATE TABLE bug110_rows (x INTEGER)")
     con.execute("INSERT INTO bug110_rows VALUES (1), (2), (3)")
@@ -102,7 +102,7 @@ def test_a_failed_copy_installs_no_snapshot_and_keeps_the_previous_one(tmp_path,
     replace the snapshot readers use."""
     import refmatrix.daemon as dm
 
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     s._connect()
     try:
         d = _bare_daemon(tmp_path, s)

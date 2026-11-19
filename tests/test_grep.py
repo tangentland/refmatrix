@@ -12,9 +12,8 @@ from refmatrix.store import Store
 
 @pytest.fixture
 def daemon(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / ".refmatrix"
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     s.init()
     d = Daemon(root)
     d.store = s

@@ -15,7 +15,6 @@ from refmatrix.store import Store
 
 @pytest.fixture()
 def store(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     s = Store(tmp_path / ".refmatrix")
     s.init()
     s.add_linkage_type("mentions")

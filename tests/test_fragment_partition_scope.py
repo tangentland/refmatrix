@@ -21,8 +21,7 @@ import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (sho
 
 @pytest.fixture
 def duck_store(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
     s.close()
@@ -243,11 +242,10 @@ def test_repair_fragments_op_through_the_dispatcher(monkeypatch):
 
     from refmatrix import daemon as dm
 
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     base = Path(rmx_sandbox.short_root("rmxf-"))
     root = base / ".refmatrix"
     d = dm.Daemon(root)
-    d.store = Store(root, backend="duckdb"); d.store.init()
+    d.store = Store(root); d.store.init()
     d._log = lambda m: None
     monkeypatch.setattr(d, "_request_snapshot", lambda: None)
     try:
@@ -273,9 +271,8 @@ def test_repair_index_fragments_cli_offline_dry_run(tmp_path, monkeypatch):
     from refmatrix import cli as cli_mod
     from refmatrix import verbs as verbs_mod
 
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = tmp_path / ".refmatrix"
-    s = Store(root, backend="duckdb"); s.init()
+    s = Store(root); s.init()
     home, a, b, x, dead, c, c2 = _contaminated(s)
     s.close()
 
@@ -287,7 +284,7 @@ def test_repair_index_fragments_cli_offline_dry_run(tmp_path, monkeypatch):
     out = CliRunner().invoke(cli_mod.main, ["repair-index", "--fragments", "--dry-run"])
     assert out.exit_code == 0, out.output
     assert "moved=2" in out.output and "dropped_dead=1" in out.output and "dry run" in out.output
-    s = Store(root, backend="duckdb")
+    s = Store(root)
     try:
         assert _persisted_entities(s, "other", "defines") == {x}
     finally:

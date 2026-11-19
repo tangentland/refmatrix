@@ -54,14 +54,13 @@ def proj(tmp_path, monkeypatch, no_daemon):
     did the first and failed every case for a reason that had nothing to do with
     either bug."""
     monkeypatch.delenv("RMX_LEARN", raising=False)
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     d = tmp_path / "t"
     d.mkdir()
     from refmatrix.store import Store
-    s = Store(d / ".refmatrix", backend="duckdb")
+    s = Store(d / ".refmatrix")
     s.init()
     s.close()
     monkeypatch.chdir(d)

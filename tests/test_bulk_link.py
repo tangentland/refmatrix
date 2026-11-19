@@ -1,5 +1,5 @@
-"""Phase-2c: bulk_link batches many link inserts into one Arrow batch (DuckDB)
-or one executemany (SQLite). Covers semantics + a small benchmark gate."""
+"""Phase-2c: bulk_link batches many link inserts into one Arrow batch. Covers semantics + a
+small benchmark gate. (Both-backend until S1, 2026-11-19; DuckDB is the one backend.)"""
 from __future__ import annotations
 
 import time
@@ -10,10 +10,9 @@ from refmatrix.query import QueryEngine
 from refmatrix.store import Store
 
 
-@pytest.fixture(params=["sqlite", "duckdb"])
-def store(tmp_path, request, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend=request.param)
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
     s.close()
@@ -68,8 +67,7 @@ def test_bulk_link_handles_multiple_linkages(store):
 
 
 def test_bulk_link_preserves_weights_on_duckdb_only(store):
-    """DuckDB path stores weight via Arrow; SQLite uses OR IGNORE so weight
-    rides along on the initial insert. Same observable behavior either way."""
+    """The Arrow path stores the weight on the initial insert."""
     parser = store.add_concept("parser")
     a = store.upsert_entity(kind="code", name="a.py")
     store.bulk_link([("defines", parser, a, 0.42)])
@@ -78,13 +76,11 @@ def test_bulk_link_preserves_weights_on_duckdb_only(store):
 
 def test_bulk_link_beats_per_row_link_on_throughput(tmp_path, monkeypatch):
     """Gate: bulk_link must be at least 2× faster than the equivalent per-row
-    `link()` loop on a moderately-sized batch. Run only on DuckDB (where the
-    Arrow path is the win); SQLite parity is incidental."""
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
+    `link()` loop on a moderately-sized batch (the Arrow path is the win)."""
     N = 2000
 
     def _build(name: str):
-        s = Store(tmp_path / name, backend="duckdb")
+        s = Store(tmp_path / name)
         s.init()
         cid = s.add_concept("hot")
         eids = [s.upsert_entity(kind="code", name=f"f{i}.py") for i in range(N)]

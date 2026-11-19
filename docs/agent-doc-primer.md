@@ -635,25 +635,24 @@ even a plain prose doc gets some signal if it contains a fenced
 
 ## Storage backend (operational note for hooks / CI) {#storage-backend-operational-note-for-hooks-ci}
 
-The catalog backend defaults to **DuckDB** as of 2026-05-16. Auto-
-detection at `Store.__init__`:
+The catalog has ONE backend, **DuckDB** (task S1, 2026-11-19): no
+autodetect, no `RMX_BACKEND` switch, no `Store(..., backend=...)`.
 
-- `.refmatrix/catalog.duckdb` present → DuckDB.
-- only `.refmatrix/catalog.db` present → SQLite (legacy stores keep working).
-- empty directory → DuckDB (fresh stores).
-
-Override explicitly with `RMX_BACKEND=duckdb|sqlite` or
-`Store(..., backend=...)`. Use `rmx migrate-to-duckdb` to one-shot
-copy a SQLite catalog (catalog tables + on-disk fragment files) into
-a native DuckDB catalog alongside the SQLite one. The SQLite file is
-not deleted — verify reads against the new catalog before removing.
+- `.refmatrix/catalog.duckdb`, or a rotation slot `catalog.A.duckdb` /
+  `catalog.B.duckdb`, present → opened.
+- empty directory → a fresh DuckDB store.
+- only the legacy `.refmatrix/catalog.db` present → **refused**, with one
+  line naming the file: `legacy SQLite catalog, this rmx reads DuckDB only.
+  Convert it with refmatrix 0.84.0 (rmx migrate-to-duckdb), or move it aside
+  and run rmx init`. A hook or CI step in such a repo fails with that line
+  (exit 1) and creates nothing. `rmx migrate-to-duckdb` exists only in
+  refmatrix 0.84.0 and earlier.
 
 Ingest performance: hot loops in `_ingest_python_semantics` flush
-links via `Store.bulk_link(items)`, which uses an Arrow batch under
-DuckDB and `executemany INSERT OR IGNORE` under SQLite. Measured
-speedup vs per-row `link()`: 600-1000× on DuckDB at N=5000 links,
-80× on SQLite. Doc-authoring rules don't change — this is just why
-ingest got fast.
+links via `Store.bulk_link(items)`, which writes one Arrow batch with one
+statement. Measured speedup vs per-row `link()`: 600-1000× at N=5000
+links. Doc-authoring rules don't change — this is just why ingest got
+fast.
 
 ## When in doubt {#when-in-doubt}
 

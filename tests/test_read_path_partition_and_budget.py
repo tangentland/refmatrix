@@ -28,7 +28,7 @@ from refmatrix.store import Store
 def _daemon(tmp_path):
     from refmatrix.daemon import Daemon, _MemMirror
 
-    s = Store(tmp_path, backend="duckdb")
+    s = Store(tmp_path)
     s._connect()
     d = object.__new__(Daemon)
     d.root = tmp_path

@@ -41,7 +41,7 @@ Benefits:
 
 - One file, one lock, one transaction boundary.
 - Analytical queries (top concepts, density, eval harness) compile to
-  vectorized DuckDB plans instead of N+1 SQLite roundtrips.
+  vectorized DuckDB plans instead of N+1 per-row roundtrips.
 - `entity_links` table shadows the bitmap content with weights so SQL queries
   can rank/filter without touching the bitmap layer.
 - Bitmap fragments persist as BLOB rows in `bitmap_fragments`, UPSERTed
@@ -52,7 +52,7 @@ Benefits:
 Every CLI invocation that *doesn't* go through the daemon pays:
 
 - Python interpreter startup (~100ms baseline).
-- DuckDB / SQLite file open + WAL replay.
+- DuckDB file open + WAL replay.
 - Bitmap fragment load on first access.
 
 With `rmx daemon start`, the daemon owns the catalog forever and clients

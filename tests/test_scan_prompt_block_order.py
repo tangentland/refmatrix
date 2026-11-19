@@ -47,7 +47,7 @@ def store(tmp_path):
     docs.mkdir()
     for i, b in enumerate(BODIES):
         (docs / f"doc-{i}.md").write_text(_doc(i, b), encoding="utf8")
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     ingest_gmd_paths(s, sorted(docs.glob("*.md")), as_memory=True,
                      memory_mtype_default="test/doc")

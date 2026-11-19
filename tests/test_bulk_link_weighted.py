@@ -15,10 +15,9 @@ import pytest
 from refmatrix.store import Store
 
 
-@pytest.fixture(params=["sqlite", "duckdb"])
-def store(tmp_path, request, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    s = Store(tmp_path / ".refmatrix", backend=request.param)
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
     s.close()

@@ -3,8 +3,9 @@
 Round 3 found the merge's home-binding rebind still outside the writer lock (#b3-1, the 7th
 bug-098-class case), merge collisions whose fragment bits were never remapped from the SRC id to
 the DST id so the repair dropped them as dead (#s3-1), unpinned report prints (#s3-2) and a silent
-rmxd.log (#m3-2). The auditor's probes P1-P3 and P5-P8 are adopted; P4 (SQLite's best-effort
-fragment-dir skip, #m3-1) is a known MEH on a non-production backend and stays open.
+rmxd.log (#m3-2). The auditor's probes P1-P3 and P5-P8 are adopted; P4 (the file-fragment
+backend's best-effort fragment-dir skip, #m3-1) was a MEH on a non-production backend, closed
+when S1 (2026-11-19) deleted that backend.
 """
 import os
 import shutil
@@ -24,8 +25,7 @@ import rmx_sandbox  # task-29.4 #r5: test roots live under the sandbox root (sho
 
 @pytest.fixture
 def s(tmp_path, monkeypatch):
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
-    st = Store(tmp_path / ".refmatrix", backend="duckdb"); st.init()
+    st = Store(tmp_path / ".refmatrix"); st.init()
     yield st
     st.close()
 
@@ -150,7 +150,6 @@ def live(monkeypatch):
     for k, v in {"HOME": str(home), "RMX_HOME": str(home / ".refmatrix"),
                  "RMX_SHARED_MODELS": "0", "RMX_MODEL_SOCK": str(base / "m.sock")}.items():
         monkeypatch.setenv(k, v)
-    monkeypatch.delenv("RMX_BACKEND", raising=False)
     root = base / "p" / ".refmatrix"; root.parent.mkdir()
     st = Store(root); st.init()
     with st.with_partition("src"):

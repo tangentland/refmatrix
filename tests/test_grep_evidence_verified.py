@@ -43,7 +43,7 @@ RMX = dev_rmx()
 
 @pytest.fixture
 def store(tmp_path):
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     yield s
     s.close()
@@ -158,7 +158,7 @@ def test_a_fully_filtered_answer_falls_through_to_the_floor(tmp_path):
     """
     f = tmp_path / "mod.py"
     f.write_text("def handler():\n    pass\n    # an error happens here\n")
-    s = Store(tmp_path / ".refmatrix", backend="duckdb")
+    s = Store(tmp_path / ".refmatrix")
     s.init()
     cid = s.add_concept("keyword/error")
     eid = s.upsert_entity("code", "error-site", path=str(f))
