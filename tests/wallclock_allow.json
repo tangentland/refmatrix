@@ -194,12 +194,6 @@
    "note": "a 1 s grace on a stopped daemon is waited, then given up (lower half 0.9 is the wait)"
   },
   {
-   "key": "test_plan4_remedy_r2.py::test_foreground_start_refuses_a_busy_daemon_without_reaping_it::time.monotonic() - t0 < 4.0",
-   "kind": "legacy",
-   "class": "B",
-   "note": "the busy refusal costs its probe budget"
-  },
-  {
    "key": "test_plan4_remedy_r3.py::test_stop_daemon_keeps_the_ping_discovered_pid_after_a_failed_grace::time.monotonic() - t0 < 10.0",
    "kind": "legacy",
    "class": "B",

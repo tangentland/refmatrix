@@ -295,8 +295,9 @@ def test_foreground_start_refuses_a_busy_daemon_without_reaping_it():
         except subprocess.TimeoutExpired:
             p.kill(); p.communicate()
             pytest.fail("serve_foreground did not refuse: it started serving (the gate reaped the busy daemon)")
-        assert p.returncode != 0 and "busy" in err, err[-600:]
-        assert time.monotonic() - t0 < 15.0
+        # The hang guard is communicate(timeout=20) above (wall-clock class A, bug-296): the elapsed
+        # time goes in the message, never in an upper-bound assert.
+        assert p.returncode != 0 and "busy" in err, f"{err[-600:]} (after {time.monotonic() - t0:.1f}s)"
         assert d.proc.poll() is None, "the busy predecessor was reaped"
         assert dm.socket_path(d.root).exists()
     finally:
