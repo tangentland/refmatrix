@@ -24,9 +24,13 @@ The conceptual model mirrors [Pilosa](https://github.com/FeatureBaseDB/featureba
 (index → field → row → column) but storage is in-process via
 [pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) plus a DuckDB
 catalog (the one backend since task S1; a legacy SQLite-only store dir is
-refused by name, see [[ARCHITECTURE#backend-selection-backend-py]]). No server, no HTTP, single-binary CLI. A long-lived per-store
-daemon (Unix socket) serializes all access so concurrent CLI clients and
-filesystem-watcher writes never race on the catalog.
+refused by name, see [[ARCHITECTURE#backend-selection-backend-py]]). A long-lived per-store
+daemon (Unix socket) is the single writer: while it runs, every write from the CLI, hooks and
+the filesystem watcher goes through it, so nothing races on the catalog. One user-level **hub**
+(launchd-supervised) sits above the daemons: it restarts dead ones, owns the global memory
+store, hosts the shared embedder and reranker workers over `~/.refmatrix/models.sock` (a daemon
+that cannot reach them falls back to a private worker of its own), and serves a web UI on
+`127.0.0.1:7777` when the `ui` extra is installed.
 
 The headline capability is **set-algebra queries that grep can't answer**:
 
@@ -178,7 +182,7 @@ over a stable column space rather than as cache lookups.
 3. **`rmx install-hooks`** wires git post-commit/merge/checkout/rewrite hooks
    plus Claude Code `PostToolUse`/`Stop`/`SessionStart`/`UserPromptSubmit`
    hooks. From here, edits trigger incremental `rmx sync` automatically.
-4. **`rmx daemon start`** (optional but recommended): owns the catalog lock,
+4. **`rmx daemon start`** (the single writer, [[#what-refmatrix-is]]): owns the catalog lock,
    serves a Unix socket for all read/write ops, embeds the file watcher.
    Without it, every CLI invocation pays the DuckDB open cost.
 5. **Queries** route through the daemon when present; otherwise the CLI
@@ -244,8 +248,8 @@ index, so the next equivalent query lands at the `rmx query` step instead.
   but not currently in the index path.
 - **Not a code-execution sandbox.** rmx never runs project code; all
   extraction is static (AST / regex / fenced-block parsing).
-- **Not a server.** Single-process CLI + per-store daemon. No HTTP, no
-  central service, no cluster.
+- **Not a network service.** The daemons and the hub talk over local Unix sockets; the only
+  HTTP is the hub's web UI, bound to 127.0.0.1 ([[#what-refmatrix-is]]). No cluster.
 
 ## File layout in a project {#file-layout-in-a-project}
 
