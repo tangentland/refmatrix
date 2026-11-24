@@ -59,7 +59,7 @@ rel: related-to -> [[adr-format]]
 | [[adr-0003-canonical-partition-layout]] | Canonical partition layout | Proposed |
 | [[adr-0004-unified-location-space-index]] | One location space: hierarchical ids, tiered bitmaps, helix on top | Proposed |
 | [[refmatrix/adr-0005-memory-dir-layout]] | Curated memory dir laid out by type and lifecycle; topic is a derived subject | Proposed |
-| [[refmatrix/adr-0007-instruction-architecture]] | Every rule delivered by the event that makes it actionable, from one generated source, with a recorded delivery | Proposed |
+| [[refmatrix/adr-0007-instruction-architecture]] | Every rule delivered by the event that makes it actionable, from one generated source, with a recorded delivery | Accepted |
 
 > ADR-0006 is reserved for the layout and layering decision of plan-29 task 29.5 (not yet
 > written).

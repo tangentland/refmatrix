@@ -7,7 +7,8 @@ tags: [adr, instructions, hooks, rules, skills, agents, injection, telemetry, te
 
 # ADR-0007: Instruction architecture {#root}
 
-**Status:** Proposed · **Date:** 2026-11-24, amended the same day ([[#amendments]]) ·
+**Status:** Accepted (the user, 2026-11-24, L226) · **Date:** 2026-11-24, amended the same day
+([[#amendments]]) ·
 **Implementation:** plan-32 step 5 (queue row I1, tasks I1.a to I1.i in
 [[plan-32-retriage-2026-11-24#i1-tasks]]); agent composition and distribution with queue row H1
 (H1.a to H1.g in [[plan-32-retriage-2026-11-24#h1-tasks]]); the plugin transport with plan-24
@@ -498,33 +499,21 @@ check refuses a commit of a review row that leaves a flagged item undecided. Tha
 what makes the roster review strong rather than a listed candidate.
 {#context-review-record}
 
-**Enforcement**, as recommended in Q63 (a), which is still open: {#context-review-enforce}
+**Enforcement**, decided by the user (Q63 = a, in L225): {#context-review-enforce}
 
 - **Due** 30 days after the newest review row, or before a major release if that is sooner.
-- **Overdue, every session says so once:** a SessionStart line on `startup` and `resume`
-  names the command and the days overdue (T5; under 300 B).
+- **Overdue, every session says so once:** a SessionStart "review due" block on `startup`
+  and `resume` names the command and the days overdue (T5; under 300 B).
 - **Overdue, a major release holds:** the release commit needs a review row newer than the
   last major release, as release step 1b needs no open GATE row
   ([[orchestration#release]]). It is a T4 check; an L-row may waive it for one release, and
   the release commit names the waiver.
-- **Fleet:** each repo holds its own review. The hub lists the overdue repos from its
-  registry, in `rmx hub status` and the web UI. No nightly scheduler exists before the mod
-  (plan-17 is post-mod), so the list is computed once a day inside the hub's existing
-  watchdog loop.
+- **Fleet:** each repo holds its own review, and the hub's nightly tick lists the overdue
+  repos from its registry, in `rmx hub status` and the web UI. The hub has no nightly
+  scheduler before the mod (plan-17 is post-mod), so the tick is a once-a-day pass inside
+  its existing watchdog loop.
 - **Bootstrap:** the gate ships in the same release as the command, so the first major
   release after it needs the first review, and none before.
-
-What changes under the other answers: {#context-review-options}
-
-- **(b) release gate only:** no SessionStart line and no hub list; "due" exists only at a
-  major release. The nine consumers have no major release, so they would never be reviewed,
-  and here a long gap between majors goes unreviewed.
-- **(c) calendar only:** the SessionStart line and the hub list stay; the release check is
-  not built. An overdue review is detectable, so by [[#principle]] this is the weaker form:
-  a reminder where enforcement is available.
-- **What (a) itself leaves open:** in a repo with no release, the only pressure is the
-  session line and the hub list. If the user wants a hold there too, the natural gate is
-  the install window (`rmx install-hooks --apply`, gated once and never trapped).
 
 ### 7. The always-on budget {#always-on}
 
@@ -636,7 +625,7 @@ sha) true without touching the settings. {#r007-q57}
 
 ### Decisions that are the user's {#user-calls}
 
-Decided by the user on 2026-11-24 (L221 to L225, [[plan-of-plans#rulings]]): {#user-calls-decided}
+Decided by the user on 2026-11-24 (L221 to L226, [[plan-of-plans#rulings]]): {#user-calls-decided}
 
 1. **C4** (Q55 = a): `approved` means the plan approved and the next task specced.
 2. **C13** (Q56 = a): STM capture is a memory path.
@@ -663,15 +652,17 @@ Decided by the user on 2026-11-24 (L221 to L225, [[plan-of-plans#rulings]]): {#u
    periodic review and are put to the user strongly; nothing is removed automatically
    ([[#roster-bands]], [[#context-review]]). Q59 is now fully decided.
 
+9. **The review's cadence and enforcement** (Q63 = a): [[#context-review-enforce]].
+10. **The re-triage and acceptance** (Q60 = a, L226): this ADR is Accepted and
+    [[plan-32-retriage-2026-11-24]] is the queue. Row 16's plan-24 revision gets no ch-bsd
+    round; I1 installs in two user-gated windows.
+
 Still open ([[plan-of-plans#questions]]): {#user-calls-open}
 
-9. **The review's cadence and enforcement** (Q63; [[#context-review-enforce]]). The ADR is
-   written with (a) as the default.
-10. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
+11. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
     procedure skills beside its overlays (recommended), or does L219 mean overlays only?
-11. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
+12. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
     the first packs ([[#packs-first]]) (Q62).
-12. **The re-triage, row by row,** and Proposed to Accepted (Q60).
 
 ## Consequences {#consequences}
 
@@ -692,6 +683,7 @@ Still open ([[plan-of-plans#questions]]): {#user-calls-open}
 - The installer outlives the mod: rules and `CLAUDE.md` cannot ride a plugin.
 - The review is a standing claim on the user's time, every 30 days per repo that has one.
   The report is built to make that short: flagged items only, each with a recommendation.
+  In a repo with no release, its only pressure is the session block and the hub's list.
 - Isolated agents (another macOS user, their own session) get the units their clone's
   `.claude/` carries, and no dev-tree ledger rows. Their denies depend on `rmx` being on
   their PATH; [[#dispatcher-failure]] says so at their SessionStart.
@@ -755,8 +747,8 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   a large change. Each pack after it is files and fixtures.
 - An agent file is edited once: the contradiction edits that touch agent files (C1, C5, C15,
   C16) ride the core rewrite in H1.b when it is next; otherwise they go with I1.a.
-- On acceptance: the index rows here and in `docs/INDEX.md` change status, and
-  [[constitution#project-4]] is amended ([[#installed-equals-generated]]).
+- Accepted on 2026-11-24 (L226): the index rows carry the status; the amendment of
+  [[constitution#project-4]] ([[#installed-equals-generated]]) is still owed, by the lead.
 
 ## Amendments {#amendments}
 
@@ -798,13 +790,21 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
 - T9 is done: the duplicate caveman hooks were removed by the lead (L223). No build.
 - The roster bands are the open half of Q59.
 
-**2026-11-24, the review** (L225; Q63 open): {#amend-4}
+**2026-11-24, the review** (L225; Q63 = a): {#amend-4}
 
 - A **mandatory context-effectiveness review** ([[#context-review]]): one read-only command,
   `rmx review context`, over every measured delivery surface; a dated row in
-  `workflow/context-reviews.md` with the user's decisions; enforcement written with Q63 (a)
-  as the default, and what (b) and (c) would change.
+  `workflow/context-reviews.md` with the user's decisions; enforcement as the user decided
+  it (Q63 = a): every 30 days or before a major release, a SessionStart block when overdue,
+  a major-release hold, the hub's nightly list.
 - [[#roster-bands]]: the bands are the review's inputs, put to the user with a recommended
   action each; never an automatic removal. Q59 is fully decided (L222 to L225).
 - Builds: the report and the record are a new task, I1.i; the release hold and the
   undecided-item check join I1.e.
+
+**2026-11-24, accepted** (L226; Q60 = a): {#amend-5}
+
+- Status is Accepted and the re-triage is the queue. Open after acceptance: Q61 (the local
+  layer) and Q62 (the detection threshold and pack order); probes P1 to P10 remain I1.b's
+  first step. The amendment of [[constitution#project-4]] named in
+  [[#installed-equals-generated]] is the lead's.
