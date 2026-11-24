@@ -624,12 +624,16 @@ def _gate(tree: Path) -> "tuple[subprocess.CompletedProcess, str]":
     return r, (gate / "summary.txt").read_text()
 
 
-def _start_merge(tree: Path, branch: str, files: dict) -> str:
-    """From `master`, a branch `branch` adding `files` (`tests/test_*.py` name -> case stem),
-    then `git merge --no-commit --no-ff branch` on `master`. Returns MERGE_HEAD."""
+def _start_merge(tree: Path, branch: str, files: dict, texts: "dict | None" = None) -> str:
+    """From `master`, a branch `branch` adding `files` (`tests/test_*.py` name -> case stem)
+    and writing `texts` (`tests/test_*.py` name -> source), then
+    `git merge --no-commit --no-ff branch` on `master`. Returns MERGE_HEAD."""
     _git(tree, "checkout", "-q", "-b", branch, "master")
     for name, case in files.items():
         shutil.copy2(sht.CASES / f"{case}.py", tree / "tests" / name)
+        _git(tree, "add", f"tests/{name}")
+    for name, text in (texts or {}).items():
+        (tree / "tests" / name).write_text(text)
         _git(tree, "add", f"tests/{name}")
     _git(tree, "commit", "-q", "-m", branch)
     _git(tree, "checkout", "-q", "master")
@@ -740,6 +744,82 @@ def test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_na
     prev = _previous_gate_line(s2)
     assert re.search(rf"merge-gate-{m1}(?![.\w])", prev) and prev.count("merge-gate-") == 1, \
         f"the baseline is {prev!r}, not the passed, merged gate merge-gate-{m1} (bug-304)"
+
+
+# The bug-304 baseline rule has four conditions: an exact `merge-gate-<sha>` dir, a gate record,
+# `passed`, and a merge head that is an ancestor of HEAD. Each test below builds a candidate
+# that breaks exactly ONE of them and is otherwise the newest qualifying gate, so dropping that
+# one condition makes it the baseline (green-294a's fold mutations b-1a, b-1c, b-1d survived the
+# four tests above, whose wrong candidates each broke two or more conditions; lead, 2026-11-24).
+
+def _no_baseline(prev: str) -> bool:
+    return "merge-gate-" not in prev
+
+
+def test_merge_gate_baseline_skips_a_failed_gate_whose_merge_was_committed_anyway(tmp_path):
+    """bug-304, the `passed` condition alone. M1 (clean) is gated, passes and is merged. Merge
+    `topic2` adds a failing test, its gate FAILS, and it is committed anyway: an exact dir, a
+    merged head, newer than M1's gate, only not passed. Merge `topic3` then touches the same
+    file (the failure runs again): its baseline is M1's gate, so the failure is NEW and the
+    gate fails. Kills b-1a (the `passed` check dropped: topic2's failed gate is the baseline,
+    the failure reads as `seen`, exit 0)."""
+    tree, m1 = _passed_merged_gate(tmp_path)
+    _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+    r2, s2 = _gate(tree)
+    assert r2.returncode == 1, s2
+    _git(tree, "commit", "-q", "-m", "merge topic2 although its gate failed")
+    failing = (sht.CASES / "case_fail.py").read_text()
+    _start_merge(tree, "topic3", {}, texts={
+        "test_t2.py": failing + "\n\ndef test_also_passes():\n    assert True\n"})
+    r3, s3 = _gate(tree)
+    prev = _previous_gate_line(s3)
+    assert re.search(rf"merge-gate-{m1}(?![.\w])", prev) and prev.count("merge-gate-") == 1, \
+        f"the baseline is {prev!r}, not the last PASSED merged gate merge-gate-{m1}"
+    assert "NEW FAILED tests/test_t2.py::test_fails_plainly" in s3, s3
+    assert r3.returncode == 1, f"a failure first seen in a FAILED gate passed the gate:\n{s3}"
+
+
+def test_merge_gate_baseline_skips_a_moved_aside_copy_of_a_passed_merged_gate(tmp_path):
+    """bug-304, the exact-dir condition alone. Merge `topic` is gated twice: run 1 passes; run
+    2 fails on the lint gate, and moves run 1 aside to `merge-gate-<sha>.<ts>`. The merge is
+    committed. The aside copy now holds a PASSED gate of a MERGED head, and the exact dir's
+    gate failed, so the copy is the newest candidate that breaks only the exact-dir rule. The
+    next merge's gate has no baseline. Kills b-1c (`match` for `fullmatch`: the copy's name
+    starts with `merge-gate-<sha>`, so it becomes the baseline)."""
+    tree, m1 = _merging_checkout(tmp_path, "case_trivial")
+    r1, s1 = _gate(tree)
+    assert r1.returncode == 0, s1
+    lint = tree / "scripts" / "lint-gmd.sh"
+    lint.write_text("#!/bin/bash\necho 'fixture lint gate: exit 1'\nexit 1\n")
+    r2, s2 = _gate(tree)
+    assert r2.returncode == 1 and "lint" in s2, s2
+    _git(tree, "checkout", "--", "scripts/lint-gmd.sh")
+    asides = sorted((tree / "workflow" / "review-output").glob(f"merge-gate-{m1}.*"))
+    assert len(asides) == 1, f"run 2 did not move run 1 aside: {asides}"
+    _git(tree, "commit", "-q", "-m", "merge topic")
+    _start_merge(tree, "topic2", {"test_t2.py": "case_trivial"})
+    r3, s3 = _gate(tree)
+    prev = _previous_gate_line(s3)
+    assert _no_baseline(prev), (f"the baseline is {prev!r}; a moved-aside copy "
+                                f"({asides[0].name}) is never a baseline")
+    assert r3.returncode == 0, s3
+
+
+def test_merge_gate_baseline_skips_a_passed_gate_whose_merge_was_aborted(tmp_path):
+    """bug-304, the ancestor condition alone. Merge `topic` is gated and PASSES (an exact dir, a
+    passed record), and is then aborted: its head never enters `master`. A later merge's gate
+    has no baseline. Kills b-1d (the ancestor check dropped: the aborted merge's gate becomes
+    the baseline)."""
+    tree, m1 = _merging_checkout(tmp_path, "case_trivial")
+    r1, s1 = _gate(tree)
+    assert r1.returncode == 0, s1
+    _git(tree, "merge", "--abort")
+    _start_merge(tree, "topic2", {"test_t2.py": "case_trivial"})
+    r2, s2 = _gate(tree)
+    prev = _previous_gate_line(s2)
+    assert _no_baseline(prev), (f"the baseline is {prev!r}; the gate of an aborted merge "
+                                f"(merge-gate-{m1}) is never a baseline")
+    assert r2.returncode == 0, s2
 
 
 # ---- ruling L192 (6) and (3): the hang guard's plugin, and the default shard count ----------
