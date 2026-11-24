@@ -1,0 +1,5 @@
+## 27 --expect ignores its phase: KILLED (exit 1) tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[expect-wrong-phase]
+   ['1 failed in 0.20s']
+   E           AssertionError: compared equal but should not:
+   E             equal: 9 node/phase outcome(s), 1 expected change(s) held
+## after: git status scripts/ tests/: ''
