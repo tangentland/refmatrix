@@ -113,6 +113,43 @@ file is a template bug — promote it into `hooks.py` or delete it (constitution
 | `SubagentStop`                      | (all)                                    | `rmx sync --flush-queue` (async)         | Drain queue when subagent ends                |
 | `SessionStart`                      | `startup\|resume`                        | `rmx sync --flush-queue` + `rmx primer`  | Flush + regenerate `PRIMER.md`                |
 | `UserPromptSubmit`                  | (all)                                    | `rmx scan-prompt --max-tokens 2000`      | Inject context bundles for mentioned symbols  |
+| `PreCompact`                        | (all)                                    | `rmx save-state --precompact --no-sync`  | Save state + promote, then print the one-line summary instruction |
+| `SessionStart`                      | `compact\|clear`                         | `rmx recall-state --handoff`             | Write the full handoff file, inject a pointer |
+| `PreToolUse`                        | (all, MCP included)                      | `rmx handoff gate`                       | Deny other tools until the handoff is Read    |
+| `PostToolUse`                       | `Read`                                   | `rmx handoff pulled`                     | A Read of the handoff lifts the gate          |
+| `UserPromptSubmit`                  | (all)                                    | `rmx handoff remind`                     | Re-say the pointer until the handoff is Read  |
+
+The full generated list is the README hooks table (`scripts/gen-cli-tree.py`).
+
+### Compaction and /clear as a handoff {#compaction-handoff}
+
+Compaction behaves like save-state → `/clear` → recall-state (task-compaction-as-handoff, L195;
+the user, 2026-11-14). No hook can suppress the compaction summary or trigger `/clear`, so:
+
+- **PreCompact** runs `rmx save-state --precompact`: the session and transcript come from the
+  hook envelope, the save (with promote) lands first, then stdout carries only the instruction
+  (at most one summary line naming the task; the handoff is authoritative; do not restate
+  files, decisions or plans), naming the save-state and the handoff file. A failed save prints
+  its cause on stderr, exits 0 and names the last good save-state. A manual `/compact <text>`
+  saves and prints nothing. With `precompact_checkpoint` off the entry is
+  `rmx handoff precompact` (no save).
+- **SessionStart `compact|clear`** runs `rmx recall-state --handoff --max-bytes N`: the FULL
+  report (a full one measured 45,870 B, over the ~10 KB hook cap) goes to
+  `.refmatrix/handoffs/<session>.txt` and only a pointer is injected (path, bytes, "read it
+  before any other action; it is the authoritative state"). If the file cannot be written, a
+  line says so and the budgeted inline report follows.
+- **The read gate**: until that file is Read (from its start), `rmx handoff gate` denies every
+  other tool call of the session (exit 2, the reason on stderr), `rmx handoff remind` re-says
+  the pointer on every prompt, and `rmx handoff pulled` lifts the gate on the Read. A missing,
+  unreadable or day-old file stands the gate down in one line; it never traps a session. A
+  bash fast path keeps the per-call cost at zero Python starts when nothing is pending.
+- **The active goal** (R6): save-state reads the newest uncleared `/goal <text>` from the
+  transcript into its `{#active-goal}` block; recall-state and the pointer carry
+  `active goal: /goal <text>` with the instruction to re-issue it if a bare `/goal` shows none.
+- **Telemetry**: `rmx telemetry --context` reports `handoff` (written, pulls with path, bytes and
+  seconds to the Read, stand-downs) from `.refmatrix/handoffs/events.jsonl`.
+
+rel: specified-by -> [[task-compaction-as-handoff]]
 
 ### Briefing doc {#briefing-doc}
 
