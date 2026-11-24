@@ -5,14 +5,14 @@ title: "Task 7.4: REPORT.md, committed results artifact, README citation"
 tags: [task, plan-7]
 metadata:
   node_type: task
-  status: complete (symbolic only; the dense re-run is T0.6)
+  status: complete
   plan: plan-7-longmemeval
 ---
 
 # Task 7.4: REPORT.md, committed results artifact, README citation {#root}
 
 > Plan: [[plan-7-longmemeval]]
-> Status: Complete — symbolic surfaces reported; dense rows blocked on bug-030
+> Status: Complete — symbolic rows (0.69.1) and the dense and fused rows (0.84.0, T0.6, 2026-11-23) reported
 > Depends on: 7.2, 7.3
 
 rel: part-of -> [[plan-7-longmemeval]]
