@@ -85,9 +85,12 @@ roaring bitmap of the entity column ids that satisfy that relation.
 The model mirrors [Pilosa](https://github.com/FeatureBaseDB/featurebase)
 (index → field → row → column). Storage is a single **DuckDB** catalog plus
 in-process [pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) bitmaps;
-dense vectors (for memory/code recall) live in **Lance**. An optional per-store
-**daemon** owns the writer so editor + watcher + CLI never contend on the lock.
-No external server, no HTTP — a single-binary CLI.
+dense vectors (for memory/code recall) live in **Lance**. A per-store **daemon**
+(Unix socket) is the single writer: while it runs, every write from the CLI, hooks and the
+file watcher goes through it, so nothing contends on the catalog lock. One user-level
+**hub** (launchd-supervised) sits above the daemons: it restarts dead ones, owns the global
+memory store, hosts the shared embedder and reranker workers, and serves a web UI on
+`127.0.0.1:7777` when the `ui` extra is installed.
 
 ## Install
 
@@ -387,7 +390,7 @@ catalog. The forward index makes deletes O(links) instead of a full bitmap scan.
                                ▼
    ┌─────────────────────────────────────────────────────────────┐
    │  Daemon (per-store unix socket) — owns the writer, serves     │
-   │  reads from the snapshot, hosts the embedder + fs watcher     │
+   │  reads from the snapshot, hosts the fs watcher; embeds via hub│
    └───────────────────────────┬─────────────────────────────────┘
         ┌──────────────┬────────┴────────┬──────────────┐
         ▼              ▼                 ▼              ▼
@@ -402,7 +405,9 @@ catalog. The forward index makes deletes O(links) instead of a full bitmap scan.
 **Reads** come from the snapshot-tier copy (`catalog.read.duckdb`), never the
 write-locked slot — so a query never blocks on an ingest. The writer stays
 **pinned** to one catalog slot for the daemon's life (writer rotation was
-retired in 0.7.7); the snapshot is regenerated shortly after each write. Deeper
+retired in 0.7.7); the snapshot is regenerated shortly after each write. **Models**
+(embedder, reranker) run once for the fleet as hub workers over `~/.refmatrix/models.sock`; a
+daemon that cannot reach them falls back to a private worker of its own. Deeper
 detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 [`docs/SYSTEM.md`](docs/SYSTEM.md).
 
