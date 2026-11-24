@@ -63,7 +63,7 @@ them as hits and gets no credit, so a body word is never counted twice: `context
 under R2. The tie is the block name prefix, `split_part(b.name, '#', 1) = m.name AND m.kind =
 'memory'` (R0 `#join-choice`), never `part-of`; a block whose prefix names no memory (bug-302's
 orphans) credits nothing. BM25 length: one document per memory, its length the memory's own
-postings plus all its blocks' postings, computed in the same grouped join (R4 measures it). {#r1-scope}
+postings plus all its blocks' postings, computed in the same grouped join (R4 measures it); the length applies inside the memory credit only, and the partition-wide N, avgdl and df are unchanged (so AC-3's pin cannot move). R3's warning fires whenever fuse is on and the leg returns nothing, including a query whose terms are all stopwords. {#r1-scope}
 
 ## Acceptance {#acceptance}
 
