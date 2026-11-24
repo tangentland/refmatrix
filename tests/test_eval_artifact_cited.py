@@ -99,7 +99,9 @@ def _lme_table(text: str) -> dict[str, dict[str, str]]:
     for r in body:
         # A surface may carry a footnote mark: * depth-uncontrolled, † / ‡ the bug-300
         # labels on the two `--fuse` rows.
-        m = re.fullmatch(r"`([\w-]+)`\s*[*†‡]*", r[0])
+        # An `-rr` row that was not reranked on every question carries its fraction
+        # (`reranked n/N`, bug-303); the label is checked by the rerank test below.
+        m = re.fullmatch(r"`([\w-]+)`\s*[*†‡]*(?:\s*\(reranked \d+/\d+\))?", r[0])
         assert m, f"unparseable surface cell {r[0]!r}"
         table[m.group(1)] = {h: c.strip("*") for h, c in zip(header[1:], r[1:])}
     return table
@@ -152,13 +154,61 @@ def test_longmemeval_table_cites_every_surface_and_cell():
 # bug-303 (bsd-t06 r1 #b-1, 2026-11-24): `memory recall --rerank` falls back to the dense
 # order when its rerank cannot run ("rerank skipped: …; hits unreranked" on stderr), and run.py
 # kept only the ids, so `recall-rr` was published as a rerank row while 86 of its 120 answers were
-# the dense top 50. An `-rr` row is a rerank result only if every question was reranked.
+# the dense top 50. The artifact now counts the reranked answers. A row reranked on fewer than all
+# questions (the fold-t06 re-runs skipped 2, then 1, on the shared worker's probe: bug-306) is cited
+# only with its true fraction, `reranked n/N`, in every table cell that names it (L196 ruling (b)).
 LME_RERANK_SURFACES = ("recall-rr", "recall-fuse-rr")
+LME_RERANK_DOCS = (README, PERF, REPO / "eval/production/longmemeval/REPORT.md")
 
 
-def test_longmemeval_rerank_rows_were_reranked_on_every_question():
+def _rerank_label_violations(text: str, surface: str, n: int, total: int) -> list[str]:
+    """Every cell that LABELS a cited figure for `surface` (a table row's first cell, or a
+    column header) must carry `reranked n/total` when n < total, and none may carry a
+    fraction other than the artifact's. Returns the offending cells; raises nothing, so a
+    planted bad doc can be checked for a non-empty answer."""
+    want = f"reranked {n}/{total}"
+    bad, seen = [], 0
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        if not ln.lstrip().startswith("|"):
+            continue
+        cells = ln.strip().strip("|").split("|")
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        header = bool(re.fullmatch(r"\|?(\s*:?-+:?\s*\|)+\s*:?-*:?\s*\|?", nxt))
+        for cell in (cells if header else cells[:1]):
+            if f"`{surface}`" not in cell:
+                continue
+            seen += 1
+            labels = re.findall(r"reranked \d+/\d+", cell)
+            if (n < total and labels != [want]) or any(lb != want for lb in labels):
+                bad.append(cell.strip())
+    if not seen:
+        bad.append(f"<no table cell names `{surface}`>")
+    return bad
+
+
+def test_longmemeval_rerank_rows_carry_their_reranked_fraction():
     d = _lme_artifact()
     for surface in LME_RERANK_SURFACES:
-        for mode in ("union", "restricted"):
-            meta = d[f"{surface}/{mode}"]["_meta"]
-            assert meta.get("n_reranked") == meta["n_questions"], (surface, mode, meta)
+        metas = [d[f"{surface}/{mode}"]["_meta"] for mode in ("union", "restricted")]
+        for meta in metas:
+            assert "n_reranked" in meta, (surface, meta)
+            assert (meta["n_reranked"] + meta["n_rerank_skipped"] + meta["n_failed"]
+                    == meta["n_questions"]), (surface, meta)
+        assert metas[0]["n_reranked"] == metas[1]["n_reranked"], surface
+        n, total = metas[0]["n_reranked"], metas[0]["n_questions"]
+        for doc in LME_RERANK_DOCS:
+            assert _rerank_label_violations(doc.read_text(), surface, n, total) == [], \
+                (doc.name, surface, n, total)
+    # Planted must-fail cases: the check can fail.
+    row = "| `recall-fuse-rr` ‡{} | 0.541 |"
+    assert _rerank_label_violations(row.format(""), "recall-fuse-rr", 119, 120)
+    assert _rerank_label_violations(row.format(" (reranked 118/120)"), "recall-fuse-rr", 119, 120)
+    assert _rerank_label_violations(row.format(" (reranked 119/120)"), "recall-fuse-rr", 120, 120)
+    assert _rerank_label_violations("no table here", "recall-fuse-rr", 120, 120)
+    header = "| type | `recall-fuse-rr` ‡{} |\n|---|---:|\n| x | 0.4 |"
+    assert _rerank_label_violations(header.format(""), "recall-fuse-rr", 119, 120)
+    assert not _rerank_label_violations(header.format(" (reranked 119/120)"), "recall-fuse-rr",
+                                        119, 120)
+    assert not _rerank_label_violations(row.format(" (reranked 119/120)"), "recall-fuse-rr",
+                                        119, 120)

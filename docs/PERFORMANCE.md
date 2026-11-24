@@ -303,7 +303,8 @@ document is never retrieved are untouchable by any reordering prior. {#memaware-
 `eval/production/longmemeval/` (Layer A: retrieval only, no LLM) scores whether a read surface
 finds the session that holds a question's answer, over 19 829 chat sessions ingested with
 `ingest-gmd --as-memory` and embedded with `rmx embed --kinds memory`. 120 type-stratified
-questions (seed 42), depth 50, deploy `rmx` 0.84.0, 2026-11-23:
+questions (seed 42), depth 50, deploy `rmx` 0.84.0, 2026-11-23. The graph is the 0.69.1 ingest of
+2026-09-15, read from that date's read snapshot; 0.84.0 embedded it and ran every query:
 
 | surface | restricted R@5 | restricted hit@5 | restricted MRR@20 | ceiling | union R@5 |
 |---|---:|---:|---:|---:|---:|
@@ -311,8 +312,8 @@ questions (seed 42), depth 50, deploy `rmx` 0.84.0, 2026-11-23:
 | `scan` * | 0.547 | 0.642 | 0.637 | 0.642 | 0.465 |
 | `recall` | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
 | `recall-fuse` † | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
-| `recall-rr` | 0.527 | 0.625 | 0.613 | 0.625 | 0.266 |
-| `recall-fuse-rr` ‡ | 0.513 | 0.608 | 0.604 | 0.608 | 0.298 |
+| `recall-rr` | 0.541 | 0.642 | 0.637 | 0.642 | 0.327 |
+| `recall-fuse-rr` ‡ (reranked 119/120) | 0.541 | 0.642 | 0.637 | 0.642 | 0.327 |
 
 Read from the committed artifact `eval/production/longmemeval/results/summary-120-0.84.0.json`;
 `tests/test_eval_artifact_cited.py` compares every cell with it. **Every restricted row is
@@ -320,8 +321,10 @@ saturated** (hit@5 equals its ceiling), so the table measures how often retrieva
 gold session within depth 50, not ranking quality. \* `scan` has no depth knob (its pool is
 scan-prompt's default). † `recall-fuse` is `recall`, ranking for ranking: the symbolic leg,
 `content_rank(kinds=['memory'])`, returns nothing on this corpus because a memory's `mentions`
-hold only its title and tag words (bug-300). It is not a fusion result. ‡ The difference from
-`recall-rr` comes from the hybrid's wider dense pool, not from fusion. Dense beats symbolic on
+hold only its title and tag words (bug-300). It is not a fusion result. ‡ For the same reason
+`recall-fuse-rr` is `recall-rr` (119 of 120 rankings, every cell equal). Its rerank was skipped on
+one question (bug-306), so the row is cited as reranked 119/120; `recall-rr` was reranked on all
+120, and the artifact's `_meta.n_reranked` records both (bug-303). Dense beats symbolic on
 preference (R@5 0.450 vs 0.200) and multi-session questions and loses on knowledge-update and
 single-session-user; per-type rows, setup and history are in
 `eval/production/longmemeval/REPORT.md`. {#longmemeval-result}

@@ -21,8 +21,9 @@ rel: reinforces -> [[feedback_measure_the_path_users_run]]
 
 **Every number here is depth-bound and must be read with its ceiling. See [[#saturation]] before
 quoting anything.** Every row in [[#restricted]] and [[#union]] comes from ONE build (deploy `rmx`
-0.84.0) in ONE run (2026-11-23). The 0.69.1 symbolic rows are kept, with their own provenance, in
-[[#history-0-69-1]].
+0.84.0) on ONE store. Eight rows are from the 2026-11-23 run; the two `-rr` rows are from the
+bug-303 re-runs of 2026-11-24 at one worker ([[#rerank-rerun]]). The 0.69.1 symbolic rows are
+kept, with their own provenance, in [[#history-0-69-1]].
 
 ## Setup {#setup}
 
@@ -41,16 +42,19 @@ quoting anything.** Every row in [[#restricted]] and [[#union]] comes from ONE b
 | read snapshot | daemonless reads open `catalog.read.duckdb`, the snapshot the 0.69.1 daemon took 2026-09-15 20:37; the embed wrote the active slot (`catalog.A`) and `vectors/`. The symbolic rows read the same graph the 0.69.1 rows read, through 0.84.0 code |
 | questions scored | **120** — type-stratified, 20 per type, seed 42 (`subsets/stratified-20.json`) |
 | retrieval depth | **50** for `context` and the four `recall` surfaces; **`scan` is DEPTH-UNCONTROLLED** (see [[#saturation]]) |
-| scoring | both modes, `--at 1,5,10,20`; 0 failed questions on every surface |
+| scoring | both modes, `--at 1,5,10,20`; 0 failed questions on every surface; `_meta.n_reranked` on each `-rr` surface |
 | run command | `python3 run.py --rmx ~/bin/rmx --subset 20 --depth 50 --at 1,5,10,20 --workers 4 --mode union --mode restricted --method recall --method recall-fuse --method recall-rr --method recall-fuse-rr --method context --method scan` |
 | run window | 2026-11-24T01:03:10Z to 01:43:19Z (2026-11-23 local): build 1,009 s, retrieval 1,400 s |
+| `-rr` re-runs | harness `cc6ea811` (bug-303), `--workers 1`, same store and build: `recall-rr` 02:19:26Z to 02:29:39Z (reranked 120/120); `recall-fuse-rr` 02:30:57Z to 02:36:07Z (reranked 119/120). See [[#rerank-rerun]] |
 | date | 2026-11-23 |
 
 `REFMATRIX_ROOT` was pinned per `rmx` process by `paths.rmx_env`, never exported. `rmx hub status`
 read the same before and after the run (8 stores, all `restarts=0`, v0.84.0).
 
 Committed results: `eval/production/longmemeval/results/summary-120-0.84.0.json`, run.py's
-`summary.json` copied verbatim (sha256 `8584b291…f85f6ae`) plus a `_provenance` key.
+`summary.json` copied verbatim plus a `_provenance` key. The source is the data volume's
+`summary.json` after the `-rr` entries were replaced by the re-runs' (sha256 `ea77f56f…adda41`;
+the 2026-11-23 run's was `8584b291…f85f6ae`).
 
 ## Results — `restricted` mode {#restricted}
 
@@ -63,8 +67,8 @@ Committed results: `eval/production/longmemeval/results/summary-120-0.84.0.json`
 | `scan` * | 0.637 | 0.445 | 0.547 | 0.547 | 0.642 | 0.642 | **0.642** | yes |
 | `recall` | 0.596 | 0.421 | 0.515 | 0.515 | 0.608 | 0.608 | **0.608** | yes |
 | `recall-fuse` † | 0.596 | 0.421 | 0.515 | 0.515 | 0.608 | 0.608 | **0.608** | yes |
-| `recall-rr` | 0.613 | 0.423 | 0.527 | 0.527 | 0.625 | 0.625 | **0.625** | yes |
-| `recall-fuse-rr` ‡ | 0.604 | 0.429 | 0.513 | 0.513 | 0.608 | 0.608 | **0.608** | yes |
+| `recall-rr` | 0.637 | 0.440 | 0.541 | 0.541 | 0.642 | 0.642 | **0.642** | yes |
+| `recall-fuse-rr` ‡ (reranked 119/120) | 0.637 | 0.440 | 0.541 | 0.541 | 0.642 | 0.642 | **0.642** | yes |
 
 \* `scan` is DEPTH-UNCONTROLLED — its ceiling is scan-prompt's default pool, NOT a depth-50 pool.
 Do not read it against the depth-50 rows as though one knob produced both.
@@ -72,11 +76,15 @@ Do not read it against the depth-50 rows as though one knob produced both.
 † `recall-fuse` = `recall`: the symbolic leg is empty on this corpus ([[#fusion]], bug-300). No
 fusion claim is made from this row.
 
-‡ `recall-fuse-rr` differs from `recall-rr` because the hybrid path widens the dense pool
-(k = max(k, rrf_k)) before the rerank, not because of fusion ([[#fusion]]).
+‡ `recall-fuse-rr` = `recall-rr` for the same reason (bug-300): 119 of 120 rankings identical and
+every cell equal. Its rerank was skipped on one question, so it is labelled reranked 119/120
+([[#rerank-rerun]]). No fusion claim is made from this row.
 
-`recall-rr`'s ceiling (0.625) differs from `recall`'s (0.608): the reranked call returned a
-different depth-50 list. The mechanism is not measured here.
+The `-rr` ceiling (0.642) is above `recall`'s (0.608) because a reranked call does not return the
+same depth-50 list: read from the deploy code (`recall.replica_memory_recall`), `--rerank` draws
+`min(max(k, 2k), 100)` = 100 dense candidates and the cross-encoder returns its top 50 of them, so
+gold from dense ranks 51-100 can enter the pool. That is a code reading; the dense ranks of the
+added gold were not measured here.
 
 ## THE RESULT IS SATURATED — read this before the table {#saturation}
 
@@ -103,21 +111,21 @@ everything it reached into the top 5, as `context` did.
 
 Restricted R@5, 20 questions per type:
 
-| type | `context` | `scan` | `recall` | `recall-fuse` † | `recall-rr` | `recall-fuse-rr` ‡ |
+| type | `context` | `scan` | `recall` | `recall-fuse` † | `recall-rr` | `recall-fuse-rr` ‡ (reranked 119/120) |
 |---|---:|---:|---:|---:|---:|---:|
-| single-session-assistant | 0.950 | 0.950 | 0.950 | 0.950 | 0.950 | 0.950 |
-| knowledge-update | 0.925 | 0.800 | 0.300 | 0.300 | 0.275 | 0.325 |
-| multi-session | 0.567 | 0.454 | 0.588 | 0.588 | 0.650 | 0.637 |
-| single-session-user | 0.500 | 0.450 | 0.300 | 0.300 | 0.300 | 0.250 |
-| temporal-reasoning | 0.487 | 0.477 | 0.502 | 0.502 | 0.537 | 0.517 |
-| **single-session-preference** | **0.200** | **0.150** | **0.450** | **0.450** | **0.450** | **0.400** |
+| single-session-assistant | 0.950 | 0.950 | 0.950 | 0.950 | 1.000 | 1.000 |
+| knowledge-update | 0.925 | 0.800 | 0.300 | 0.300 | 0.325 | 0.325 |
+| multi-session | 0.567 | 0.454 | 0.588 | 0.588 | 0.742 | 0.742 |
+| single-session-user | 0.500 | 0.450 | 0.300 | 0.300 | 0.250 | 0.250 |
+| temporal-reasoning | 0.487 | 0.477 | 0.502 | 0.502 | 0.527 | 0.527 |
+| **single-session-preference** | **0.200** | **0.150** | **0.450** | **0.450** | **0.400** | **0.400** |
 
 **The surfaces fail on different questions.** Dense recall more than doubles symbolic on
 preference (0.450 vs 0.200). A preference is stated once, casually, in vocabulary that never
 recurs, so the `mentions` index has nothing to grip. Dense is also ahead on multi-session
-(0.588–0.650 vs 0.567) and temporal-reasoning (0.502–0.537 vs 0.487), the two types the
+(0.588–0.742 vs 0.567) and temporal-reasoning (0.502–0.527 vs 0.487), the two types the
 conceptual-memory thesis predicts the system should win. It falls far behind on knowledge-update
-(0.275–0.325 vs 0.925) and single-session-user (0.250–0.300 vs 0.500). A working fusion would
+(0.300–0.325 vs 0.925) and single-session-user (0.250–0.300 vs 0.500). A working fusion would
 exploit that split; on this corpus fusion does not run ([[#fusion]]).
 
 This corpus has **no structural edges at all** — no calls, defines, or imports — so the half of
@@ -137,12 +145,14 @@ session appears anywhere in the retrieved list. It bounds `union` hit@k at every
 | `scan` * | 0.439 | 0.278 | 0.465 | 0.519 | 0.542 | 0.600 | 0.642 |
 | `recall` | 0.231 | 0.127 | 0.239 | 0.362 | 0.308 | 0.458 | 0.608 |
 | `recall-fuse` † | 0.231 | 0.127 | 0.239 | 0.362 | 0.308 | 0.458 | 0.608 |
-| `recall-rr` | 0.282 | 0.162 | 0.266 | 0.401 | 0.342 | 0.492 | 0.625 |
-| `recall-fuse-rr` ‡ | 0.312 | 0.185 | 0.298 | 0.427 | 0.367 | 0.517 | 0.608 |
+| `recall-rr` | 0.348 | 0.200 | 0.327 | 0.445 | 0.408 | 0.558 | 0.642 |
+| `recall-fuse-rr` ‡ (reranked 119/120) | 0.348 | 0.200 | 0.327 | 0.445 | 0.408 | 0.558 | 0.642 |
 
-`context` union completed this time (it did not in the 0.69.1 batch). Union R@5 is below restricted
-for every surface; the dense surfaces lose the most (0.239 vs 0.515), the symbolic ones less
-(`context` 0.411 vs 0.605, `scan` 0.465 vs 0.547).
+`context` union reproduces the 0.69.1 batch's (`summary-symbolic-120.json`: MRR 0.421, R@1 0.275,
+R@5 0.411, hit@5 0.492); only overall R@20 moved (0.553 vs 0.549). `scan` union reproduces R@5
+0.465 but not MRR or R@1 (0.439 vs 0.444, 0.278 vs 0.282). Union R@5 is below restricted for every
+surface; the dense surfaces lose the most (`recall` 0.239 vs 0.515, the reranked rows 0.327 vs
+0.541), the symbolic ones less (`context` 0.411 vs 0.605, `scan` 0.465 vs 0.547).
 
 ## `--fuse` is a no-op on this corpus {#fusion}
 
@@ -159,12 +169,44 @@ dense order. A second defect reaches the same leg: `content_terms` keeps trailin
 Therefore:
 
 - the `recall-fuse` rows are dense rows, and **no figure here is a fusion result**;
-- `recall-fuse-rr` differs from `recall-rr` only through the hybrid's wider dense pool
-  (k = max(k, rrf_k)) feeding the reranker.
+- `recall-fuse-rr` is `recall-rr` by the same cause: with the rerank on, both paths draw the same
+  100-candidate dense pool (`hybrid_recall`'s `max(k, rrf_k)` is `max(100, 60)` = 100), the empty
+  symbolic leg leaves it in dense order, and the cross-encoder reorders it identically. Measured:
+  119 of 120 rankings identical; the one that differs (`6b168ec8`) is the question whose rerank
+  was skipped ([[#rerank-rerun]]). The 2026-11-23 text said the two differed through a "wider
+  dense pool"; that was false (bsd-t06 r1 #b-2). Their gap that day came from which questions the
+  rerank skipped (bug-303).
 
 The "RRF dense⊕symbolic recall fusion" measurement in `docs/PERFORMANCE.md`
 ([[refmatrix/PERFORMANCE#negatives]]) came from the memory-recall eval over descriptively titled
 memories; it does not transfer to this corpus until bug-300 is fixed.
+
+## The `-rr` re-runs: how many answers were reranked {#rerank-rerun}
+
+The 2026-11-23 run published `recall-rr` and `recall-fuse-rr` as rerank rows, but `run.py` kept only
+ids: `memory recall --json` prints a bare list and says a skipped rerank only on stderr
+(`# rmx: warning: rerank skipped: …; hits unreranked`, exit 0). At `--workers 4`, `recall-rr`
+equalled `recall`'s dense top 50 on 86 of 120 questions (bsd-t06 r1 #b-1, bug-303). The harness now
+records, per `-rr` surface, `n_reranked`, `n_rerank_skipped`, `unreranked_ids` and every distinct
+warning in `_meta` (`cc6ea811`), and `tests/test_eval_artifact_cited.py` requires every cited cell
+of a row reranked on fewer than all questions to carry its fraction.
+
+| run (2026-11-24, `--workers 1`) | surface | reranked | skipped ids |
+|---|---|---:|---|
+| r2, 02:19:26Z to 02:29:39Z | `recall-rr` | **120/120** | none |
+| r2 | `recall-fuse-rr` | 118/120 | `7405e8b1`, `75832dbd` |
+| r3, 02:30:57Z to 02:36:07Z (one surface) | `recall-fuse-rr` | **119/120** | `6b168ec8` |
+
+The tables take `recall-rr` from r2 and `recall-fuse-rr` from r3 (L196: re-run once, then label
+the true fraction). Each skip printed exactly `rerank skipped: TimeoutError: timed out; hits
+unreranked`, and each skipped answer is byte-identical to `recall`'s dense top 50. The skipped
+calls returned early: about 2.0 s (r2: 2,029 ms and 2,039 ms; r3: 1,904 ms) against a
+`--fuse --rerank` median of 2,463 ms in r2 and 2,121 ms in r3. They did not wait out the 30 s
+rerank budget. **Cause, inferred, not measured:** that early return fits the 1 s
+`RERANK_PROBE_S` probe to the hub's shared rerank worker (which serves the whole fleet) timing out
+with a single harness caller, and the deployed code turning that into the dense fallback (bug-306).
+The probe keeps its deployed default here: the benchmark path is the production path. `rmx hub
+status` read the same before and after each re-run.
 
 ## Latency — RETRACTED, see the profile {#latency}
 
@@ -178,9 +220,10 @@ the graph walk is **0.37 s**. The retrieval core is not slow. What remains unexp
 gap between `build_context` (0.45 s) and the full daemonless CLI (9.0 s), of which only 2.8 s is
 CPU. That gap is not yet attributed.
 
-The 2026-11-23 run's `retrieve_s` per method (120 questions, 4 workers, daemonless: `context`
-50.1 s, `scan` 1,077.3 s, `recall` 33.6 s, `recall-rr` 90.6 s) is a batch wall clock on a shared
-machine, not a per-query latency. **No per-query latency figure for this corpus should be
+The `retrieve_s` per method (120 questions, daemonless; 2026-11-23 at 4 workers: `context`
+50.1 s, `scan` 1,077.3 s, `recall` 33.6 s; the 2026-11-24 `-rr` re-runs at 1 worker: `recall-rr`
+254.9 s, `recall-fuse-rr` 309.2 s) is a batch wall clock on a shared machine, not a per-query
+latency. **No per-query latency figure for this corpus should be
 quoted** until the store is re-measured quiet. Full retraction and decomposition:
 `workflow/measurements/longmemeval-latency.md`.
 
@@ -246,13 +289,13 @@ seed 42), depth 50 for `context`, `scan` depth-uncontrolled. Date 2026-09-15. Re
 | `context` | 0.679 | 0.476 | 0.605 | 0.683 | **0.683** |
 | `scan` * | 0.637 | 0.445 | 0.547 | 0.642 | **0.642** |
 
-`scan` union R@5 was 0.465; `context` union did not complete in that batch. Per-type R@5
+Union R@5 was 0.411 for `context` and 0.465 for `scan` (`summary-symbolic-120.json`). Per-type R@5
 (`context` / `scan`): single-session-assistant 0.950 / 0.950, knowledge-update 0.925 / 0.800,
 multi-session 0.567 / 0.454, single-session-user 0.500 / 0.450, temporal-reasoning 0.487 / 0.477,
 single-session-preference 0.200 / 0.150.
 
-The 0.84.0 re-take reproduces both restricted rows, `scan`'s union R@5 and every per-type figure
-to three decimals. Both runs read the same graph (the 2026-09-15 read snapshot; see [[#setup]]).
+The 0.84.0 re-take reproduces both restricted rows, both union R@5 figures and every per-type
+figure to three decimals. Both runs read the same graph (the 2026-09-15 read snapshot; see [[#setup]]).
 
 ## Next, in priority order {#next}
 
@@ -267,11 +310,11 @@ to three decimals. Both runs read the same graph (the 2026-09-15 read snapshot; 
    document's first 2048 chars and **36.9% of this corpus's answer-bearing turns sit beyond that
    offset** (896 turns: median 0, p75 3,268, p90 8,117). `rmx context` never constructs a
    reranker, so truncation cannot reach it. The exposed rows are `scan` and the two `-rr` rows.
-   `recall-rr`'s rankings differ from `recall`'s on 34 of 120 questions, so the reranker answered
-   in this run;
-   the hub's shared rerank worker (pid 78880) went from 0.66 GB RSS before the `-rr` window to
-   1.42–1.53 GB in it (01:23Z, 01:25Z samples). It serves the whole fleet, so that is consistent
-   with these calls, not proof that only they drove it.
+   That the reranker answered is read from the artifact, not from how many rankings moved: the
+   2026-11-23 reading ("differ from `recall`'s on 34 of 120, so the reranker answered") had it
+   backwards, since the other 86 were unreranked (bug-303). After the re-runs `_meta.n_reranked`
+   is 120/120 for `recall-rr` and 119/120 for `recall-fuse-rr` ([[#rerank-rerun]]), and
+   `recall-rr` equals `recall` on 0 of 120.
 3. **Attribute the ~8.5 s CLI gap.** `build_context` warm is 0.45 s; the full daemonless CLI is
    9.0 s, of which only 2.8 s is CPU. That ~6 s of waiting is the real open performance question —
    NOT the retracted 62.9 s. See `workflow/measurements/longmemeval-latency.md`.

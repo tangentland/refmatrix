@@ -50,19 +50,23 @@ still ahead).
 | `scan` * | 0.547 | 0.642 | 0.637 | 0.642 | 0.465 |
 | `recall` | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
 | `recall-fuse` † | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
-| `recall-rr` | 0.527 | 0.625 | 0.613 | 0.625 | 0.266 |
-| `recall-fuse-rr` ‡ | 0.513 | 0.608 | 0.604 | 0.608 | 0.298 |
+| `recall-rr` | 0.541 | 0.642 | 0.637 | 0.642 | 0.327 |
+| `recall-fuse-rr` ‡ (reranked 119/120) | 0.541 | 0.642 | 0.637 | 0.642 | 0.327 |
 
 Read from the committed artifact
 `eval/production/longmemeval/results/summary-120-0.84.0.json` (19 829 session
-docs, 120 type-stratified questions, seed 42, deploy `rmx` 0.84.0, 2026-11-23);
+docs, 120 type-stratified questions, seed 42, deploy `rmx` 0.84.0, 2026-11-23; the
+graph is the 0.69.1 ingest of 2026-09-15, read from that date's read snapshot,
+which 0.84.0 embedded and queried);
 `tests/test_eval_artifact_cited.py` compares every cell with it. **Every
 restricted row is saturated** (hit@5 equals its ceiling): these figures measure
 how often retrieval reached the gold session within depth 50, not ranking
 quality. \* `scan` has no depth knob. † `recall-fuse` is `recall`: the symbolic
-leg returns nothing on this corpus (bug-300), so it is no fusion figure. ‡ the
-difference from `recall-rr` comes from the hybrid's wider dense pool, not from
-fusion. Full table, per-type rows and caveats:
+leg returns nothing on this corpus (bug-300), so it is no fusion figure. ‡ for
+the same reason `recall-fuse-rr` is `recall-rr` (119 of 120 rankings, every cell
+equal); its rerank was skipped on one question (bug-306), so it is cited as
+reranked 119/120. `recall-rr` was reranked on all 120. Full table, per-type rows
+and caveats:
 `eval/production/longmemeval/REPORT.md`.
 
 Latency: rmx ≈ 3–4 min ingest + seconds to retrieve, CPU only. CodeRankEmbed

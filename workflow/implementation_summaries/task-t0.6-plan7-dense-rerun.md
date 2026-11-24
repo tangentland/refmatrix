@@ -2,7 +2,7 @@
 gmd: "0.1"
 id: impl-task-t0-6-plan7-dense-rerun
 title: "T0.6: the plan-7 LongMemEval dense and fused re-run on 0.84.0"
-tags: [implementation-summary, t0, t0-6, plan-7, longmemeval, eval, embed, bug-030, bug-300]
+tags: [implementation-summary, t0, t0-6, plan-7, longmemeval, eval, embed, bug-030, bug-300, bug-303, bug-306]
 metadata:
   node_type: implementation-summary
   status: complete
@@ -69,9 +69,10 @@ Run from `eval/production/longmemeval/`, logged to
 `REFMATRIX_ROOT` was pinned per process by `paths.rmx_env`, never exported. **Embed wall time:
 997.4 s** for 19,829 rows (78 batches), no failure. 0 failed questions on every surface. {#run-cmd}
 
-## Results (one build, one run) {#results}
+## Results (one build, one store) {#results}
 
-Restricted mode, depth 50, 120 questions; every row saturated (hit@5 = ceiling):
+Restricted mode, depth 50, 120 questions; every row saturated (hit@5 = ceiling). The two `-rr` rows
+are from the fold-t06 re-runs ([[#fold]]); the other four from the 2026-11-23 run:
 
 | surface | R@5 | hit@5 | MRR@20 | ceiling | union R@5 |
 |---|---:|---:|---:|---:|---:|
@@ -79,15 +80,16 @@ Restricted mode, depth 50, 120 questions; every row saturated (hit@5 = ceiling):
 | `scan` | 0.547 | 0.642 | 0.637 | 0.642 | 0.465 |
 | `recall` | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
 | `recall-fuse` | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
-| `recall-rr` | 0.527 | 0.625 | 0.613 | 0.625 | 0.266 |
-| `recall-fuse-rr` | 0.513 | 0.608 | 0.604 | 0.608 | 0.298 |
+| `recall-rr` | 0.541 | 0.642 | 0.637 | 0.642 | 0.327 |
+| `recall-fuse-rr` (reranked 119/120) | 0.541 | 0.642 | 0.637 | 0.642 | 0.327 |
 
 - `context` and `scan` reproduce the 0.69.1 restricted rows and per-type rows to three decimals.
   Both runs read the same 2026-09-15 read snapshot.
 - `recall-fuse` = `recall`, 120 of 120 rankings (the lead's finding, bug-300: the memory BM25 leg
   returns [] on this corpus; bug-301: `content_terms` keeps trailing punctuation). The reports
-  label it and make no fusion claim. `recall-fuse-rr` differs from `recall-rr` through the
-  hybrid's wider dense pool.
+  label it and make no fusion claim. For the same reason `recall-fuse-rr` = `recall-rr` (119 of
+  120 rankings; the one that differs is the question whose rerank was skipped). The r1 text said
+  they differed through a "wider dense pool"; that was false (bsd-t06 r1 #b-2) and is withdrawn.
 - Dense wins preference (R@5 0.450 vs `context` 0.200), multi-session and temporal-reasoning; it
   loses knowledge-update (0.300 vs 0.925) and single-session-user (0.300 vs 0.500). {#results-lead}
 
@@ -120,3 +122,36 @@ compared with the artifact.
 - **M6.1:** README's `recall-rr` union R@5 edited 0.266 → 0.267: `1 failed, 5 passed`,
   `AssertionError: ('README.md', 'recall-rr', 'union R@5', '0.267', '0.266')`
   (`t06-m61-mutation.log`). README restored with `git checkout`. {#tests-lead}
+
+## Fold of bsd-t06 r1 (L196) {#fold}
+
+rel: amends -> [[#results]]
+
+- **b-1, bug-303.** RED `7d15df07`: the artifact test required `n_reranked == n_questions` on both
+  `-rr` methods (`assert None == 120`), and a `rank_all` case required the counts
+  (`ValueError: not enough values to unpack (expected 3, got 2)`); local lane rmxtest2, 2 failed,
+  20 passed. Fix `cc6ea811`: `memory recall --json` prints a bare list, so a skipped rerank is said
+  only on stderr (`# rmx: warning: rerank skipped: …`, exit 0); `_rmx_json` now keeps those lines,
+  `rank_all` counts rows carrying `reranked`, and `_meta` carries `n_reranked`,
+  `n_rerank_skipped`, `unreranked_ids`, `rerank_warnings`. {#fold-b1}
+- **Re-runs at `--workers 1`**, same store, deploy 0.84.0, no re-embed (backup confirmed at its
+  recorded 9,945,432 KB first; the r1 and r2 results directories copied aside as
+  `/Volumes/littlebig/longmemeval/results-t06-r1-2026-11-23` and `results-fold-t06-r2-2026-11-24`).
+  r2 (02:19:26Z to 02:29:39Z): `recall-rr` reranked 120/120, `recall-fuse-rr` 118/120 (skipped
+  `7405e8b1`, `75832dbd`). r3, `recall-fuse-rr` only (02:30:57Z to 02:36:07Z): 119/120 (skipped
+  `6b168ec8`). Every skip: `rerank skipped: TimeoutError: timed out; hits unreranked`, about 2.0 s
+  against a ~2.1-2.5 s median; cause inferred, not measured: the 1 s probe to the hub's shared
+  rerank worker (bug-306). Per L196 (b) the row is cited as reranked 119/120, and the test requires
+  that label on every cell that labels the row (must-fail cases planted; removing PERFORMANCE's
+  label failed it). Hub status identical before and after each re-run. {#fold-rerun}
+- **Data volume.** `results/summary.json` restored to all six methods: r1's other eight entries
+  byte-identical plus the r2 `recall-rr` and r3 `recall-fuse-rr` entries (sha256
+  `ea77f56f…adda41`). The artifact carries the same entries and a `rerank_reruns` provenance key.
+  {#fold-data}
+- **b-2:** the wider-pool claim is withdrawn from README, PERFORMANCE, REPORT (‡, `#fusion`), the
+  artifact's `_provenance.notes` and this summary. **m-1:** REPORT now cites `context` union R@5
+  0.411 from `summary-symbolic-120.json`. **m-2:** README and PERFORMANCE name the graph as the
+  0.69.1 ingest read from the 2026-09-15 snapshot; `_provenance.read_snapshot` records it. REPORT
+  `#next` item 2 reads the reranker's answer from `n_reranked`, not from rankings that moved.
+  {#fold-text}
+
