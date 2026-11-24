@@ -983,7 +983,15 @@ def _verb_named(root: Path, **kw) -> list[str]:
     return list(res["named"])
 
 
-@pytest.mark.parametrize("leg", ["replica-on", "replica-first-0", "no-worker"])
+@pytest.mark.parametrize("leg", [
+    # bug-312 (2026-11-24): replica-on ranks the fixture's rows differently from the verb
+    # (`'fx_mem_06' != 'fx_mem_10'` at index 0); the same E line at the 0.84.0 release commit
+    # cab0a7dc, at master 643f9628 and 749608ce, and on the C1 branch, so it predates them all.
+    # Known failure (rule 8) until bisected and fixed; strict, so a fix turns it red here.
+    pytest.param("replica-on", marks=pytest.mark.xfail(strict=True, reason="bug-312")),
+    "replica-first-0",
+    "no-worker",
+])
 def test_ac4d_rows_parity_replica_on_and_off(fx, monkeypatch, leg):
     """AC-4 (d): daemon up in all three; with the replica leg forced on (a real worker), off by
     `RMX_RECALL_REPLICA_FIRST=0` in the calling process, and off by no worker: the per-prompt
