@@ -411,6 +411,7 @@ class _RawHub:
     def __init__(self, path: Path, *, info_delay=0.0, rerank_reply=None):
         self.frames: list[dict] = []
         self.connections = 0
+        self.hangups = 0       # client closed before a reply could be written
         self._info_delay = info_delay
         self._rerank_reply = rerank_reply
         self._srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -440,11 +441,18 @@ class _RawHub:
                     self.frames.append(req)
                     if req.get("op") == "info":
                         time.sleep(self._info_delay)
-                        send_frame(rw, {"ok": True, "model": "stub/ce",
-                                        "cost_s_per_doc": None, "queue_depth": 0})
+                        reply = {"ok": True, "model": "stub/ce",
+                                 "cost_s_per_doc": None, "queue_depth": 0}
                     elif self._rerank_reply is not None:
-                        send_frame(rw, self._rerank_reply)
-                    # else: never answer a rerank
+                        reply = self._rerank_reply
+                    else:
+                        continue       # never answer a rerank
+                    try:
+                        send_frame(rw, reply)
+                    except OSError:
+                        # the client gave up (budget) and closed the socket
+                        self.hangups += 1
+                        return
             threading.Thread(target=one, daemon=True).start()
 
     def close(self):
@@ -548,6 +556,7 @@ def test_a_recorded_overrun_reaches_the_answers_warnings(monkeypatch):
     assert any("overran" in w and "0.7" in w for w in warnings), warnings
 
 
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_a_header_that_eats_the_budget_sends_no_rerank(stub):
     """When the cost header alone outlasts the budget, nothing is left to
     score with; a rerank frame then is a request the caller has already
@@ -569,6 +578,8 @@ def test_a_header_that_eats_the_budget_sends_no_rerank(stub):
         raw.close()
     assert out.startswith("skipped"), out
     assert [f.get("op") for f in raw.frames] == ["info"], raw.frames
+    # the budget path gave up and closed the connection while the stub slept
+    assert raw.hangups >= 1, raw.hangups
 
 
 
