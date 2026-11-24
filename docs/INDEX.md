@@ -24,7 +24,7 @@ rel: catalogs -> [[system_design_review]]
 | [[ARCHITECTURE]] | Module layout, dependency graph, catalog schema, daemon/concurrency, CLI tree |
 | [[INTEGRATION]] | Everything touching the outside: llm-tldr, git + Claude Code hooks, GMD ingest, watcher, socket protocol |
 | [[PERFORMANCE]] | Where the speed comes from, scoring stack, honest CSN production harness (0.961), MemAware proactive-retrieval benchmark, measured negatives |
-| [[system_design_review]] | Staff-level system design interview reconstructed for refmatrix (v0.60.x, with the scars) |
+| [[system_design_review]] | Staff-level system design interview reconstructed for refmatrix (v0.60.x, with the scars). Stale: still describes the retired A/B writer rotation; superseded by [[refmatrix/refmatrix_system_design_interview]] |
 
 ## ADRs {#adrs}
 
@@ -86,6 +86,20 @@ reports — see `CLAUDE.md#planning-task-docs` for the split.)
 |-----|------|
 | [[refmatrix/grep-learning-replay]] | Does funnelling grep through rmx teach the graph anything? Two-arm replay: index share 18.5% -> 31.7% (SUPERSEDED by bug-074; re-measured by task-16.4), and the defect the instrument found first |
 | [[refmatrix/grep-canonical-breadth]] | bug-070: how wide should the canonical grep match be? Four arms — the obvious fix (plain equality) destroyed the bridge; the trailing-segment anchor costs nothing |
+
+## External reviews {#external-reviews}
+
+Assessments written from outside the build loop (a separate session reading the repo, its ledgers
+and the live fleet), under `docs/external_reviews/`. Each names what it does NOT claim and when its
+findings are to be acted on.
+
+rel: catalogs -> [[refmatrix/ch-bsd-assessment-2026-11-23]]
+rel: catalogs -> [[refmatrix/refmatrix_system_design_interview]]
+
+| Doc | Hook |
+|-----|------|
+| [[refmatrix/ch-bsd-assessment-2026-11-23]] | ch-bsd across the fleet from its own ledgers: highest-value reviewer, unbounded rounds until the L165 reset (r18 → r3); eight findings (stale `last_run.log`, charter, stop condition, leaderboard, precision, template drift, impressions size, and F8: 13 of 25 post-reset SKETCHYs should have been BULLSHIT, 7 shipped unconfirmed) on HOLD until 0.85.0 |
+| [[refmatrix/refmatrix_system_design_interview]] | Full staff-level system design interview as a model answer, verified against the code at 0.84.0 (`338c6dfb`): snapshot read tiers, FIFO writer lock, out-of-process copy (bug-110), scan-prompt PPR stack, memory tiers, hub watchdog, incident table, 10×/100× scaling, rubric, `file:line` code map. Supersedes [[system_design_review]] |
 
 ## Non-GMD reference {#non-gmd}
 
