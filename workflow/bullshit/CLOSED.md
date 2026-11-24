@@ -66,5 +66,6 @@ Backfill (2026-11-24, post-reset reports 2026-11-15 onward): level is the report
 | 315-r1-S3 | [[bsd-315-r1-51bbdfb]] | GATE (F8) | M2-1a survives: the stopwords fixture never holds `the` as a concept | upheld | fixed `dfbfdc3d` (merged `655fad9f`); M2-1a killed in [[bsd-reprobe-c7550ad5]]; L178 | 2026-11-24 |
 | t05-r1-s-1 | [[bsd-t05-r1-61b0666c]] | GATE (F8) | G7 survives though the real-mirror harness can kill it | upheld | fixed `f97977b8` (merged `a22cdaa2`); closed in [[bsd-t05-confirm-3f9ce2a3]], G7 killed again in [[bsd-reprobe-c7550ad5]]; L188 | 2026-11-24 |
 | b300-r1-s-1 | [[bsd-b300-r1-5d28d2a5]] | SKETCHY (handed off) | a re-added memory is ranked by a forgotten same-name memory's blocks; handed to bug-302 | upheld | bug-302 fixed `9edfdbf1` + `21125243` (merged `6c6aa048`, release 0.85.1 `69e10ffd`); L209 | 2026-11-24 |
+| t03-confirm-A2 | 2026-11-16 bsd-t03 confirm-lite (`4a0f4498`) | GATE (rated by the lead under P1, L218) | mutation A2 (`retire()` never sets `_retired`) survived the t03 verify set | upheld | L181 fold `5f418cdb` added the B1-node assertion; `ff6dd09a` logs the mutant failing in 1.16 s; both on master | 2026-11-24 |
 
 {#closed-table}
