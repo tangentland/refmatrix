@@ -630,3 +630,28 @@ def test_forget_matches_blocks_by_exact_name_not_a_like_pattern(tmp_path):
     assert _b302_blocks("axb") == ["axb#how-to-apply", "axb#notes", "axb#root"]
     assert _b302_blocks("a_b", "memory-other") == [
         "a_b#how-to-apply", "a_b#notes", "a_b#root"]
+
+
+def test_memory_dedup_purges_orphan_blocks_dry_run_first(tmp_path):
+    """The repair for blocks a pre-bug-302 forget left behind: the memory row
+    is purged alone (what every forget did before), `memory dedup --dry-run`
+    lists the orphans and keeps them, `memory dedup` purges them, and a live
+    memory's blocks stay."""
+    import os
+    from pathlib import Path
+    _b302_seed(tmp_path, {"a_b": "alpha", "axb": "beta"})
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    with s.with_partition(_B302_PART):
+        s.purge_entity(s.get_memory("a_b")["id"])
+    s.close()
+    orphans = ["a_b#how-to-apply", "a_b#notes", "a_b#root"]
+
+    dry = _b302_cli(["memory", "dedup", "--dry-run"])
+    assert "would purge 3 orphan GMD block node(s)" in dry.stdout, dry.stdout
+    assert all(n in dry.stdout for n in orphans), dry.stdout
+    assert _b302_blocks("a_b") == orphans
+
+    real = _b302_cli(["memory", "dedup"])
+    assert "purged 3 orphan GMD block node(s)" in real.stdout, real.stdout
+    assert _b302_blocks("a_b") == []
+    assert _b302_blocks("axb") == ["axb#how-to-apply", "axb#notes", "axb#root"]
