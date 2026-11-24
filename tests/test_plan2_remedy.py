@@ -356,8 +356,12 @@ def test_precompact_promote_is_bounded_too(tmp_path):
     """#m-5: PreCompact is the catch-up, so its budget is longer — but it is
     a budget, not the 180 s default the harness kills at 60 s."""
     block = _claude_hook_block(tmp_path / ".refmatrix")
-    pre = [c for _, _, c in _cmds(block, "PreCompact") if "focus summarize --promote" in c][0]
-    assert "--timeout 30" in pre
+    # task-compaction-as-handoff R1 (L195, 2026-11-24): the promote moved into PreCompact's
+    # save-state (whose daemon write is bounded at 30 s, `handoff._promote_digest`); a
+    # `focus summarize --promote` entry, where one is still generated, keeps its bound.
+    pre = [c for _, _, c in _cmds(block, "PreCompact") if "focus summarize --promote" in c]
+    assert all("--timeout 30" in c for c in pre), pre
+    assert pre or [c for _, _, c in _cmds(block, "PreCompact") if "rmx save-state" in c]
 
 
 def test_no_claude_apply_reaps_a_previously_installed_block(tmp_path):

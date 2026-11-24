@@ -1794,8 +1794,14 @@ def _rs_entry(root: Path) -> "tuple[str | None, str]":
 
 def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tmp_path):
     """AC-15 (a): exactly one SessionStart entry whose matcher covers compact AND clear, whose
-    command is `rmx recall-state --max-bytes N` (N = budget("recall_state") ≤ 9,000), alone
-    (not chained to another command); startup|resume keep their entries."""
+    command is `rmx recall-state … --max-bytes N` (N = budget("recall_state") ≤ 9,000), alone
+    (not chained to another command); startup|resume keep their entries.
+
+    Amended for task-compaction-as-handoff R3 (L195, 2026-11-24): the entry now writes the FULL
+    report to a per-session handoff file and prints a pointer; the budgeted inline report is its
+    fallback, so `--max-bytes N` stays in the argv but the argv is no longer exactly
+    `rmx recall-state --max-bytes N` (the pulled form is pinned in
+    tests/test_compaction_handoff.py)."""
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     matcher, cmd = _rs_entry(root)
@@ -1803,7 +1809,8 @@ def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tm
     tail = s.after_env(cmd)
     n = s.budget_or_none("recall_state")
     assert n is not None and n <= 9000, f"R1 recall_state budget: {n}"
-    assert tail == f"rmx recall-state --max-bytes {n}", tail
+    assert tail.startswith("rmx recall-state") and f"--max-bytes {n}" in tail, tail
+    assert "$" not in tail and ";" not in tail and "&&" not in tail, tail
     entries = [e for e in h.hook_block(root)["hooks"]["SessionStart"]
                if any("recall-state" in x["command"] for x in e["hooks"])]
     assert len(entries) == 1 and len(entries[0]["hooks"]) == 1, entries
@@ -1812,10 +1819,18 @@ def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tm
     assert starts, "startup|resume entries vanished"
 
 
+def _rs_fallback_cmd() -> str:
+    """The budgeted inline recall-state, as a hook runs it: 25.1's compact|clear payload, which
+    task-compaction-as-handoff R3 keeps as the FALLBACK when the handoff file cannot be written
+    (the generated entry now prints a pointer; tests/test_compaction_handoff.py pins that)."""
+    return s.HOOK_ENV + f"rmx recall-state --max-bytes {s.budget_or_none('recall_state')}"
+
+
 def test_ac15b_compact_runs_recall_state_naming_the_checkpoint_within_n(rs):
     """AC-15 (b): run through bash -c with a SessionStart {"source": "compact"} envelope: stdout
-    ≤ N bytes, it names the PreCompact checkpoint as the handoff, exit 0."""
-    _m, cmd = _rs_entry(rs.root)
+    ≤ N bytes, it names the PreCompact checkpoint as the handoff, exit 0. Since
+    task-compaction-as-handoff R3 this is the budgeted fallback form, run as a hook."""
+    cmd = _rs_fallback_cmd()
     r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
     _ok(r, "recall-state entry (compact)")
     n = s.budget_or_none("recall_state")
@@ -1831,7 +1846,7 @@ def test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer(rs):
     _ok(full, "rmx recall-state (full)")
     n = 700
     assert len(full.stdout) > n, f"fixture: full recall-state is only {len(full.stdout)} B"
-    _m, cmd = _rs_entry(rs.root)
+    cmd = _rs_fallback_cmd()      # the budgeted form (task-compaction-as-handoff R3 fallback)
     r = s.run_cmd(rs, cmd + f" --max-bytes {n}",
                   env_in=s.envelope("", event="SessionStart", source="compact"))
     _ok(r, f"recall-state --max-bytes {n}")
@@ -1843,8 +1858,10 @@ def test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer(rs):
 
 def test_ac15d_no_daemon_prints_the_file_blocks_and_exits_0(rs):
     """AC-15 (d): no daemon: exit 0 and the file-based blocks (the handoff, git) printed; the
-    missing daemon leg is SAID (the spec's "counted" names no recorder; see the summary)."""
-    _m, cmd = _rs_entry(rs.root)
+    missing daemon leg is SAID (the spec's "counted" names no recorder; see the summary).
+    The budgeted fallback form since task-compaction-as-handoff R3 (the file it writes is
+    pinned in tests/test_compaction_handoff.py)."""
+    cmd = _rs_fallback_cmd()
     r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="clear"))
     _ok(r, "recall-state entry (clear, no daemon)")
     out = r.stdout.decode("utf-8")
@@ -1969,6 +1986,14 @@ _PRODUCER_OF = (
 )
 
 
+# task-compaction-as-handoff R2 (L195, 2026-11-24): no generated PreCompact entry may print but
+# the one-line instruction, so the PreCompact recall leaves the generated config; the
+# `precompact` channel keeps its producer argv (the CLI flags `recall_channel` maps) for the
+# by_producer count, written here as 25.1 generated it.
+_PRECOMPACT_RECALL_ARGV = ["memory", "recall", "--recent", "--since", "1h", "--k", "30",
+                           "--scope", "both", "--pack", "--timeout", "30"]
+
+
 def _generated_argv(root: Path, event: str, needle: str) -> list[str]:
     """The cli.log `argv` (after `rmx`) of the generated hook segment that runs `needle`: the
     command split on `;` / `&&` / `||`, the segment shlex-split, redirections dropped."""
@@ -1993,7 +2018,8 @@ def test_m2_by_producer_counts_every_hook_producer(tmp_path):
     root.mkdir(parents=True)
     rows, want = [], {}
     for i, (ev, needle, prod) in enumerate(_PRODUCER_OF):
-        argv = _generated_argv(root, ev, needle)
+        argv = (_PRECOMPACT_RECALL_ARGV if prod == "precompact"
+                else _generated_argv(root, ev, needle))
         sizes = [100 + i] + ([300 + i] if prod == "prompt_recall" else [])
         for sz in sizes:
             rows.append({"ts": f"2026-11-14T01:00:{i:02d}", "argv": argv, "source": "hook",

@@ -34,7 +34,11 @@ def test_memory_hooks_default_on(tmp_path):
     # was broken because the env var doesn't exist in the hook context.
     assert "rmx memory recall --stdin-json" in cmds["UserPromptSubmit"]
     assert "PreCompact" in block["hooks"]
-    assert "--recent --since 1h" in cmds["PreCompact"]
+    # task-compaction-as-handoff R1/R2 (L195, 2026-11-24): PreCompact saves state and prints
+    # only the one-line summary instruction; the `--recent` recall left it (its pack would
+    # become summary instructions too).
+    assert "rmx save-state" in cmds["PreCompact"]
+    assert "memory recall" not in cmds["PreCompact"]
     # Memory hooks must NOT silently swallow errors -- per-project
     # convention is to surface failures so a broken store can't quietly
     # rot. Check only the memory-recall commands (the file-sync SessionStart
