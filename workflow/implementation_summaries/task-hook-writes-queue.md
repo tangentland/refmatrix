@@ -85,7 +85,11 @@ Lane logs in `workflow/review-output/` (scripts/lane-local.sh, committed shas):
 - `hwq-green-r1` at `f76db480`: RED's five files, **88 passed**.
 - `hwq-green-replay-r2` at `b1b8df4d`: every replay / facts.log / reclassify / retag / bridge-move
   test file plus `test_hook_writes` and `test_deferrals_clean`, **191 passed**.
-- The verify set at `adf0ff1d` (308 files: every test file importing `store`, `daemon`,
+- **Final:** RED's conversions `c34c39fb` merged (merged before `22309bb3`), PreCompact per
+  L215; the verify set at `22309bb3`, three local-lane shards: `hwq-green-l215-s0` **1544
+  passed**, `hwq-green-l215-s1` **1672 passed, 1 xpassed** (bug-312's non-strict xfail),
+  `hwq-green-l215-s2` **1389 passed**. 4605 passed, 0 failed.
+- Earlier: the verify set at `adf0ff1d` (308 files: every test file importing `store`, `daemon`,
   `verbs`, `cli`, `handoff` or `hook_writes`, plus the nine repo guards), three local-lane
   shards: `hwq-green-final-s0` **1544 passed**; `hwq-green-final-s2` **1388 passed**;
   `hwq-green-final-s1` **1669 passed, 2 failed, 1 xpassed** (the xpass is
@@ -148,7 +152,7 @@ Lane logs in `workflow/review-output/` (scripts/lane-local.sh, committed shas):
   events written inside it and bits set in in-memory bitmap fragments are not rolled back.
   This is the existing behaviour of every `transaction()` user (the bridge included), not
   new here; a partition apply that raises is the rare path. {#note-rollback}
-- Two existing tests assert the pre-L212 contract and are not among RED's conversions (see
-  #verify); reported to the lead, not edited. {#note-r3}
+- Two existing tests asserted the pre-L212 contract; reported to the lead, converted by RED in
+  `c34c39fb` and merged here, green at `22309bb3`. {#note-r3}
 - Not done here: the mutation pass on the `src/` change (the spec's large-change step), which
   belongs to the review stage. {#note-mutations}
