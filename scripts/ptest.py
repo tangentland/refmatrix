@@ -76,8 +76,12 @@ _NORMALISE = [
     # the macOS per-user temp dir, then a random segment directly under a temp root
     (re.compile(r"(?:/private)?/var/folders/[^/\s]+/[^/\s]+/T(?=/|\b)"), "<TMPDIR>"),
     (re.compile(r"pytest-of-[^/\s]+/pytest-\d+"), "pytest-of-<USER>/pytest-<N>"),
-    (re.compile(r"((?:/private)?/tmp|<TMPDIR>)/([\w.-]*?)[a-z0-9_]{8}(?=[/\s)'\",:]|$)"),
-     r"\1/\2<RAND>"),
+    # a random segment is mkdtemp's default shape, the WHOLE path component: `tmp` + 8 of
+    # [a-z0-9_]. A named path (/tmp/fixture_alpha) stays as it is (bsd-294a r1 m-4, L197:
+    # the earlier rule ate the tail of any 8+ character name, so two different fixtures'
+    # failures compared equal and the merge gate would read one as `seen`).
+    (re.compile(r"((?:/private)?/tmp|<TMPDIR>)/tmp[a-z0-9_]{8}(?=[/\s)'\",:]|$)"),
+     r"\1/tmp<RAND>"),
     # pids
     (re.compile(r"\b(pid)(\s*[=:]\s*|\s+)\d+", re.IGNORECASE), r"\1\2<PID>"),
     # hex addresses
@@ -131,6 +135,35 @@ def require_hang_guard(py: str) -> None:
         last = (r.stderr.strip().splitlines() or ["?"])[-1]
         raise Refusal(f"refusing to run: pytest-timeout (the hang guard) is not importable in "
                       f"{py} ({last}); install requirements-dev.lock")
+    # Importable is not loaded (bsd-294a r1 m-2, L197): with PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+    # and no `-p pytest_timeout`, pytest never registers the plugin and `timeout = 600` is only
+    # an unknown-option warning. Ask a pytest started with the shards' environment.
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="ptest-probe-") as d:
+        r = subprocess.run([py, "-c", _LOADED_PROBE, d], cwd=d, capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+    marks = [ln for ln in r.stdout.splitlines() if ln.startswith("PTEST-TIMEOUT-")]
+    if marks != ["PTEST-TIMEOUT-LOADED"]:
+        why = marks[-1] if marks else (r.stdout + r.stderr).strip()[-300:] or f"exit {r.returncode}"
+        flags = (f"PYTEST_DISABLE_PLUGIN_AUTOLOAD={os.environ.get('PYTEST_DISABLE_PLUGIN_AUTOLOAD')!r}"
+                 f", PYTEST_ADDOPTS={os.environ.get('PYTEST_ADDOPTS', '')!r}")
+        raise Refusal(f"refusing to run: pytest-timeout (the hang guard) is importable but pytest "
+                      f"does not load it under this environment ({flags}; probe: {why}); unset "
+                      f"PYTEST_DISABLE_PLUGIN_AUTOLOAD or add `-p pytest_timeout` to PYTEST_ADDOPTS")
+
+
+# Run by `require_hang_guard` under the interpreter and environment the shards get, in an empty
+# temp dir (no ini, no conftest): does pytest register the pytest_timeout module as a plugin?
+_LOADED_PROBE = """
+import sys, pytest
+class _Probe:
+    loaded = None
+    def pytest_configure(self, config):
+        _Probe.loaded = any(getattr(p, "__name__", "") == "pytest_timeout"
+                            for p in config.pluginmanager.get_plugins())
+pytest.main(["-q", "-p", "no:cacheprovider", "--collect-only", sys.argv[1]], plugins=[_Probe()])
+print("PTEST-TIMEOUT-LOADED" if _Probe.loaded else "PTEST-TIMEOUT-NOT-LOADED", flush=True)
+"""
 
 
 def git(co: Path, *args: str) -> "tuple[int, str]":
@@ -300,6 +333,7 @@ _COLLECTED_RX = re.compile(r"^collected (\d+) items?", re.MULTILINE)
 _FINAL_RX = re.compile(r"^=+ (.+?) in [\d.]+s(?: \([\d:]+\))? =+\s*$", re.MULTILINE)
 _COUNT_RX = re.compile(r"(\d+) (passed|failed|errors?|skipped|xfailed|xpassed|deselected)")
 _TIMEOUT_RX = re.compile(r"^\++ Timeout \++\s*$", re.MULTILINE)
+_TIMEOUT_FAIL_RX = re.compile(r"Timeout \(>[\d.]+s\) from pytest-timeout")
 
 
 def shard_env(rd: Path, s: Shard, co: Path) -> dict:
@@ -406,6 +440,11 @@ def finish(s: Shard) -> None:
     s.root = m.group(1) if m else None
     m = _COLLECTED_RX.search(text)
     s.counts = {"collected": int(m.group(1)) if m else None}
+    if _TIMEOUT_FAIL_RX.search(text) and not getattr(s, "_timeouts_seen", 0):
+        # bsd-294a r1 m-1 (L197): pytest-timeout's signal method prints its banner only when
+        # more than one thread is alive, so a main-thread hang leaves no moment to snapshot.
+        s.notes.append("pytest-timeout fired; no process snapshot taken (no `+++ Timeout +++` "
+                       "banner: a single-threaded hang)")
     finals = _FINAL_RX.findall(text)
     if finals:
         # a parsed final line: a count it does not name is 0, not unknown
@@ -660,6 +699,9 @@ def mode_merge_gate(args, co: Path) -> int:
     if rc != 0 or not merge_head:
         raise Refusal("--merge-gate: no merge in progress (no MERGE_HEAD); run it after "
                       "`git merge --no-commit --no-ff <branch>`")
+    rc, head = git(co, "rev-parse", "HEAD")
+    if rc != 0:
+        raise Refusal(f"--merge-gate: git rev-parse HEAD failed: {head}")
     rc, diff = git(co, "diff", "--cached", "--name-only", "HEAD")
     if rc != 0:
         raise Refusal(f"--merge-gate: git diff failed: {diff}")
@@ -706,7 +748,7 @@ def mode_merge_gate(args, co: Path) -> int:
     lines = header_lines(run, "merge gate")
     lines.append(f"# merge head {merge_head}; touched test files: {', '.join(touched) or 'none'}; "
                  f"devtree files: {len(by_all['devtree'])}; ALWAYS_FILES: {len(always)}")
-    lines.append(f"# previous gate: {prev if prev is not None else 'none (every failure is new)'}")
+    lines.append(f"# previous gate: {prev if prev is not None else 'none (no passed gate whose merge head is an ancestor of HEAD; every failure is new)'}")
     lines += [shard_line(s, co) for s in run.shards]
     lines += plan.no_weight
     lines += failure_lines(run, seen)
@@ -727,16 +769,43 @@ def mode_merge_gate(args, co: Path) -> int:
                  f"merge gate passed: {len(run.shards)} shard(s), "
                  f"{len(run.failures)} failure record(s) all open in the previous gate, lint ok")
     write_summary(run, lines)
+    (rd / GATE_RECORD).write_text(json.dumps(
+        {"merge_head": merge_head, "head": head, "passed": not reasons,
+         "exit": 1 if reasons else 0, "finished": time.strftime("%Y-%m-%dT%H:%M:%S")}) + "\n")
     return 1 if reasons else 0
 
 
+_GATE_DIR_RX = re.compile(r"merge-gate-([0-9a-f]{40,64})")
+GATE_RECORD = "gate.json"
+
+
 def previous_gate(co: Path, current: Path) -> "Path | None":
-    """The newest earlier `merge-gate-*` run with a summary (#r7: compared by E line)."""
-    cands = [d for d in (co / "workflow" / "review-output").glob("merge-gate-*")
-             if d != current and (d / "summary.txt").is_file()]
+    """The baseline of #r7's E-line comparison: the newest gate that PASSED (its `gate.json`
+    says so) and whose merge head is an ancestor of HEAD (it was merged). Never a failed gate,
+    never a gate of a merge that was not committed, and never a moved-aside
+    `merge-gate-<sha>.<ts>` copy (only an exact `merge-gate-<sha>` directory qualifies).
+
+    bug-304 (bsd-294a r1 b-1, ruling L197, 2026-11-24): the baseline was "the newest earlier
+    merge-gate-* run with a summary", so a failed gate re-run on the same merge took its own
+    moved-aside copy as the baseline, read every failure as `seen` and passed; a different
+    merge carrying the failure did the same."""
+    cands = []
+    for d in (co / "workflow" / "review-output").glob("merge-gate-*"):
+        m = _GATE_DIR_RX.fullmatch(d.name)
+        if m is None or d == current or not (d / GATE_RECORD).is_file():
+            continue
+        try:
+            rec = json.loads((d / GATE_RECORD).read_text())
+        except ValueError:
+            continue
+        if rec.get("passed") is not True or rec.get("merge_head") != m.group(1):
+            continue
+        rc, _ = git(co, "merge-base", "--is-ancestor", m.group(1), "HEAD")
+        if rc == 0:
+            cands.append(d)
     if not cands:
         return None
-    return max(cands, key=lambda d: (d / "summary.txt").stat().st_mtime)
+    return max(cands, key=lambda d: (d / GATE_RECORD).stat().st_mtime)
 
 
 # ---- --compare -------------------------------------------------------------------------------
@@ -823,7 +892,11 @@ def parse_args(argv: list):
     ap.add_argument("--tier", choices=("unit", "daemon", "devtree", "timing", "all"),
                     default="all")
     ap.add_argument("--files", nargs="+", metavar="F")
-    ap.add_argument("--shards", type=int, default=None)
+    ap.add_argument("--shards", type=int, default=None,
+                    help="shard processes per tier: unit and daemon EACH get N, so --tier all "
+                         "runs up to 2N at once (timing and devtree run in one process each); "
+                         "default: default_shards(), half of os.cpu_count() split between the "
+                         "tiers that run at the same time")
     ap.add_argument("--name")
     ap.add_argument("--max-minutes", type=float, default=None,
                     help="kill a shard's process group past this many minutes (off by default)")

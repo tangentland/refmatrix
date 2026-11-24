@@ -263,19 +263,39 @@ def signals_of(path) -> set:
     return kinds
 
 
+def _is_environ(node: ast.AST) -> bool:
+    """`os.environ` / `environ` (the mapping an env lookup reads)."""
+    d = _dotted(node)
+    return d is not None and d.split(".")[-1] == "environ"
+
+
+def _is_key(node: "ast.AST | None") -> bool:
+    return isinstance(node, ast.Constant) and node.value == _REAL_HOME_KEY
+
+
 def _reads_real_home(tree: ast.AST) -> bool:
-    """A call of `real_home(...)` (bare or as an attribute), or the `RMX_SANDBOX_REAL_HOME`
-    key as a string of its own (an env lookup). A docstring that MENTIONS either is not a
-    read."""
+    """A call of `real_home(...)` (bare or as an attribute), or an ENVIRONMENT LOOKUP of the
+    `RMX_SANDBOX_REAL_HOME` key: `environ[KEY]`, `environ.get(KEY…)`, `getenv(KEY…)`, or
+    `KEY in environ`. The key as a plain string elsewhere is not a read: a docstring, or an
+    assert that a source text holds it (bsd-294a r1 s-1, ruling L197, 2026-11-24: that assert
+    put test_suite_tiers.py in devtree, a seventh file, and devtree does not run in a clone)."""
     for n in ast.walk(tree):
         if isinstance(n, ast.Call):
             f = n.func
             name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
             if name == "real_home":
                 return True
-        elif isinstance(n, ast.Constant) and n.value == _REAL_HOME_KEY:
+            first = n.args[0] if n.args else None
+            if name == "getenv" and _is_key(first):
+                return True
+            if (name == "get" and isinstance(f, ast.Attribute) and _is_environ(f.value)
+                    and _is_key(first)):
+                return True
+        elif isinstance(n, ast.Subscript) and _is_environ(n.value) and _is_key(n.slice):
             return True
-        elif isinstance(n, ast.Name) and n.id == _REAL_HOME_KEY:
+        elif (isinstance(n, ast.Compare) and _is_key(n.left)
+              and any(isinstance(o, ast.In) for o in n.ops)
+              and any(_is_environ(c) for c in n.comparators)):
             return True
     return False
 
