@@ -287,8 +287,8 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
 - **Installed equals generated, for everything.** `render_managed` and `check` extend from the
   hook block to rules, skills, agents, commands, the compiled file and the git hooks. A
   hand-edited copy is drift, shown as a diff. Local changes belong in an overlay or a local
-  unit ([[#layers]]). [[constitution#project-4]] should be widened from "hooks" to "every
-  instruction artifact" when this ADR is accepted (a constitution amendment, the lead's).
+  unit ([[#layers]]). [[constitution#project-4]] is widened from "hooks" to "every instruction artifact"
+  (the lead, `8187ed00`, on acceptance).
   {#installed-equals-generated}
 - **Every other mention is a pointer.** `CLAUDE.md`, the profile, `ORCHESTRATION.md`, agent
   files and overlays name a unit's id and do not restate it. A memory whose rule now lives in
@@ -744,8 +744,8 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   a large change. Each pack after it is files and fixtures.
 - An agent file is edited once: the contradiction edits that touch agent files (C1, C5, C15,
   C16) ride the core rewrite in H1.b when it is next; otherwise they go with I1.a.
-- Accepted on 2026-11-24 (L226): the index rows carry the status; the amendment of
-  [[constitution#project-4]] ([[#installed-equals-generated]]) is still owed, by the lead.
+- Accepted on 2026-11-24 (L226): the index rows carry the status; [[constitution#project-4]] is
+  amended to every instruction artifact (`8187ed00`, [[#installed-equals-generated]]).
 
 ## Amendments {#amendments}
 
@@ -806,5 +806,5 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   and the pack order stand as written (L228).
 - [[#user-calls]] has no open item. What remains before the builds is evidence, not a
   decision: probes P1 to P10, I1.b's first step ([[#open]]).
-- Still owed, by the lead: the amendment of [[constitution#project-4]] named in
-  [[#installed-equals-generated]].
+- Done: the amendment of [[constitution#project-4]] named in [[#installed-equals-generated]]
+  (`8187ed00`).
