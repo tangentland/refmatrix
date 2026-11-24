@@ -496,48 +496,55 @@ def _focus_digest(s) -> str:
 def _promote_digest(root: Path, s, *, timeout: float = 30.0) -> dict:
     """Condense the session STM and write it to the durable memory store
     (daemon-routed; in-proc Store fallback when the daemon is down). Returns
-    {"name", "id"} on success or {"error"} — never raises.
+    {"name", "id"} on success, {"queued", "name", "note"} when the daemon was busy
+    and the digest was queued, or {"error"} — never raises.
 
     `timeout` bounds the daemon write (one attempt). PreCompact passes what is left of its
     overall budget (task-compaction-as-handoff s-2, L202/L203, 2026-11-24). A write that does
     not answer in time is NOT lost: measured 2026-11-24 on a held writer, the daemon applied
-    the queued `memory_add` once the lock freed."""
-    from refmatrix import daemon as daemon_mod, discovery
+    the queued `memory_add` once the lock freed.
+
+    Queued (task-hook-writes-queue, L212, 2026-11-24; 23.1 R11.4-R11.5): this promote is
+    best-effort, its handoff file is already on disk, and its id's only consumer is the
+    subject filing, which rides in the entry. So a BUSY daemon (the one probe says busy, or
+    the dial bounded by `deadline - now - ENQUEUE_RESERVE_S` times out) appends the digest to
+    the hook-writes spool and returns the queued note; the daemon applies it at its next
+    drain. Its deadline is derived from its own `timeout` (RED decision 9). The partition is
+    `discovery.resolve_partition`, the resolver the Stop-hook producer uses, so both write
+    one digest name under one `(op, partition, name)` key (R11.2, round 12 m6)."""
+    import time as _time
+    from refmatrix import discovery
+    deadline = _time.monotonic() + float(timeout)
     slug = re.sub(r"[^A-Za-z0-9]+", "", s.session)[:12] or "default"
     name = f"focus_summary_{slug}"
     digest = _focus_digest(s)
-    part = discovery.store_name(root)
-    args = {"name": name, "content": digest, "mtype": "session/digest",
-            "tags": [f"session:{s.session}", "summary"],
-            "metadata": {"title": f"Session summary {s.session[:8]}"},
-            "protected": False, "partition": part}
     try:
-        # Busy is not absent (ch-bsd plan-3 r3 #b-1): only a store with NO
-        # daemon may be opened in-process; a busy one raises VerbBusyError,
-        # which the outer except turns into the error dict the callers print.
-        from refmatrix.verbs import VerbAbsentError, _call, require_daemon
-        try:
-            require_daemon(root)
-            daemon_up = True
-        except VerbAbsentError:
-            daemon_up = False
-        if daemon_up:
-            # Typed, one attempt (bsd-plan3-r4 #s-3): the bare call retried a
-            # 30 s timeout three times and reported "TimeoutError: timed out"
-            # for a held writer; a busy daemon is now named as busy.
-            r = _call(root, "memory_add", args, timeout=max(0.5, float(timeout)), retries=0)
-            return {"name": name, "id": r.get("id")}
-        # No daemon: through `verbs.local_write`, the checked opener (bug-212 r4, ruling
-        # L72, 2026-11-13) -- a hand-rolled `Store(root)` here wrote a catalog git tracks.
-        # Its refusal is a VerbError, returned below as {"error"}; `rmx save-state` prints
-        # that on stderr and exits non-zero (L82).
-        from refmatrix.verbs import local_write
-        out = local_write(
-            root, lambda st: {"id": st.add_memory(
+        from refmatrix import verbs as _verbs
+        part = discovery.resolve_partition(root)
+        authored = _time.time()
+        args = {"name": name, "content": digest, "mtype": "session/digest",
+                "tags": [f"session:{s.session}", "summary"],
+                "metadata": {"title": f"Session summary {s.session[:8]}"},
+                "protected": False, "updated_at": authored}
+        subj = s.get_subject()
+        label = (subj.get("label") or subj.get("subject")) if subj else None
+        # Busy is not absent (ch-bsd plan-3 r3 #b-1): only a store with NO daemon may be
+        # opened in-process, through `verbs.local_write`, the checked opener (bug-212 r4,
+        # ruling L72, 2026-11-13) -- a hand-rolled `Store(root)` here wrote a catalog git
+        # tracks. Its refusal is a VerbError, returned below as {"error"}; `rmx save-state`
+        # prints that on stderr and exits non-zero (L82).
+        res = _verbs._write_or_local(
+            root, "memory_add", args, timeout=float(timeout),
+            local=lambda st: {"id": st.add_memory(
                 name=name, content=digest, mtype="session/digest",
-                tags=[f"session:{s.session}", "summary"], protected=False)},
-            partition=part, create=True)
-        return {"name": name, "id": out["id"]}
+                tags=[f"session:{s.session}", "summary"], protected=False,
+                updated_at=authored)},
+            local_create=True, partition=part, queue=_verbs.HOOK_WRITES_QUEUE,
+            deadline=deadline, subject=label, origin="save-state")
+        if res.get("queued"):
+            return {"queued": res["queued"], "name": name,
+                    "note": _verbs.QUEUED_WRITE_MSG.format(name=res["queued"])}
+        return {"name": name, "id": res.get("id")}
     except Exception as e:  # noqa: BLE001 — promote is best-effort
         return {"error": f"{type(e).__name__}: {e}", "name": name}
 
@@ -1653,16 +1660,25 @@ def remind_line(root: Path, session: "str | None", *, agent: bool = False) -> st
 
 
 def record_precompact_save(root: Path, session: str, *, saved: bool,
-                           promote_error: "str | None", save_error: "str | None") -> None:
+                           promote_error: "str | None", save_error: "str | None",
+                           promote_queued: "str | None" = None) -> None:
     """One ledger row per PreCompact save (L204, 2026-11-24): whether the save-state file
     landed and whether its STORE COMMIT (the promote) was deferred, and if so whether by the
     `--timeout` bound. The count of commits deferred by the bound is L204's no-go signal
-    after release, so it is recorded, not inferred."""
+    after release, so it is recorded, not inferred.
+
+    `promote_queued` (task-hook-writes-queue, L212, 2026-11-24): the queued note of a
+    promote the busy daemon could not confirm inside the bound, appended to the hook-writes
+    spool instead. Durable, but still a commit deferred by the bound: the queue is taken only
+    when the writer did not answer in the budget, which is exactly what L204 counts."""
     err = promote_error or ""
     by_bound = bool(err) and bool(re.search(r"did not answer within|timed out|timeout", err,
                                             re.I))
+    if promote_queued and not err:
+        err, by_bound = promote_queued, True
     _record_event(root, {"event": "precompact", "session": str(session), "saved": bool(saved),
                          "commit_deferred": bool(err), "deferred_by_bound": by_bound,
+                         **({"queued": True} if promote_queued else {}),
                          **({"cause": " ".join((err or save_error or "").split())[:300]}
                             if (err or save_error) else {})})
 

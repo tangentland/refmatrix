@@ -870,6 +870,11 @@ class Daemon:
         self._snapshot_dirty = False
         self._last_snapshot_ts: float = 0.0
         self._snapshot_lock = threading.Lock()
+        # Serialises hook-writes drains (task-hook-writes-queue, 2026-11-24): the boot drain
+        # runs after the slot rebind, while the flush thread (started earlier) may already
+        # tick. Two drains reading one spool would apply, delete and move the same files.
+        # Not the store lock: an empty spool must never take the writer.
+        self._hook_writes_drain_lock = threading.Lock()
         # Ingest job registry. Single-active guard: an in-flight ingest
         # blocks subsequent ingest starts (synchronous or detached) so
         # two ingests never trample each other on the same store. State
@@ -1843,6 +1848,8 @@ class Daemon:
         # leftovers (task 3.7 r5 M1); readers never glob them. Swept here, before
         # this instance's watcher can start writing a new one.
         self._sweep_stale_curator_tmp()
+        # The hook-writes spool's crash leftovers too (task-hook-writes-queue D1).
+        self._sweep_stale_hook_writes_tmp()
         # Heartbeat first: the store open + repairs below can take a while
         # and the supervisor must already see "alive", not "dead".
         self._start_heartbeat()
@@ -1984,6 +1991,15 @@ class Daemon:
         # out-of-process readers always have a lock-free path even before
         # the first rotation cycle. Derived from the real writer above.
         self._refresh_read_only_link()
+        # Boot drain of the hook-writes spool (task-hook-writes-queue D2 / R11.7, AC-2): an
+        # entry queued before a crash or a restart is applied now, on the rebound writer
+        # slot and before the startup snapshot, not a flush interval later. A failure is
+        # logged and the entries stay for the first tick; a store invalidation fast-exits.
+        try:
+            self._drain_hook_writes()
+        except Exception as exc:  # noqa: BLE001 -- logged; fatal classified below
+            self._log(f"hook_writes boot drain FAILED: {exc!r}; entries stay for the tick")
+            self._fast_exit_if_invalidated(exc, "hook_writes boot drain")
         # Writer rotation is dropped: the writer stays pinned to the active
         # slot for the daemon's life. No refresh/swap thread is started — the
         # swap could promote a log-replayed slot missing under-logged state.
@@ -2316,6 +2332,14 @@ class Daemon:
                 except Exception as exc:
                     self._log(f"learn-queue drain tick failed: {exc!r}")
                     self._fast_exit_if_invalidated(exc, "learn-queue drain")
+                # The hook-writes spool, on the same tick and before the flush (D2): the
+                # Stop hook's digest queued while the writer was held lands within one
+                # interval of the writer freeing (task-hook-writes-queue, bug-309).
+                try:
+                    self._drain_hook_writes()
+                except Exception as exc:
+                    self._log(f"hook_writes drain tick failed: {exc!r}")
+                    self._fast_exit_if_invalidated(exc, "hook_writes drain")
                 try:
                     _periodic_flush(self.store, self._store_lock, self._log)
                 except Exception as exc:
@@ -2326,6 +2350,44 @@ class Daemon:
             target=_runner, name="rmxd-flush", daemon=True,
         )
         self._flush_thread.start()
+
+    def _drain_hook_writes(self) -> dict:
+        """Apply the hook-writes spool: the ONE entry point for the flush tick and the boot
+        drain (task-hook-writes-queue D2, L212, 2026-11-24; the sibling of
+        `_drain_learn_queue`).
+
+        WHY: since bug-309 the Stop hook's promote (and the save-state promote) append a
+        durable entry and return when the writer is busy, instead of waiting it out and
+        failing the hook. This applies them: `hook_writes.drain` takes `_store_lock` ONCE for
+        a non-empty spool and never for an empty one, applies each partition in one
+        transaction with the authoring-time guard, and deletes the files after the commit.
+        A committing drain requests a snapshot so replica readers see the digest without an
+        unrelated write. Returns `{"applied", "superseded", "bad", "failed", "committed"}`;
+        every outcome is counted and logged by the drain."""
+        from refmatrix import hook_writes
+        if self.store is None:
+            return {"applied": 0, "superseded": 0, "bad": 0, "failed": 0, "committed": False}
+        with self._hook_writes_drain_lock:
+            out = hook_writes.drain(self.root, self.store, store_lock=self._store_lock,
+                                    log=self._log, is_fatal=Daemon._is_fatal_invalidation)
+        if out.get("committed"):
+            self._request_snapshot()
+        return out
+
+    def _sweep_stale_hook_writes_tmp(self) -> None:
+        """Startup sweep of `hook_writes.spool/*.tmp` (task-hook-writes-queue D1), beside the
+        curator spool's. A failure is logged, never fatal to the boot: a leftover is invisible
+        to readers and the next start retries."""
+        from refmatrix import hook_writes
+        try:
+            r = hook_writes.sweep_stale_tmp(self.root)
+        except OSError as exc:
+            self._log(f"hook_writes spool tmp sweep FAILED: {exc!r}")
+            return
+        if r["removed"] or r["kept"]:
+            self._log(f"hook_writes spool: swept {r['removed']} stale tmp file(s), kept "
+                      f"{r['kept']} younger than {hook_writes.TMP_SWEEP_MIN_AGE_S:g}s "
+                      f"(possibly an enqueue in flight)")
 
     def _drain_learn_queue(self) -> dict:
         """Apply queued `rmx grep` teach records in ONE lock acquisition.
@@ -4161,6 +4223,17 @@ def _store_health(d: Daemon) -> dict:
     except Exception as exc:  # noqa: BLE001 — named, never mute
         h["learn_queue_pending"] = -1
         h["learn_queue_error"] = f"{type(exc).__name__}: {exc}"
+    # 0b. The hook-writes spool (task-hook-writes-queue D4, 2026-11-24): entries waiting for
+    #     a drain, and unreadable ones moved to `bad/`. A spool that stops draining is the
+    #     Stop hook's digest silently not reaching memory, so it is on the health surface,
+    #     not only in rmxd.log. A directory listing; no store, no lock.
+    try:
+        from refmatrix import hook_writes as _hw
+        _c = _hw.counts(d.root)
+        h["hook_writes_pending"], h["hook_writes_bad"] = _c["pending"], _c["bad"]
+    except Exception as exc:  # noqa: BLE001 — named, never mute
+        h["hook_writes_pending"] = h["hook_writes_bad"] = -1
+        h["hook_writes_error"] = f"{type(exc).__name__}: {exc}"
     # 1. Does a memory read actually work? A corrupt row, a bad index or a
     #    damaged zonemap surfaces here and nowhere else.
     try:
@@ -5201,10 +5274,14 @@ def _op_memory_add(d: Daemon, args: dict) -> dict:
     tags = args.get("tags")
     metadata = args.get("metadata")
     protected = bool(args.get("protected", False))
+    # `updated_at`: the content's authoring time (23.1 R11.3 item 2, task-hook-writes-queue,
+    # 2026-11-24). The hook producers stamp it into the payload they both dial AND queue, so
+    # whichever of the two lands second is skipped by `add_memory`'s guard. Absent = today.
     with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
         eid = d._st().add_memory(
             name=name, content=content, mtype=mtype,
             tags=tags, metadata=metadata, protected=protected,
+            updated_at=args.get("updated_at"),
         )
     d._request_snapshot()
     return {"id": eid}

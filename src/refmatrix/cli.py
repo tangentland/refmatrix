@@ -1534,7 +1534,21 @@ def focus_summarize(session, promote, is_global, timeout):
     on 2026-09-14 it took 55 s / 15 s / 6 s while the daemon was busy with a
     bridge ingest and a post-commit sync (bsd-plan2-r2 #s-1). A hook must not
     hold the turn for the store: past the bound it fails loud and the next
-    PreCompact / save-state promote catches up."""
+    PreCompact / save-state promote catches up.
+
+    A BUSY daemon no longer fails the hook (task-hook-writes-queue, L212, 2026-11-24;
+    bug-309: 72 of 136 promotes timed out at 8.04 s on a held writer, each a hook error).
+    The project promote goes through `verbs._write_or_local(queue="hook_writes")`: ONE probe
+    classifies the daemon; up -> one dial bounded by what is left of --timeout minus
+    `ENQUEUE_RESERVE_S`; busy, or a dial that times out -> the digest (with the session's
+    active subject) is appended to the store's hook-writes spool, `queued: <name>` and
+    `QUEUED_WRITE_MSG` are printed and the exit is 0; the daemon applies it on its next drain.
+    Absent still refuses (exit 1, no spool entry); refused, undiallable and an enqueue that
+    fails stay loud (exit 1 with the cause)."""
+    import time as _time
+    # The deadline FIRST, before any probe (R11.4, round 12 m5): the probe's cost comes out
+    # of --timeout, so the dial's budget is what is really left.
+    deadline = _time.monotonic() + float(timeout)
     s = _stm(session, prefer_latest=True)
     digest = _focus_digest(s)
     if not promote:
@@ -1553,7 +1567,8 @@ def focus_summarize(session, promote, is_global, timeout):
         # `hub.global_call` directly — unbudgeted (60 s x 3) under a hook that
         # promises --timeout, and bypassing `verbs.global_write`'s up / busy /
         # absent classification (an absent global daemon is started inside the
-        # budget, a held one is busy, never spawned over).
+        # budget, a held one is busy, never spawned over). The global legs are
+        # outside the hook-writes queue (R11 non-goal).
         from refmatrix import verbs as _verbs
         try:
             res = _verbs.global_write("memory_add", args, timeout=float(timeout))
@@ -1563,51 +1578,42 @@ def focus_summarize(session, promote, is_global, timeout):
                 f"catches up") from e
         eid = res.get("id")
     else:
-        from refmatrix import discovery as _disc
+        from refmatrix import verbs as _verbs
         root = _root()
-        # ONE cheap probe classifies the daemon (up / busy / absent): a
-        # daemon that is alive but not answering is BUSY — telling the
-        # operator to start one invites a duplicate (bsd-plan2-r3 #s-2).
-        st = _disc.daemon_status(root, retries=0)
-        import time as _time
-        deadline = _time.monotonic() + float(timeout)
-        if st.get("up"):
-            import socket as _socket
-            try:
-                resp = _memory_daemon_call("memory_add", args, timeout=float(timeout),
-                                           retries=0)
-            except (TimeoutError, _socket.timeout, OSError) as e:
-                # Typed and worded by THE classifier (task 3.6 #r10-amend S2,
-                # ch-bsd plan-3 r10 #s-2): every OSError here read "daemon
-                # busy", a refused socket included. `write=True`: only a
-                # TIMEOUT means the request may be in the daemon's hands — the
-                # digest (upserted by name) may still land — and only then
-                # does the classifier say so (bsd-plan2-r3 #m-6).
-                from refmatrix import verbs as _verbs
-                c = _verbs.classify_transport_error(e, op="memory_add", root=root,
-                                                    timeout=float(timeout), write=True)
-                raise click.ClickException(
-                    f"promote: {c} — the next PreCompact / save-state promote "
-                    f"catches up") from e
-            if not resp.get("ok"):
-                raise click.ClickException(resp.get("error", "daemon error"))
-            eid = resp["result"]["id"]
-        elif st.get("busy"):
-            raise click.ClickException(
-                f"daemon busy pid={st.get('pid')} for {root} (alive, not "
-                f"answering) — promote not confirmed this turn; the daemon may "
-                f"still be starting or holding the store lock; the next "
-                f"PreCompact / save-state promote catches up")
-        else:
+        # The authoring time, stamped into the ONE payload the dial and the queued entry
+        # share (R11.3 item 2): whichever lands second is skipped by `add_memory`'s guard.
+        args["updated_at"] = _time.time()
+        subj = s.get_subject()
+        label = (subj.get("label") or subj.get("subject")) if subj else None
+        try:
+            res = _verbs._write_or_local(
+                root, "memory_add", args, timeout=float(timeout), local=None,
+                partition=_resolve_partition(), queue=_verbs.HOOK_WRITES_QUEUE,
+                deadline=deadline, subject=label, origin="stop-hook")
+        except _verbs.VerbAbsentError as e:
             # Store-through-daemon (constitution VII): the Stop hook runs
             # this every turn; opening the active slot from a CLI process
             # while a daemon may hold it is how the 2026-09-14 lock crashes
-            # started. Refuse loudly instead (plan-2 Q4).
+            # started. Refuse loudly instead (plan-2 Q4). An absent daemon
+            # will not drain a queue either, so nothing is queued.
             raise click.ClickException(
                 f"daemon not running for {root} — `focus summarize --promote` "
                 f"writes durable memory through the daemon; start it "
                 f"(`rmx daemon start`) or run `rmx focus summarize` without "
-                f"--promote to print the digest only")
+                f"--promote to print the digest only") from e
+        except _verbs.VerbError as e:
+            # Refused, undiallable, or a spool that could not take the entry: worded by
+            # the verb (the transport classifier / the enqueue), never a queued success.
+            raise click.ClickException(
+                f"promote: {e} — the next PreCompact / save-state promote "
+                f"catches up") from e
+        if res.get("queued"):
+            # Plain echo, not rich: the name and the message carry no markup to parse.
+            # The subject filing rides in the entry; nothing else to do this turn.
+            click.echo(f"queued: {res['queued']}")
+            click.echo(_verbs.QUEUED_WRITE_MSG.format(name=res["queued"]))
+            return
+        eid = res.get("id")
     console.print(f"[green]promoted[/] {name} (id={eid}) — recall with "
                   f"`rmx memory recall summary` or `rmx context {name}`")
     if not is_global:
@@ -3983,6 +3989,22 @@ def daemon_status():
             console.print(f"[yellow]stale pid[/] {pid} (process gone or reused)")
     else:
         console.print("[dim]not running[/]")
+
+    # The hook-writes spool (task-hook-writes-queue D4, 2026-11-24): read from the store
+    # directory with the same `hook_writes.counts` `_store_health` reports, so the line
+    # shows whether the daemon is up, busy or down -- a spool that is not draining matters
+    # most when it is not. Printed only when something waits or was set aside.
+    try:
+        from refmatrix import hook_writes as _hw
+        hwc = _hw.counts(root)
+        if hwc["pending"] or hwc["bad"]:
+            console.print(
+                f"[yellow]hook_writes:[/] {hwc['pending']} pending, {hwc['bad']} bad "
+                f"(unreadable, moved to {rich_escape(str(_hw.bad_dir(root)))})",
+                soft_wrap=True)
+    except Exception as e:  # noqa: BLE001 — diagnostic line, must not raise
+        console.print(f"hook_writes: [dim]unknown ({rich_escape(str(e))})[/]  "
+                      f"[yellow][UNVERIFIED][/]")
 
     # Supervision layer — best-effort; never let it break process status.
     if _sys.platform != "darwin":
@@ -14330,6 +14352,11 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
             # on stderr at the end (r5, L95).
             console.print(f"[red]promote FAILED[/] -- the session digest did not reach "
                           f"durable memory; the error follows on stderr")
+        elif promoted.get("queued"):
+            # task-hook-writes-queue (L212, 2026-11-24; R11.4): the daemon was busy, so the
+            # digest -- and its subject filing -- were queued for the next drain. Printed in
+            # place of `promoted … (id=…)`: there is no id yet. Plain echo (no markup).
+            click.echo(promoted.get("note") or "")
         else:
             console.print(f"[green]promoted[/] {promoted['name']} "
                           f"(id={promoted.get('id')}) → durable memory")
@@ -14431,14 +14458,14 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
             click.echo(f"{tag}: FAILED: the hook envelope carries no session_id; nothing was "
                        f"saved", err=True)
         else:
-            err = None
+            err, incomplete = None, False
             try:
                 saved = _verbs.save_state(
                     root, message=message, promote=promote, session=session,
                     memory_dir=str(memory_dir) if memory_dir else None, lint=lint, sync=sync,
                     transcript=str(d.get("transcript_path") or "") or None, timeout=timeout)
             except _verbs.SaveStateIncompleteError as e:
-                saved, err = e.result, None          # the handoff file WAS written
+                saved, err, incomplete = e.result, None, True   # the handoff file WAS written
                 click.echo(f"{tag}: the store commit was deferred: "
                            f"{' '.join(str(e).split())}. {saved.get('target')} is on disk and "
                            f"is the durable record; a promote the daemon did not confirm is "
@@ -14450,14 +14477,24 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
             except Exception as e:  # noqa: BLE001 -- said on stderr; PreCompact exits 0
                 failed, err = True, f"{type(e).__name__}: {e}"
             perr = ((saved or {}).get("promoted") or {}).get("error")
+            promo = ((saved or {}).get("promoted") or {})
+            queued = promo.get("note") if promo.get("queued") else None
+            if queued and not err and not incomplete:
+                # task-hook-writes-queue (L212, 2026-11-24): a QUEUED promote is a store
+                # commit deferred past the bound -- durable in the hook-writes spool, applied
+                # at the daemon's next drain, but not confirmed this turn. Said and counted as
+                # deferred (L203/L204), never as promoted.
+                click.echo(f"{tag}: the store commit was deferred: {queued}. "
+                           f"{saved.get('target')} is on disk and is the durable record.",
+                           err=True)
             _handoff.record_precompact_save(root, session, saved=bool(saved),
-                                            promote_error=perr,
+                                            promote_error=perr, promote_queued=queued,
                                             save_error=None if saved else err)
             if saved:
-                promo = saved.get("promoted") or {}
                 click.echo(f"{tag}: wrote {saved.get('target')} ({saved.get('events')} events, "
                            f"session {session})"
-                           + (f"; promoted {promo.get('name')}" if promo.get("id") else ""),
+                           + (f"; promoted {promo.get('name')}" if promo.get("id") else "")
+                           + (f"; queued {promo.get('name')}" if queued else ""),
                            err=True)
             if err:
                 click.echo(f"{tag}: FAILED: {' '.join(err.split())}", err=True)

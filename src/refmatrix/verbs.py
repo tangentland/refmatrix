@@ -296,8 +296,17 @@ def _call(root: Path, op: str, payload: dict, *, timeout: float = 60.0,
     """`retries=0` for budgeted paths: `daemon.call` retries on timeout, so a
     5 s bound with the library default is a 15 s wait. `write=True` for a WRITE
     op: a timeout then also says the write is not confirmed (task 3.7 C5)."""
-    from refmatrix import daemon as daemon_mod
     require_daemon(root, retries=0 if retries == 0 else 2)
+    return _dial(root, op, payload, timeout=timeout, retries=retries, write=write)
+
+
+def _dial(root: Path, op: str, payload: dict, *, timeout: float, retries: int,
+          write: bool) -> dict:
+    """`_call` after its probe: ONE `daemon.call`, its transport failure typed and worded by
+    `classify_transport_error`, an answered `ok:false` raised as `VerbError`. Split out
+    (task-hook-writes-queue, 2026-11-24) so `_write_or_local`'s queued path can probe once,
+    derive the dial's budget from what the probe left, and dial without a second probe."""
+    from refmatrix import daemon as daemon_mod
     try:
         r = daemon_mod.call(root, op, payload, timeout=timeout, retries=retries)
     except Exception as e:  # noqa: BLE001 — transport-level only (call does socket+json)
@@ -598,16 +607,115 @@ def local_write(root: Path, fn: "Callable[[Any], dict]", *, partition: "str | No
     return {**out, "source": "in-process"}
 
 
+# ---- the queued fourth outcome (23.1 R11.4 on the interim spool; task-hook-writes-queue) ----
+
+# The time `_write_or_local`'s queued path keeps back from the caller's deadline for the
+# enqueue itself, so a dial that times out still leaves room to append the entry inside the
+# hook's `--timeout`; and the shortest dial worth making (below it, enqueue without dialing).
+ENQUEUE_RESERVE_S = 1.0
+MIN_DIAL_S = 0.5
+# The ONE wording of a queued write (R11.4). Not inside `classify_transport_error`: that
+# returns errors, and a queued promote is a success.
+QUEUED_WRITE_MSG = ("daemon busy: queued {name} for the next drain; it is applied when the "
+                    "writer frees")
+HOOK_WRITES_QUEUE = "hook_writes"
+
+
+def _enqueue_hook_write(root: Path, op: str, payload: dict, *, partition: str,
+                        subject: "str | None", origin: str) -> dict:
+    """Append the R11.2 entry and return the queued result. A spool that cannot take it
+    raises `VerbError` naming the path and the OS error (D6: an enqueue that fails is not a
+    queued promote; it stays loud)."""
+    from refmatrix import hook_writes
+    name = payload["name"]
+    entry = {"op": op, "partition": partition, "name": name, "args": dict(payload),
+             "subject": subject, "origin": origin, "ts": payload["updated_at"]}
+    try:
+        path = hook_writes.enqueue(root, entry)
+    except OSError as exc:
+        raise VerbError(f"daemon busy and {name} could not be queued to "
+                        f"{hook_writes.spool_dir(root)}: {type(exc).__name__}: {exc}; the "
+                        f"write was NOT saved") from exc
+    return {"queued": name, "queue": HOOK_WRITES_QUEUE, "source": "queue", "spool": str(path)}
+
+
 def _write_or_local(root: Path, op: str, payload: dict, *, timeout: float,
-                    local: "Callable[[Any], dict]", partition: str) -> dict:
+                    local: "Callable[[Any], dict] | None", partition: str,
+                    queue: "str | None" = None, deadline: "float | None" = None,
+                    subject: "str | None" = None, origin: "str | None" = None,
+                    local_create: bool = False) -> dict:
     """One daemon WRITE, single attempt (C4/C5), with `local_write` as the absent-daemon
     bootstrap (C4a). Busy, refused and undiallable all raise from `_call`; only
-    `VerbAbsentError` reaches the in-process store."""
+    `VerbAbsentError` reaches the in-process store.
+
+    `queue="hook_writes"` adds the FOURTH outcome (23.1 R11.4, task-hook-writes-queue, L212,
+    2026-11-24; bug-309: 72 of 136 Stop-hook promotes timed out on a held writer). For a
+    best-effort writer whose id has no consumer outside the entry: a BUSY daemon (the probe
+    says busy, or the dial raised `VerbBusyError`) appends a durable spool entry and returns
+    `{"queued": <name>, "queue": "hook_writes", "source": "queue"}` instead of raising.
+    - `deadline` (a `time.monotonic()` value) is required with `queue=`: ONE probe
+      (`require_daemon(retries=0)`) classifies the daemon, then the dial gets
+      `deadline - now - ENQUEUE_RESERVE_S`; under `MIN_DIAL_S` there is no dial and the
+      entry is appended directly, so the whole path fits the caller's budget.
+    - `payload` must carry `updated_at` (the authoring time, also the entry's `ts`): the
+      dial and the entry are the same write, and `Store.add_memory`'s guard makes the one
+      that lands second a no-op.
+    - `local=None` (allowed only with `queue=`): an ABSENT daemon raises `VerbAbsentError`
+      and queues nothing -- an absent daemon will not drain the spool, and a hook must not
+      open the Store (constitution VII). Refused and undiallable still raise.
+    `subject` (the label the entry files under) and `origin` ride in the entry. `timeout`
+    is the non-queued path's dial budget. `local_create` is `local_write`'s `create=` (the
+    save-state promote's bootstrap creates a missing catalog, as it always has)."""
+    full = {**payload, "partition": partition}
+    if queue is None:
+        if local is None:
+            raise VerbArgsError("_write_or_local: local=None is allowed only with queue=")
+        try:
+            res = _call(root, op, full, timeout=timeout, retries=0, write=True)
+        except VerbAbsentError:
+            return local_write(root, local, partition=partition, create=local_create)
+        return {**res, "source": "daemon"}
+
+    import time as _time
+    from refmatrix import hook_writes
+    if queue != HOOK_WRITES_QUEUE:
+        raise VerbArgsError(f"_write_or_local: unknown queue {queue!r}")
+    if deadline is None:
+        raise VerbArgsError("_write_or_local: queue= requires deadline=")
+    if op not in hook_writes.OPS:
+        raise VerbArgsError(f"_write_or_local: {op!r} cannot be queued "
+                            f"({', '.join(hook_writes.OPS)} only)")
+    if origin not in hook_writes.ORIGINS:
+        raise VerbArgsError(f"_write_or_local: origin {origin!r} is not one of "
+                            f"{', '.join(hook_writes.ORIGINS)}")
+    ts = payload.get("updated_at")
+    if isinstance(ts, bool) or not isinstance(ts, (int, float)):
+        raise VerbArgsError("_write_or_local: a queued write's payload needs a numeric "
+                            "updated_at (its authoring time)")
+
+    def _enqueue() -> dict:
+        return _enqueue_hook_write(root, op, payload, partition=partition, subject=subject,
+                                   origin=origin)
+
     try:
-        res = _call(root, op, {**payload, "partition": partition}, timeout=timeout,
-                    retries=0, write=True)
+        require_daemon(root, retries=0)
+    except VerbBusyError:
+        return _enqueue()
     except VerbAbsentError:
-        return local_write(root, local, partition=partition)
+        if local is None:
+            raise
+        return local_write(root, local, partition=partition, create=local_create)
+    left = deadline - _time.monotonic() - ENQUEUE_RESERVE_S
+    if left < MIN_DIAL_S:
+        return _enqueue()
+    try:
+        res = _dial(root, op, full, timeout=left, retries=0, write=True)
+    except VerbBusyError:
+        return _enqueue()
+    except VerbAbsentError:
+        if local is None:
+            raise
+        return local_write(root, local, partition=partition, create=local_create)
     return {**res, "source": "daemon"}
 
 
