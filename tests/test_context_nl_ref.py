@@ -193,6 +193,16 @@ def id_titled(tmp_path):
         ingest_gmd_paths(s, [doc_dir / "s0042x1.md"])
         ids = {n: s.get_entity("memory", n).id for n, _ in _MEMORIES}
         assert s.get_entity("doc", "s0042x1") is not None
+        # An ORPHAN block: the shape R0 found live (3 blocks of
+        # `impression_bsd_isolation_drops_the_suite`, memory entity and file gone; logged as
+        # its own bug by the lead). Planted directly: a gmd_node concept whose `meta.doc` names
+        # a memory that does not exist, carrying the only `zeppelin`.
+        orphan = s.upsert_entity(
+            kind="concept", name="s0099_1#gone", path=str(mem_dir / "s0099_1.md"),
+            tldr="Gone\n\nThe zeppelin hangar", meta={"doc": "s0099_1", "anchor": "gone",
+                                                     "level": 2, "gmd_node": True})
+        s.link("mentions", s.upsert_entity(kind="concept", name="zeppelin"), orphan, 1.0)
+        assert s.get_entity("memory", "s0099_1") is None
         yield s, ids
     finally:
         s.close()
@@ -237,12 +247,16 @@ def test_memory_kind_returns_each_memory_once_and_no_block_node(id_titled):
 @pytest.mark.parametrize("term,expect", [
     ("lighthouse", ["s0050_1"]),   # NOT s0051_1, which s0050_1#root is `part-of` by a rel: line
     ("ferry", []),                 # NOT s0042_1: `s0042x1#harbour` is a DOC's block
+    ("zeppelin", []),              # an orphan block (its memory is gone) is not a hit
 ])
 def test_block_credit_follows_the_block_name_not_part_of_or_a_like_pattern(
         id_titled, term, expect):
-    """R0: the block -> memory tie that is total is the block's NAME prefix (`<memory-id>#`,
-    = `meta.doc`). A `part-of` walk credits s0050_1's body to the memory its rel: line names; a
-    `LIKE 's0042_1#%'` join credits the doc `s0042x1`'s block to memory `s0042_1`."""
+    """R0 + the lead's ruling: a block is credited to the memory named by its NAME prefix
+    (`split_part(name, '#', 1)`, which equals `meta.doc` on every block of both stores
+    measured), never through `part-of`. A `part-of` walk credits s0050_1's body to s0051_1,
+    the memory its GMD `rel: part-of` line names; a `LIKE 's0042_1#%'` join credits the doc
+    `s0042x1`'s block to memory `s0042_1`; an orphan block (no memory of that name) maps to
+    nothing and is not returned on its own."""
     s, _ids = id_titled
     hits = s.content_rank([term], kinds=["memory"], limit=10)
     assert [n for _, n in _named(s, hits)] == expect, _named(s, hits)
