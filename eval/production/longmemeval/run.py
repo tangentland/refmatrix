@@ -171,6 +171,9 @@ class Method:
     """
     argv: Callable[..., list[str]]
     note: str = ""
+    # The surface asks for the cross-encoder. Its `_meta` then carries `n_reranked`: a rerank
+    # that could not run falls back to the dense order and is NOT a rerank answer (bug-303).
+    rerank: bool = False
 
 
 def _recall_argv(query: str, *, k: int, fuse: bool, rerank: bool) -> list[str]:
@@ -222,8 +225,9 @@ METHODS: dict[str, Method] = {
     "recall-fuse": Method(lambda q, *, k: _recall_argv(q, k=k, fuse=True, rerank=False),
                           "dense RRF-fused with content_rank BM25"),
     "recall-rr": Method(lambda q, *, k: _recall_argv(q, k=k, fuse=False, rerank=True),
-                        "same retrieval, cross-encoder reordering"),
-    "recall-fuse-rr": Method(lambda q, *, k: _recall_argv(q, k=k, fuse=True, rerank=True)),
+                        "same retrieval, cross-encoder reordering", rerank=True),
+    "recall-fuse-rr": Method(lambda q, *, k: _recall_argv(q, k=k, fuse=True, rerank=True),
+                             rerank=True),
     "context": Method(lambda q, *, k: _context_argv(q, k=k),
                       "symbolic content_rank + graph walk"),
     "context-d2": Method(lambda q, *, k: _context_argv(q, k=k, degree=2),
@@ -237,7 +241,19 @@ METHODS: dict[str, Method] = {
 
 # ── talking to rmx ─────────────────────────────────────────────────────────
 
-def _rmx_json(argv: list[str], rmx: str, root: Path) -> object:
+WARNING_PREFIX = "# rmx: warning: "
+
+
+def _rmx_json(argv: list[str], rmx: str, root: Path,
+              warnings: "list[str] | None" = None) -> object:
+    """Run one `rmx` read and parse its JSON payload.
+
+    `warnings`, when given, receives what the call SAID besides its answer: every
+    `# rmx: warning: …` stderr line, and a dict payload's own `warnings`. `memory recall
+    --json` prints a bare list of rows and says a skipped rerank only on stderr ("rerank
+    skipped: …; hits unreranked"); discarding stderr on exit 0 is how T0.6 published 86
+    dense answers as `recall-rr` rows (bug-303, 2026-11-24).
+    """
     env = rmx_env()
     env["REFMATRIX_ROOT"] = str(root)
     p = subprocess.run([rmx, *argv], env=env, capture_output=True, text=True,
@@ -245,14 +261,34 @@ def _rmx_json(argv: list[str], rmx: str, root: Path) -> object:
     if p.returncode != 0:
         raise RuntimeError(f"rmx {' '.join(argv[:3])} -> exit {p.returncode}\n"
                            f"{p.stderr[-600:]}")
+    if warnings is not None:
+        warnings.extend(ln[len(WARNING_PREFIX):].strip()
+                        for ln in p.stderr.splitlines() if ln.startswith(WARNING_PREFIX))
     out = p.stdout.strip()
     if not out:
         return None
     try:
-        return json.loads(out)
+        payload = json.loads(out)
     except ValueError:
         # Some surfaces prepend a human line before the JSON payload.
-        return json.loads(out.splitlines()[-1])
+        payload = json.loads(out.splitlines()[-1])
+    if warnings is not None and isinstance(payload, dict):
+        warnings.extend(w for w in payload.get("warnings") or [] if isinstance(w, str))
+    return payload
+
+
+def payload_reranked(payload) -> bool:
+    """Did the cross-encoder order this answer? True when a returned row carries `reranked`.
+
+    The recall verb marks every row it reranked (`"reranked": True`) and returns the dense
+    rows unmarked when the rerank was skipped or failed; the same test the CLI's own table
+    uses to pick its score column (bug-089). An empty answer was not reranked.
+    """
+    rows = payload
+    if isinstance(payload, dict):
+        rows = payload.get("memories") or payload.get("hits") or []
+    return isinstance(rows, list) and any(
+        isinstance(r, dict) and r.get("reranked") for r in rows)
 
 
 def session_ids(payload) -> list[str]:
@@ -297,28 +333,55 @@ def session_ids(payload) -> list[str]:
 
 
 def rank_all(method: str, questions: list[dict], *, rmx: str, root: Path,
-             depth: int, workers: int) -> tuple[dict[str, list[str]], list[str]]:
+             depth: int, workers: int
+             ) -> tuple[dict[str, list[str]], list[str], "dict | None"]:
     """Run one surface over every question. Deep — `restricted` filters after.
 
-    Returns `(rankings, failed_ids)`. The failure list is the half that used to
-    go only to stderr: without it the artifact cannot tell a dead surface from
-    an empty one (ch-bsd r1 #s-13).
+    Returns `(rankings, failed_ids, rerank)`. The failure list is the half that
+    used to go only to stderr: without it the artifact cannot tell a dead surface
+    from an empty one (ch-bsd r1 #s-13).
+
+    `rerank` is None unless the surface asks for the cross-encoder. Then it counts
+    the answered questions whose rows came back reranked (`n_reranked`), the ones
+    that came back in the dense order (`n_rerank_skipped`, `unreranked_ids`), and
+    every distinct warning text the calls printed, with its count. The same
+    blindness as #s-13, one leg further in: `--rerank` falls back to the dense
+    order and says so on stderr, which this function used to drop, so T0.6's
+    `-rr` rows were 72-86 of 120 dense answers under a rerank label (bug-303,
+    bsd-t06 r1 #b-1, 2026-11-24).
     """
     m = METHODS[method]
+    wants_rerank = bool(getattr(m, "rerank", False))
 
-    def one(q: dict) -> tuple[str, list[str], bool]:
+    def one(q: dict) -> tuple[str, list[str], bool, bool, list[str]]:
+        ws: list[str] = []
         try:
-            return q["question_id"], session_ids(
-                _rmx_json(m.argv(q["question"], k=depth), rmx, root)), False
+            payload = _rmx_json(m.argv(q["question"], k=depth), rmx, root, warnings=ws)
+            return (q["question_id"], session_ids(payload), False,
+                    payload_reranked(payload), ws)
         except Exception as exc:
             # Say so on stderr AND report it upward.
             print(f"  ! {method} {q['question_id']}: {exc}", file=sys.stderr)
-            return q["question_id"], [], True
+            return q["question_id"], [], True, False, ws
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         rows = list(ex.map(one, questions))
-    return ({qid: ids for qid, ids, _ in rows},
-            [qid for qid, _, bad in rows if bad])
+    rerank = None
+    if wants_rerank:
+        answered = [r for r in rows if not r[2]]
+        texts: dict[str, int] = {}
+        for r in rows:
+            for w in r[4]:
+                texts[w] = texts.get(w, 0) + 1
+        unreranked = [r[0] for r in answered if not r[3]]
+        rerank = {"n_reranked": sum(1 for r in answered if r[3]),
+                  "n_rerank_skipped": len(unreranked),
+                  "unreranked_ids": unreranked[:50],
+                  "rerank_warnings": dict(sorted(texts.items()))}
+        for w, n in rerank["rerank_warnings"].items():
+            print(f"  ! {method}: {n}x warning: {w}", file=sys.stderr)
+    return ({r[0]: r[1] for r in rows},
+            [r[0] for r in rows if r[2]], rerank)
 
 
 # ── output ─────────────────────────────────────────────────────────────────
@@ -342,6 +405,9 @@ def print_table(method: str, summary: dict, ks: list[int]) -> None:
         # Loud in the table, not just in the JSON: a 0.000 with failures behind
         # it is not a retrieval result.
         head += f" FAILED={meta['n_failed']}"
+    if "n_reranked" in meta:
+        # As loud: an `-rr` row with dense answers behind it is not a rerank result (bug-303).
+        head += f" reranked={meta['n_reranked']}/{meta.get('n_questions', '?')}"
     print(head + "]\n")
     print("  " + "slice".ljust(26) + "n".rjust(5)
           + "".join(c.rjust(11) for c in labels))
@@ -390,8 +456,8 @@ def main() -> int:
 
     for method in methods:
         t0 = time.time()
-        rankings, failed = rank_all(method, questions, rmx=a.rmx, root=a.root,
-                                    depth=a.depth, workers=a.workers)
+        rankings, failed, rerank = rank_all(method, questions, rmx=a.rmx, root=a.root,
+                                            depth=a.depth, workers=a.workers)
         elapsed = round(time.time() - t0, 1)
         (RESULTS / f"rank-{method}.json").write_text(
             json.dumps(rankings, indent=1), encoding="utf8")
@@ -401,6 +467,8 @@ def main() -> int:
                       failed=failed)
             s["_meta"]["retrieve_s"] = elapsed
             s["_meta"]["n_questions"] = len(questions)
+            if rerank is not None:
+                s["_meta"].update(rerank)
             print_table(method, s, ks)
             report[f"{method}/{mode}"] = s
             (RESULTS / f"retrieval-{method}-{mode}.json").write_text(

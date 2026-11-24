@@ -138,7 +138,7 @@ def test_rank_all_reports_which_questions_failed():
         def argv(q, *, k):
             return ["context", q, "--format", "json"]
 
-    def boom(argv, rmx, root):
+    def boom(argv, rmx, root, warnings=None):
         calls["n"] += 1
         raise RuntimeError("surface is dead")
 
@@ -147,13 +147,14 @@ def test_rank_all_reports_which_questions_failed():
     _run._rmx_json = boom
     _run.METHODS = {"fake": _M()}
     try:
-        rankings, failed = _run.rank_all(
+        rankings, failed, rerank = _run.rank_all(
             "fake", [{"question_id": "q0", "question": "x"}],
             rmx="rmx", root=Path("/tmp"), depth=5, workers=1)
     finally:
         _run._rmx_json, _run.METHODS = orig_json, orig_methods
     assert rankings == {"q0": []}
     assert failed == ["q0"]
+    assert rerank is None   # not a rerank surface: no n_reranked to report
 
 
 def test_rank_all_counts_reranked_answers_and_keeps_the_skip_warning():
@@ -198,3 +199,22 @@ def test_rank_all_counts_reranked_answers_and_keeps_the_skip_warning():
     assert rerank["n_rerank_skipped"] == 2
     assert sorted(rerank["unreranked_ids"]) == ["q1", "q2"]
     assert rerank["rerank_warnings"] == {skip: 2}
+
+
+def test_rmx_json_keeps_the_stderr_warning_beside_a_list_payload(tmp_path):
+    """`memory recall --json` prints a bare list and says a skipped rerank only on stderr,
+    exit 0 (bug-303). A stand-in `rmx` executable is the process boundary."""
+    import run as _run
+    fake = tmp_path / "rmx"
+    fake.write_text("#!/bin/sh\n"
+                    "echo '# rmx: warning: rerank skipped: probe gave up; hits unreranked' >&2\n"
+                    "echo 'not a warning line' >&2\n"
+                    "echo '[{\"name\": \"s1\"}]'\n")
+    fake.chmod(0o755)
+    ws: list[str] = []
+    payload = _run._rmx_json(["memory", "recall", "q", "--json"], str(fake), tmp_path,
+                             warnings=ws)
+    assert payload == [{"name": "s1"}]
+    assert ws == ["rerank skipped: probe gave up; hits unreranked"]
+    assert _run.payload_reranked(payload) is False
+    assert _run.payload_reranked([{"name": "s1", "reranked": True}]) is True
