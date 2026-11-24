@@ -10056,7 +10056,10 @@ def projects_cmd(footprint, fmt):
 @click.option("--composite-every", type=int, default=3, show_default=True,
               help="scan-prompt --composite-every N (0 = off).")
 @click.option("--precompact-checkpoint/--no-precompact-checkpoint", default=True,
-              help="PreCompact `rmx save-state --no-promote --no-sync` checkpoint.")
+              help="PreCompact `rmx save-state --precompact --no-sync --timeout N`: save "
+                   "state (with promote), then print the one-line summary instruction. Off: "
+                   "`rmx handoff precompact` prints the instruction only, naming the newest "
+                   "save-state.")
 @click.option("--stop-promote/--no-stop-promote", default=True,
               help="Stop runs `rmx focus summarize --promote`.")
 @click.option("--resume-focus", type=int, default=15, show_default=True,
@@ -12796,9 +12799,12 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         from refmatrix import hook_budget as _hb
         _mode = ("session-start" if session_start else "recent" if recent else
                  "subject" if subject else "dense")
+        # `--recent` has no channel of its own since the PreCompact recall left the generated
+        # config (task-compaction-as-handoff R2; L202 #m-4 retired `precompact`): a recency
+        # list packs like the session-start list, so it takes that budget.
         _key = rec_channel if rec_channel in _hb.CHANNEL_BUDGET_BYTES else \
-            {"session-start": "session_start", "recent": "precompact"}.get(_mode,
-                                                                          "prompt_recall")
+            {"session-start": "session_start", "recent": "session_start"}.get(_mode,
+                                                                             "prompt_recall")
         try:
             pack_bytes = _hb.resolve(_key, max_bytes)
         except ValueError as e:
@@ -14166,13 +14172,18 @@ def _encode_claude_project_dir(cwd: Path) -> str:
               help="The session's Claude Code transcript (JSONL); its active `/goal` is "
                    "written to the handoff's {#active-goal} block. Default: the transcript "
                    "Claude Code keeps for the session id, when it exists.")
+@click.option("--timeout", "timeout", type=float, default=None,
+              help="One overall bound, in seconds, on the save: the savestate file is "
+                   "written first, then the store commit (promote), subject filing and lint "
+                   "get what is left, one attempt each. An overrun leaves the file on disk and "
+                   "says the commit was deferred. Default: no overall bound.")
 @click.option("--precompact", is_flag=True,
               help="The PreCompact hook form: the session and transcript come from the hook "
                    "envelope on stdin, nothing but the one-line summary instruction reaches "
                    "stdout (progress and errors go to stderr), and it exits 0 even when the "
                    "save fails, so the instruction still reaches the summary.")
 def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
-               no_sync, transcript, precompact):
+               no_sync, transcript, timeout, precompact):
     """Compile + persist a session handoff — the resume point for the next instance.
 
     SAVES, into ONE durable GMD memory (`savestate_<session>`) in the curated-
@@ -14211,7 +14222,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
 
     if precompact:
         _precompact_hook(root, save=True, message=message, promote=promote,
-                         memory_dir=memory_dir, lint=not no_lint, sync=not no_sync)
+                         memory_dir=memory_dir, lint=not no_lint, sync=not no_sync,
+                         timeout=timeout)
         return
 
     # ONE implementation (verbs.save_state): compose + promote + lint + file
@@ -14225,7 +14237,8 @@ def save_state(message, commit, session, memory_dir, dry_run, no_lint, promote,
         res = _verbs.save_state(root, message=message, promote=promote,
                                 dry_run=dry_run, session=session,
                                 memory_dir=str(memory_dir) if memory_dir else None,
-                                lint=not no_lint, sync=not no_sync, transcript=transcript)
+                                lint=not no_lint, sync=not no_sync, transcript=transcript,
+                                timeout=timeout)
     except _verbs.SaveStateIncompleteError as e:
         incomplete, res = e, e.result
     except _verbs.VerbError as e:
@@ -14343,7 +14356,8 @@ def _hook_envelope(root: Path, hook: str) -> "dict | None":
 
 def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
                      promote: bool = True, memory_dir: "Path | None" = None,
-                     lint: bool = True, sync: bool = False) -> None:
+                     lint: bool = True, sync: bool = False,
+                     timeout: "float | None" = None) -> None:
     """PreCompact (task-compaction-as-handoff R1/R2/R4, L195, 2026-11-24): save state WITH
     promote for the envelope's session (its `transcript_path` feeds R6's goal), THEN print the
     one summary instruction (`handoff.precompact_instruction`) and nothing else, since every
@@ -14356,10 +14370,19 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
     `precompact_checkpoint=False`: no save, the instruction names the newest save-state.
 
     Before this, the generated `rmx save-state --no-promote` read no envelope and raised
-    SessionUnresolved in every sandbox child (measured 2026-11-23, RED)."""
+    SessionUnresolved in every sandbox child (measured 2026-11-23, RED).
+
+    A subagent's compaction (`agent_id` in the envelope; it carries the LEAD's session id)
+    saves nothing and prints nothing, so Claude Code's own summary stands for it (bsd-cah r1
+    #b-2, bug-307, 2026-11-24). `timeout` is ONE bound on the save (s-2, L203): the file is
+    written first; a store commit that overruns is said as deferred, never lost."""
     from refmatrix import handoff as _handoff, verbs as _verbs
     tag = "rmx save-state --precompact" if save else "rmx handoff precompact"
     d = _hook_envelope(root, tag) or {}
+    if _handoff.is_subagent(d):
+        click.echo(f"{tag}: a subagent's compaction (agent_id {d.get('agent_id')}): nothing "
+                   f"saved, no instruction; Claude Code's own summary stands", err=True)
+        return
     session = str(d["session_id"]) if d.get("session_id") else None
     trigger = str(d.get("trigger") or "auto")
     custom = str(d.get("custom_instructions") or "")
@@ -14375,9 +14398,15 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
                 saved = _verbs.save_state(
                     root, message=message, promote=promote, session=session,
                     memory_dir=str(memory_dir) if memory_dir else None, lint=lint, sync=sync,
-                    transcript=str(d.get("transcript_path") or "") or None)
+                    transcript=str(d.get("transcript_path") or "") or None, timeout=timeout)
             except _verbs.SaveStateIncompleteError as e:
-                saved, err = e.result, str(e)        # the handoff file WAS written
+                saved, err = e.result, None          # the handoff file WAS written
+                click.echo(f"{tag}: the store commit was deferred: "
+                           f"{' '.join(str(e).split())}. {saved.get('target')} is on disk and "
+                           f"is the durable record; a promote the daemon did not confirm is "
+                           f"applied when the writer frees, and the memory bridge (the "
+                           f"SessionStart catch-up, or the next `rmx save-state`) brings the "
+                           f"file into the store.", err=True)
             except _verbs.VerbError as e:
                 failed, err = True, str(e)
             except Exception as e:  # noqa: BLE001 -- said on stderr; PreCompact exits 0
@@ -14419,6 +14448,14 @@ def _recall_state_handoff(root: Path, memory_dir: "Path | None",
     one `Error:` line and exit 1, as without `--handoff`."""
     from refmatrix import handoff as _handoff, hook_budget, verbs as _verbs
     d = _hook_envelope(root, "recall-state --handoff") or {}
+    if _handoff.is_subagent(d):
+        # bsd-cah r1 #b-1/#b-2 (bug-307): a subagent's compaction fires the project's
+        # SessionStart(compact) with the LEAD's session id. Its handoff is not the lead's: no
+        # file, no gate, no pointer; Claude Code's own summary stands for the subagent.
+        click.echo(f"recall-state --handoff: a subagent's {d.get('source') or 'session start'} "
+                   f"(agent_id {d.get('agent_id')}): no handoff written, nothing gated",
+                   err=True)
+        return
     session = str(d["session_id"]) if d.get("session_id") else None
     source = str(d.get("source") or "")
     try:
@@ -14540,8 +14577,9 @@ def handoff_grp():
 
 @handoff_grp.command("gate")
 def handoff_gate():
-    """PreToolUse: deny every tool call but a Read of the unread handoff file (exit 2, the
-    reason on stderr); a missing or unreadable file stands the gate down in one line."""
+    """PreToolUse: deny every tool call but a Read of the unread handoff file (JSON
+    `permissionDecision: deny` at exit 0); a missing or unreadable file stands the gate down
+    in one line. Never exit 2 (bsd-cah r1 #s-1): any failure here allows the call, loudly."""
     from refmatrix import handoff as _handoff
     root = _root()
     d = _hook_envelope(root, "handoff gate")
@@ -14549,8 +14587,10 @@ def handoff_gate():
         return
     verdict, msg = _handoff.gate_decision(root, d)
     if verdict == "deny":
-        click.echo(msg, err=True)
-        sys.exit(2)
+        click.echo(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": msg}}))
+        return
     if verdict == "stand_down":
         # One line, on stdout as Claude Code's `systemMessage` (shown to the user): the call
         # proceeds, nothing is decided for the permission system.
@@ -14567,10 +14607,12 @@ def handoff_pulled():
     if d is None:
         return
     try:
-        _handoff.record_pull(root, d)
+        got = _handoff.record_pull(root, d)
     except OSError as e:
         raise click.ClickException(
-            f"handoff pulled: could not lift the gate: {type(e).__name__}: {e}") from e
+            f"handoff pulled: could not record the pull: {type(e).__name__}: {e}") from e
+    if got and got.get("stood_down"):
+        click.echo(json.dumps({"systemMessage": got["stood_down"]}))
 
 
 @handoff_grp.command("remind")
@@ -14581,7 +14623,7 @@ def handoff_remind():
     d = _hook_envelope(root, "handoff remind")
     if d is None:
         return
-    line = _handoff.remind_line(root, d.get("session_id"))
+    line = _handoff.remind_line(root, d.get("session_id"), agent=_handoff.is_subagent(d))
     if line:
         click.echo(line)
 

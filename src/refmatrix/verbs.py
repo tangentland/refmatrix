@@ -1622,7 +1622,7 @@ def save_state(root: Path, *, message: str | None = None,
                promote: bool = True, dry_run: bool = False,
                session: str | None = None, memory_dir: str | None = None,
                lint: bool = True, sync: bool = True,
-               transcript: str | None = None) -> dict:
+               transcript: str | None = None, timeout: float | None = None) -> dict:
     """The CLI `rmx save-state` calls this and renders; `--commit` (git) is a
     CLI-only post-step. `dry_run` returns the rendered `doc` and writes
     nothing. Result carries `events`, `target`, `promoted`, `subject`,
@@ -1632,10 +1632,16 @@ def save_state(root: Path, *, message: str | None = None,
     `transcript` (task-compaction-as-handoff R6, L198, 2026-11-24): the session's Claude Code
     transcript, whose active `/goal` becomes the save-state's `{#active-goal}` block; the
     PreCompact hook passes its envelope's `transcript_path`. Without it, the transcript Claude
-    Code keeps for the session id is used when it exists (`handoff.session_transcript_path`)."""
+    Code keeps for the session id is used when it exists (`handoff.session_transcript_path`).
+
+    `timeout` (s-2, L202/L203): ONE overall bound in seconds. The savestate file is written to
+    disk first; the store commit (the promote), the subject filing and the lint then get what
+    is left, one attempt each. An overrun raises `SaveStateIncompleteError` with the file
+    written, so the caller says the commit was deferred; nothing is lost."""
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
+    deadline = _time.monotonic() + float(timeout) if timeout is not None else None
     sess, session_source = resolve_session_source(root, session, purpose="write")
     s = stm_mod.Stm(root, sess)
     memdir = (Path(memory_dir).resolve() if memory_dir
@@ -1644,7 +1650,7 @@ def save_state(root: Path, *, message: str | None = None,
         res = handoff.compose_save_state(
             s, root, repo=repo, memdir=memdir,
             today=_time.strftime("%Y-%m-%d"), message=message,
-            promote=promote, dry_run=dry_run, transcript=transcript)
+            promote=promote, dry_run=dry_run, transcript=transcript, deadline=deadline)
     except handoff.SaveStateWriteError as exc:
         # A save that could not write is an error to EVERY caller, never a
         # result with a `target` (task 26.3 remedy-r1).
@@ -1662,7 +1668,8 @@ def save_state(root: Path, *, message: str | None = None,
     if dry_run:
         res["dry_run"] = True
         return res
-    fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync)
+    fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync,
+                                      deadline=deadline)
     res["lint"] = fin.get("lint")
     res["filed_subject"] = fin.get("filed_subject")
     # A subject-filing failure is a memory-path failure: carried, not dropped
@@ -3594,6 +3601,15 @@ INTERNAL_CLI: dict[tuple[str, ...], str] = {
     ("learn", "on"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
     ("learn", "off"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
     ("learn", "status"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
+    # task-compaction-as-handoff R3b (L202 fold, 2026-11-24): hook plumbing behind the pulled
+    # handoff, invoked only by the generated hooks (`hooks._handoff_cmd`), never by an agent.
+    ("handoff", "gate"): f"the PreToolUse read gate (hook plumbing) — {_INTERNAL_DECISION}",
+    ("handoff", "pulled"): f"the PostToolUse(Read) pull marker (hook plumbing) — "
+                           f"{_INTERNAL_DECISION}",
+    ("handoff", "remind"): f"the UserPromptSubmit reminder (hook plumbing) — "
+                           f"{_INTERNAL_DECISION}",
+    ("handoff", "precompact"): f"the PreCompact instruction with the checkpoint off (hook "
+                               f"plumbing) — {_INTERNAL_DECISION}",
 }
 
 # The six `_alias` copies: a HIDDEN command running the same callback as a

@@ -62,6 +62,21 @@ HOOK_ENV = ('export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:
             "export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; "
             "export TOKENIZERS_PARALLELISM=false; ")
 
+# PreCompact's save-state budget, seconds: ONE overall bound on the save (task-compaction-as-
+# handoff s-2, bsd-cah r1, 2026-11-24). The savestate file is written to disk first (~0.6 s); the
+# budget bounds the STORE COMMIT after it (the STM digest promote: a daemon write that waits on
+# the single writer), the subject filing and the lint. An overrun never loses the commit: the
+# file is on disk, the promote is queued and applied when the writer frees (measured
+# 2026-11-24), and the hook says the commit was deferred. PROVISIONAL: L203 measures the value
+# (live-shaped p99 1.45 s with no writer contention; a held writer adds its whole hold) and the
+# user sets it.
+PRECOMPACT_SAVE_TIMEOUT_S = 10
+# The PreCompact entry's Claude Code `timeout` (seconds) sits this far above the budget, so the
+# harness never kills the hook before rmx's own budget fires and the instruction prints
+# (interpreter start, the instruction, a last short attempt).
+PRECOMPACT_HOOK_MARGIN_S = 30
+
+
 def _store_gate() -> str:
     """The shell lines every generated git hook gates on: exit 0 unless THIS checkout holds a
     store of its own that a sync may write -- a live daemon's socket, or a writer catalog git
@@ -490,15 +505,18 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
         # 30 s bridge at compaction is the wrong moment; SessionStart catch-up and manual
         # save-state cover the store. It exits 0 even when the save fails (lead ruling L200),
         # naming the last good save-state. Checkpoint off: the instruction only.
-        block["hooks"]["PreCompact"] = [{
-            "hooks": [{
-                "type": "command",
-                "command": (HOOK_ENV + ("rmx save-state --precompact --no-sync "
-                                        "-m \"auto: pre-compact checkpoint\""
-                                        if precompact_checkpoint
-                                        else "rmx handoff precompact")),
-            }],
-        }]
+        # s-2 (bsd-cah r1, L203): ONE overall bound, `PRECOMPACT_SAVE_TIMEOUT_S`, and the
+        # entry's Claude Code `timeout` above it, so rmx fails loud (commit deferred, the
+        # instruction still printed) before the harness could kill the hook.
+        if precompact_checkpoint:
+            pre_hook = {"type": "command",
+                        "command": (HOOK_ENV + "rmx save-state --precompact --no-sync "
+                                    f"--timeout {int(PRECOMPACT_SAVE_TIMEOUT_S)} "
+                                    "-m \"auto: pre-compact checkpoint\""),
+                        "timeout": int(PRECOMPACT_SAVE_TIMEOUT_S + PRECOMPACT_HOOK_MARGIN_S)}
+        else:
+            pre_hook = {"type": "command", "command": HOOK_ENV + "rmx handoff precompact"}
+        block["hooks"]["PreCompact"] = [{"hooks": [pre_hook]}]
 
     # cat-herder enforcement hooks — emitted by THIS generator so the
     # settings file has one author. Auto mode: each entry only when its
@@ -520,15 +538,26 @@ def _handoff_cmd(refmatrix_root: Path, sub: str, *, per_session: bool) -> str:
     per call. So bash answers first: `per_session` reads the envelope's session id and exits
     0 unless `<store>/handoffs/<session>.gate` exists (an id the pattern does not match falls
     through to Python, which decides); otherwise any `*.gate` sends the call to Python. The
-    envelope is handed on unchanged. No `|| true`: a failing `rmx` reaches Claude Code, which
-    never blocks on a non-2 exit."""
+    envelope is handed on unchanged.
+
+    Python decides on the SAME store the shell tested (bsd-cah r1 #m-1): `REFMATRIX_ROOT` is
+    set to the baked root for that one `rmx`, so a hook whose cwd is outside the project does
+    not resolve another store and allow.
+
+    Exit 2 is never passed through (bsd-cah r1 #s-1, bug-308): Claude Code reads a PreToolUse
+    exit 2 as a block, and click exits 2 for a usage error, so an older `rmx` with no
+    `handoff` group (a rollback while a gate exists) blocked every tool with no way out. The
+    gate denies with JSON at exit 0; any other failure is exit 1: loud, and the call goes
+    ahead. No `|| true`."""
+    root = str(Path(refmatrix_root))
     hd = str(Path(refmatrix_root) / "handoffs")
+    run = (f"REFMATRIX_ROOT='{root}' rmx handoff {sub}; s=$?; "
+           "if [ $s -eq 2 ]; then exit 1; fi; exit $s")
     if per_session:
         return (HOOK_ENV + f"J=$(cat); re='{_ENVELOPE_SESSION_RE}'; "
                 f"if [[ $J =~ $re ]] && [ ! -e '{hd}/'\"${{BASH_REMATCH[1]}}\".gate ]; "
-                f"then exit 0; fi; printf '%s' \"$J\" | rmx handoff {sub}")
-    return (HOOK_ENV + f"set -- '{hd}/'*.gate; if [ ! -e \"$1\" ]; then exit 0; fi; "
-            f"rmx handoff {sub}")
+                f"then exit 0; fi; printf '%s' \"$J\" | {run}")
+    return (HOOK_ENV + f"set -- '{hd}/'*.gate; if [ ! -e \"$1\" ]; then exit 0; fi; {run}")
 
 
 def _optional_project_hook(script: str) -> str:

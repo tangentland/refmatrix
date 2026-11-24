@@ -71,11 +71,11 @@ def _ss_clean_focus(nodes: list[dict], limit: int = 15) -> list[dict]:
     return out[:limit]
 
 
-def _ss_sh(args: list[str], cwd: Path) -> str:
+def _ss_sh(args: list[str], cwd: Path, *, timeout: float = 20) -> str:
     """Best-effort subprocess capture; '' on any failure (never raises)."""
     try:
         r = subprocess.run(args, cwd=str(cwd), capture_output=True,
-                           text=True, timeout=20)
+                           text=True, timeout=max(0.1, float(timeout)))
         return r.stdout.strip()
     except Exception:
         return ""
@@ -493,10 +493,15 @@ def _focus_digest(s) -> str:
 # ---- promote: graduate the condensed STM digest to durable memory ----------
 
 
-def _promote_digest(root: Path, s) -> dict:
+def _promote_digest(root: Path, s, *, timeout: float = 30.0) -> dict:
     """Condense the session STM and write it to the durable memory store
     (daemon-routed; in-proc Store fallback when the daemon is down). Returns
-    {"name", "id"} on success or {"error"} — never raises."""
+    {"name", "id"} on success or {"error"} — never raises.
+
+    `timeout` bounds the daemon write (one attempt). PreCompact passes what is left of its
+    overall budget (task-compaction-as-handoff s-2, L202/L203, 2026-11-24). A write that does
+    not answer in time is NOT lost: measured 2026-11-24 on a held writer, the daemon applied
+    the queued `memory_add` once the lock freed."""
     from refmatrix import daemon as daemon_mod, discovery
     slug = re.sub(r"[^A-Za-z0-9]+", "", s.session)[:12] or "default"
     name = f"focus_summary_{slug}"
@@ -520,7 +525,7 @@ def _promote_digest(root: Path, s) -> dict:
             # Typed, one attempt (bsd-plan3-r4 #s-3): the bare call retried a
             # 30 s timeout three times and reported "TimeoutError: timed out"
             # for a held writer; a busy daemon is now named as busy.
-            r = _call(root, "memory_add", args, timeout=30.0, retries=0)
+            r = _call(root, "memory_add", args, timeout=max(0.5, float(timeout)), retries=0)
             return {"name": name, "id": r.get("id")}
         # No daemon: through `verbs.local_write`, the checked opener (bug-212 r4, ruling
         # L72, 2026-11-13) -- a hand-rolled `Store(root)` here wrote a catalog git tracks.
@@ -551,7 +556,8 @@ class SaveStateWriteError(OSError):
 
 def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
                        message: str | None = None, promote: bool = True,
-                       dry_run: bool = False, transcript: "str | None" = None) -> dict:
+                       dry_run: bool = False, transcript: "str | None" = None,
+                       deadline: "float | None" = None) -> dict:
     """Compile + persist the session handoff memory. `s` is a live Stm.
 
     Returns a structured result the caller renders. Side effects (unless
@@ -563,6 +569,12 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
     Claude Code keeps for this session id under `~/.claude/projects/<slug>/` is used when it
     exists (a `/save-state` then `/clear` keeps the goal too). Its active `/goal` becomes the
     `{#active-goal}` block; no transcript known = no block.
+
+    ORDER (L203, the user 2026-11-24: "a timeout must never lose the commit"): the
+    `savestate_*.md` file and the MEMORY.md index are written FIRST, to disk; only then does
+    the store commit (the promote, a daemon write) start. `deadline` (a `time.monotonic()`
+    value) bounds the commit with what is left; a commit that overruns leaves the file as the
+    durable record and the caller says the commit was deferred.
     """
     events = s.all_events()
     focus = s.focus_graph(top=20)
@@ -651,12 +663,20 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
     _ss_update_index(memdir, mem_id, title, hook)
 
     if promote:
-        result["promoted"] = _promote_digest(root, s)
+        result["promoted"] = _promote_digest(
+            root, s, **({"timeout": _remaining(deadline)} if deadline is not None else {}))
     return result
 
 
+def _remaining(deadline: "float | None", floor: float = 0.5) -> float:
+    """Seconds left before `deadline` (a `time.monotonic()` value), never under `floor`, so a
+    spent budget still makes one short attempt that fails loudly rather than none."""
+    return max(floor, deadline - time.monotonic()) if deadline is not None else floor
+
+
 def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
-                        lint: bool = True, sync: bool = True) -> dict:
+                        lint: bool = True, sync: bool = True,
+                        deadline: "float | None" = None) -> dict:
     """Post-compose steps EVERY save-state caller needs (CLI and MCP): GMD
     lint of the written handoff file, filing the promoted digest under the
     active subject (`part-of`) so the subject index reaches it, and — the
@@ -703,7 +723,8 @@ def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
         lint_py = Path.home() / "claude_tools" / "gmd" / "lint.py"
         target = result.get("target")
         if lint_py.exists() and target:
-            out["lint"] = _ss_sh(["python3", str(lint_py), str(target)], repo)
+            out["lint"] = _ss_sh(["python3", str(lint_py), str(target)], repo,
+                                 timeout=_remaining(deadline) if deadline is not None else 20)
     promoted = result.get("promoted") or {}
     leaf = promoted.get("id") if not promoted.get("error") else None
     if leaf:
@@ -719,9 +740,15 @@ def finalize_save_state(s, root: Path, result: dict, *, repo: Path,
                 # helpers carry the partition injection + daemon-or-inproc
                 # routing that a bare daemon call here would get wrong.
                 from refmatrix.cli import _subject_link, _subject_upsert
-                sid = _subject_upsert(label)
+                # Under a deadline (PreCompact, s-2): one attempt each, inside the budget;
+                # `retries=2` on a 60 s default multiplied the worst case to ~6 min.
+                bound = ({"timeout": _remaining(deadline), "retries": 0}
+                         if deadline is not None else {})
+                sid = _subject_upsert(label, **bound)
                 if sid:
-                    _subject_link(int(leaf), int(sid))
+                    _subject_link(int(leaf), int(sid),
+                                  **({"timeout": _remaining(deadline), "retries": 0}
+                                     if deadline is not None else {}))
                     out["filed_subject"] = label
             except Exception as e:  # noqa: BLE001 — named in the result
                 out["filed_subject_error"] = f"{label}: {e}"
@@ -979,11 +1006,17 @@ def fit_recall_state(rep: dict, max_bytes: "int | None") -> "tuple[str, int]":
 # the pointer, because /clear removes it and only the user can re-issue it.
 
 HANDOFFS_DIR = "handoffs"
-HANDOFF_EVENTS = "events.jsonl"
+# The handoff ledger (writes, pulls, stand-downs, reaps). Not `*events.jsonl`: that name family
+# is reserved for recall items (21.1 AC-9's one-sink rule, `recall-events.jsonl`).
+HANDOFF_LEDGER = "ledger.jsonl"
 POINTER_MAX_BYTES = 1024        # the SessionStart pointer block (RED's contract)
 PRECOMPACT_MAX_BYTES = 1000     # the PreCompact instruction (RED's contract; 3 lines at most)
 FALLBACK_HEAD_MAX_BYTES = 500   # the "could not be written" line above the inline fallback
 GATE_EXPIRY_S = 24 * 3600       # an unread handoff older than this stands its gate down
+HANDOFF_KEEP_S = 7 * 24 * 3600  # handoff files and ledger rows older than this are reaped
+# The clock every handoff age is read on: epoch seconds, `RMX_HANDOFF_NOW` when set (a test
+# knob for the 24 h expiry and the 7-day reap, rule 6: no real waits), else the wall clock.
+HANDOFF_NOW_ENV = "RMX_HANDOFF_NOW"
 
 # Session ids the generated shell fast path can test without Python (`hooks._handoff_cmd`):
 # the same character class there and here, so the shell and Python name the same file.
@@ -992,6 +1025,24 @@ SESSION_SLUG_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 def _say(msg: str) -> None:
     print(msg, file=sys.stderr)
+
+
+def _now() -> float:
+    v = os.environ.get(HANDOFF_NOW_ENV)
+    if v:
+        try:
+            return float(v)
+        except ValueError:
+            raise ValueError(f"{HANDOFF_NOW_ENV}={v!r} is not epoch seconds") from None
+    return time.time()
+
+
+def is_subagent(envelope: "dict | None") -> bool:
+    """A subagent's or a teammate's hook input: Claude Code 2.1.331 gives it the PARENT's
+    `session_id` plus `agent_id` / `agent_type` (bsd-cah r1 #b-1/#b-2, bug-307, 2026-11-24).
+    The handoff, its gate and its pull are the session's MAIN thread's; a subagent's call
+    never arms, trips or lifts them."""
+    return bool((envelope or {}).get("agent_id"))
 
 
 def handoff_slug(session: str) -> str:
@@ -1024,14 +1075,14 @@ def _marker_path(root: Path, session: str, kind: str) -> Path:
 
 
 def _now_ts() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%S")
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(_now()))
 
 
 def _record_event(root: Path, row: dict) -> bool:
-    """Append one row to `<store>/handoffs/events.jsonl` (what `rmx telemetry --context`
+    """Append one row to `<store>/handoffs/ledger.jsonl` (what `rmx telemetry --context`
     reads). A row that cannot be written is said on stderr, never dropped silently."""
-    p = handoffs_dir(root) / HANDOFF_EVENTS
-    row = {"ts": _now_ts(), **row}
+    p = handoffs_dir(root) / HANDOFF_LEDGER
+    row = {"ts": _now_ts(), "t": round(_now(), 3), **row}
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "a", encoding="utf-8") as f:
@@ -1272,14 +1323,16 @@ def write_pulled_handoff(root: Path, session: str, text: str, *, source: str) ->
     data = text.encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    now = _now()
     try:
         tmp.write_bytes(data)
+        os.utime(tmp, (now, now))         # the file's age is read on the handoff clock (reap)
         os.replace(tmp, path)
     except OSError:
         tmp.unlink(missing_ok=True)
         raise
     state = {"session": str(session), "path": str(path), "bytes": len(data),
-             "written_at": time.time(), "source": source or "unknown"}
+             "written_at": now, "source": source or "unknown"}
     gate_error = None
     try:
         for kind in ("pulled", "stood-down"):
@@ -1292,7 +1345,82 @@ def write_pulled_handoff(root: Path, session: str, text: str, *, source: str) ->
     _record_event(root, {"event": "write", "session": str(session), "path": str(path),
                          "bytes": len(data), "source": state["source"],
                          **({"gate_error": gate_error} if gate_error else {})})
+    reap_handoffs(root, keep=path)
     return {**state, "gate_error": gate_error}
+
+
+def _row_epoch(row: dict) -> "float | None":
+    t = row.get("t")
+    if isinstance(t, (int, float)):
+        return float(t)
+    try:
+        return time.mktime(time.strptime(str(row.get("ts"))[:19], "%Y-%m-%dT%H:%M:%S"))
+    except (TypeError, ValueError):
+        return None
+
+
+def reap_handoffs(root: Path, *, keep: "Path | None" = None) -> dict:
+    """What no session will consult again, reaped when a handoff is written (bsd-cah r1 #m-3,
+    2026-11-24): an unread gate past `GATE_EXPIRY_S` stands down (recorded, as its own session
+    would have on its next call); a handoff file older than `HANDOFF_KEEP_S`, with its
+    markers, is removed; ledger rows older than that are dropped. Without this a session that
+    ended unread left its `.gate` forever (every Read in every session then started Python)
+    and the files grew one per session. `keep` (the file just written) is never reaped.
+    Counts ride back and are recorded as one `reap` row; a failure is said, never silent."""
+    d = handoffs_dir(root)
+    now = _now()
+    out = {"gates": 0, "files": 0, "rows": 0, "errors": 0}
+    if not d.is_dir():
+        return out
+    for gp in sorted(d.glob("*.gate")):
+        try:
+            st = json.loads(gp.read_text(encoding="utf-8"))
+            age = now - float(st.get("written_at") or 0)
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue                          # its own session's gate_status says so
+        if age > GATE_EXPIRY_S:
+            sess = str(st.get("session") or gp.stem)
+            _stand_down(root, sess, st, f"was never read; reaped {age / 3600:.0f} h after it "
+                                        f"was written (past the {GATE_EXPIRY_S // 3600} h expiry)")
+            out["gates"] += 1
+    keep_s = str(keep) if keep else None
+    for f in sorted(d.glob("*.txt")):
+        if keep_s and str(f) == keep_s:
+            continue
+        try:
+            if now - f.stat().st_mtime <= HANDOFF_KEEP_S:
+                continue
+            f.unlink()
+            for kind in ("gate", "pulled", "stood-down"):
+                f.with_suffix(f".{kind}").unlink(missing_ok=True)
+            out["files"] += 1
+        except OSError as e:
+            out["errors"] += 1
+            _say(f"rmx handoff: could not reap {f}: {type(e).__name__}: {e}")
+    led = d / HANDOFF_LEDGER
+    if led.is_file():
+        try:
+            lines = led.read_text(encoding="utf-8").splitlines()
+            kept = []
+            for ln in lines:
+                try:
+                    t = _row_epoch(json.loads(ln))
+                except ValueError:
+                    t = None                  # an unreadable line stays: telemetry counts it
+                if t is not None and now - t > HANDOFF_KEEP_S:
+                    out["rows"] += 1
+                else:
+                    kept.append(ln)
+            if out["rows"]:
+                tmp = led.with_name(f".{led.name}.{os.getpid()}.tmp")
+                tmp.write_text("".join(x + "\n" for x in kept), encoding="utf-8")
+                os.replace(tmp, led)
+        except OSError as e:
+            out["errors"] += 1
+            _say(f"rmx handoff: could not reap old rows of {led}: {type(e).__name__}: {e}")
+    if out["gates"] or out["files"] or out["rows"]:
+        _record_event(root, {"event": "reap", **out})
+    return out
 
 
 def handoff_pointer(written: dict, *, source: str, savestate: "dict | None") -> str:
@@ -1367,23 +1495,57 @@ def _stand_down(root: Path, session: str, state: dict, reason: str) -> str:
     return f"rmx handoff gate stood down: {path} {reason}; nothing is gated."
 
 
+def _unwritable_marker(root: Path, session: str) -> Path:
+    """Where a stand-down is remembered when `handoffs/` itself cannot be written (b-3): beside
+    it, in the store root, so the stand-down line is said once, not on every call."""
+    return Path(root) / f".handoff-stood-down.{handoff_slug(session)}"
+
+
 def gate_status(root: Path, session: "str | None") -> "tuple[str, dict | None, str]":
     """`("none" | "armed" | "stood_down", state, line)` for `session`. A gate whose file is
-    missing, unreadable or past `GATE_EXPIRY_S` stands down here, once, with its line."""
+    missing, unreadable or past `GATE_EXPIRY_S` stands down here, once, with its line.
+
+    A gate that could not be LIFTED stands down too (bsd-cah r1 #b-3, bug-308, 2026-11-24):
+    when `handoffs/` is not writable, neither the pull marker nor the stand-down can persist
+    there, and at cbbe9e3f the session stayed denied until the 24 h expiry. Now the gate
+    stands down, remembered beside the dir so its one line is said once."""
     if not session:
         return "none", None, ""
     session = str(session)
+    hd = handoffs_dir(root)
+    um = _unwritable_marker(root, session)
+    if um.exists():
+        if os.access(hd, os.W_OK):
+            _gate_path(root, session).unlink(missing_ok=True)
+            um.unlink(missing_ok=True)
+        return "none", None, ""
     if _marker_path(root, session, "pulled").exists():
         # A pull whose gate file could not be removed must not keep the session trapped.
-        _gate_path(root, session).unlink(missing_ok=True)
-        return "none", None, ""
+        try:
+            _gate_path(root, session).unlink(missing_ok=True)
+        except OSError:
+            pass                              # unwritable dir: handled below if still armed
+        if not _gate_path(root, session).exists():
+            return "none", None, ""
     state, problem = _load_gate(root, session)
     if state is None:
         return "none", None, ""
+    if not os.access(hd, os.W_OK):
+        path = state.get("path") or "?"
+        line = (f"rmx handoff gate stood down: {path} cannot be marked read ({hd} is not "
+                f"writable); nothing is gated.")
+        try:
+            um.write_text(json.dumps({"session": session, "path": path, "ts": _now_ts()}),
+                          encoding="utf-8")
+        except OSError as e:
+            line += f" (the stand-down could not be remembered: {type(e).__name__}: {e})"
+        _record_event(root, {"event": "stand_down", "session": session, "path": path,
+                             "reason": f"{hd} is not writable"})
+        return "stood_down", state, line
     if problem:
         return "stood_down", state, _stand_down(root, session, state, problem)
     path = state["path"]
-    age = time.time() - float(state.get("written_at") or 0)
+    age = _now() - float(state.get("written_at") or 0)
     if age > GATE_EXPIRY_S:
         why = f"was written {age / 3600:.0f} h ago, past the {GATE_EXPIRY_S // 3600} h expiry"
         return "stood_down", state, _stand_down(root, session, state, why)
@@ -1397,6 +1559,8 @@ def gate_status(root: Path, session: "str | None") -> "tuple[str, dict | None, s
 def gate_decision(root: Path, envelope: dict) -> "tuple[str, str]":
     """PreToolUse: `("allow", "")`, `("deny", reason)` or `("stand_down", line)`. While the
     session's handoff is unread, every tool call but a Read of that exact file is denied."""
+    if is_subagent(envelope):
+        return "allow", ""
     status, state, line = gate_status(root, envelope.get("session_id"))
     if status != "armed":
         return ("stand_down", line) if status == "stood_down" else ("allow", "")
@@ -1422,11 +1586,17 @@ def _offset_ok(ti: dict) -> bool:
 
 def record_pull(root: Path, envelope: dict) -> "dict | None":
     """PostToolUse(Read): a successful Read of the session's handoff, from its start (no
-    offset, or offset <= 1; lead ruling L200), writes the `.pulled` marker, lifts the gate and
-    records the pull (path, bytes, seconds since the file was written). Anything else: None."""
+    offset, or offset <= 1; lead ruling L200), lifts the gate, writes the `.pulled` marker and
+    records the pull (path, bytes, seconds since the file was written). A subagent's Read is
+    not the session's pull (b-1). A gate that cannot be lifted stands down (b-3): the result
+    is then `{"stood_down": line}`. Anything else: None."""
+    if is_subagent(envelope) or envelope.get("tool_name") != "Read":
+        return None
     session = envelope.get("session_id")
-    status, state, _line = gate_status(root, session)
-    if status != "armed" or envelope.get("tool_name") != "Read":
+    status, state, line = gate_status(root, session)
+    if status == "stood_down":
+        return {"stood_down": line}
+    if status != "armed":
         return None
     ti = envelope.get("tool_input") or {}
     if not isinstance(ti, dict) or not _same_file(ti.get("file_path"), state["path"]) \
@@ -1441,27 +1611,41 @@ def record_pull(root: Path, envelope: dict) -> "dict | None":
         nbytes = os.stat(path).st_size
     except OSError:
         nbytes = int(state.get("bytes") or 0)
-    seconds = round(max(0.0, time.time() - float(state.get("written_at") or time.time())), 3)
+    seconds = round(max(0.0, _now() - float(state.get("written_at") or _now())), 3)
     row = {"session": session, "path": path, "bytes": nbytes, "seconds": seconds}
-    _marker_path(root, session, "pulled").write_text(
-        json.dumps({**row, "ts": _now_ts()}), encoding="utf-8")
-    _gate_path(root, session).unlink(missing_ok=True)
+    # Lift FIRST, then mark (b-3): a marker that cannot be written must not leave the gate.
+    try:
+        _gate_path(root, session).unlink(missing_ok=True)
+    except OSError as e:
+        return {"stood_down": _stand_down(root, session, state,
+                                          f"was read but its gate could not be lifted "
+                                          f"({type(e).__name__}: {e})")}
+    try:
+        _marker_path(root, session, "pulled").write_text(
+            json.dumps({**row, "ts": _now_ts()}), encoding="utf-8")
+    except OSError as e:
+        _say(f"rmx handoff pulled: the gate is lifted but the read marker for {session} could "
+             f"not be written: {type(e).__name__}: {e}")
     _record_event(root, {"event": "pull", **row})
     return row
 
 
-def remind_line(root: Path, session: "str | None") -> str:
+def remind_line(root: Path, session: "str | None", *, agent: bool = False) -> str:
     """UserPromptSubmit: the one-line pointer while the session's handoff is unread (so a
     tool-less reply cannot skip it for more than one turn), the stand-down line when the gate
-    just stood down, else ''."""
+    just stood down, else ''. Never for a subagent's prompt (b-1). At most the
+    `handoff_remind` channel's bytes (hook_budget)."""
+    if agent:
+        return ""
     status, state, line = gate_status(root, session)
     if status == "stood_down":
         return line
     if status != "armed":
         return ""
-    return (f"Handoff pending: read {state['path']} before any other action; it is the "
-            f"authoritative state ({state.get('bytes')} B, written after "
-            f"{state.get('source')}).")
+    from refmatrix import hook_budget
+    return _clip(f"Handoff pending: read {state['path']} before any other action; it is the "
+                 f"authoritative state ({state.get('bytes')} B, written after "
+                 f"{state.get('source')}).", hook_budget.resolve("handoff_remind", None) - 1)
 
 
 def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
@@ -1469,8 +1653,9 @@ def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
     down, from `<store>/handoffs/events.jsonl`. Compliance is `len(pulls) / len(written)`;
     `seconds` is from the write (the session's start) to the Read. Unreadable lines are
     counted, never skipped silently."""
-    out: dict = {"written": [], "pulls": [], "stand_downs": [], "unreadable_lines": 0}
-    p = handoffs_dir(root) / HANDOFF_EVENTS
+    out: dict = {"written": [], "pulls": [], "stand_downs": [], "reaps": [],
+                 "unreadable_lines": 0}
+    p = handoffs_dir(root) / HANDOFF_LEDGER
     if not p.is_file():
         return out
     try:
@@ -1480,7 +1665,8 @@ def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
         return out
     keys = {"write": ("written", ("session", "path", "bytes", "source", "gate_error")),
             "pull": ("pulls", ("session", "path", "bytes", "seconds")),
-            "stand_down": ("stand_downs", ("session", "path", "reason"))}
+            "stand_down": ("stand_downs", ("session", "path", "reason")),
+            "reap": ("reaps", ("gates", "files", "rows", "errors"))}
     for line in text.splitlines():
         if not line.strip():
             continue

@@ -1035,22 +1035,23 @@ def hook_producer(command: str, argv: "list") -> "str | None":
     Why (task 25.1 R11's last bullet, rev 7 F2, 2026-11-13): the compact|clear `rmx
     recall-state` hook landed in `by_command` beside every interactive run of the same
     command, so nothing read the HOOK's bytes against its budget. The memory-recall producers
-    follow `recall_channel`'s first-match order (`--session-start`, `--stdin-json`, then
-    `--recent`, which only PreCompact's hook runs)."""
+    follow `recall_channel`'s first-match order (`--session-start`, then `--stdin-json`).
+    `rmx handoff remind` (task-compaction-as-handoff R3b) is the `handoff_remind` producer."""
     flags = {str(a) for a in argv}
     if command == "memory recall":
         if "--session-start" in flags:
             return "session_start"
         if "--stdin-json" in flags:
             return "prompt_recall"
-        if "--recent" in flags:
-            return "precompact"
+        # `--recent` was PreCompact's generated recall; R2 removed it and L202 #m-4 retired
+        # its `precompact` budget channel, so a `--recent` run is no hook producer now.
         return None
     if command == "focus hook":
         return "focus_input" if _flag_value(argv, "--event") == "input" else None
     return {"recall-state": "recall_state", "scan-prompt": "scan_prompt",
             "curator status": "curator_status",
-            "focus context": "focus_context"}.get(command)
+            "focus context": "focus_context",
+            "handoff remind": "handoff_remind"}.get(command)
 
 
 def summarize_context(root: Path, *, since: "str | None" = None,

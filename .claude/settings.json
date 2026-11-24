@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; set -- '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'*.gate; if [ ! -e \"$1\" ]; then exit 0; fi; rmx handoff pulled"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; set -- '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'*.gate; if [ ! -e \"$1\" ]; then exit 0; fi; REFMATRIX_ROOT='/Users/tholley/claude_tools/refmatrix/.refmatrix' rmx handoff pulled; s=$?; if [ $s -eq 2 ]; then exit 1; fi; exit $s"
           }
         ]
       },
@@ -157,7 +157,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; J=$(cat); re='\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\"'; if [[ $J =~ $re ]] && [ ! -e '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'\"${BASH_REMATCH[1]}\".gate ]; then exit 0; fi; printf '%s' \"$J\" | rmx handoff remind"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; J=$(cat); re='\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\"'; if [[ $J =~ $re ]] && [ ! -e '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'\"${BASH_REMATCH[1]}\".gate ]; then exit 0; fi; printf '%s' \"$J\" | REFMATRIX_ROOT='/Users/tholley/claude_tools/refmatrix/.refmatrix' rmx handoff remind; s=$?; if [ $s -eq 2 ]; then exit 1; fi; exit $s"
           }
         ]
       },
@@ -184,7 +184,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; J=$(cat); re='\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\"'; if [[ $J =~ $re ]] && [ ! -e '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'\"${BASH_REMATCH[1]}\".gate ]; then exit 0; fi; printf '%s' \"$J\" | rmx handoff gate"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; J=$(cat); re='\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\"'; if [[ $J =~ $re ]] && [ ! -e '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'\"${BASH_REMATCH[1]}\".gate ]; then exit 0; fi; printf '%s' \"$J\" | REFMATRIX_ROOT='/Users/tholley/claude_tools/refmatrix/.refmatrix' rmx handoff gate; s=$?; if [ $s -eq 2 ]; then exit 1; fi; exit $s"
           }
         ]
       },
@@ -216,7 +216,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx save-state --precompact --no-sync -m \"auto: pre-compact checkpoint\""
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx save-state --precompact --no-sync --timeout 10 -m \"auto: pre-compact checkpoint\"",
+            "timeout": 40
           }
         ]
       }
