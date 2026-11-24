@@ -150,6 +150,17 @@ def _headingless(doc_id: str, text: str) -> str:
 # Ingest ORDER matters for one case: `s0061_1` (one `glacier`) gets a LOWER entity id than
 # `s0060_1` (two), so a max-per-block join ties them and the id tie-break puts s0061 first.
 _MEMORIES = [
+    # s0063_1 (lower id) and s0062_1 say `fjord` once each, in the same sentence; s0063_1 also
+    # has a long block of other words. One document per memory (L199 3.): its length is its own
+    # postings PLUS every block's, so the longer s0063_1 ranks second. A length taken from the
+    # memory's own postings alone ties them, and the id tie-break puts s0063_1 first.
+    ("s0063_1", _gmd("s0063_1", [
+        ("Cruise", "cruise", "The fjord cruise passed steep green cliffs."),
+        ("Log", "log", "Breakfast porridge, deck chairs, binoculars, seabirds, waterfalls, "
+                       "rain jackets, postcards, harbour shops, woollen gloves, hot cocoa, "
+                       "camera batteries, folding maps, wooden benches, quiet cabins.")])),
+    ("s0062_1", _gmd("s0062_1", [
+        ("Cruise", "cruise", "The fjord cruise passed steep green cliffs.")])),
     ("s0061_1", _gmd("s0061_1", [
         ("Ice", "ice", "The glacier walk crossed a wide blue field of old snow."),
         ("Rock", "rock", "The moraine walk crossed a wide grey field of old stone.")])),
@@ -271,6 +282,61 @@ def test_one_memory_is_one_bm25_document_across_its_blocks(id_titled):
     hits = s.content_rank(["glacier"], kinds=["memory"], limit=10)
     assert [eid for eid, _ in hits] == [ids["s0060_1"], ids["s0061_1"]], _named(s, hits)
     assert hits[0][1] > hits[1][1], hits
+
+
+def test_a_memorys_bm25_length_is_its_own_plus_its_blocks(id_titled):
+    """L199 ruling 3: one document per memory, length = the memory's own postings + all its
+    blocks' postings (the same grouped join). Same tf of `fjord`, but s0063_1 carries an extra
+    block of 20-odd other words: BM25's length norm must put the shorter s0062_1 first. A
+    length read from the memory's own `mentions` (title + tags, equal for both) ties them and
+    the id tie-break puts s0063_1 (ingested first) on top."""
+    s, ids = id_titled
+    hits = s.content_rank(["fjord"], kinds=["memory"], limit=10)
+    assert [eid for eid, _ in hits] == [ids["s0062_1"], ids["s0063_1"]], _named(s, hits)
+    assert hits[0][1] > hits[1][1], hits
+
+
+# ─── L199 ruling 1: callers that ask for `concept` (context) or no kinds (net) ────────
+#
+# Block postings are credited to a memory ONLY when `kinds` includes `memory` and excludes
+# `concept`: with `concept` in `kinds` the blocks are already candidates of their own, and a
+# second credit would count each body word twice. `kinds=None` (net.py:114) is the same case.
+# Both are pinned at base (da6af511) on the memory-and-blocks fixture: `s0042_1` scores from its
+# own title postings (`s0042_1`), its blocks from their body words.
+
+_UNCHANGED_TERMS = ["s0042_1", "commute", "lighthouse", "fjord"]
+
+
+def _pinned(s: Store, kinds) -> list:
+    hits = s.content_rank(_UNCHANGED_TERMS, kinds=kinds, limit=50)
+    return [(k, n, round(sc, 9)) for (k, n), (_e, sc) in zip(_named(s, hits), hits)]
+
+
+_PIN_WITH_CONCEPT: list = [
+    ("concept", "s0050_1#coast", 0.827510148),
+    ("concept", "s0042_1#travel", 0.824554755),
+    ("concept", "s0063_1#cruise", 0.689592303),
+    ("concept", "s0062_1#cruise", 0.689592303),
+    ("concept", "s0042_1#root", 0.066583413),
+    ("memory", "s0042_1", 0.063045164),
+]
+# Same numbers: with `concept` in the kinds, the code/doc kinds add nothing on this store.
+_PIN_KINDS_NONE: list = list(_PIN_WITH_CONCEPT)
+
+
+@pytest.mark.parametrize("kinds,pin", [
+    (["code", "doc", "memory", "concept"], "_PIN_WITH_CONCEPT"),   # context.py:792/805
+    (None, "_PIN_KINDS_NONE"),                                      # net.py:114
+])
+def test_a_caller_that_also_asks_for_concept_or_for_every_kind_is_unchanged(
+        id_titled, kinds, pin):
+    """L199 ruling 1 (R2): a guard, GREEN at base by construction. It fails if GREEN credits
+    block postings to the memory while `concept` is in `kinds` (or `kinds` is None): the
+    memory's score moves and it gains rows for body words its blocks already answer."""
+    s, _ids = id_titled
+    want = globals()[pin]
+    got = _pinned(s, kinds)
+    assert got == want, f"{pin} moved; base pin {want!r}, now {got!r}"
 
 
 # ─── bug-300 R2 / AC-3: a caller over code and docs ranks exactly as before ──
