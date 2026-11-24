@@ -107,6 +107,9 @@ Claude Code facts this ADR rests on are of three kinds. {#context-facts}
 3. Else (no trigger exists) one **always-on line** in the principles block.
 4. **Recall is never the only delivery of a rule.** Recall carries knowledge (T6), not rules.
 5. A rule that gains a detector moves up this list and its lower-rank text is deleted.
+6. **One exception, by the user's ruling (L229):** the active practice pack's stance is
+   always-on although its rules have triggers. It states the position in at most 600 B; the
+   units carry the rules ([[#practice-packs]]).
 
 ### 2. The delivery contract per type {#contract}
 
@@ -122,7 +125,7 @@ One row per type. "Unit" is the rule's one source file ([[#generation]]). "Ledge
 | T5 session orientation | SessionStart blocks; C1's pointer and read gate; the review-due line ([[#context-review]]) | `startup`, `resume`, `compact`, `clear` | the event itself | the handoff ledger (exists) | pointer ≤ 1,024 B; `session_start` 9,000 B (exists) |
 | T6 prompt-relevant knowledge | UserPromptSubmit scan and recall (exists) | every prompt | the composite's sent marker (exists); names-only dedupe is post-mod (10.2) | `recall-events.jsonl` (exists) | `CHANNEL_BUDGET_BYTES` (exists). Carries no rule once I1.h lands |
 | T7 agent roles and per-agent facts | a stack-neutral core + stack packs + the project overlay ([[#composition]]); SubagentStart `additionalContext` for live state | agent spawn; a file touch for a pack's rule half | per `agent_id` (a spawn is a new context) | `spawned` with `agent_type`, bytes and the units carried | block ≤ 9,000 B; the brief-keyed recall is dropped first |
-| T8 judgment principles | one line each in the `CLAUDE.md` principles block | launch | native | `loaded` | block ≤ 2,000 B, enforced by a size guard |
+| T8 judgment principles | one line each in the `CLAUDE.md` principles block, after the active practice's stance | launch | native | `loaded` | the project's lines ≤ 2,000 B and the stance ≤ 600 B, each held by a size guard |
 | T9 style | one SessionStart or output style | launch | native | none of ours | not ours, and done: the duplicate caveman hooks are gone (L223, [[#user-calls]]) |
 | T10 reference facts | a nested `CLAUDE.md` in the directory concerned + an always-on pointer list | native: a file touch under that directory | native | `loaded` | nested file ≤ 3,000 B; pointer list ≤ 1,000 B |
 
@@ -251,6 +254,7 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   | `rules/stack-<x>.md`, a pack's rule half | `.claude/rules/`, where the stack is detected | T2 |
   | `triggers/<id>.md` | compiled into `.claude/rmx-instructions.json` | T1; T3's tool-keyed injects |
   | `checks/<id>.md` | compiled into the same file | T4 |
+  | `practices/<name>/`: a manifest, a stance, and units of the kinds above | each unit as its kind; the stance into `CLAUDE.md` and every agent core | T8 stance; T1 to T4 units |
 
 - **The template is the single source; a project adds only what is true of it alone.**
   Packaged units (agent cores, stack packs, process skills, neutral rules, triggers, checks)
@@ -261,9 +265,10 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   release), under the same directory names in `.claude/`, with the same schema and fixtures.
   `--check` puts every installed file in one of three classes: **generated** (equal to the
   render), **drift** (a template name whose content differs: an error), **local** (a name the
-  template does not have: listed, its fixtures run). A local file with a pack-shaped name is
-  refused ([[#composition-rules]]). What a second project would use is promoted to the
-  template, not copied. {#layers}
+  template does not have: listed, its fixtures run). A local file named like a stack pack is
+  refused ([[#composition-rules]]); a local practice pack, or a local unit that amends or
+  supersedes a practice unit, is allowed and printed ([[#practice-packs]]). What a second
+  project would use is promoted to the template, not copied. {#layers}
 - **The local layer, and L219** (decided: Q61 = a, L227). L219 puts project specifics "only in
   `.local.md` overlays". That governs agent text. A project's own denies, checks, triggers
   and procedure skills bind the lead too, so an agent overlay cannot hold them: they are the
@@ -310,13 +315,15 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
 
 Decided by the user as L219 ([[plan-of-plans#rulings]]): an agent definition is three layers,
 so one role serves every stack in the fleet, and each layer arrives without the agent fetching
-it. What was measured: ten copies of the security auditor in the fleet with ten checksums and
+it. L229 adds a third kind of pack beside the stack pack and the overlay: the practice pack
+([[#practice-packs]]). What was measured: ten copies of the security auditor in the fleet with ten checksums and
 two overlays; Docker named on 21 lines of 8 of this repo's 13 neutral agent files, while
 no fleet repo tracks a container. {#composition-lead}
 
 | Layer | Holds | Source | Delivered by |
 |---|---|---|---|
 | **Core** | the role's method, its consequence rubric, its outputs. No stack word | `templates/agents/<role>.md` | the agent file at spawn |
+| **Practice pack** | the working practice: its stance, and the role skills in its slots | `templates/practices/<name>/`, or a project's own | the stance in the core's preamble and in `CLAUDE.md`; the skills by the agent's `skills:` preload, first in the list |
 | **Stack pack, rule half** | conventions of the stack that bind any role | `templates/rules/stack-<x>.md`, `paths:` by extension and manifest name | the native path rule, on Read / Write / Edit, in the lead and every subagent |
 | **Stack pack, role half** | what this role does differently on this stack | `templates/skills/<role>-<x>/SKILL.md` | the agent's `skills:` preload; `rmx init` generates the list from the detected stacks |
 | **Overlay** | this project's facts for the role | `.claude/agents/<role>.local.md`, hand-written in the project | preloaded: the generator renders it as the skill `<role>-local`, last in the `skills:` list |
@@ -334,7 +341,7 @@ Rules of composition: {#composition-rules}
 - **A preload budget.** A pack skill is at most 6,000 B. The generator sums each agent's list
   at render and fails, naming the skills, if it passes the 25k-token window in which preloaded
   bodies survive compaction.
-- **Packs are template-only.** Cores, stack rules and role × stack skills live in
+- **Stack packs are template-only.** Cores, stack rules and role × stack skills live in
   `src/refmatrix/templates/` and nowhere else. A stack no pack covers is added to the
   template, never locally: `--check` refuses a local file named like a pack (`stack-*`,
   `<role>-<stack>`). An installed agent file is the core plus its generated `skills:` list, so
@@ -395,6 +402,84 @@ the order is decided (Q62 = a, L228). {#packs-first-lead}
   baseline audits of the other repos are the lead's, on the user's go (L219), and are not
   part of this ADR.
 
+#### Practice packs: TDD, on by default {#practice-packs}
+
+The user, L229 (Q64 = a): "the TDD stance is a core position of refmatrix", always on, and
+modular enough to be replaced or amended. So the practice is one pack, `practice/tdd`, in
+`src/refmatrix/templates/practices/tdd/`, and it owns the whole stance. {#practice-packs-lead}
+
+**The stance** is one unit of at most 600 B: RED before GREEN, in separate hands; a new test
+is seen failing first; tests go through the entry point; real states, faked boundaries only;
+never red. The generator renders it in two places: first in `CLAUDE.md`'s principles block,
+and in the preamble of every agent core. Both are generated copies under the parity gate.
+{#practice-stance}
+
+- **How it counts.** It sits inside `CLAUDE.md`'s 4,000 B: identity at most 400 B, the stance
+  at most 600 B, the project's own principle lines at most 2,000 B, pointers at most 1,000 B
+  ([[#always-on]]). The 10,000 B target does not move.
+- **The copy in an agent core is per spawn, not always-on,** and is not counted against the
+  target. A subagent that also loads `CLAUDE.md` reads the stance twice, at most 600 B extra
+  per spawn. That is the ruling's choice: the stance holds even where an agent runs without
+  the project's `CLAUDE.md`.
+
+**The slot contract.** A practice pack's manifest (`practice.md`, id `practice-<name>`, one
+anchor per unit) fills named slots. Other units refer to a slot, never to a unit id, so
+changing the pack leaves nothing dangling. {#practice-slots}
+
+| Slot | In `practice/tdd` | Kind | Census rows |
+|---|---|---|---|
+| `stance` (required) | the block above | always-on text | — |
+| `test-run` | test output goes to a file; no group is skipped or filtered away | T1 denies | R047, R048 |
+| `test-authoring` | the test-discipline rule on test paths, with `test_suite_discipline.py` as its backstop | T2 rule and guard | R049 to R056 |
+| `dispatch` | `dispatch-red-green`, preloaded in `ch-test-engineer` and `ch-implementer` | T3 skill | R057, R067 to R069 |
+| `proof` | `mutation-loop`, and the deny on mutating over uncommitted `src/` | T3 skill, T1 deny | R064 to R066 |
+| `completion` | never red across a release; **seen failing** (new) | T4 checks | R058; R057 |
+
+- A pack fills every slot or declares it empty with a reason (`none: <why>`). An empty slot
+  is printed, never inferred.
+- A unit in a slot is an ordinary unit: binding, fixtures, size rule ([[#generation]]).
+- **Stack facts stay in stack packs.** A practice unit names what it needs (`test-runner`,
+  `test-paths`, `test-id`) and each stack pack supplies its value (python: `pytest`,
+  `tests/**`, `def test_`). The compiled deny or rule is the practice unit over the detected
+  stacks. A detected stack that supplies none is printed (`practice tdd: no test-runner for
+  stack shell`). Project facts (the lanes, the repo guards) stay in the local layer.
+- **The seen-failing check** is new and moves R057 from a reminder to enforcement
+  ([[#principle]] 5). At merge, where the range is git's own, every test added in the range
+  must be named in the task's summary with the E line it failed on at base (the summary file
+  on the branch; on the small path, the commit body). A test with no line fails the check; a
+  renamed or `xfail(strict)` test is named with its reason.
+
+**Selection, replacement, amendment.** {#practice-select}
+
+- **Select:** `practices: [tdd]` in `.claude/rmx-hooks.json`, which `rmx init` writes by
+  default. A change takes effect at the next install, like any other flag. Two active packs
+  that fill the same slot are refused.
+- **Replace:** select another practice pack that meets the slot contract.
+- **Amend:** a project-local unit with `rel: amends` or `rel: supersedes` to the pack's
+  anchor for that unit (`practice-tdd#<unit>`). `supersedes`: the pack's unit is not rendered
+  and the local unit takes its slot, with its own fixtures. `amends`: both are rendered; a
+  text unit is appended, and a deny or check may only gain an exception or a condition, so
+  an amendment can narrow a rule and cannot quietly replace it. `--check` resolves the edge
+  against the installed pack; a target that a pack upgrade removed or renamed is an error,
+  so no amendment outlives the unit it changed.
+- **A project may hold a local practice pack** (`.claude/practices/<name>/`), unlike a stack
+  pack. A stack is a fact about the repo: it is detected, it is the same for every repo
+  that has it, and a private variant is drift. A practice is policy: no detection can choose
+  it, and the project's owner is entitled to. A local pack meets the same slot contract and
+  is fixture-checked.
+
+**Never silent.** {#practice-visible}
+
+- `--check` prints the active practice and where it comes from (template or local), every
+  amended and superseded unit with the local unit that does it, and every empty slot.
+- The context-effectiveness review lists the same, with the firing counts of the practice's
+  denies and checks ([[#context-review-report]]).
+- `practices: []` turns the stance and its units off. SessionStart then says so in one line
+  on every `startup` and `resume`, and `--check` prints `practice: none`.
+
+**Until H1.c builds selection,** the pack's units are authored in the pack's directory and
+installed like any packaged unit, so the practice is simply on. {#practice-interim}
+
 ### 5. Distribution {#distribution}
 
 - **Now:** `rmx init` scaffolds; `rmx install-hooks` renders, checks and applies. One engine
@@ -435,6 +520,10 @@ the order is decided (Q62 = a, L228). {#packs-first-lead}
   type accepts both the bare and the namespaced name from the start. {#dist-agent-lists}
 - **Also installed, always:** a project's local units, its overlays and the generated
   `<role>-local` skills, and the workflow skeleton. {#dist-local}
+- **The practice is rendered per project too.** Which pack is active, what is amended and
+  the stance's two copies depend on the project's `practices` flag, so they stay with the
+  installer (or the mod's per-project registration) even where the plugin ships the skills.
+  {#dist-practice}
 - **Template version = rmx version.** A unit changes in a release and reaches a project at its
   install window, which stays user-gated. {#dist-version}
 
@@ -487,6 +576,7 @@ already has, and writes nothing. Its sections are every delivery surface the led
 | The PRIMER | the share of discovery calls only it could have served, and the targets nothing delivered | 31.5's scorer ([[#primer]]) |
 | Scan-prompt and recall | per channel and block: delivered against used | `recall-events.jsonl`; 21.1's usage report; 31.5's per-block capture |
 | Always-on bytes | each source against its target in [[#always-on]], and what grew since the last review | file sizes; `loaded` rows |
+| The practice | the active pack and its source; amended and superseded units; empty slots; how often its denies and checks fired | `.claude/rmx-hooks.json`; the compiled file; the instruction ledger |
 
 A section whose instrument is not built yet prints `not measured` and the task that builds
 it. It is never left out. {#context-review-unmeasured}
@@ -528,7 +618,7 @@ the census (L216). With both, a session loads at most 17,849 B plus the open row
 
 | Source | Today | Target | How |
 |---|---|---|---|
-| `CLAUDE.md` | 15,989 | ≤ 4,000 | identity; the principles block (≤ 2,000 B, T8, one line per rule); the pointer list (≤ 1,000 B, T10). A size guard test holds it |
+| `CLAUDE.md` | 15,989 | ≤ 4,000 | identity (≤ 400 B); the practice stance (≤ 600 B, generated, [[#practice-stance]]); the project's principles (≤ 2,000 B, T8, one line per rule); the pointer list (≤ 1,000 B, T10). A size guard test holds it |
 | `.claude/PROJECT_PROFILE.md` | 9,599 | 0 | the `@` import is removed. Layout, primitives and glossary go to a nested `src/refmatrix/CLAUDE.md`; commands into the skills; constraints into units; the subagent lookup text into SubagentStart. The file shrinks to identity, stack and pointers for the agents that read it |
 | `.refmatrix/PRIMER.md` | 7,849 | 7,849, until a better PRIMER is measured | kept, apart from the target (L224); measured and improved, never cut on a low reading, below |
 | `.claude/rules/bug-registry.md` | 867 | 0 | `paths: workflow/bug_registry.md` (its `globs:` key is not read), plus the T4 registry check |
@@ -628,8 +718,8 @@ sha) true without touching the settings. {#r007-q57}
 
 ### Decisions that are the user's {#user-calls}
 
-All are decided, by the user on 2026-11-24 (L221 to L228, [[plan-of-plans#rulings]]; the
-questions are Q55 to Q63 in [[plan-of-plans#questions]]). None is open. {#user-calls-decided}
+All are decided, by the user on 2026-11-24 (L221 to L229, [[plan-of-plans#rulings]]; the
+questions are Q55 to Q64 in [[plan-of-plans#questions]]). None is open. {#user-calls-decided}
 
 1. **C4** (Q55 = a, L221): `approved` means the plan approved and the next task specced.
 2. **C13** (Q56 = a, L221): STM capture is a memory path.
@@ -660,6 +750,9 @@ questions are Q55 to Q63 in [[plan-of-plans#questions]]). None is open. {#user-c
     never shipped ([[#layers-l219]]).
 12. **Stack detection and the pack order** (Q62 = a, L228): as written in
     [[#stack-detection]] and [[#packs-first]].
+13. **TDD as a practice pack** (Q64 = a, L229): on by default, replaceable by selection,
+    amendable by local units with typed edges, and a project may hold a local practice pack
+    ([[#practice-packs]]).
 
 ## Consequences {#consequences}
 
@@ -678,6 +771,8 @@ questions are Q55 to Q63 in [[plan-of-plans#questions]]). None is open. {#user-c
 - An installed agent file differs per project by its generated `skills:` list, so "the same
   file everywhere" (F6's test) becomes "the same render everywhere", checked by `--check`.
 - The installer outlives the mod: rules and `CLAUDE.md` cannot ride a plugin.
+- A project can turn TDD off, or swap it, in one line of `.claude/rmx-hooks.json`. The line
+  is visible at every session start and in every `--check`, and the context review lists it.
 - The review is a standing claim on the user's time, every 30 days per repo that has one.
   The report is built to make that short: flagged items only, each with a recommendation.
   In a repo with no release, its only pressure is the session block and the hub's list.
@@ -701,6 +796,10 @@ questions are Q55 to Q63 in [[plan-of-plans#questions]]). None is open. {#user-c
   and ten checksums again; and a repo with two stacks would need both.
 - **Stack text kept in the core behind "if your project uses X".** Rejected: that is the
   Docker text today, loaded in every repo while none tracks a container (C1).
+- **TDD left as scattered units** (this ADR before L229). Rejected by the user: the stance
+  could then be neither stated in one place nor replaced as a whole.
+- **Practice packs template-only**, like stack packs. Rejected by the user (Q64 b): a
+  practice is policy, so a replacement need not be contributed upstream first.
 - **One always-on file, better organised.** Rejected: "works; only grows"
   ([[design-note-tool-keyed-context-2026-11-15#kinds]]).
 
@@ -742,6 +841,8 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   `#test-discipline` rules 1 and 3).
 - Stack detection and the composed render change `rmx init` / `install-hooks`, a shared path:
   a large change. Each pack after it is files and fixtures.
+- The TDD units are authored inside `templates/practices/tdd/` from their first build (I1.c
+  to I1.f), so H1.c adds selection and amendment without moving a file.
 - An agent file is edited once: the contradiction edits that touch agent files (C1, C5, C15,
   C16) ride the core rewrite in H1.b when it is next; otherwise they go with I1.a.
 - Accepted on 2026-11-24 (L226): the index rows carry the status; [[constitution#project-4]] is
@@ -808,3 +909,16 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   decision: probes P1 to P10, I1.b's first step ([[#open]]).
 - Done: the amendment of [[constitution#project-4]] named in [[#installed-equals-generated]]
   (`8187ed00`).
+
+**2026-11-24, the practice pack** (L229; Q64 = a): {#amend-6}
+
+- **TDD is a practice pack, `practice/tdd`, on by default** ([[#practice-packs]]): a stance
+  of at most 600 B rendered into `CLAUDE.md` and every agent core; the slot contract; the
+  units it owns; selection, replacement and amendment; a project may hold a local practice
+  pack; never silent.
+- The stance is counted inside `CLAUDE.md`'s 4,000 B, so the 10,000 B target is unchanged
+  ([[#practice-stance]]). [[#principle]] gains the one sanctioned always-on exception.
+- New check: seen failing, at merge. R057 moves from a skill's text to enforcement.
+- "Packs are template-only" now reads "stack packs are template-only" ([[#composition-rules]]).
+- Builds: the render, selection and amendment in H1.c; the pack's skills in I1.d and its
+  checks in I1.e; its denies in I1.c and its test rule in I1.f.
