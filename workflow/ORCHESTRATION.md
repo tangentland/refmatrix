@@ -84,12 +84,20 @@ failing; never red; the lane). {#task-tests}
 1. **Release commit** on `master` bumps `pyproject.toml` and `src/refmatrix/__init__.py`. A
    change to a shared path is **major** (`0.N.0`); a fix confined to a few modules is **minor**
    (`0.N.x`); when unsure, major.
+1b. **Findings ledger maintenance, in the release commit** (L217): walk every row of
+   `workflow/bullshit/OPEN.md`; a row whose fix sha is now reachable from `master`
+   (`git merge-base --is-ancestor <sha> master`) or that an L-row ruled moves to `CLOSED.md` with
+   that evidence and its F5 outcome (upheld / overruled). Re-check the rest is still open. An open
+   BULLSHIT or GATE row on code this release ships holds the release unless an L-row rules it. The
+   release commit body states the counts (closed this release, still open).
 2. **Gate on merged `master`:** major → the full suite; minor → the verify set. Compared by E
    line with the previous release's log.
 3. **Deploy:** `git -C ~/refmatrix pull --ff-only origin master`; `rmx daemon restart
    --relaunch`; `rmx version -v` (no `[DEV TREE]`); `rmx hub relaunch-fleet` (a stale hub:
-   `rmx hub stop` + one `launchctl kickstart`); `rmx install-hooks --check`, re-install only
-   when out of sync.
+   `rmx hub stop` + one `launchctl kickstart`); `rmx install-hooks --check` per fleet repo; a repo
+   out of sync is re-installed with `rmx install-hooks --apply --force` (plain `--apply` skips a
+   settings file that already has rmx hooks), after backing up every `.claude/settings*.json` and
+   `.git/hooks/post-*` it touches (0.85.0 deploy, 2026-11-24).
 4. **Live check** of the release's claim, after backing up `catalog.read.duckdb`, `facts.log`
    and `active`. A store-changing release needs its own user go.
 
