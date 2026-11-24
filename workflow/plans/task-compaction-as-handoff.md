@@ -5,13 +5,13 @@ title: "Compaction and /clear as a handoff: PreCompact saves state and shrinks t
 tags: [task, hooks, compaction, handoff, save-state, recall-state]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-14
 ---
 
 # Task: compaction as a handoff {#root}
 
-> Status: drafting (2026-11-14). The user asked for compaction to behave like save-state → /clear
+> Status: approved 2026-11-24 (L195, Q54 = b: pulled in from post-mod, R1-R5 and R3b in one build, queue row C1). Drafted 2026-11-14. The user asked for compaction to behave like save-state → /clear
 > → recall-state without the compacted session, and chose Q17 a (automatic). **Post-mod** (Q28 = a;
 > re-evaluated against the mod first, L127 and L129; [[plan-of-plans#post-mod]]). It was first queued right after
 > 0.83.0, which ships 25.1 (it drops the PreCompact recall command and adds recall-state on
