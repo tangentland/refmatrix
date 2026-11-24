@@ -269,10 +269,10 @@ def test_ac5_a_reused_pid_is_not_signalled_and_the_line_says_so(tmp_path, case_i
 
 
 def _killed_run(tmp_path: Path, case_info: Path) -> "tuple[Path, int, str]":
-    """Run `case_killed_mid_test` as inner session A, wait until it reports its daemon, then
+    """Run `case_killed_mid_run` as inner session A, wait until it reports its daemon, then
     SIGKILL A (never reaching teardown) and swap the trivial case in for the next session.
     Returns (tree, the orphan daemon's pid, A's sandbox root)."""
-    tree = _inner_tree(tmp_path, "case_killed_mid_test")
+    tree = _inner_tree(tmp_path, "case_killed_mid_run")
     a = subprocess.Popen(_inner_cmd(), cwd=str(tree), env=_inner_env(case_info),
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:

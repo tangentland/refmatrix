@@ -1,0 +1,48 @@
+## AC-12 exit from last shard only: KILLED (exit 1) tests/test_ptest_runner.py::test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position[in-process]
+   ['1 failed in 2.43s']
+   E           AssertionError: a live touch in shard unit-0 did not fail the run (exit 0):
+   E             d=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=1.5s files=1 cmd: cd /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2569/test_ac12_a_live_touch_fails_i0/p0/co && PYTHONPATH=/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2569/test_ac12_a_live_touch_fails_i0/p0/co/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest -p no:cacheprovider -rfE tests/test_probe.py
+## 3 exit 0 with a failed shard: KILLED (exit 1) tests/test_ptest_runner.py::test_ac2_tier_all_in_a_clone_logs_every_shard_and_fails_when_any_shard_fails
+   ['1 failed in 1.39s']
+   E       AssertionError: shards failed but the run exited 0:
+   E         t=1 root=/private/tmp/rmx-4dv52tk0 collected=2 passed=0 failed=1 errors=0 skipped=1 xfailed=0 xpassed=0 wall=0.5s files=2 cmd: cd /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2572/test_ac2_tier_all_in_a_clone_l0/co && PYTHONPATH=/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2572/test_ac2_tier_all_in_a_clone_l0/co/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest -p no:cacheprovider -rfE tests/test_fail.py tests/test_skip.py
+## 4 no incomplete line: KILLED (exit 1) tests/test_ptest_runner.py::test_ac2_tier_all_in_a_clone_logs_every_shard_and_fails_when_any_shard_fails
+   ['1 failed in 1.40s']
+   E       AssertionError: last line: 'run FAILED: 2 of 3 shard(s) exited non-zero; every tier ran (unit, daemon, timing, devtree)'
+   E       assert ('devtree' in 'run FAILED: 2 of 3 shard(s) exited non-zero; every tier ran (unit, daemon, timing, devtree)' and 'incomplete' in 'run failed: 2 of 3 shard(s) exited non-zero; every tier ran (unit, daemon, timing, devtree)')
+## 5 compare ignores the phase: KILLED (exit 1) tests/test_ptest_runner.py::test_ac3_compare_failures_unequal_names_the_difference[phase]
+   ['1 failed in 0.18s']
+   E       AssertionError: runs that differ compared equal:
+   E         equal: 1 failure record(s) by (node id, phase, normalised E line)
+## 6 normaliser replaces words: KILLED (exit 1) tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[word]
+   ['1 failed in 0.11s']
+   E       AssertionError: ('W: W W', 'W: W W')
+   E       assert 'W: W W' != 'W: W W'
+## 24 no xfailed/xpassed: KILLED (exit 1) tests/test_ptest_runner.py::test_ac3_outcomes_jsonl_follows_the_normalisation_table
+   ['1 failed in 2.23s']
+   E       AssertionError: (got, want) per node/phase: {('tests/test_outcomes.py::test_strict_xfail_that_fails', 'call'): ('skipped', 'xfailed'), ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'call'): ('passed', 'xpassed')}
+   E         all records: {('tests/test_outcomes.py::test_passes', 'setup'): 'passed', ('tests/test_outcomes.py::test_passes', 'call'): 'passed', ('tests/test_outcomes.py::test_passes', 'teardown'): 'passed', ('tests/test_outcomes.py::test_skips', 'setup'): 'passed', ('tests/test_outcomes.py::test_skips', 'call'): 'skipped', ('tests/test_outcomes.py::test_skips', 'teardown'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_fails', 'setup'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_fails', 'call'): 'skipped', ('tests/test_outcomes.py::test_strict_xfail_that_fails', 'teardown'): 'passed', ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'setup'): 'passed', ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'call'): 'passed', ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'teardown'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_passes', 'setup'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_passes', 'call'): 'failed', ('tests/test_outcomes.py::test_strict_xfail_that_passes', 'teardown'): 'passed', ('tests/test_outcomes.py::test_fails', 'setup'): 'passed', ('tests/test_outcomes.py::test_fails', 'call'): 'failed', ('tests/test_outcomes.py::test_fails', 'teardown'): 'passed', ('tests/test_outcomes.py::test_errors_at_teardown', 'setup'): 'passed', ('tests/test_outcomes.py::test_errors_at_teardown', 'call'): 'passed', ('tests/test_outcomes.py::test_errors_at_teardown', 'teardown'): 'error'}
+## 26 strict XPASS recorded xpassed: KILLED (exit 1) tests/test_ptest_runner.py::test_ac3_outcomes_jsonl_follows_the_normalisation_table
+   ['1 failed in 1.96s']
+   E       AssertionError: (got, want) per node/phase: {('tests/test_outcomes.py::test_strict_xfail_that_passes', 'call'): ('xpassed', 'failed')}
+   E         all records: {('tests/test_outcomes.py::test_passes', 'setup'): 'passed', ('tests/test_outcomes.py::test_passes', 'call'): 'passed', ('tests/test_outcomes.py::test_passes', 'teardown'): 'passed', ('tests/test_outcomes.py::test_skips', 'setup'): 'passed', ('tests/test_outcomes.py::test_skips', 'call'): 'skipped', ('tests/test_outcomes.py::test_skips', 'teardown'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_fails', 'setup'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_fails', 'call'): 'xfailed', ('tests/test_outcomes.py::test_strict_xfail_that_fails', 'teardown'): 'passed', ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'setup'): 'passed', ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'call'): 'xpassed', ('tests/test_outcomes.py::test_nonstrict_xfail_that_passes', 'teardown'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_passes', 'setup'): 'passed', ('tests/test_outcomes.py::test_strict_xfail_that_passes', 'call'): 'xpassed', ('tests/test_outcomes.py::test_strict_xfail_that_passes', 'teardown'): 'passed', ('tests/test_outcomes.py::test_fails', 'setup'): 'passed', ('tests/test_outcomes.py::test_fails', 'call'): 'failed', ('tests/test_outcomes.py::test_fails', 'teardown'): 'passed', ('tests/test_outcomes.py::test_errors_at_teardown', 'setup'): 'passed', ('tests/test_outcomes.py::test_errors_at_teardown', 'call'): 'passed', ('tests/test_outcomes.py::test_errors_at_teardown', 'teardown'): 'error'}
+## 25 missing node ignored: KILLED (exit 1) tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[node-missing-from-b]
+   ['1 failed in 0.18s']
+   E           AssertionError: compared equal but should not:
+   E             equal: 9 node/phase outcome(s), 0 expected change(s) held
+## 27 --expect ignores its phase: SURVIVED (exit 0) tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[expect-wrong-phase]
+   ['1 passed in 0.15s']
+   
+## 1 helper imports ignored: KILLED (exit 1) tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_helper.py-daemon]
+   ['1 failed in 0.09s']
+   E       AssertionError: assert 'unit' == 'daemon'
+   E         
+## 2 marker hook skips tier timing: KILLED (exit 1) tests/test_suite_tiers.py::test_plain_collection_is_clean_and_every_item_carries_its_files_tier_marker
+   ['1 failed in 10.35s']
+   E       AssertionError: 277 items without exactly their file's tier marker; first: [('tests/test_bug112_duckdb_reopen.py::test_readonly_reopen_sees_the_replaced_file_while_the_old_is_held', [], 'tier_timing'), ('tests/test_bug112_duckdb_reopen.py::test_write_after_swap_reaches_the_new_file_on_disk', [], 'tier_timing'), ('tests/test_bug112_duckdb_reopen.py::test_write_reopen_beside_a_stale_reader_of_the_old_file', [], 'tier_timing'), ('tests/test_bug112_duckdb_reopen.py::test_write_reopen_of_the_same_inode_shares_as_before', [], 'tier_timing'), ('tests/test_bug112_duckdb_reopen.py::test_second_store_reader_sees_a_replaced_snapshot', [], 'tier_timing')]
+   E       assert not [('tests/test_bug112_duckdb_reopen.py::test_readonly_reopen_sees_the_replaced_file_while_the_old_is_held', [], 'tier_t...reopen.py::test_memory_partition_sees_a_replaced_snapshot_while_another_reader_holds_the_old', [], 'tier_timing'), ...]
+## 15 merge gate ignores teardown errors: KILLED (exit 1) tests/test_ptest_runner.py::test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[teardown-error]
+   ['1 failed in 1.53s']
+   E           AssertionError: the merge gate passed:
+   E             ge_gate_runs_the_t0/co/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest -p no:cacheprovider -rfE tests/test_topic.py
+## after: git status scripts/ tests/: ''
