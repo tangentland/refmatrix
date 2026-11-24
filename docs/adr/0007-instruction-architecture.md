@@ -16,7 +16,8 @@ tags: [adr, instructions, hooks, rules, skills, agents, injection, telemetry, te
 A rule reaches the model at the **earliest mandatory event at which it can be acted on**, from
 **one source file**, **once per context**, and every delivery **writes a row**. Where a
 violation can be detected the rule is **enforced** (denied or checked), not recalled. Always-on
-text shrinks from 62,087 B to at most 10,000 B: judgment principles and pointers only. The 205
+text shrinks from 62,087 B to at most 10,000 B of principles and pointers, beside the PRIMER,
+which keeps its place ([[#primer]]). The 205
 rules of the census each get exactly one of ten delivery contracts ([[#contract]]). An agent
 is composed from a stack-neutral core, stack packs and a project overlay, each arriving without
 being fetched ([[#composition]]). All of it is generated from package data by the `hooks.py`
@@ -118,7 +119,7 @@ One row per type. "Unit" is the rule's one source file ([[#generation]]). "Ledge
 | T6 prompt-relevant knowledge | UserPromptSubmit scan and recall (exists) | every prompt | the composite's sent marker (exists); names-only dedupe is post-mod (10.2) | `recall-events.jsonl` (exists) | `CHANNEL_BUDGET_BYTES` (exists). Carries no rule once I1.h lands |
 | T7 agent roles and per-agent facts | a stack-neutral core + stack packs + the project overlay ([[#composition]]); SubagentStart `additionalContext` for live state | agent spawn; a file touch for a pack's rule half | per `agent_id` (a spawn is a new context) | `spawned` with `agent_type`, bytes and the units carried | block ≤ 9,000 B; the brief-keyed recall is dropped first |
 | T8 judgment principles | one line each in the `CLAUDE.md` principles block | launch | native | `loaded` | block ≤ 2,000 B, enforced by a size guard |
-| T9 style | one SessionStart or output style, never per prompt | launch | native | none of ours | not ours ([[#user-calls]]) |
+| T9 style | one SessionStart or output style | launch | native | none of ours | not ours, and done: the duplicate caveman hooks are gone (L223, [[#user-calls]]) |
 | T10 reference facts | a nested `CLAUDE.md` in the directory concerned + an always-on pointer list | native: a file touch under that directory | native | `loaded` | nested file ≤ 3,000 B; pointer list ≤ 1,000 B |
 
 **Corrections to the census's targets**, each for a stated reason: {#contract-corrections}
@@ -133,7 +134,9 @@ One row per type. "Unit" is the rule's one source file ([[#generation]]). "Ledge
 - **R115** (open Q ids at the end of a reply) and **R159** (third edit of one file) are not in
   the first builds: neither has a detector that will not misfire. They stay prose where they
   are and are re-read once the ledger shows what a Stop check costs.
-- **R183** (caveman per prompt) belongs to a plugin the user installed ([[#user-calls]]).
+- **R183** (caveman per prompt) belongs to a plugin the user installed. It was registered
+  twice; the lead removed the duplicate settings entries and the plugin's own stay (L223). No
+  build.
 - **R003** (subagents read-only on a live store) is a refmatrix local unit, not a packaged
   one (Q58 = b). **R007** denies Edit and Write in the deploy tree and leaves `cp` to the
   user's permission rules (Q57 = b, [[#r007-q57]]).
@@ -463,27 +466,36 @@ From L219's fleet census; counts are tracked files. Ordered by repos served, the
 
 ### 7. The always-on budget {#always-on}
 
-Target: **at most 10,000 B** of standing always-on text, from 62,087 B at the census, plus
-the open-findings rows the user added afterwards (L216). {#always-on-target}
+Target: **at most 10,000 B** of standing always-on text, from 54,238 B at the census. Two
+things are counted apart from it, by the user's rulings: the PRIMER, which keeps its place at
+today's 7,849 B until a better one is measured (L224), and the open-findings rows added after
+the census (L216). With both, a session loads at most 17,849 B plus the open rows, against
+62,087 B at the census. {#always-on-target}
 
 | Source | Today | Target | How |
 |---|---|---|---|
 | `CLAUDE.md` | 15,989 | ≤ 4,000 | identity; the principles block (≤ 2,000 B, T8, one line per rule); the pointer list (≤ 1,000 B, T10). A size guard test holds it |
 | `.claude/PROJECT_PROFILE.md` | 9,599 | 0 | the `@` import is removed. Layout, primitives and glossary go to a nested `src/refmatrix/CLAUDE.md`; commands into the skills; constraints into units; the subagent lookup text into SubagentStart. The file shrinks to identity, stack and pointers for the agents that read it |
-| `.refmatrix/PRIMER.md` | 7,849 | 0, or ≤ 1,500 | by measurement, below |
+| `.refmatrix/PRIMER.md` | 7,849 | 7,849, until a better PRIMER is measured | kept, apart from the target (L224); measured and improved, never cut on a low reading, below |
 | `.claude/rules/bug-registry.md` | 867 | 0 | `paths: workflow/bug_registry.md` (its `globs:` key is not read), plus the T4 registry check |
 | `MEMORY.md` | 20,244 | ≤ 3,000 | the index rule, below |
-| `~/.claude/GMD.md` + `MEMORY-RULES.md` | 6,901 | ≤ 500 | the user's files ([[#user-calls]]) |
+| `~/.claude/GMD.md` + `MEMORY-RULES.md` | 6,901 | ≤ 2,250 | the user, L222: `GMD.md` (2,052 B) stays always-on; `MEMORY-RULES.md` (4,849 B) moves to triggered delivery after probe P7, leaving one pointer line |
 | `~/.claude/CLAUDE.md`, the ancestor `CLAUDE.md` | 638 | 638 | not ours |
 | `workflow/bullshit/OPEN.md` (imported since L216, after the census) | 3,312 | its open rows | not capped: its size is the open debt. Its backfill note is history and moves to the closed ledger, by the file's own rule |
 
-- **PRIMER** states no rule and nothing has measured its use. It is not dropped on a guess.
-  Measure first, read-only, with 31.5's discovery-call scorer or the committed sizing script's
-  method: the share of discovery calls whose target is a PRIMER name that the same prompt's
-  scan and recall did not deliver. Recommended bands, written before the read: under 2%, the
-  import goes and its how-to-query header becomes one pointer line; 2 to 10%, cut to the names
-  that produced the hits, ≤ 1,500 B; over 10%, keep at ≤ 1,500 B and make it a cache-stable
-  section after the mod. {#primer}
+- **The PRIMER keeps its place** (the user, L224: unused content "is a signal to make the
+  primer better, not reduce or drop it"). It states no rule and nothing has measured its use,
+  so it is measured, read-only, with 31.5's discovery-call scorer: the share of discovery
+  calls whose target only the PRIMER could have delivered (a PRIMER name that the same
+  prompt's scan and recall did not deliver), and beside it the targets that neither the
+  PRIMER nor scan and recall delivered. **No reading cuts or drops it.** A low reading
+  (recommended: under 10%, written before the read) opens an improvement task on what the
+  PRIMER selects and how it is shaped. The missed targets are its input: they say which names
+  it should have held, where today's list ranks by reference count and spends lines on
+  `import/json` and test-function names. The task is measured before and after on the same
+  scorer, and a new shape is adopted on that reading, not on its byte count. The PRIMER stays
+  at today's size until then. After the mod it is a candidate for a cache-stable section in
+  the main session. {#primer}
 - **`MEMORY.md` states no rule.** A memory superseded by another, or encoded as a unit, has no
   index line; the principles block is the always-on text of a T8 memory, so it has none
   either. What remains is `reference_*` pointers and the fold lines that say how to list the
@@ -562,7 +574,7 @@ sha) true without touching the settings. {#r007-q57}
 
 ### Decisions that are the user's {#user-calls}
 
-Decided by the user on 2026-11-24 (L221, [[plan-of-plans#rulings]]): {#user-calls-decided}
+Decided by the user on 2026-11-24 (L221 to L224, [[plan-of-plans#rulings]]): {#user-calls-decided}
 
 1. **C4** (Q55 = a): `approved` means the plan approved and the next task specced.
 2. **C13** (Q56 = a): STM capture is a memory path.
@@ -574,21 +586,25 @@ Decided by the user on 2026-11-24 (L221, [[plan-of-plans#rulings]]): {#user-call
    unit layer: under Q61 = b the deny would ship in the template to every project, which
    Q58 = b rules out.
 
+5. **The user's global files** (Q59 part 1 = c, L222): `~/.claude/MEMORY-RULES.md` moves to
+   triggered delivery, an inject on a write under a `*/memory/` dir, after probe P7, leaving
+   one always-on pointer line; `~/.claude/GMD.md` stays always-on. The file serves every
+   project, so its trigger is installed at user level beside the existing PostToolUse memory
+   lint, or a project without the rmx dispatcher loses the rules. Its `#index` text changes
+   with [[#memory-index]] and goes to the user together with 26.8's AC-8 text, one approval.
+6. **T9** (Q59 part 2 = a, L223): done by the lead. Caveman was registered twice; the two
+   `~/.claude/settings.json` entries were removed and the plugin's own hooks stay. No build.
+7. **The PRIMER** (Q59 part 3, L224): never cut or dropped on a low reading; measured and
+   improved ([[#primer]]).
+
 Still open ([[plan-of-plans#questions]]): {#user-calls-open}
 
-5. **`~/.claude/GMD.md` and `~/.claude/MEMORY-RULES.md`** (Q59; 6,901 B in every project): move to
-   triggered delivery (a rule on `**/*.md` for the GMD primer; an inject on a write under a
-   memory dir for the memory rules, [[#open]] P7), leaving one always-on line each? They are
-   the user's global files. The `#index` text of MEMORY-RULES changes with [[#memory-index]];
-   it goes to the user together with 26.8's AC-8 text, one approval instead of two.
-6. **T9** (Q59): the caveman tracker injects on every prompt; one SessionStart style is the target.
-   It is the user's plugin.
-7. **The PRIMER bands and the roster bands** (Q59; [[#primer]], [[#roster-bands]]).
-8. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
+8. **The roster bands** (Q59 part 3, the other half; [[#roster-bands]]).
+9. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
    procedure skills beside its overlays (recommended), or does L219 mean overlays only?
-9. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
-   the first packs ([[#packs-first]]) (Q62).
-10. **The re-triage, row by row,** and Proposed to Accepted (Q60).
+10. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
+    the first packs ([[#packs-first]]) (Q62).
+11. **The re-triage, row by row,** and Proposed to Accepted (Q60).
 
 ## Consequences {#consequences}
 
@@ -643,7 +659,7 @@ Each is one throwaway-session probe. Evidence is committed as field names and ha
 | P4 | can a hook entry be filtered by a command pattern before any process starts? | the prefilter's form |
 | P5 | do PreCompact and SessionStart `compact` fire inside a subagent? | the ledger reset for a long subagent |
 | P6 | a skill's `paths:`: is the body loaded, or only the listing changed; and in subagents? (not documented) | T3 by path: the skill's own `paths:`, or the generated rule of [[#t3-fallbacks]] |
-| P7 | does a user-level rule's `paths:` match a file outside the project (the memory dir)? | R099 to R103: a rule or a dispatcher inject |
+| P7 | does a user-level rule's `paths:` match a file outside the project (the memory dir)? | how `MEMORY-RULES.md` is triggered (L222) and R099 to R103: a user-level rule, or the user-level inject |
 | P8 | which event sees a skill or slash-command invocation? | the `invoked` row |
 | P9 | the SubagentStart envelope: is the task prompt present? | [[task-agent-start-context#r0]] |
 | P10 | how are a plugin's agents and skills named, and may a project agent's `skills:` name a plugin skill? (a plugin cannot carry rules: documented) | [[#dist-agent-lists]] |
@@ -701,3 +717,14 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
 - R003's deny is refmatrix only: a local unit and a `gmd-curator.local.md` overlay; the
   packaged curator is unchanged ([[#contradictions]] C5).
 - [[#user-calls]] is split into decided and open; Q61 and Q62 are cited.
+
+**2026-11-24, Q59** (L222, L223, L224): {#amend-3}
+
+- **The PRIMER is never cut or dropped on a low reading** (L224). [[#primer]] keeps the
+  measurement and replaces the cut bands with an improvement task, measured before and after.
+  Its always-on row is today's size, and the 10,000 B target is restated apart from it
+  ([[#always-on-target]]). The first draft recommended dropping or cutting it by band.
+- `MEMORY-RULES.md` moves to triggered delivery after P7 and `GMD.md` stays always-on (L222);
+  the global-files row is at most 2,250 B, not 500.
+- T9 is done: the duplicate caveman hooks were removed by the lead (L223). No build.
+- The roster bands are the open half of Q59.
