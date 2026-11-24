@@ -205,6 +205,12 @@ Full workflow in `workflow/PLANNING_WORKFLOW.md`; templates in `workflow/templat
 
 ## Session Start {#session-start}
 
+After compaction or `/clear` the handoff is a file: Read the `.refmatrix/handoffs/<session>.txt`
+the hook names before any other action; it is the authoritative state (every other tool call is
+denied until it is read). {#after-compact-handoff}
+
+rel: implements -> [[task-compaction-as-handoff#rr-claude-md]]
+
 1. `rmx recall-state` (or `/recall-state`) and read `handoff.md`.
 2. Read `workflow/plan-of-plans.md` for what to implement next.
 3. Read `workflow/bullshit/last_run.log`; any unaddressed BULLSHIT finding is first priority.

@@ -1,15 +1,11 @@
 {
-  "version": "0.83.0",
+  "version": "0.85.0",
   "flags": {
     "claude": true,
     "memory_hooks": true,
     "primer": true,
     "scan_prompt": true,
     "search": true,
-    "wrappers": [
-      "/Users/tholley/refmatrix/bin/rmxgrep",
-      "/Users/tholley/refmatrix/bin/rmxrg"
-    ],
     "composite_every": 3,
     "precompact_checkpoint": true,
     "stop_promote": true,
