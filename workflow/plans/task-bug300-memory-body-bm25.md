@@ -55,6 +55,16 @@ lead before writing tests. {#r0-body}
    adds at most one indexed join per query (no per-memory loop), measured on the LongMemEval
    copy, before and after, and quoted. {#r4}
 
+**Scope rule (L199, after red-b300's R0).** Block postings are credited to their memory exactly
+when the caller's `kinds` includes `memory` and EXCLUDES `concept` (i.e. when block nodes are
+filtered out and so cannot be hits on their own). A caller that already returns block nodes keeps
+them as hits and gets no credit, so a body word is never counted twice: `context.py:792/805`
+(code, doc, memory, concept) and `net.py:114` (`kinds=None`, every kind) are unchanged and fall
+under R2. The tie is the block name prefix, `split_part(b.name, '#', 1) = m.name AND m.kind =
+'memory'` (R0 `#join-choice`), never `part-of`; a block whose prefix names no memory (bug-302's
+orphans) credits nothing. BM25 length: one document per memory, its length the memory's own
+postings plus all its blocks' postings, computed in the same grouped join (R4 measures it). {#r1-scope}
+
 ## Acceptance {#acceptance}
 
 - **AC-1.** On a fixture store with a memory titled by an id whose BODY contains `commute`,
