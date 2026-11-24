@@ -8,7 +8,7 @@ tags: [adr, instructions, hooks, rules, skills, agents, injection, telemetry, te
 # ADR-0007: Instruction architecture {#root}
 
 **Status:** Proposed · **Date:** 2026-11-24, amended the same day ([[#amendments]]) ·
-**Implementation:** plan-32 step 5 (queue row I1, tasks I1.a to I1.h in
+**Implementation:** plan-32 step 5 (queue row I1, tasks I1.a to I1.i in
 [[plan-32-retriage-2026-11-24#i1-tasks]]); agent composition and distribution with queue row H1
 (H1.a to H1.g in [[plan-32-retriage-2026-11-24#h1-tasks]]); the plugin transport with plan-24
 (24.6, 24.7)
@@ -114,8 +114,8 @@ One row per type. "Unit" is the rule's one source file ([[#generation]]). "Ledge
 | T1 detectable prohibitions | `deny` or `ask` from the PreToolUse dispatcher; auto-mode rules (the p20-0 compile) only where the violation needs judgment, not a pattern | tool + pattern + who (`main`, `subagent`, `agent:<type>`) + where (project root, clone) | none: it fires on every violation | `denied`, `asked` | reason ≤ 600 B: the rule, then the command to run instead |
 | T2 area conventions | `.claude/rules/<id>.md` with `paths:` | native: Read / Write / Edit of a matching file, main session and subagents | native: once per context, reloaded after compaction on the next touch | `loaded` (from `InstructionsLoaded`) | file ≤ 4,000 B |
 | T3 procedures with a trigger | a skill, `.claude/skills/<id>/SKILL.md`, reached three ways: (a) by path: its `paths:` if P6 shows the body loads, until then a generated path rule; (b) a dispatcher `gate` or inject of its `#checklist`; (c) an agent's `skills:` preload ([[#t3-fallbacks]]) | (a) file touch, (b) tool + pattern, (c) agent start | (a), (c) native; (b) the delivery ledger entry ([[#once]]) | `injected`, `gated`, `suppressed_once`, `preloaded`, `invoked` | checklist ≤ 2,000 B; the skill body within the 5k-token compaction window |
-| T4 completion obligations | a `check`, run by `rmx rules check` at commit, at merge, at Stop and at SubagentStop | `git commit` (two triggers, [[#t4-two-triggers]]); `git merge` and the release commit (an open BULLSHIT or GATE row on shipped code, L216; a touched security surface, [[#security-first]]); end of turn; end of a build agent | none: it runs every time; a Stop block fires once per stop | `check_failed` per failure, one `check_run` per run | message ≤ 1,000 B: the missing item and the command that supplies it |
-| T5 session orientation | SessionStart blocks; C1's pointer and read gate | `startup`, `resume`, `compact`, `clear` | the event itself | the handoff ledger (exists) | pointer ≤ 1,024 B; `session_start` 9,000 B (exists) |
+| T4 completion obligations | a `check`, run by `rmx rules check` at commit, at merge, at Stop and at SubagentStop | `git commit` (two triggers, [[#t4-two-triggers]]); `git merge` and the release commit (an open BULLSHIT or GATE row on shipped code, L216; a touched security surface, [[#security-first]]; an overdue context review, [[#context-review]]); end of turn; end of a build agent | none: it runs every time; a Stop block fires once per stop | `check_failed` per failure, one `check_run` per run | message ≤ 1,000 B: the missing item and the command that supplies it |
+| T5 session orientation | SessionStart blocks; C1's pointer and read gate; the review-due line ([[#context-review]]) | `startup`, `resume`, `compact`, `clear` | the event itself | the handoff ledger (exists) | pointer ≤ 1,024 B; `session_start` 9,000 B (exists) |
 | T6 prompt-relevant knowledge | UserPromptSubmit scan and recall (exists) | every prompt | the composite's sent marker (exists); names-only dedupe is post-mod (10.2) | `recall-events.jsonl` (exists) | `CHANNEL_BUDGET_BYTES` (exists). Carries no rule once I1.h lands |
 | T7 agent roles and per-agent facts | a stack-neutral core + stack packs + the project overlay ([[#composition]]); SubagentStart `additionalContext` for live state | agent spawn; a file touch for a pack's rule half | per `agent_id` (a spawn is a new context) | `spawned` with `agent_type`, bytes and the units carried | block ≤ 9,000 B; the brief-keyed recall is dropped first |
 | T8 judgment principles | one line each in the `CLAUDE.md` principles block | launch | native | `loaded` | block ≤ 2,000 B, enforced by a size guard |
@@ -455,14 +455,76 @@ From L219's fleet census; counts are tracked files. Ordered by repos served, the
   delivery in the same context (`violated_after_delivery`); for a checklist, its commands seen
   in later tool events. The join is 21.5's method ([[task-21.5-tool-used-signal]]): delivered
   rows against STM tool events, never a hook-emitted `used`. {#ledger-used}
-- **The report** is an `instructions` view in `rmx telemetry --context`: per unit and per
-  agent, skill and command, the count, bytes and last use.
-- **The roster decision it feeds** (recommended bands, the user's to set): no use in a project
-  for 30 days makes an agent, skill or command a candidate to leave that project's roster; no
-  use in any fleet store for 90 days, a candidate to leave the template. The fleet is read
-  from the hub's registry, never by a tree walk. Rows are kept 90 days. {#roster-bands}
+- **The raw view** is an `instructions` view in `rmx telemetry --context`: per unit and per
+  agent, skill and command, the count, bytes and last use. The review below reads it.
+- **Roster bands are inputs to the review, never a removal** (the user, L225). No use in a
+  project for 30 days flags an agent, skill or command for that project's roster; no use in
+  any fleet store for 90 days flags it for the template. A flag is put to the user with its
+  numbers and a recommended action, and the review is not complete until each flagged item
+  has the user's decision. Nothing leaves a roster or the template without one. The fleet is
+  read from the hub's registry, never by a tree walk. Rows are kept 90 days. {#roster-bands}
 - **Later:** `bytes` per delivery is what `session.measure` tuning weighs against real
   headroom after the mod.
+
+#### The context-effectiveness review {#context-review}
+
+The user, L225: "a periodic context effectiveness review should be mandatory". Mandatory
+means enforced, not remembered ([[#principle]]). {#context-review-lead}
+
+**One read-only command, `rmx review context`,** produces the report. It is a verb with CLI
+and MCP adapters, reads the ledgers and a store snapshot through the readers each ledger
+already has, and writes nothing. Its sections are every delivery surface the ledgers measure:
+{#context-review-report}
+
+| Section | What it shows | Source |
+|---|---|---|
+| Injected units | per unit: fired, suppressed, dropped for bytes; denied again in one session; violated after delivery; checklist steps seen afterwards. Units that never fired in the window | the instruction ledger; 21.5's join ([[#ledger-used]]) |
+| The roster | each agent, skill and command against the 30-day and 90-day bands, with a recommended action per flagged item | `spawned`, `preloaded`, `invoked` rows; the hub registry for the fleet band |
+| The PRIMER | the share of discovery calls only it could have served, and the targets nothing delivered | 31.5's scorer ([[#primer]]) |
+| Scan-prompt and recall | per channel and block: delivered against used | `recall-events.jsonl`; 21.1's usage report; 31.5's per-block capture |
+| Always-on bytes | each source against its target in [[#always-on]], and what grew since the last review | file sizes; `loaded` rows |
+
+A section whose instrument is not built yet prints `not measured` and the task that builds
+it. It is never left out. {#context-review-unmeasured}
+
+**The record is one dated row** in `workflow/context-reviews.md`, a GMD ledger in the repo:
+the date, the window, the report's hash and headline numbers, a decision for every flagged
+item, and the next due date. The file is in git so that a clone, another machine and the
+release commit all see the same answer; the store would not give that. A decision that
+changes scope (an agent leaves a roster, a unit is retired, a PRIMER task opens) is an L-row
+in the POP first, and the review row cites it. The report prints the row's skeleton with
+each flagged item marked undecided; the lead fills it from the user's answers, and a T4
+check refuses a commit of a review row that leaves a flagged item undecided. That check is
+what makes the roster review strong rather than a listed candidate.
+{#context-review-record}
+
+**Enforcement**, as recommended in Q63 (a), which is still open: {#context-review-enforce}
+
+- **Due** 30 days after the newest review row, or before a major release if that is sooner.
+- **Overdue, every session says so once:** a SessionStart line on `startup` and `resume`
+  names the command and the days overdue (T5; under 300 B).
+- **Overdue, a major release holds:** the release commit needs a review row newer than the
+  last major release, as release step 1b needs no open GATE row
+  ([[orchestration#release]]). It is a T4 check; an L-row may waive it for one release, and
+  the release commit names the waiver.
+- **Fleet:** each repo holds its own review. The hub lists the overdue repos from its
+  registry, in `rmx hub status` and the web UI. No nightly scheduler exists before the mod
+  (plan-17 is post-mod), so the list is computed once a day inside the hub's existing
+  watchdog loop.
+- **Bootstrap:** the gate ships in the same release as the command, so the first major
+  release after it needs the first review, and none before.
+
+What changes under the other answers: {#context-review-options}
+
+- **(b) release gate only:** no SessionStart line and no hub list; "due" exists only at a
+  major release. The nine consumers have no major release, so they would never be reviewed,
+  and here a long gap between majors goes unreviewed.
+- **(c) calendar only:** the SessionStart line and the hub list stay; the release check is
+  not built. An overdue review is detectable, so by [[#principle]] this is the weaker form:
+  a reminder where enforcement is available.
+- **What (a) itself leaves open:** in a repo with no release, the only pressure is the
+  session line and the hub list. If the user wants a hold there too, the natural gate is
+  the install window (`rmx install-hooks --apply`, gated once and never trapped).
 
 ### 7. The always-on budget {#always-on}
 
@@ -574,7 +636,7 @@ sha) true without touching the settings. {#r007-q57}
 
 ### Decisions that are the user's {#user-calls}
 
-Decided by the user on 2026-11-24 (L221 to L224, [[plan-of-plans#rulings]]): {#user-calls-decided}
+Decided by the user on 2026-11-24 (L221 to L225, [[plan-of-plans#rulings]]): {#user-calls-decided}
 
 1. **C4** (Q55 = a): `approved` means the plan approved and the next task specced.
 2. **C13** (Q56 = a): STM capture is a memory path.
@@ -597,14 +659,19 @@ Decided by the user on 2026-11-24 (L221 to L224, [[plan-of-plans#rulings]]): {#u
 7. **The PRIMER** (Q59 part 3, L224): never cut or dropped on a low reading; measured and
    improved ([[#primer]]).
 
+8. **The roster bands** (Q59 part 3, the other half; L225): they are inputs to a mandatory
+   periodic review and are put to the user strongly; nothing is removed automatically
+   ([[#roster-bands]], [[#context-review]]). Q59 is now fully decided.
+
 Still open ([[plan-of-plans#questions]]): {#user-calls-open}
 
-8. **The roster bands** (Q59 part 3, the other half; [[#roster-bands]]).
-9. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
-   procedure skills beside its overlays (recommended), or does L219 mean overlays only?
-10. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
+9. **The review's cadence and enforcement** (Q63; [[#context-review-enforce]]). The ADR is
+   written with (a) as the default.
+10. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
+    procedure skills beside its overlays (recommended), or does L219 mean overlays only?
+11. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
     the first packs ([[#packs-first]]) (Q62).
-11. **The re-triage, row by row,** and Proposed to Accepted (Q60).
+12. **The re-triage, row by row,** and Proposed to Accepted (Q60).
 
 ## Consequences {#consequences}
 
@@ -623,6 +690,8 @@ Still open ([[plan-of-plans#questions]]): {#user-calls-open}
 - An installed agent file differs per project by its generated `skills:` list, so "the same
   file everywhere" (F6's test) becomes "the same render everywhere", checked by `--check`.
 - The installer outlives the mod: rules and `CLAUDE.md` cannot ride a plugin.
+- The review is a standing claim on the user's time, every 30 days per repo that has one.
+  The report is built to make that short: flagged items only, each with a recommendation.
 - Isolated agents (another macOS user, their own session) get the units their clone's
   `.claude/` carries, and no dev-tree ledger rows. Their denies depend on `rmx` being on
   their PATH; [[#dispatcher-failure]] says so at their SessionStart.
@@ -670,7 +739,7 @@ self-audit check has run for a week). {#open-not-probes}
 
 ## Implementation {#implementation}
 
-Tasks, order and sizes are in [[plan-32-retriage-2026-11-24#i1-tasks]] (delivery) and
+Tasks, order and sizes are in [[plan-32-retriage-2026-11-24#i1-tasks]] (delivery and the review) and
 [[plan-32-retriage-2026-11-24#h1-tasks]] (composition and distribution); each is specced just
 in time ([[orchestration#planning]]). Constraints the specs inherit from this ADR:
 
@@ -728,3 +797,14 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   the global-files row is at most 2,250 B, not 500.
 - T9 is done: the duplicate caveman hooks were removed by the lead (L223). No build.
 - The roster bands are the open half of Q59.
+
+**2026-11-24, the review** (L225; Q63 open): {#amend-4}
+
+- A **mandatory context-effectiveness review** ([[#context-review]]): one read-only command,
+  `rmx review context`, over every measured delivery surface; a dated row in
+  `workflow/context-reviews.md` with the user's decisions; enforcement written with Q63 (a)
+  as the default, and what (b) and (c) would change.
+- [[#roster-bands]]: the bands are the review's inputs, put to the user with a recommended
+  action each; never an automatic removal. Q59 is fully decided (L222 to L225).
+- Builds: the report and the record are a new task, I1.i; the release hold and the
+  undecided-item check join I1.e.
