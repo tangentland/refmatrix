@@ -82,12 +82,18 @@ Every capability an agent can invoke is a `@verb` in `verbs.py`; CLI commands an
 adapters over verbs. Parity between surfaces is asserted by a test, never assumed. Rationale:
 the MCP surface drifted to 30 tools over 10 verbs; behavior lived in only one adapter.
 
-### X. Hooks are generated {#project-4}
+### X. Instruction artifacts are generated {#project-4}
 
-The Claude Code hook config this project runs is produced by `rmx install-hooks`; the installed
-file equals the generated block (`rmx install-hooks --check`). A hook that only exists in a
-settings file is a template bug to be promoted or deleted. Rationale: hand-authored hooks were
-invisible to reinstall, unreviewed, and silenced a failure the code was designed to shout.
+Every instruction artifact this project installs — hook config, PreToolUse/Stop dispatchers,
+path-scoped rules, skills, agent files and their `skills:` lists, nested `CLAUDE.md` files, git
+hooks, and the project-local units beside them — is produced by `rmx install-hooks` / `rmx init`
+from one source (the package's `src/refmatrix/templates/` plus the project's own unit layer); the
+installed file equals the render (`rmx install-hooks --check`). An artifact that exists only as an
+installed file is a template bug to be promoted or deleted. Rationale: hand-authored hooks were
+invisible to reinstall, unreviewed, and silenced a failure the code was designed to shout; ADR
+0007 (L226) widened the rule from hooks to every instruction artifact so a rule has one source.
+
+rel: amends -> [[0007-instruction-architecture#installed-equals-generated]]
 
 ### XI. Measure the path users run {#project-5}
 
