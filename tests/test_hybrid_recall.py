@@ -257,6 +257,11 @@ def test_an_empty_symbolic_leg_is_said_on_every_surface(b300, surface, query):
     concept, or a query of stopwords only -- the answer (still the dense rows) carries a
     `fuse: symbolic leg empty` warning, through the verb, the CLI and MCP, so a no-op fuse is
     never silent. RED at base: no surface says anything."""
+    if query == _B300_STOPWORDS:
+        # The decided case (spec #r1-scope, 98de45b4): fuse on, no terms reach the leg. Bound to
+        # THE stoplist (never hand-rolled), so a stoplist change cannot quietly void the case.
+        from refmatrix.scan import _PROMPT_STOPWORDS
+        assert all(w in _PROMPT_STOPWORDS for w in query.split()), query
     ws = _recall_warnings(surface, b300, query, fuse=True)
     assert any(_B300_WARN in w for w in ws), f"{surface}: no {_B300_WARN!r} in {ws}"
 
