@@ -7,21 +7,25 @@ tags: [adr, instructions, hooks, rules, skills, agents, injection, telemetry, te
 
 # ADR-0007: Instruction architecture {#root}
 
-**Status:** Proposed · **Date:** 2026-11-24 · **Implementation:** plan-32 step 5 (queue row I1,
-tasks I1.a to I1.h in [[plan-32-retriage-2026-11-24#i1-tasks]]); distribution with queue row H1;
-the plugin transport with plan-24 (24.6, 24.7)
+**Status:** Proposed · **Date:** 2026-11-24, amended the same day ([[#amendments]]) ·
+**Implementation:** plan-32 step 5 (queue row I1, tasks I1.a to I1.h in
+[[plan-32-retriage-2026-11-24#i1-tasks]]); agent composition and distribution with queue row H1
+(H1.a to H1.g in [[plan-32-retriage-2026-11-24#h1-tasks]]); the plugin transport with plan-24
+(24.6, 24.7)
 
 A rule reaches the model at the **earliest mandatory event at which it can be acted on**, from
 **one source file**, **once per context**, and every delivery **writes a row**. Where a
 violation can be detected the rule is **enforced** (denied or checked), not recalled. Always-on
 text shrinks from 62,087 B to at most 10,000 B: judgment principles and pointers only. The 205
-rules of the census each get exactly one of ten delivery contracts ([[#contract]]). All of it is
-generated from package data by the `hooks.py` family, so the installed files equal the generated
-ones in every project ([[#generation]]).
+rules of the census each get exactly one of ten delivery contracts ([[#contract]]). An agent
+is composed from a stack-neutral core, stack packs and a project overlay, each arriving without
+being fetched ([[#composition]]). All of it is generated from package data by the `hooks.py`
+family, so the installed files equal the generated ones in every project ([[#generation]]).
 
 rel: part-of -> [[refmatrix/adr-0000-adr-overview]]
 rel: derives-from -> [[plan-32-instruction-architecture#principle]]
 rel: derives-from -> [[instruction-census-2026-11-24]]
+rel: derives-from -> [[plan-of-plans#rulings]]
 rel: realizes -> [[design-note-tool-keyed-context-2026-11-15#open]]
 rel: implements -> [[constitution#project-4]]
 rel: depends-on -> [[task-10.3-plan-10-injection-dedup#r1]]
@@ -66,14 +70,26 @@ What already exists and is reused, not rebuilt: {#context-reuse}
   the contract below.
 - **`agent_id` / `agent_type` on a subagent's hook envelope** (bug-307, Claude Code 2.1.331).
 
-Claude Code facts this ADR rests on are of two kinds. **Verified** from the docs on 2026-11-24
-([[plan-32-instruction-architecture#rule-types-mechanism-pre-mod-now-post-mo]]): path-scoped
-rules load on Read / Write / Edit in the main session and in subagents, not on Glob or Grep,
-and reload after compaction on the next touch; a skill's `paths:`; an agent's `skills:`
-preload; PreToolUse `additionalContext` and deny-with-reason; SubagentStart injection; Stop and
-SubagentStop `block`; the `InstructionsLoaded` event; the 10,000-character cap with a
-2,000-character preview above it. **Not verified** facts are listed as probes in [[#open]], and
-no unit that depends on one is built before its probe is committed. {#context-facts}
+Claude Code facts this ADR rests on are of three kinds. {#context-facts}
+
+- **Verified** from the docs on 2026-11-24
+  ([[plan-32-instruction-architecture#rule-types-mechanism-pre-mod-now-post-mo]], and the
+  lead's check of hooks.md, skills.md and plugins/components.md the same day): path-scoped
+  rules load their body on Read / Write / Edit in the main session and in subagents, not on
+  Glob or Grep, and reload after compaction on the next touch; an agent's `skills:` preloads
+  full skill bodies; PreToolUse deny-with-reason; a hook's `allow` **skips the permission
+  prompt**; PostToolUse context beside the result; SubagentStart injection; Stop and
+  SubagentStop `block`; the 10,000-character cap with a 2,000-character preview above it.
+  `InstructionsLoaded` is asynchronous observation only (`file_path`, `memory_type`,
+  `load_reason` including `path_glob_match` and `compact`, `trigger_file_path`): good for
+  telemetry, unable to gate. A plugin ships skills, commands, agents, hooks, MCP servers,
+  output styles and monitors, and **not** path-scoped rules or a `CLAUDE.md`.
+- **Documented only in part.** PreToolUse `additionalContext`: every documented example pairs
+  it with a `permissionDecision`; whether it is honoured without one is not documented
+  ([[#open]] P1). A skill's `paths:`: whether a match loads the skill's body or only changes
+  the listing is not documented (P6). Both have a verified fallback ([[#t3-fallbacks]]).
+- **Not verified:** the other probes in [[#open]]. No unit that depends on a probe is built
+  before the probe is committed.
 
 ## Decision {#decision}
 
@@ -96,11 +112,11 @@ One row per type. "Unit" is the rule's one source file ([[#generation]]). "Ledge
 |---|---|---|---|---|---|
 | T1 detectable prohibitions | `deny` or `ask` from the PreToolUse dispatcher; auto-mode rules (the p20-0 compile) only where the violation needs judgment, not a pattern | tool + pattern + who (`main`, `subagent`, `agent:<type>`) + where (project root, clone) | none: it fires on every violation | `denied`, `asked` | reason ≤ 600 B: the rule, then the command to run instead |
 | T2 area conventions | `.claude/rules/<id>.md` with `paths:` | native: Read / Write / Edit of a matching file, main session and subagents | native: once per context, reloaded after compaction on the next touch | `loaded` (from `InstructionsLoaded`) | file ≤ 4,000 B |
-| T3 procedures with a trigger | a skill, `.claude/skills/<id>/SKILL.md`, reached three ways: (a) its `paths:`, (b) a dispatcher inject of its `#checklist`, (c) an agent's `skills:` preload | (a) file touch, (b) tool + pattern, (c) agent start | (a), (c) native; (b) the delivery ledger entry ([[#once]]) | `injected`, `gated`, `suppressed_once`, `preloaded`, `invoked` | checklist ≤ 2,000 B; the skill body within the 5k-token compaction window |
-| T4 completion obligations | a `check`, run by `rmx rules check` at commit, at Stop and at SubagentStop | `git commit` (two triggers, [[#t4-two-triggers]]); end of turn; end of a build agent | none: it runs every time; a Stop block fires once per stop | `check_failed` per failure, one `check_run` per run | message ≤ 1,000 B: the missing item and the command that supplies it |
+| T3 procedures with a trigger | a skill, `.claude/skills/<id>/SKILL.md`, reached three ways: (a) by path: its `paths:` if P6 shows the body loads, until then a generated path rule; (b) a dispatcher `gate` or inject of its `#checklist`; (c) an agent's `skills:` preload ([[#t3-fallbacks]]) | (a) file touch, (b) tool + pattern, (c) agent start | (a), (c) native; (b) the delivery ledger entry ([[#once]]) | `injected`, `gated`, `suppressed_once`, `preloaded`, `invoked` | checklist ≤ 2,000 B; the skill body within the 5k-token compaction window |
+| T4 completion obligations | a `check`, run by `rmx rules check` at commit, at merge, at Stop and at SubagentStop | `git commit` (two triggers, [[#t4-two-triggers]]); `git merge` and the release commit (an open BULLSHIT or GATE row on shipped code, L216; a touched security surface, [[#security-first]]); end of turn; end of a build agent | none: it runs every time; a Stop block fires once per stop | `check_failed` per failure, one `check_run` per run | message ≤ 1,000 B: the missing item and the command that supplies it |
 | T5 session orientation | SessionStart blocks; C1's pointer and read gate | `startup`, `resume`, `compact`, `clear` | the event itself | the handoff ledger (exists) | pointer ≤ 1,024 B; `session_start` 9,000 B (exists) |
 | T6 prompt-relevant knowledge | UserPromptSubmit scan and recall (exists) | every prompt | the composite's sent marker (exists); names-only dedupe is post-mod (10.2) | `recall-events.jsonl` (exists) | `CHANNEL_BUDGET_BYTES` (exists). Carries no rule once I1.h lands |
-| T7 agent roles and per-agent facts | agent file + `.local.md` overlay + `skills:` preload + SubagentStart `additionalContext` for live state | agent spawn | per `agent_id` (a spawn is a new context) | `spawned` with `agent_type`, bytes and the units carried | block ≤ 9,000 B; the brief-keyed recall is dropped first |
+| T7 agent roles and per-agent facts | a stack-neutral core + stack packs + the project overlay ([[#composition]]); SubagentStart `additionalContext` for live state | agent spawn; a file touch for a pack's rule half | per `agent_id` (a spawn is a new context) | `spawned` with `agent_type`, bytes and the units carried | block ≤ 9,000 B; the brief-keyed recall is dropped first |
 | T8 judgment principles | one line each in the `CLAUDE.md` principles block | launch | native | `loaded` | block ≤ 2,000 B, enforced by a size guard |
 | T9 style | one SessionStart or output style, never per prompt | launch | native | none of ours | not ours ([[#user-calls]]) |
 | T10 reference facts | a nested `CLAUDE.md` in the directory concerned + an always-on pointer list | native: a file touch under that directory | native | `loaded` | nested file ≤ 3,000 B; pointer list ≤ 1,000 B |
@@ -136,11 +152,11 @@ follows as a PostToolUse unit; `enforce-rmx-grep.sh` stays until plan-16 decides
   instrument (a wrapper timestamp around the hook command): the median added wall time of a
   non-matching tool call is at most 10 ms; above that the prefilter is fixed before any unit
   ships. {#dispatcher-cost}
-- **An inject never changes a permission outcome.** It returns `additionalContext` and no
-  `permissionDecision`. plan-32 writes "additionalContext with an allow"; an allow from a hook
-  would answer the user's permission prompt on their behalf, so it is never emitted. If the
-  probe shows context is delivered only with a decision ([[#open]] P1), an inject uses `gate`
-  mode instead. {#dispatcher-allow}
+- **A hook never returns `allow`.** plan-32 writes "additionalContext with an allow". The
+  docs say an allow skips the permission prompt, so an inject that carried one would grant
+  permissions silently. A `context` inject returns `additionalContext` and no
+  `permissionDecision`; whether Claude Code honours that is not documented, so `context` mode
+  is built only after probe P1, with the fallbacks in [[#t3-fallbacks]]. {#dispatcher-allow}
 - **Two inject modes.** `context`: the checklist rides beside the call. `gate`: the call is
   denied once with the checklist as the reason, and the retry passes (the delivery ledger
   holds the unit). `gate` is for procedures whose first step must come before the call:
@@ -150,6 +166,23 @@ follows as a PostToolUse unit; `enforce-rmx-grep.sh` stays until plan-16 decides
   is counted, and the next SessionStart says `rmx rules: dispatcher failed N times` in one
   line. A session whose `rmx` is absent runs without denies; that is said at its start, not
   hidden. {#dispatcher-failure}
+
+#### T3's two undocumented routes and their fallbacks {#t3-fallbacks}
+
+- **The tool-keyed inject in `context` mode waits on P1.** If Claude Code does not deliver
+  context without a decision, each unit takes the fallback its binding names, all three
+  verified: a procedure whose first step must precede the call uses `gate` (deny with the
+  reason); a reminder that may arrive beside the result uses PostToolUse `additionalContext`
+  on the triggering call; an agent's own procedure uses its `skills:` preload. P1's answer
+  changes the compiled table and no unit's text.
+- **The path-keyed skill waits on P6.** Until a probe shows that a `paths:` match loads the
+  body, in subagents too, a file-triggered procedure (the POP row, the bug row, persisting a
+  review) is delivered by a generated path-scoped rule with the same `paths:` whose body is
+  the skill's `#checklist`. Rules load their body; that is verified. The skill stays the one
+  source and the rule is a generated artifact under the parity gate.
+- **The first T3 builds wait on neither.** `release-deploy`, `live-surgery` and
+  `mutation-loop` are `gate` units; `bsd-pass`, `self-audit` and `dispatch-red-green` are
+  preloads.
 
 #### Inject once {#once}
 
@@ -200,17 +233,32 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
 
   | package data, `src/refmatrix/templates/` | installed as | type |
   |---|---|---|
-  | `agents/<name>.md` | `.claude/agents/` | T7 |
+  | `agents/<role>.md`, a stack-neutral core | `.claude/agents/`, with a generated `skills:` list | T7 |
   | `commands/<name>.md` | `.claude/commands/` (two at user level, as today) | T3 |
   | `skills/<id>/SKILL.md` | `.claude/skills/<id>/` | T3 |
+  | `skills/<role>-<stack>/SKILL.md`, a pack's role half | `.claude/skills/`, where the stack is detected | T7 |
   | `rules/<id>.md` | `.claude/rules/` | T2 |
+  | `rules/stack-<x>.md`, a pack's rule half | `.claude/rules/`, where the stack is detected | T2 |
   | `triggers/<id>.md` | compiled into `.claude/rmx-instructions.json` | T1; T3's tool-keyed injects |
   | `checks/<id>.md` | compiled into the same file | T4 |
 
-- **Two layers, one schema, one generator.** Packaged units are project-neutral and ship to
-  every project. A project's own units live in its repo under the same directory names in
-  `.claude/` (for refmatrix: the dev `rmx` against a live store, the deploy tree, the lanes).
-  This is the agents' neutral-file-plus-overlay rule (R094) applied to every kind. {#layers}
+- **The template is the single source; a project adds only what is true of it alone.**
+  Packaged units (agent cores, stack packs, process skills, neutral rules, triggers, checks)
+  ship from `src/refmatrix/templates/`, and their installed copies are generated artifacts:
+  never hand-edited, compared by the parity gate (L219). A project's own sources are its
+  `.local.md` overlays and the units for procedures and prohibitions that exist only there
+  (for refmatrix: the dev `rmx` against a live store, the deploy tree, the lanes, the
+  release), under the same directory names in `.claude/`, with the same schema and fixtures.
+  `--check` puts every installed file in one of three classes: **generated** (equal to the
+  render), **drift** (a template name whose content differs: an error), **local** (a name the
+  template does not have: listed, its fixtures run). A local file with a pack-shaped name is
+  refused ([[#composition-rules]]). What a second project would use is promoted to the
+  template, not copied. {#layers}
+- **How this reads L219.** L219 puts project specifics "only in `.local.md` overlays". That
+  settles agents. A project's own denies and procedures bind the lead too, so an agent overlay
+  cannot hold them; this ADR treats them as the same local layer for the other kinds. Read
+  more narrowly, they would move into the template behind a detection key and ship refmatrix's
+  development rules to every project ([[#user-calls]]). {#layers-l219}
 - **The binding lives in the unit's frontmatter:** the event, the tool, the pattern and the
   field it is matched on (`command`, `file_path`, `subagent_type`), who, where, the action
   (`deny`, `ask`, `inject` with its mode), the priority, and the census rows it carries. A
@@ -226,8 +274,8 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   kills fails its `fire` fixture instead of going quiet. {#fixtures}
 - **Installed equals generated, for everything.** `render_managed` and `check` extend from the
   hook block to rules, skills, agents, commands, the compiled file and the git hooks. A
-  hand-edited copy is drift, shown as a diff. Local changes belong in a project unit or a
-  `.local.md` overlay. [[constitution#project-4]] should be widened from "hooks" to "every
+  hand-edited copy is drift, shown as a diff. Local changes belong in an overlay or a local
+  unit ([[#layers]]). [[constitution#project-4]] should be widened from "hooks" to "every
   instruction artifact" when this ADR is accepted (a constitution amendment, the lead's).
   {#installed-equals-generated}
 - **Every other mention is a pointer.** `CLAUDE.md`, the profile, `ORCHESTRATION.md`, agent
@@ -246,14 +294,108 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   one unit, one principles line, or `retired`, by a script that reads the units' `census`
   fields. {#removal-order}
 
-### 4. Distribution {#distribution}
+### 4. Agent composition {#composition}
+
+Decided by the user as L219 ([[plan-of-plans#rulings]]): an agent definition is three layers,
+so one role serves every stack in the fleet, and each layer arrives without the agent fetching
+it. What was measured: ten copies of the security auditor in the fleet with ten checksums and
+two overlays; Docker named on 21 lines of 8 of this repo's 13 neutral agent files, while
+no fleet repo tracks a container. {#composition-lead}
+
+| Layer | Holds | Source | Delivered by |
+|---|---|---|---|
+| **Core** | the role's method, its consequence rubric, its outputs. No stack word | `templates/agents/<role>.md` | the agent file at spawn |
+| **Stack pack, rule half** | conventions of the stack that bind any role | `templates/rules/stack-<x>.md`, `paths:` by extension and manifest name | the native path rule, on Read / Write / Edit, in the lead and every subagent |
+| **Stack pack, role half** | what this role does differently on this stack | `templates/skills/<role>-<x>/SKILL.md` | the agent's `skills:` preload; `rmx init` generates the list from the detected stacks |
+| **Overlay** | this project's facts for the role | `.claude/agents/<role>.local.md`, hand-written in the project | preloaded: the generator renders it as the skill `<role>-local`, last in the `skills:` list |
+
+Rules of composition: {#composition-rules}
+
+- **A core holds no stack word.** A guard test reads the packaged cores for a stack-term list
+  (Docker, pytest, JWT, npm, Postgres and the rest) and plants a must-fail case. Docker text
+  leaves the cores for a `docker` pack, which removes C1 instead of editing around it.
+- **No "read your overlay first".** That sentence is a fetch the model must remember; it
+  leaves every core. The overlay arrives by preload, like the packs.
+- **A cell exists only when it has content.** `<role>-<x>` is written when today's files hold
+  stack text for that role (the extraction source) or an audit shows the need. The generator
+  lists the cells that exist; it never installs an empty skill.
+- **A preload budget.** A pack skill is at most 6,000 B. The generator sums each agent's list
+  at render and fails, naming the skills, if it passes the 25k-token window in which preloaded
+  bodies survive compaction.
+- **Packs are template-only.** Cores, stack rules and role × stack skills live in
+  `src/refmatrix/templates/` and nowhere else. A stack no pack covers is added to the
+  template, never locally: `--check` refuses a local file named like a pack (`stack-*`,
+  `<role>-<stack>`). An installed agent file is the core plus its generated `skills:` list, so
+  the parity gate compares it with the render, not with the template's bytes.
+
+#### Stack detection {#stack-detection}
+
+`rmx init` and `rmx install-hooks --apply` choose the packs. The contract: {#stack-detection-lead}
+
+1. **Inputs:** manifests at tracked paths, and a census of tracked files by extension from
+   `git ls-files`. Never a directory walk; untracked, ignored and vendored files do not count.
+2. **A stack is detected** by its manifest, or by at least 5 tracked files of its extensions
+   (a proposed threshold; the smallest stack measured in the fleet has 31). A framework is
+   detected only from a manifest's dependencies.
+3. **Each pack declares its own detection** (`detect:` in its rule's frontmatter: manifest
+   names, extensions, dependency names). Adding a pack adds its detection; there is no second
+   table to drift.
+4. **The result is recorded** in `.claude/rmx-hooks.json` (`stacks`: each with its count and
+   what detected it) and printed. The project may pin `include` or `exclude` there; detection
+   never overrides a pin.
+5. **`--check` re-runs detection.** A stack detected but not installed, or installed but no
+   longer detected, is out of sync, and the line names the command that fixes it.
+6. **Nothing is silent.** A group of tracked files with no pack is printed with its count and
+   counted. A repo with no tracked files (orderly today) installs cores only and says so.
+   Outside a git repo detection reads manifests only, and says so.
+
+#### The first packs {#packs-first}
+
+From L219's fleet census; counts are tracked files. Ordered by repos served, then by risk.
+{#packs-first-lead}
+
+| # | Pack | Detected by | Rule `paths:` | First role cells | Reach |
+|---|---|---|---|---|---|
+| 1 | `python` (pytest folded in: every Python repo here uses it) | `pyproject.toml`, `setup.py`, `requirements*.txt`; `.py` | `**/*.py` | test-engineer, implementer, code-reviewer, security-auditor | every repo with code |
+| 2 | `shell` | `.sh`; hook scripts | `**/*.sh` | security-auditor (quoting, PATH, hooks), code-reviewer | every repo |
+| 3 | `postgres` | `.sql`; a Postgres driver in a manifest | `**/*.sql` | security-auditor (roles, grants, injection), implementer, test-engineer | atldb 250, cliquedb 264, portal 112, thiquet 31 |
+| 4 | `node`, and `node-express` where `express` is a dependency | `package.json` | `**/*.{js,mjs,cjs,jsx,ts,tsx}` | security-auditor (web / API), test-engineer | portal 198 (Express), viascope 396 (frontend) |
+| 5 | `docker` | a tracked `Dockerfile*` or compose file | those files | test-engineer, security-auditor: the text extracted from today's cores | no repo today; refmatrix when T0.9 (b) lands |
+
+#### Security, the first instance {#security-first}
+
+- **One canonical `ch-security-auditor` core.** Its checklist is by **surface category**: web
+  and API; database roles and SQL; network daemons; device control; local IPC and CLI;
+  secrets; supply chain; agent-context injection. Stack detail (JWT, Express middleware,
+  Postgres grants, shell quoting) lives in `ch-security-auditor-<stack>` cells.
+- **The overlay declares the project's surfaces** and their path globs, in
+  `ch-security-auditor.local.md`'s frontmatter. The generator compiles them into two units.
+  A trigger on the ch-bsd dispatch lists the surfaces and says to dispatch the auditor in the
+  same message when the range touches them ([[#t3-fallbacks]] for its mode). A check at
+  `git merge` is the backstop: the range is git's own; if it touches a surface and the ledger
+  has no `spawned` row for the auditor since the branch head was committed, the merge is
+  gated once with the surfaces named. The retry passes and is logged.
+- **ch-bsd gains one clause,** in the `bsd-pass` skill: a security breach with a live
+  consequence is BULLSHIT.
+- **No declared surfaces, no dispatch units**, and `--check` says `security surfaces: none
+  declared` in one line.
+- **Retention** is read from the ledger's `spawned` rows per project ([[#roster-bands]]). The
+  baseline audits of the other repos are the lead's, on the user's go (L219), and are not
+  part of this ADR.
+
+### 5. Distribution {#distribution}
 
 - **Now:** `rmx init` scaffolds; `rmx install-hooks` renders, checks and applies. One engine
   for both; the `rmx template diff|upgrade` the merge review proposes is that engine's check
   and apply under another name, not a second installer. {#dist-now}
-- **A project's roster** (which agents, skills and commands it installs) is recorded in
-  `.claude/rmx-hooks.json` with the other flags, so `--check` re-renders the same set. The
-  template keeps every agent; refmatrix trims its own install (L214). {#roster}
+- **A project's roster** (which agents, skills and commands it installs) and its detected
+  stacks are recorded in `.claude/rmx-hooks.json` with the other flags, so `--check`
+  re-renders the same set. The template keeps every agent and every pack; refmatrix trims its
+  own install (L214). {#roster}
+- **Installed copies are generated artifacts** (L219): cores, pack rules and pack skills are
+  written by the installer from `src/refmatrix/templates/`, never by hand, and a hand edit is
+  drift. A project changes its behaviour through its overlay, or the template changes for
+  everyone. {#dist-generated}
 - **H1 is built once** because the template tree is already in plugin layout and
   `--check` is the parity gate. An upgrade shows the diff, backs the file up, and replaces it.
   The backup is part of H1: today `--force` backs up only the two user-level commands
@@ -261,17 +403,30 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   (`_install_pkg_md`). It does **not** build the three-way merge of
   [[refmatrix/cat-herder-merge-2026-11-24#shape-upgrade]]: an edited neutral file is drift by
   rule, and the plugin retires copied agents, skills, commands and hooks anyway. {#h1-once}
-- **Post-mod, the plugin carries** agents, skills, commands and hooks from the same tree
-  ([[exploration-claude-code-mod-transport#distribution]], 24.7). The copy step stands down per
-  component while the plugin is live, the rule 24.6 already has for shell hooks. **What stays
-  installed as project files:** path-scoped rules, nested `CLAUDE.md` files, a project's own
-  units, overlays, and the workflow skeleton. Whether a plugin can carry rules, and how plugin
-  agents and skills are namespaced, is [[#open]] P10; a binding that matches an agent type
-  accepts both the bare and the namespaced name from the start. {#dist-post-mod}
+- **Post-mod, the plugin carries** skills (process skills and the packs' role half),
+  commands and hooks from the same tree ([[exploration-claude-code-mod-transport#distribution]],
+  24.7). The copy step stands down per component while the plugin is live, the rule 24.6
+  already has for shell hooks. {#dist-post-mod}
+- **A plugin cannot carry path-scoped rules or a `CLAUDE.md`** (the docs). So the rule half of
+  every stack pack, a project's T2 rules, the nested `CLAUDE.md` files and the pointer list
+  stay installed by `rmx init` / `install-hooks` after the mod, under the same parity gate.
+  The installer is therefore permanent, not a bridge to the plugin, and H1's check and upgrade
+  are not throwaway. A pack then has two carriers, so `--check` reports installed rules whose
+  version differs from the live plugin's, on the version-and-schema handshake 24.7 already
+  specifies. {#dist-rules-stay}
+- **Agent cores and the per-project `skills:` list.** A plugin's agent file is one static file
+  for every project, so it cannot hold a list generated from one project's stacks. Post-mod,
+  either the agent files stay installed (generated, as now), or the mod registers each agent
+  per project with its computed list (`$.agent.register`, read from the recorded stacks). The
+  second is a 24.5 / 24.7 design point. Whether a project agent's `skills:` may name a plugin
+  skill, and how plugin agents are named, is [[#open]] P10; a binding that matches an agent
+  type accepts both the bare and the namespaced name from the start. {#dist-agent-lists}
+- **Also installed, always:** a project's local units, its overlays and the generated
+  `<role>-local` skills, and the workflow skeleton. {#dist-local}
 - **Template version = rmx version.** A unit changes in a release and reaches a project at its
   install window, which stays user-gated. {#dist-version}
 
-### 5. Usage telemetry {#telemetry}
+### 6. Usage telemetry {#telemetry}
 
 - **One ledger per store,** `<store>/instructions/ledger.jsonl`: one line per delivery,
   appended lock-free like `query.log`. It is a file append, not a store write, so a subagent's
@@ -283,7 +438,9 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   and ids only. Outcomes are the ones in [[#contract]], plus `dropped_bytes` and `error`.
   {#ledger-row}
 - **Who writes:** the dispatcher (its own rows); a generated `InstructionsLoaded` entry (every
-  `CLAUDE.md`, nested `CLAUDE.md` and rule load); the SubagentStart entry (`spawned`); the
+  `CLAUDE.md`, nested `CLAUDE.md` and rule load; the event is asynchronous and cannot gate, and
+  its `load_reason` goes to `cause`, so a reload after compaction is told from a first load);
+  the SubagentStart entry (`spawned`); the
   dispatcher on a `Skill` call or a slash command (`invoked`, [[#open]] P8). {#ledger-writers}
 - **"Was it used" is derived, not emitted.** At report time: `denied` again for the same unit
   in one session (the reason did not teach); a T1 or T4 failure after that rule's own T2 / T3
@@ -299,9 +456,10 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
 - **Later:** `bytes` per delivery is what `session.measure` tuning weighs against real
   headroom after the mod.
 
-### 6. The always-on budget {#always-on}
+### 7. The always-on budget {#always-on}
 
-Target: **at most 10,000 B** always-on, from 62,087 B. {#always-on-target}
+Target: **at most 10,000 B** of standing always-on text, from 62,087 B at the census, plus
+the open-findings rows the user added afterwards (L216). {#always-on-target}
 
 | Source | Today | Target | How |
 |---|---|---|---|
@@ -312,6 +470,7 @@ Target: **at most 10,000 B** always-on, from 62,087 B. {#always-on-target}
 | `MEMORY.md` | 20,244 | ≤ 3,000 | the index rule, below |
 | `~/.claude/GMD.md` + `MEMORY-RULES.md` | 6,901 | ≤ 500 | the user's files ([[#user-calls]]) |
 | `~/.claude/CLAUDE.md`, the ancestor `CLAUDE.md` | 638 | 638 | not ours |
+| `workflow/bullshit/OPEN.md` (imported since L216, after the census) | 3,312 | its open rows | not capped: its size is the open debt. Its backfill note is history and moves to the closed ledger, by the file's own rule |
 
 - **PRIMER** states no rule and nothing has measured its use. It is not dropped on a guess.
   Measure first, read-only, with 31.5's discovery-call scorer or the committed sizing script's
@@ -331,7 +490,7 @@ Target: **at most 10,000 B** always-on, from 62,087 B. {#always-on-target}
   ([[refmatrix/adr-0005-memory-dir-layout#hooks]]). {#memory-index}
 - **Order:** this is the last I1 task. Text leaves always-on only by [[#removal-order]].
 
-### 7. What stays for the mod {#split}
+### 8. What stays for the mod {#split}
 
 T1 to T7 are native now. The mod is a second **transport** for the same units, not a second
 design: {#split-lead}
@@ -342,18 +501,18 @@ design: {#split-lead}
 | `prompt.context` | T5's pointer-and-gate under the hook cap | re-read on compaction and `/clear` |
 | `session.measure` | T6 budgets from real headroom (plan-19's frozen parts) | the ledger's `bytes` is its input |
 | `session.compact` | the PreCompact entry that writes 10.3's marker | |
-| `agent.spawn`, `$.agent.register` | SubagentStart inject; copied agent files | |
+| `agent.spawn`, `$.agent.register` | SubagentStart inject; installed agent files, each with its per-project `skills:` list | [[#dist-agent-lists]] |
 | `skill.prompt` | T3 checklists with live store facts | **never fired in the 2026-10-20 probe** ([[plan-24-mod-transport#probes-batch2]]): probe before 24.8 counts on it |
 | `tool.describe` | the discovery-ladder pointer at the Grep tool itself (21.3) | |
 | `turn.complete` | the Stop check | |
-| plugin distribution | the copy step for agents, skills, commands, hooks | 24.7 |
+| plugin distribution | the copy step for skills, commands and hooks. Never rules or `CLAUDE.md` | 24.7; [[#dist-rules-stay]] |
 
 **T2 and T8 do not move to `prompt.section`.** plan-32's table sends them there, but
 `prompt.section` and `prompt.compose` do not fire for a subagent
 ([[plan-24-mod-transport#probes-batch2]]), and subagents do most of the editing. Path-scoped
 rules and `CLAUDE.md` reach both, so they stay the delivery after the mod. {#split-t2}
 
-### 8. The 19 contradictions {#contradictions}
+### 9. The 19 contradictions {#contradictions}
 
 For each: the source that wins, why, and the edit that removes the loser. "User" in the last
 column means the choice is not settled by evidence ([[#user-calls]]). Numbers are
@@ -361,7 +520,7 @@ column means the choice is not settled by evidence ([[#user-calls]]). Numbers ar
 
 | # | Wins | Why | Edit that removes the loser | Call |
 |---|---|---|---|---|
-| C1 Docker | `CLAUDE.md`: no container | a project fact; the Docker text is template default in neutral files | the five agent files drop the Docker sentences and point at the `lane-verify` skill; `ch-test-engineer.md`'s appended host-venv line moves to its overlay. T0.9 (b) later edits the skill, once | evidence |
+| C1 Docker | `CLAUDE.md`: no container | a project fact; the Docker text is stack text in neutral files | Docker leaves every core for the `docker` pack ([[#composition-rules]]), installed only where a container file is tracked; `ch-test-engineer.md`'s appended host-venv line moves to its overlay; the lanes are refmatrix's local `lane-verify` skill. T0.9 (b) later installs the pack here | evidence |
 | C2 verify lane | `CLAUDE.md` `#test-discipline` rule 9 | newer (L173 to L176); `ORCHESTRATION` `#one-suite` agrees | `ch-test-engineer.local.md`'s `lockf` sentence becomes a pointer to `lane-verify` | evidence |
 | C3 ch-bsd on specs | `ORCHESTRATION` `#planning` | L165, the user's "go"; it says it wins | `CLAUDE.md` `#agent-skill-workflow` and `PLANNING_WORKFLOW` `#default-planning-path` lose the spec-round chain and point at `#planning` | evidence |
 | C4 when specs are written | recommended: just in time | L165; plan-32, C1 and C2 were all run that way | `CLAUDE.md` `#plans-pre-written`, `PLAN_GOVERNANCE` `#lifecycle-gates` and the POP's `#status-lifecycle` say: no production code for a **task** before that task's one-page spec is approved | **user**: it redefines `approved`, a lifecycle state the user set |
@@ -388,21 +547,27 @@ enforcement are one unit, so they cannot differ ([[#generation]]).
 
 ### Decisions that are the user's {#user-calls}
 
-1. **C4:** does `approved` mean "every task specced" or "the plan approved, the next task
-   specced"? Recommended: the second.
-2. **C13:** is STM capture a memory path? Recommended: yes.
-3. **C17 and `permissions.allow`:** the `RMXGREP_MODE=plain` env line in the user's global
+The POP holds the first seven as Q55 to Q59 ([[plan-of-plans#questions]]). {#user-calls-lead}
+
+1. **C4** (Q55): does `approved` mean "every task specced" or "the plan approved, the next
+   task specced"? Recommended: the second.
+2. **C13** (Q56): is STM capture a memory path? Recommended: yes.
+3. **C17 and `permissions.allow`** (Q57): the `RMXGREP_MODE=plain` env line in the user's global
    settings, and the standing `cp … ~/refmatrix/src/…` grants in `.claude/settings.local.json`
    that allow what R007 forbids. Settings are the user's to edit.
-4. **`~/.claude/GMD.md` and `~/.claude/MEMORY-RULES.md`** (6,901 B in every project): move to
+4. **`~/.claude/GMD.md` and `~/.claude/MEMORY-RULES.md`** (Q59; 6,901 B in every project): move to
    triggered delivery (a rule on `**/*.md` for the GMD primer; an inject on a write under a
    memory dir for the memory rules, [[#open]] P7), leaving one always-on line each? They are
    the user's global files. The `#index` text of MEMORY-RULES changes with [[#memory-index]];
    it goes to the user together with 26.8's AC-8 text, one approval instead of two.
-5. **T9:** the caveman tracker injects on every prompt; one SessionStart style is the target.
+5. **T9** (Q59): the caveman tracker injects on every prompt; one SessionStart style is the target.
    It is the user's plugin.
-6. **The PRIMER bands and the roster bands** ([[#primer]], [[#roster-bands]]).
-7. **The fleet reach of R003's deny** (C5).
+6. **The PRIMER bands and the roster bands** (Q59; [[#primer]], [[#roster-bands]]).
+7. **The fleet reach of R003's deny** (C5; Q58).
+8. **The local layer** ([[#layers-l219]]): may a project hold its own denies, checks and
+   procedure skills beside its overlays (recommended), or does L219 mean overlays only?
+9. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
+   the first packs ([[#packs-first]]).
 
 ## Consequences {#consequences}
 
@@ -416,6 +581,9 @@ enforcement are one unit, so they cannot differ ([[#generation]]).
   is covered by `--check`.
 - The install window carries more than hooks. It stays user-gated, and its diff is readable
   before it is applied.
+- An installed agent file differs per project by its generated `skills:` list, so "the same
+  file everywhere" (F6's test) becomes "the same render everywhere", checked by `--check`.
+- The installer outlives the mod: rules and `CLAUDE.md` cannot ride a plugin.
 - Isolated agents (another macOS user, their own session) get the units their clone's
   `.claude/` carries, and no dev-tree ledger rows. Their denies depend on `rmx` being on
   their PATH; [[#dispatcher-failure]] says so at their SessionStart.
@@ -432,6 +600,10 @@ enforcement are one unit, so they cannot differ ([[#generation]]).
 - **Wait for the mod's `tool.check` and `prompt.section`.** Rejected by L214's finding that
   T1 to T7 are native now; and `prompt.section` does not reach subagents ([[#split-t2]]).
 - **Inject with `permissionDecision: allow`.** Rejected ([[#dispatcher-allow]]).
+- **One agent file per role per stack.** Rejected: roles times stacks files, the ten copies
+  and ten checksums again; and a repo with two stacks would need both.
+- **Stack text kept in the core behind "if your project uses X".** Rejected: that is the
+  Docker text today, loaded in every repo while none tracks a container (C1).
 - **One always-on file, better organised.** Rejected: "works; only grows"
   ([[design-note-tool-keyed-context-2026-11-15#kinds]]).
 
@@ -442,16 +614,16 @@ Each is one throwaway-session probe. Evidence is committed as field names and ha
 
 | # | Probe | Decides |
 |---|---|---|
-| P1 | is PreToolUse `additionalContext` delivered with no `permissionDecision`, and does the permission flow stay as it was? | `context` mode, or `gate` everywhere |
+| P1 | is PreToolUse `additionalContext` delivered with no `permissionDecision`, and does the permission flow stay as it was? (not documented) | `context` mode, or the fallbacks of [[#t3-fallbacks]] |
 | P2 | is there an `ask` decision, and what does it do in auto mode? | R006 |
-| P3 | `InstructionsLoaded`: its fields; does it fire in a subagent with `agent_id`; for a skill? | the `loaded` row |
+| P3 | `InstructionsLoaded` (fields documented): does it fire in a subagent with `agent_id`; for a skill load? | whose context a `loaded` row belongs to |
 | P4 | can a hook entry be filtered by a command pattern before any process starts? | the prefilter's form |
 | P5 | do PreCompact and SessionStart `compact` fire inside a subagent? | the ledger reset for a long subagent |
-| P6 | a skill's `paths:`: is the body loaded, or only offered; and in subagents? | T3 route (a) |
+| P6 | a skill's `paths:`: is the body loaded, or only the listing changed; and in subagents? (not documented) | T3 by path: the skill's own `paths:`, or the generated rule of [[#t3-fallbacks]] |
 | P7 | does a user-level rule's `paths:` match a file outside the project (the memory dir)? | R099 to R103: a rule or a dispatcher inject |
 | P8 | which event sees a skill or slash-command invocation? | the `invoked` row |
 | P9 | the SubagentStart envelope: is the task prompt present? | [[task-agent-start-context#r0]] |
-| P10 | can a plugin carry rules; how are its agents and skills named? | [[#dist-post-mod]] |
+| P10 | how are a plugin's agents and skills named, and may a project agent's `skills:` name a plugin skill? (a plugin cannot carry rules: documented) | [[#dist-agent-lists]] |
 
 Not probes: whether the p20-0 auto-mode rules change behaviour at all (unmeasured since they
 shipped); what a Stop check costs in false blocks (read from the ledger after SubagentStop's
@@ -459,7 +631,8 @@ self-audit check has run for a week). {#open-not-probes}
 
 ## Implementation {#implementation}
 
-Tasks, order and sizes are in [[plan-32-retriage-2026-11-24#i1-tasks]]; each is specced just
+Tasks, order and sizes are in [[plan-32-retriage-2026-11-24#i1-tasks]] (delivery) and
+[[plan-32-retriage-2026-11-24#h1-tasks]] (composition and distribution); each is specced just
 in time ([[orchestration#planning]]). Constraints the specs inherit from this ADR:
 
 - I1.b (the substrate) is a large change on a shared path (hook output): RED and GREEN in
@@ -470,5 +643,28 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
 - 29.6 re-points the units' path globs after the split; the `fire` fixtures say which broke.
 - Tests extend the existing hook test files through the hook command (`CLAUDE.md`
   `#test-discipline` rules 1 and 3).
+- Stack detection and the composed render change `rmx init` / `install-hooks`, a shared path:
+  a large change. Each pack after it is files and fixtures.
+- An agent file is edited once: the contradiction edits that touch agent files (C1, C5, C15,
+  C16) ride the core rewrite in H1.b when it is next; otherwise they go with I1.a.
 - On acceptance: the index rows here and in `docs/INDEX.md` change status, and
   [[constitution#project-4]] is amended ([[#installed-equals-generated]]).
+
+## Amendments {#amendments}
+
+**2026-11-24, after the merge at `6ca154f6`** (the lead's doc check and L219): {#amend-1}
+
+- **Doc facts** ([[#context-facts]]): a hook's `allow` skips the permission prompt;
+  `additionalContext` without a decision and a skill's `paths:` body load are not documented,
+  so both are probe-gated with verified fallbacks ([[#t3-fallbacks]]); `InstructionsLoaded`
+  observes and cannot gate; a plugin cannot carry rules or a `CLAUDE.md`
+  ([[#dist-rules-stay]]).
+- **Agent composition** (L219): [[#composition]], with [[#stack-detection]],
+  [[#packs-first]] and [[#security-first]]; the template as the single source of every pack
+  ([[#layers]], [[#dist-generated]]); the per-project `skills:` list against a static plugin
+  agent file ([[#dist-agent-lists]]).
+- **Since the census:** `OPEN.md` is always-on (L216) and is counted apart from the 10,000 B
+  target ([[#always-on]]); the merge and release refusal on an open finding is a T4 check
+  ([[#contract]]).
+- C1's edit is now the `docker` pack. Sections 4 to 8 were renumbered 5 to 9; no anchor
+  changed.
