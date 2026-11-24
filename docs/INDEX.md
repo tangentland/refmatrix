@@ -95,11 +95,13 @@ findings are to be acted on.
 
 rel: catalogs -> [[refmatrix/ch-bsd-assessment-2026-11-23]]
 rel: catalogs -> [[refmatrix/refmatrix_system_design_interview]]
+rel: catalogs -> [[refmatrix/cat-herder-merge-2026-11-24]]
 
 | Doc | Hook |
 |-----|------|
 | [[refmatrix/ch-bsd-assessment-2026-11-23]] | ch-bsd across the fleet from its own ledgers: highest-value reviewer, unbounded rounds until the L165 reset (r18 → r3); eight findings (stale `last_run.log`, charter, stop condition, leaderboard, precision, template drift, impressions size, and F8: 13 of 25 post-reset SKETCHYs should have been BULLSHIT, 7 shipped unconfirmed) on HOLD until 0.85.0 |
 | [[refmatrix/refmatrix_system_design_interview]] | Full staff-level system design interview as a model answer, verified against the code at 0.84.0 (`338c6dfb`): snapshot read tiers, FIFO writer lock, out-of-process copy (bug-110), scan-prompt PPR stack, memory tiers, hub watchdog, incident table, 10×/100× scaling, rubric, `file:line` code map. Supersedes [[system_design_review]] |
+| [[refmatrix/cat-herder-merge-2026-11-24]] | Merge cat-herder into refmatrix? Yes, as project-neutral package data in `src/refmatrix/templates/` (where `rmx init` already ships 9 of its files, all drifted) with a parity gate and `rmx template diff\|upgrade`: cat-herder has stalled (3 commits since Oct), refmatrix is the de facto upstream, consumers have no upgrade path. Ownership (atollogy vs tangentland) is the user's call; HOLD until 0.85.0 + the ch-bsd package |
 
 ## Non-GMD reference {#non-gmd}
 
