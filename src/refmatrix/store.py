@@ -2355,7 +2355,16 @@ class Store:
                 "WHERE e.partition_id=? AND e.kind='memory' AND e.name=?",
                 (self.partition_id, name),
             ).fetchone()
-            if held is not None and held[1] is not None and float(held[1]) >= authored:
+            # Live writes skip a TIE: the timed-out dial and its queued entry carry one
+            # authoring time, and the second to land must be a no-op (one row, one event).
+            # Replay applies a tie in log order: a log only holds writes that happened (a
+            # skipped live write logs nothing), so an equal-time later event is a later state
+            # -- 26.2's path-refresh event keeps the row's `updated_at` and must still apply.
+            # The same rule as `newest_by_ts` and the rebuild's winner: a tie goes to the
+            # later line.
+            if held is not None and held[1] is not None and (
+                    float(held[1]) > authored if self._replay_mode
+                    else float(held[1]) >= authored):
                 return int(held[0]), False
         eid = self.upsert_entity(kind="memory", name=name, protected=protected)
         # `entities.updated_at` (the embedding clock below) keeps the wall time; only the
@@ -8692,7 +8701,7 @@ class Store:
         # bug-216 R13: pending rows by identity, folded in log order.
         pending_state: dict[tuple, dict] = {}
         # Memory bodies, LWW by (partition, entity name).
-        memory_content_lww: dict[tuple[str, str], tuple[float, dict]] = {}
+        memory_content_lww: dict[tuple[str, str], tuple[tuple, dict]] = {}
         # Linkage types referenced anywhere in the log (partition-independent).
         # Pre-2.0 logs don't carry `linkage_type` events, so we also derive the
         # set from link/unlink/evidence events and register the missing ones
@@ -8788,8 +8797,11 @@ class Store:
                 # task-hook-writes-queue, 2026-11-24): a later-appended event with an older
                 # `updated_at` must not win. Legacy events keep the append `ts` ordering.
                 key = (part, ev["name"])
+                # A tie on the authoring time goes to the later append (`ts`): 26.2's
+                # path-refresh event keeps the row's `updated_at` and must win over the write
+                # it refreshes.
                 order = ev.get("updated_at")
-                order = ts if order is None else float(order)
+                order = (ts if order is None else float(order), ts)
                 prev = memory_content_lww.get(key)
                 if prev is None or order > prev[0]:
                     memory_content_lww[key] = (order, ev)
