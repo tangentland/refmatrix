@@ -1372,6 +1372,37 @@ def test_ac7_cli_prints_the_verbs_text_byte_for_byte(fx, monkeypatch):
     assert r.stdout == res["text"].encode("utf-8"), (len(r.stdout), res["payload_bytes"])
 
 
+def test_every_pack_mode_resolves_to_a_live_budget_channel():
+    """bsd-cah confirm-lite #s-3 (L208, 2026-11-24): `verbs._PACK_CHANNEL_OF_MODE` is THE map
+    from a recall mode to the budget channel it packs for when the caller names none (the CLI
+    reads it too, so the copies cannot drift). Every value must be a live
+    `hook_budget.CHANNEL_BUDGET_BYTES` channel. 4784cdd5: `"recent"` still mapped to the
+    retired `precompact`, so `pack_recall(mode="recent")` raised "unknown channel"."""
+    from refmatrix import hook_budget, verbs
+    dead = {m: c for m, c in verbs._PACK_CHANNEL_OF_MODE.items()
+            if c not in hook_budget.CHANNEL_BUDGET_BYTES}
+    assert not dead, f"s-3: pack modes mapped to no budget channel: {dead}"
+    assert set(verbs._PACK_CHANNEL_OF_MODE) >= {"session-start", "recent", "subject", "dense"}
+
+
+@pytest.mark.parametrize("via", ["verb", "mcp"])
+def test_recent_pack_through_the_verb_and_the_mcp_tool(fx, monkeypatch, via):
+    """bsd-cah confirm-lite #s-3 (L208): `rmx_memory_recall(recent=true, pack=true)` with no
+    `max_bytes`, through the verb and through the MCP tool function, on the daemon-served
+    fixture: a pack within the `session_start` budget, no error. 4784cdd5: `VerbArgsError
+    "unknown channel 'precompact'"` (it worked at cbbe9e3f)."""
+    from refmatrix import mcp, verbs
+    monkeypatch.setenv("RMX_HOME", str(fx.home))
+    if via == "verb":
+        res = verbs.memory_recall(fx.root, recent=True, k=8, scope="both", pack=True)
+    else:
+        res = mcp.TOOLS["rmx_memory_recall"]["fn"](
+            {"recent": True, "k": 8, "scope": "both", "pack": True, "root": str(fx.root)})
+    assert isinstance(res, dict) and not res.get("error"), f"s-3 ({via}): {res!r}"[:600]
+    assert "text" in res and res["text"], f"s-3 ({via}): no pack text: keys {sorted(res)}"
+    assert res["payload_bytes"] <= s.budget_or_none("session_start"), res["payload_bytes"]
+
+
 def test_ac7_schema_has_pack_params_and_never_embedder_policy():
     """AC-7 / r4 #n2: `pack`, `max_bytes`, `include_subjects` are verb params (MCP schema) and
     CLI options; `embedder_policy` rides `**internal` and is absent from the schema."""

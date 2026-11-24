@@ -984,6 +984,27 @@ def test_unwritable_handoffs_dir_after_arming_never_traps_the_session(fx):
     assert len(lines) <= 1, f"b-3: want at most one line about the stand-down: {lines}"
 
 
+def test_next_handoff_after_an_unwritable_stand_down_is_gated_again(fx):
+    """bsd-cah confirm-lite #m-5 (L208, 2026-11-24): the b-3 stand-down (an unwritable
+    `handoffs/`) is remembered beside the dir. Once the dir is writable again, the SAME
+    session's next /clear writes a new handoff and its pointer says "denied until it is
+    read", so the gate must hold. 4784cdd5: the stale stand-down marker outlived the episode,
+    and the first call after the new handoff silently dropped the new gate."""
+    p, _ = written_handoff(fx, "clear", CLEAR_SESSION)
+    os.chmod(p.parent, 0o555)
+    try:
+        fire(fx, "PostToolUse", "Read", read_envelope(fx, CLEAR_SESSION, p))
+        assert not denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"}))
+    finally:
+        os.chmod(p.parent, 0o755)
+    q, out = written_handoff(fx, "clear", CLEAR_SESSION)
+    assert "denied until it is read" in out, out
+    got = denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"}))
+    assert got, "m-5: the new handoff's gate was dropped by the earlier stand-down's marker"
+    assert denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"})), (
+        "m-5: the gate held for one call only")
+
+
 # -- s-1 (bug-308): deny is JSON at exit 0; any other failure of the gate allows ------------------
 
 
