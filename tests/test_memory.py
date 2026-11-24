@@ -581,11 +581,12 @@ def _b302_cli(monkeypatch, argv):
 ], ids=["memory-forget", "memory-bulk-forget", "forget-kind-memory"])
 def test_forget_removes_the_memorys_gmd_blocks(tmp_path, monkeypatch, argv):
     _b302_seed(tmp_path, {"fb_traffic": "traffic"})
-    assert _b302_blocks("fb_traffic") == ["fb_traffic#how-to-apply", "fb_traffic#notes"]
+    assert _b302_blocks("fb_traffic") == [
+        "fb_traffic#how-to-apply", "fb_traffic#notes", "fb_traffic#root"]
     r = _b302_cli(monkeypatch, argv)
     assert _b302_blocks("fb_traffic") == [], r.output
     # counted and said, never silent
-    assert "2 GMD block node(s)" in r.output, r.output
+    assert "3 GMD block node(s)" in r.output, r.output
 
 
 def test_a_memory_re_added_after_forget_is_not_ranked_by_the_old_body(tmp_path, monkeypatch):
@@ -596,7 +597,7 @@ def test_a_memory_re_added_after_forget_is_not_ranked_by_the_old_body(tmp_path, 
     from pathlib import Path
     _b302_seed(tmp_path, {"fb_traffic": "traffic"})
     _b302_cli(monkeypatch, ["memory", "forget", "fb_traffic", "--yes"])
-    _b302_cli(monkeypatch, ["memory", "add", "fb_traffic", "cats sleep on warm laptops"])
+    _b302_cli(monkeypatch, ["memory", "add", "fb_traffic", "-c", "cats sleep on warm laptops"])
     s = Store(Path(os.environ["REFMATRIX_ROOT"]))
     try:
         with s.with_partition(_B302_PART):
@@ -621,5 +622,6 @@ def test_forget_matches_blocks_by_exact_name_not_a_like_pattern(tmp_path, monkey
                partitions=(_B302_PART, "memory-other"))
     _b302_cli(monkeypatch, ["memory", "forget", "a_b", "--yes"])
     assert _b302_blocks("a_b") == []
-    assert _b302_blocks("axb") == ["axb#how-to-apply", "axb#notes"]
-    assert _b302_blocks("a_b", "memory-other") == ["a_b#how-to-apply", "a_b#notes"]
+    assert _b302_blocks("axb") == ["axb#how-to-apply", "axb#notes", "axb#root"]
+    assert _b302_blocks("a_b", "memory-other") == [
+        "a_b#how-to-apply", "a_b#notes", "a_b#root"]
