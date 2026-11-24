@@ -472,6 +472,14 @@ def _say_degraded_read(exc: BaseException, *, op: str, root: Path) -> None:
     click.echo(f"# rmx: {c}; reading the lock-free replica", err=True)
 
 
+def _blocks_said(result) -> str:
+    """The suffix a forget's render line carries for the GMD block nodes it
+    purged with the memory (bug-302, 2026-11-24): a removal is said, never
+    silent. Empty when there were none."""
+    n = (result or {}).get("blocks_purged") if isinstance(result, dict) else None
+    return f" and {n} GMD block node(s)" if n else ""
+
+
 def _say_vector_delete_failures(result, what: str) -> None:
     """Put a failed vector delete on the CALLER's terminal (ch-bsd r8 #s-1).
 
@@ -5018,7 +5026,7 @@ def forget_cmd(names, like, namespace, kind, dry_run, yes):
         click.confirm("proceed", abort=True)
     r = _curate("forget", names, like, namespace, kind, dry_run=False, broad=True)
     _say_vector_delete_failures(r, "forget")
-    console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities")
+    console.print(f"[red]forgot[/] {r.get('forgotten', 0)} entities{_blocks_said(r)}")
 
 
 @main.command("untrack")
@@ -13691,14 +13699,16 @@ def memory_forget(name_or_id):
     def local() -> dict:
         s = _store()
         failed0 = getattr(s, "vector_delete_failures", 0)
+        blocks0 = getattr(s, "memory_blocks_purged", 0)
         ok = s.forget_memory(int(name_or_id) if name_or_id.isdigit() else name_or_id)
         return {"forgotten": ok,
-                "vector_delete_failed": getattr(s, "vector_delete_failures", 0) - failed0}
+                "vector_delete_failed": getattr(s, "vector_delete_failures", 0) - failed0,
+                "blocks_purged": getattr(s, "memory_blocks_purged", 0) - blocks0}
     res = _memory_write("forget", local, **key)
     ok = res.get("forgotten")
     _say_vector_delete_failures(res, "memory forget")
     if ok:
-        console.print(f"[green]forgot[/] {name_or_id}")
+        console.print(f"[green]forgot[/] {name_or_id}{_blocks_said(res)}")
     else:
         console.print(f"[yellow]no memory matching[/] {name_or_id}")
 
@@ -13707,12 +13717,15 @@ def memory_forget(name_or_id):
 @click.option("--dry-run", is_flag=True,
               help="Report the dup count without folding.")
 def memory_dedup(dry_run):
-    """Fold concept↔memory duplicate nodes into the memory (pre-0.7.6 debt).
+    """Fold concept↔memory duplicate nodes into the memory (pre-0.7.6 debt),
+    and purge orphan GMD block nodes (bug-302).
 
     The GMD `__root__` node used to mint a concept twinning each doc-level
     memory, splitting a subject's edges across two nodes. New ingests no
     longer create them (the ingest_gmd fix); this migrates any lingering
     concept's edges onto the same-named memory and drops the concept.
+    It also purges every `<doc>#<anchor>` block node whose memory or doc is
+    gone (a forget before bug-302 left them); `--dry-run` lists them.
     Operates on the active partition. Routes through the daemon when one is up.
     """
     _memory_intent("memory_dedup")
@@ -13724,6 +13737,20 @@ def memory_dedup(dry_run):
         f"[green]{verb}[/] {res.get('folded', 0)} concept↔memory dup(s), "
         f"{res.get('edges_migrated', 0)} edge(s) migrated"
     )
+    # bug-302: GMD block nodes whose memory/doc is gone, listed and counted
+    orphans = res.get("orphan_block_names") or []
+    verb = "would purge" if res.get("dry_run") else "purged"
+    console.print(f"[green]{verb}[/] {res.get('orphan_blocks', len(orphans))} "
+                  f"orphan GMD block node(s)")
+    for name in orphans[:50]:
+        console.print(f"  {name}")
+    if len(orphans) > 50:
+        console.print(f"  … +{len(orphans) - 50} more")
+    bad = res.get("orphan_blocks_unreadable") or []
+    if bad:
+        click.echo(f"rmx memory dedup: {len(bad)} block node(s) with unreadable meta "
+                   f"kept, not judged: {', '.join(bad[:5])}"
+                   f"{' …' if len(bad) > 5 else ''}", err=True)
 
 
 @memory_grp.command("compile")
@@ -14119,7 +14146,7 @@ def memory_bulk_forget(ids, names, mtypes, dry_run, yes):
     # size this command exists for, and the verb's write default is 120 s.
     result = _bulk(False, timeout=600.0)
     console.print(
-        f"[green]forgot[/] {result.get('forgotten', 0)} memories"
+        f"[green]forgot[/] {result.get('forgotten', 0)} memories{_blocks_said(result)}"
     )
     _say_vector_delete_failures(result, "memory bulk-forget")
 
