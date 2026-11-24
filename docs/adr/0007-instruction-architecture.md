@@ -134,6 +134,9 @@ One row per type. "Unit" is the rule's one source file ([[#generation]]). "Ledge
   the first builds: neither has a detector that will not misfire. They stay prose where they
   are and are re-read once the ledger shows what a Stop check costs.
 - **R183** (caveman per prompt) belongs to a plugin the user installed ([[#user-calls]]).
+- **R003** (subagents read-only on a live store) is a refmatrix local unit, not a packaged
+  one (Q58 = b). **R007** denies Edit and Write in the deploy tree and leaves `cp` to the
+  user's permission rules (Q57 = b, [[#r007-q57]]).
 
 #### One dispatcher per event {#dispatcher}
 
@@ -258,7 +261,9 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   settles agents. A project's own denies and procedures bind the lead too, so an agent overlay
   cannot hold them; this ADR treats them as the same local layer for the other kinds. Read
   more narrowly, they would move into the template behind a detection key and ship refmatrix's
-  development rules to every project ([[#user-calls]]). {#layers-l219}
+  development rules to every project (Q61, [[#user-calls]]). Q58 = b already depends on the
+  wider reading: a deny that applies to refmatrix only has to be a refmatrix file.
+  {#layers-l219}
 - **The binding lives in the unit's frontmatter:** the event, the tool, the pattern and the
   field it is matched on (`command`, `file_path`, `subagent_type`), who, where, the action
   (`deny`, `ask`, `inject` with its mode), the priority, and the census rows it carries. A
@@ -523,8 +528,8 @@ column means the choice is not settled by evidence ([[#user-calls]]). Numbers ar
 | C1 Docker | `CLAUDE.md`: no container | a project fact; the Docker text is stack text in neutral files | Docker leaves every core for the `docker` pack ([[#composition-rules]]), installed only where a container file is tracked; `ch-test-engineer.md`'s appended host-venv line moves to its overlay; the lanes are refmatrix's local `lane-verify` skill. T0.9 (b) later installs the pack here | evidence |
 | C2 verify lane | `CLAUDE.md` `#test-discipline` rule 9 | newer (L173 to L176); `ORCHESTRATION` `#one-suite` agrees | `ch-test-engineer.local.md`'s `lockf` sentence becomes a pointer to `lane-verify` | evidence |
 | C3 ch-bsd on specs | `ORCHESTRATION` `#planning` | L165, the user's "go"; it says it wins | `CLAUDE.md` `#agent-skill-workflow` and `PLANNING_WORKFLOW` `#default-planning-path` lose the spec-round chain and point at `#planning` | evidence |
-| C4 when specs are written | recommended: just in time | L165; plan-32, C1 and C2 were all run that way | `CLAUDE.md` `#plans-pre-written`, `PLAN_GOVERNANCE` `#lifecycle-gates` and the POP's `#status-lifecycle` say: no production code for a **task** before that task's one-page spec is approved | **user**: it redefines `approved`, a lifecycle state the user set |
-| C5 subagents and a live store | `PROJECT_PROFILE` `#corpus` | the user's ruling, 2026-11-14 | `gmd-curator.md` (repo copy and packaged template) returns the ingest and sync commands for the lead to run; R003's deny enforces it | evidence; the deny changes the curator in the nine consumers, so its fleet install is confirmed at I1.c |
+| C4 when specs are written | just in time | the user, Q55 = a (L221); L165; plan-32, C1 and C2 were all run that way | `CLAUDE.md` `#plans-pre-written`, `PLAN_GOVERNANCE` `#lifecycle-gates` and the POP's `#status-lifecycle` say: `approved` is the plan approved and its next task specced; no production code for a **task** before that task's one-page spec is approved | **user, decided** (Q55 = a) |
+| C5 subagents and a live store | `PROJECT_PROFILE` `#corpus`, **in refmatrix only** | the user's ruling, 2026-11-14; its reach is the user's, Q58 = b (L221) | R003's deny is a refmatrix local unit ([[#layers]]), not a packaged one. The packaged `gmd-curator.md` is unchanged, so the nine consumers are unchanged. Here a `gmd-curator.local.md` overlay says the curator returns the ingest and sync commands for the lead to run | evidence; reach: **user, decided** (Q58 = b) |
 | C6 agents and registry rows | both, scoped | an agent writes the row under an id the lead allocated (bug-301: the brief names the existing row, the isolated agent committed `93783619`) | `bug-registry.md` gets `paths:` and one sentence: the id comes from the lead. R161 rides SubagentStart | evidence |
 | C7 who bumps the version | `ORCHESTRATION` `#release`: the lead, in the release commit | a bumped version on a branch is what R001 guards against | the line leaves `ch-implementer.local.md`; a deny on a version edit from an envelope with `agent_id` | evidence |
 | C8 the hub after a deploy | `ORCHESTRATION` `#release` step 3 | measured: the handshake did not restart it in 90 s; used at 0.85.0 and 0.85.1 | `PROJECT_PROFILE` `#commands` points at `release-deploy`; the sentence in `feedback_deploy_tree_is_the_runtime` is corrected. If the hub is meant to restart itself, the 90 s miss is a registry row | evidence |
@@ -532,11 +537,11 @@ column means the choice is not settled by evidence ([[#user-calls]]). Numbers ar
 | C10 where Q ids live | `feedback_ldq_enter_pop_first` | the user, 2026-11-15; `workflow/open-questions.md` no longer exists | `feedback_track_questions_by_id` is amended: the POP's counter, across sessions | evidence |
 | C11 plan D labels | `feedback_plan_d_labels_are_valid_ids` | a declared supersession | the superseded memory loses its index line; `ORCHESTRATION` `#ledgers` adds "or the plan's own D label" | evidence |
 | C12 the channel for reasoning notes | the MCP tool | `feedback_mcp_first_agent_stm`; `CLAUDE.md` `#write-decisions` | `hooks.CLAUDE_BRIEFING` (the source of `.refmatrix/CLAUDE.md`) names the MCP tool first and the Bash form as the no-server fallback; a `src/` edit, in I1.d | evidence |
-| C13 masking on memory-path hooks | recommended: `CLAUDE.md`, with STM capture counted as a memory path | STM is promoted to durable memory; a silent capture failure loses it | the four `rmx focus hook … 2>/dev/null \|\| true` entries become counted failures surfaced once at SessionStart, exit 0; `feedback_no_silent_failures` loses its carve-out. The other choice: `CLAUDE.md` names STM capture as plumbing | **user**: whether STM capture is a memory path |
+| C13 masking on memory-path hooks | `CLAUDE.md`: STM capture is a memory path | the user, Q56 = a (L221); STM is promoted to durable memory, so a silent capture failure loses it | the four `rmx focus hook … 2>/dev/null \|\| true` entries become counted failures surfaced once at SessionStart, exit 0: a `hooks.py` change, so it ships in I1.b's install window, not with the doc edits. `feedback_no_silent_failures` loses its carve-out (I1.a, the lead's) | **user, decided** (Q56 = a) |
 | C14 suite size | none of the four | all four are stale; 5,536 was measured for the 0.85.0 README | no doc states a count: the `lane-verify` skill gives the collect command; the three other mentions are deleted | evidence |
 | C15 report files from subagents | return as text; the lead persists | the harness refuses a subagent's report Write (`reference_subagent_reports_returned_as_text`) | every neutral agent file's "write the full report to `workflow/review-output/`" becomes "return it as text" ([[orchestration#reports]]). An isolated agent is its own session and keeps `REPORT.md` until A1 (b) | evidence |
 | C16 docstrings | `CLAUDE.md` `#development-guidelines` | project convention over a neutral default (R094) | `ch-code-reviewer.md` defers to the project's convention; the `src/**` rule carries it | evidence |
-| C17 the grep escape | `feedback_rmxgrep_no_plain_escape` | a declared supersession | the superseded memory loses its index line. `RMXGREP_MODE=plain` in `~/.claude/settings.json` is removed by the user | evidence; the settings edit is the **user's** |
+| C17 the grep escape | the user's settings: `RMXGREP_MODE=plain` stays in the global settings | the user, Q57 = b (L221): the settings stay and the rule is reworded to match. The value is inert at the shim, which treats anything but `rich` as auto ([[instruction-census-2026-11-24#c17]]) | `feedback_rmxgrep_no_plain_escape` is amended: the global env line is the user's standing setting and is not a violation. R186's pattern loses its `env RMXGREP_MODE=` half. No settings edit | **user, decided** (Q57 = b) |
 | C18 hook output budget | 9,500 B | `hook_budget.HOOK_COMMAND_BUDGET_BYTES`; the user, 2026-11-15 | `reference_hook_output_cap_measured`'s 9,000 is corrected; prose points at the constant; [[task-agent-start-context]] R3 reads its channel budget | evidence |
 | C19 who mutates, and when | `ORCHESTRATION` `#task` | L164 (3), L165; L200: RED runs them after GREEN | `ch-test-engineer.local.md`'s pre-GREEN mutation sentence becomes a pointer to the `mutation-loop` skill | evidence |
 
@@ -545,36 +550,54 @@ memory never has an index line ([[#memory-index]]); a stated rule and its instal
 enforcement are one unit, so they cannot differ ([[#generation]]).
 {#contradictions-general}
 
+**R007 follows Q57 = b as well** (L221). The standing `cp … ~/refmatrix/src/…` grants in
+`.claude/settings.local.json` stay, so the rule is reworded to match them: the deploy tree is
+not edited in place, and a file is copied into it only under a grant the user has given.
+R007's deny covers Edit and Write under `~/refmatrix/**` and leaves `cp` to the permission
+rules; the "do not cp" line of `feedback_refmatrix_dev_deploy_split` is amended the same way.
+One consequence to carry, not to reopen: a granted copy leaves the deploy tree dirty, so
+`release-deploy`'s first step reads `git -C ~/refmatrix status --short` and names any file
+that differs before the fast-forward. That keeps R011 (deploy only from a committed `master`
+sha) true without touching the settings. {#r007-q57}
+
 ### Decisions that are the user's {#user-calls}
 
-The POP holds the first seven as Q55 to Q59 ([[plan-of-plans#questions]]). {#user-calls-lead}
+Decided by the user on 2026-11-24 (L221, [[plan-of-plans#rulings]]): {#user-calls-decided}
 
-1. **C4** (Q55): does `approved` mean "every task specced" or "the plan approved, the next
-   task specced"? Recommended: the second.
-2. **C13** (Q56): is STM capture a memory path? Recommended: yes.
-3. **C17 and `permissions.allow`** (Q57): the `RMXGREP_MODE=plain` env line in the user's global
-   settings, and the standing `cp … ~/refmatrix/src/…` grants in `.claude/settings.local.json`
-   that allow what R007 forbids. Settings are the user's to edit.
-4. **`~/.claude/GMD.md` and `~/.claude/MEMORY-RULES.md`** (Q59; 6,901 B in every project): move to
+1. **C4** (Q55 = a): `approved` means the plan approved and the next task specced.
+2. **C13** (Q56 = a): STM capture is a memory path.
+3. **C17 and `permissions.allow`** (Q57 = b): the user's settings stay as they are
+   (`RMXGREP_MODE=plain` in the global settings; the `cp … ~/refmatrix/src/…` grants in
+   `.claude/settings.local.json`). The rules are reworded to match them, not the other way
+   round ([[#contradictions]] C17, [[#r007-q57]]). The first draft recommended the opposite.
+4. **The reach of R003's deny** (C5; Q58 = b): refmatrix only. This holds only with a local
+   unit layer: under Q61 = b the deny would ship in the template to every project, which
+   Q58 = b rules out.
+
+Still open ([[plan-of-plans#questions]]): {#user-calls-open}
+
+5. **`~/.claude/GMD.md` and `~/.claude/MEMORY-RULES.md`** (Q59; 6,901 B in every project): move to
    triggered delivery (a rule on `**/*.md` for the GMD primer; an inject on a write under a
    memory dir for the memory rules, [[#open]] P7), leaving one always-on line each? They are
    the user's global files. The `#index` text of MEMORY-RULES changes with [[#memory-index]];
    it goes to the user together with 26.8's AC-8 text, one approval instead of two.
-5. **T9** (Q59): the caveman tracker injects on every prompt; one SessionStart style is the target.
+6. **T9** (Q59): the caveman tracker injects on every prompt; one SessionStart style is the target.
    It is the user's plugin.
-6. **The PRIMER bands and the roster bands** (Q59; [[#primer]], [[#roster-bands]]).
-7. **The fleet reach of R003's deny** (C5; Q58).
-8. **The local layer** ([[#layers-l219]]): may a project hold its own denies, checks and
+7. **The PRIMER bands and the roster bands** (Q59; [[#primer]], [[#roster-bands]]).
+8. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
    procedure skills beside its overlays (recommended), or does L219 mean overlays only?
 9. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
-   the first packs ([[#packs-first]]).
+   the first packs ([[#packs-first]]) (Q62).
+10. **The re-triage, row by row,** and Proposed to Accepted (Q60).
 
 ## Consequences {#consequences}
 
 - 85 rules stop depending on recall. The price is a dispatcher on every tool call, held to
   the band in [[#dispatcher-cost]].
-- A deny has no escape hatch (the user removed the last one, `RMXGREP_MODE`). A bad pattern
-  blocks real work until the unit is fixed, so the replay in [[#fixtures]] is not optional.
+- A deny has no escape hatch by design. A bad pattern blocks real work until the unit is
+  fixed, so the replay in [[#fixtures]] is not optional. A deny never overrides a grant the
+  user keeps on purpose: where the settings allow something, the unit is written to match
+  (Q57 = b, [[#r007-q57]]).
 - Agent files, overlays and `CLAUDE.md` get shorter and stop disagreeing, because they point
   instead of restate. The census's 105 multi-stated rules is the number to re-count.
 - New standing surfaces: the instruction ledger, the compiled file, the units' fixtures. Each
@@ -668,3 +691,13 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
   ([[#contract]]).
 - C1's edit is now the `docker` pack. Sections 4 to 8 were renumbered 5 to 9; no anchor
   changed.
+
+**2026-11-24, the user's answers** (L221; Q55 = a, Q56 = a, Q57 = b, Q58 = b): {#amend-2}
+
+- C4 and C13 are decided as recommended. C13's hook entries are a `hooks.py` change and ship
+  in I1.b's install window.
+- **C17's winner flips** to the user's settings, and R007 is reworded to match the standing
+  `cp` grants ([[#r007-q57]]). No settings edit anywhere in I1.
+- R003's deny is refmatrix only: a local unit and a `gmd-curator.local.md` overlay; the
+  packaged curator is unchanged ([[#contradictions]] C5).
+- [[#user-calls]] is split into decided and open; Q61 and Q62 are cited.
