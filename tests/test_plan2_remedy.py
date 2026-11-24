@@ -353,21 +353,26 @@ def test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget(silent, monke
 
 
 def _unbounded_precompact_promotes(block: dict) -> "list[str]":
-    """The PreCompact commands that promote with no `--timeout N` (N <= 30), or one problem
-    line when NO generated PreCompact command promotes. Empty = bounded. bsd-cah r1 #s-2: the
-    amended form asserted `all(...)` over an EMPTY list once the promote moved into
-    save-state, so it constrained nothing."""
+    """The PreCompact hook entries that promote without a bound, or one problem line when NO
+    generated PreCompact entry promotes. Empty = bounded. Bounded means: exactly one
+    `--timeout N` (N > 0) on the command, and the entry's Claude Code `timeout` above N, so
+    rmx fails loud before the harness kills it. No numeric ceiling on N: the default is
+    measured, not pinned (L203). bsd-cah r1 #s-2: the earlier amended form asserted
+    `all(...)` over an EMPTY list once the promote moved into save-state."""
     import re as _re
-    pre = [c for _, _, c in _cmds(block, "PreCompact")]
-    promoting = [c for c in pre if ("rmx save-state" in c and "--no-promote" not in c)
-                 or "focus summarize --promote" in c]
+    entries = [hk for e in block["hooks"].get("PreCompact", []) for hk in e.get("hooks", [])]
+    promoting = [hk for hk in entries
+                 if ("rmx save-state" in hk["command"] and "--no-promote" not in hk["command"])
+                 or "focus summarize --promote" in hk["command"]]
     if not promoting:
         return ["no PreCompact command promotes"]
     bad = []
-    for c in promoting:
-        m = _re.search(r"--timeout (\d+)", c)
-        if not m or not 0 < int(m.group(1)) <= 30:
-            bad.append(c)
+    for hk in promoting:
+        found = _re.findall(r"--timeout (\d+)", hk["command"])
+        ht = hk.get("timeout")
+        if len(found) != 1 or int(found[0]) <= 0 or not isinstance(ht, (int, float)) \
+                or ht <= int(found[0]):
+            bad.append(hk["command"])
     return bad
 
 
@@ -375,17 +380,23 @@ def test_precompact_promote_is_bounded_too(tmp_path):
     """#m-5: PreCompact is the catch-up, so its budget is longer — but it is
     a budget, not the 180 s default the harness kills at 60 s. Since
     task-compaction-as-handoff R1 the promote runs inside PreCompact's save-state, which
-    must carry the bound (bsd-cah r1 #s-2). Must-fail cases: no promoting command, a
-    promote without `--timeout`, and one over 30 s."""
+    must carry the bound (bsd-cah r1 #s-2, shape per L203). Must-fail cases: no promoting
+    entry, a promote without `--timeout`, two `--timeout`s, and a hook timeout not above N."""
     block = _claude_hook_block(tmp_path / ".refmatrix")
     assert _unbounded_precompact_promotes(block) == []
-    for cmds in ([], ["rmx save-state --precompact --no-sync"],
-                 ["rmx save-state --precompact --no-sync --timeout 300"],
-                 ["rmx focus summarize --promote"]):
-        planted = {"hooks": {"PreCompact": [{"hooks": [{"command": c} for c in cmds]}]}}
-        assert _unbounded_precompact_promotes(planted), cmds
-    ok = {"hooks": {"PreCompact": [{"hooks": [
-        {"command": "rmx save-state --precompact --no-sync --timeout 20"}]}]}}
+
+    def planted(*hks):
+        return {"hooks": {"PreCompact": [{"hooks": list(hks)}]}}
+
+    for bad in (planted(),
+                planted({"command": "rmx save-state --precompact --no-sync", "timeout": 60}),
+                planted({"command": "rmx save-state --precompact --timeout 9 --timeout 9",
+                         "timeout": 60}),
+                planted({"command": "rmx save-state --precompact --timeout 20", "timeout": 20}),
+                planted({"command": "rmx save-state --precompact --timeout 20"}),
+                planted({"command": "rmx focus summarize --promote", "timeout": 60})):
+        assert _unbounded_precompact_promotes(bad), bad
+    ok = planted({"command": "rmx save-state --precompact --no-sync --timeout 20", "timeout": 40})
     assert _unbounded_precompact_promotes(ok) == []
 
 

@@ -1049,21 +1049,54 @@ def test_a_failing_gate_command_allows_the_call(fx):
 # -- s-2: PreCompact's save-state has one overall time bound --------------------------------------
 
 
-def test_precompact_save_state_is_bounded_and_still_instructs_on_overrun():
-    """s-2: the generated PreCompact save-state carries ONE overall `--timeout N` (N <= 30, as
-    Stop's promote has `--timeout 8`). With a held writer (a `_PingOnlyDaemon`: answers ping,
-    stalls every other op) and the knob set test-sized (2), it still exits 0 with the
-    instruction naming a save-state, and says the overrun on stderr. No elapsed assert: the
-    subprocess deadline is the hang guard (rule 6). cbbe9e3f: no `--timeout` on the command."""
+# The margin a Claude Code hook `timeout` needs above the save-state budget, for the instruction
+# print and interpreter start after the budget is spent. A test contract, not a measured budget:
+# L203 leaves the budget itself (`hooks.PRECOMPACT_SAVE_TIMEOUT_S`) to green-cah's measurement.
+PRECOMPACT_PRINT_MARGIN_S = 5
+
+
+def precompact_save_entry(root: Path) -> "tuple[dict, int]":
+    """The generated PreCompact hook entry (`{"type", "command", "timeout"?}`) and the N of its
+    ONE `--timeout N`. Fails (the RED line) on anything else."""
+    hooks_ = [hk for e in h.hook_block(root)["hooks"].get("PreCompact", []) for hk in e["hooks"]]
+    assert len(hooks_) == 1, [hk["command"] for hk in hooks_]
+    found = re.findall(r"--timeout (\d+)", hooks_[0]["command"])
+    assert len(found) == 1, (
+        f"s-2: want exactly one --timeout N on the PreCompact save-state: {hooks_[0]['command']!r}")
+    return hooks_[0], int(found[0])
+
+
+def test_precompact_save_state_budget_is_one_named_constant_inside_the_hook_timeout(tmp_path):
+    """s-2 (shape only, L203: the number is measured, not pinned): the generated PreCompact
+    save-state carries exactly one `--timeout N`; N is `hooks.PRECOMPACT_SAVE_TIMEOUT_S`; and
+    the entry's Claude Code `timeout` (seconds) exceeds N plus the print margin, so the
+    harness never kills the hook before its own budget fires and the instruction prints.
+    cbbe9e3f: no `--timeout`, no constant, no entry timeout."""
+    from refmatrix import hooks as hooks_mod
+    root = tmp_path / "proj" / ".refmatrix"
+    root.mkdir(parents=True)
+    entry, n = precompact_save_entry(root)
+    const = getattr(hooks_mod, "PRECOMPACT_SAVE_TIMEOUT_S", None)
+    assert const is not None, "s-2: hooks.PRECOMPACT_SAVE_TIMEOUT_S is not defined"
+    assert n == const, (n, const)
+    ht = entry.get("timeout")
+    assert isinstance(ht, (int, float)) and ht > n + PRECOMPACT_PRINT_MARGIN_S, (
+        f"s-2: the PreCompact entry's hook timeout {ht!r} is not above {n} + "
+        f"{PRECOMPACT_PRINT_MARGIN_S} s")
+
+
+def test_precompact_overrun_still_instructs_and_never_loses_the_commit():
+    """s-2 / L203 ("an overrun never loses the commit"): with a held writer (a seeded
+    `_PingOnlyDaemon`: answers ping, stalls every other op) and the budget knob test-sized
+    (`--timeout 2` in place of N), the PreCompact command exits 0 with the instruction naming
+    a save-state, `savestate_<session>.md` is on disk, and stderr says the store commit was
+    deferred. No elapsed assert: the subprocess deadline is the hang guard (rule 6).
+    cbbe9e3f: no `--timeout` on the command."""
     from tests.test_plan2_remedy import _PingOnlyDaemon
     d = _PingOnlyDaemon(seeded=True)
     try:
-        cmds = [c for _e, _m, c in h.hook_entries(d.root, "PreCompact")]
-        assert len(cmds) == 1, cmds
-        m = re.search(r"--timeout (\d+)", cmds[0])
-        assert m and 0 < int(m.group(1)) <= 30, (
-            f"s-2: the generated PreCompact save-state has no overall --timeout: {cmds[0]!r}")
-        cmd = cmds[0].replace(m.group(0), "--timeout 2")
+        entry, n = precompact_save_entry(d.root)
+        cmd = entry["command"].replace(f"--timeout {n}", "--timeout 2")
         proj = d.root.parent
         s.copy_memdir(proj, include={"savestate_fx01"})
         s.seed_ring(d.root, session=SESSION, n=4)
@@ -1077,7 +1110,11 @@ def test_precompact_save_state_is_bounded_and_still_instructs_on_overrun():
         err = r.stderr.decode("utf-8", "replace")
         assert r.returncode == 0, (r.returncode, err[-800:])
         assert "authoritative" in out.lower() and "savestate_" in out, out
-        assert re.search(r"(?i)time(d)? ?out|budget|not confirmed", err), err[-800:]
+        md = s.memdir_of(proj)
+        assert list(md.rglob(f"savestate_{SESSION}.md")), (
+            f"L203: the overrun lost the save-state file; stderr {err[-600:]!r}")
+        assert re.search(r"(?i)(store )?commit\b.*\bdeferred|deferred.*\bcommit", err), (
+            f"L203: stderr does not say the store commit was deferred: {err[-800:]!r}")
     finally:
         d.close()
 

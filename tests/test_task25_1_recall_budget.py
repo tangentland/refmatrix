@@ -127,9 +127,10 @@ def _pack(r, what) -> "s.Pack":
 
 # R1's seven channels plus rev 6's `recall_state` (R11: "a CHANNEL_BUDGET_BYTES entry like every
 # other producer"), less `precompact`: task-compaction-as-handoff R2 removed the generated
-# PreCompact recall, and bsd-cah r1 #m-4 (L202) retires its budget channel with it.
+# PreCompact recall, and bsd-cah r1 #m-4 (L202) retires its budget channel with it; plus
+# `handoff_remind`, the R3b UserPromptSubmit reminder's own channel (L202 fold).
 CHANNELS = {"prompt_recall", "scan_prompt", "curator_status", "focus_input", "session_start",
-            "focus_context", "recall_state"}
+            "focus_context", "recall_state", "handoff_remind"}
 EVENTS = {"UserPromptSubmit", "SessionStart"}
 
 
@@ -1648,23 +1649,72 @@ def test_ac12_curator_status_alone_within_its_budget(fx):
     s.assert_within(len(r.stdout), "curator_status", "AC-12 curator status")
 
 
+# The budget of each generated UserPromptSubmit COMMAND, by what it runs; None = unbudgeted (a
+# command this map does not know is a failure, never silently charged to prompt_recall).
+def _ups_budget_of(cmd: str) -> "int | None":
+    hb = s.hook_budget_mod()
+    if hb is None:
+        return None
+    if "rmx scan-prompt" in cmd:
+        return s.command_budget("scan_cmd")
+    for needle, chan in (("rmx focus hook --event input", "focus_input"),
+                         ("rmx memory recall --stdin-json", "prompt_recall"),
+                         ("rmx handoff remind", "handoff_remind")):
+        if needle in cmd:
+            return hb.budget(chan) if chan in hb.CHANNEL_BUDGET_BYTES else None
+    return None
+
+
+# A Claude Code session id is a UUID (36 chars): the reminder's worst case names
+# `<root>/handoffs/<uuid>.txt` in its one line.
+_REMIND_SESSION = "5f1c2a9e-0b7d-4e3a-9c41-2d8e6f7a1b30"
+
+
 def test_ac12_each_user_prompt_submit_command_within_its_command_budget(fx):
     """AC-12 under R0 outcome (A): each generated UserPromptSubmit COMMAND's stdout ≤ its
-    command budget (`scan_cmd` = scan_prompt + curator_status; focus input; recall)."""
-    got = {}
-    for _ev, _m, cmd in h.hook_entries(fx.root, "UserPromptSubmit"):
-        r = s.run_cmd(fx, cmd, env_in=s.envelope(QUESTION))
-        got[cmd] = len(r.stdout)
-    assert len(got) == 3, list(got)
-    for cmd, n in got.items():
-        if "scan-prompt" in cmd:
-            b = s.command_budget("scan_cmd")
-        elif "focus hook --event input" in cmd:
-            b = s.budget_or_none("focus_input")
-        else:
-            b = s.budget_or_none("prompt_recall")
-        assert b is not None, f"R1 not built; {s.after_env(cmd)[:60]!r} printed {n} B"
-        assert n <= b, f"{s.after_env(cmd)[:60]!r}: {n} B > {b} B"
+    command budget (`scan_cmd` = scan_prompt + curator_status; focus input; recall; and, since
+    task-compaction-as-handoff R3b, the handoff reminder against its own channel
+    `handoff_remind`, L202 fold).
+
+    The reminder prints only while a session's handoff is unread, so a UUID-shaped session is
+    handed off first (the generated compact|clear `recall-state` entry, source clear) and the
+    prompt is that session's: its one line names the longest real path under this short root.
+    The gate is lifted afterwards through the generated PostToolUse Read hook, so the module's
+    other tests see no pending handoff. Must-fail case: a 5th, unbudgeted command has no
+    budget. cbbe9e3f: `hook_budget` has no `handoff_remind` channel."""
+    (_m, rs_cmd), = [(m, c) for _e, m, c in h.hook_entries(fx.root, "SessionStart")
+                     if "recall-state" in c]
+    r = s.run_cmd(fx, rs_cmd, env_in=s.envelope("", session=_REMIND_SESSION,
+                                                event="SessionStart", source="clear"))
+    _ok(r, "compact|clear recall-state (arming the reminder)")
+    m = re.search(r"/\S+/handoffs/\S+?\.txt", r.stdout.decode("utf-8", "replace"))
+    assert m, r.stdout[:400]
+    path = m.group(0)
+    try:
+        got = {}
+        for _ev, _m2, cmd in h.hook_entries(fx.root, "UserPromptSubmit"):
+            rr = s.run_cmd(fx, cmd, env_in=s.envelope(QUESTION, session=_REMIND_SESSION))
+            got[cmd] = rr.stdout
+        assert len(got) == 4, [s.after_env(c)[:50] for c in got]
+        reminder = [out for c, out in got.items() if "rmx handoff remind" in c]
+        assert len(reminder) == 1 and path.encode() in reminder[0], (
+            "fixture: the reminder did not fire for the handed-off session", reminder)
+        assert len(reminder[0].decode("utf-8").strip().splitlines()) == 1, reminder[0]
+        for cmd, out in got.items():
+            b = _ups_budget_of(cmd)
+            assert b is not None, (f"no budget for {s.after_env(cmd)[:60]!r} (printed "
+                                   f"{len(out)} B); `handoff_remind` must be a hook_budget channel")
+            assert len(out) <= b, f"{s.after_env(cmd)[:60]!r}: {len(out)} B > {b} B"
+    finally:
+        pulled = [c for _e, _m3, c in h.hook_entries(fx.root, "PostToolUse")
+                  if "rmx handoff pulled" in c]
+        for c in pulled:
+            s.run_cmd(fx, c, env_in={"session_id": _REMIND_SESSION, "hook_event_name":
+                                     "PostToolUse", "tool_name": "Read",
+                                     "tool_input": {"file_path": path},
+                                     "tool_response": {"type": "text"}, "cwd": "",
+                                     "transcript_path": ""})
+    assert _ups_budget_of(s.HOOK_ENV + "rmx brand-new-prompt-hook --stdin-json") is None
 
 
 def test_ac12b_focus_context_within_its_budget(fx):
@@ -1961,6 +2011,7 @@ _PRODUCER_OF = (
     ("SessionStart", "rmx memory recall --session-start", "session_start"),
     ("SessionStart", "rmx focus context", "focus_context"),
     ("SessionStart", "rmx recall-state", "recall_state"),
+    ("UserPromptSubmit", "rmx handoff remind", "handoff_remind"),
 )
 
 
@@ -1977,7 +2028,7 @@ def _generated_argv(root: Path, event: str, needle: str) -> list[str]:
 
 
 def test_m2_by_producer_counts_every_hook_producer(tmp_path):
-    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for all 7 channels (8 before bsd-cah r1 #m-4 retired `precompact`), not only
+    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for every channel (`precompact` retired and `handoff_remind` added by the L202 fold), not only
     `recall_state`. A cli.log is written whose rows carry the argv of each GENERATED hook
     producer (source "hook", a distinct size each, two for `prompt_recall`), plus rows that
     must count nowhere: the same commands run interactively, a hook `focus hook --event tool`,
