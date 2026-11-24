@@ -67,4 +67,6 @@ earns a second round.
 In every review, list any new test file named for a round/bug/fix, any new variant that should be
 a parametrized case, any patched `ping`/`daemon.call`/guard input in a test about busy or down
 behaviour, any test that waits out a real timeout, and any new source-text test without a planted
-must-fail case. Each is at least SKETCHY; a test that cannot fail is BULLSHIT.
+must-fail case. Each is at least SKETCHY. A test or guard that cannot fail for its stated
+property, a patched guard input, or a waited-out timeout that hides a defect is BULLSHIT (P1
+clause 4 or 6).

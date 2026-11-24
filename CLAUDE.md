@@ -213,7 +213,8 @@ rel: implements -> [[task-compaction-as-handoff#rr-claude-md]]
 
 1. `rmx recall-state` (or `/recall-state`) and read `handoff.md`.
 2. Read `workflow/plan-of-plans.md` for what to implement next.
-3. Read `workflow/bullshit/last_run.log`; any unaddressed BULLSHIT finding is first priority.
+3. Read the last lines of `workflow/bullshit/last_run.log` (an append log; the last line is the
+   latest run); any unaddressed BULLSHIT or GATE finding is first priority.
 4. Verify git state matches the handoff; check `rmx daemon status` + `rmx hub status`.
 5. If implementing: read the active plan (`metadata.status: in-progress`) and its task specs.
 
@@ -244,7 +245,8 @@ Continuous Implementation Mode. **The procedure is `workflow/ORCHESTRATION.md`**
 3. **Small fix** (one module / test-side / < ~100 `src` lines, no shared path): one agent writes
    test + fix, test shown failing first; the lead reads the diff and merges.
 4. **Large change** (shared path or several modules): RED → GREEN in separate hands, mutations on
-   the `src/` change, one ch-bsd pass (only BULLSHIT earns a second round).
+   the `src/` change, one ch-bsd pass; BULLSHIT earns a confirm-lite, GATE needs a killing test
+   or a ruling.
 5. **Verify:** the task's tests + every importer of a changed module; E lines vs the last release.
 6. **Merge `--no-ff`; release** (major → full suite on merged `master`; minor → verify set),
    deploy, live check with backups first.
@@ -268,7 +270,7 @@ After each plan: triage `docs/architecture/todo.md`, graduate mocks in
 - [ ] `src/` fully concrete; no new silent failure on a memory path
 - [ ] Verify set passes (log captured); a new test was seen failing before its fix
 - [ ] Large changes only: mutations on the `src/` change each fail a test; one ch-bsd pass with
-      no unaddressed BULLSHIT
+      no unaddressed BULLSHIT or GATE
 - [ ] GMD lint zero errors (`./scripts/lint-gmd.sh`, memory files via `tools/gmd/lint.py`)
 - [ ] `rmx install-hooks --check` clean; verb parity test green
 - [ ] POP row current for a merge, release or scope change

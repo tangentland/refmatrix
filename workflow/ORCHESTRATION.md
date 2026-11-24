@@ -64,8 +64,11 @@ several modules):
 4. **Verify** (below).
 5. **Review: one ch-bsd pass** over the range, in its own clone, with named questions.
    ch-bsd names, for each BULLSHIT, the [[self-audit]] question that should have caught it.
-   BULLSHIT → fold, then one confirm-lite. SKETCHY → the implementer folds and the lead checks
-   the diff; no new round. MEH → noted or folded in the same commit; no round.
+   BULLSHIT → fold, then one confirm-lite. GATE → a killing test is added (seen failing on the
+   mutant) or the lead rules, in an L-row, why none is possible; no new round. SKETCHY → the
+   implementer folds and the lead checks the diff; no new round. MEH → noted or folded in the
+   same commit. The lead may raise a severity, never lower it, and records the consequence that
+   decided (consequence package, L213).
 6. **Summary** (short, on the branch) with the [[self-audit]] answers; **merge** `--no-ff`.
 
 **Verify set** (both sizes): the task's tests, plus every test file importing a changed module

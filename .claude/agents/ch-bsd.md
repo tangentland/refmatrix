@@ -287,11 +287,21 @@ the next one.
 
 ## Severity Levels {#severity-levels}
 
-| Level | Meaning | Action Required |
-|-------|---------|-----------------|
-| **BULLSHIT** | Dead code merged. Code exists but nothing calls it. | Fix immediately. Block next task until addressed. |
-| **SKETCHY** | Might be intentional but needs explicit justification. | Address in next session or justify in writing. |
-| **MEH** | Minor gap. | Fix in next sweep. |
+Severity follows CONSEQUENCE, never category. Rate by what the code at HEAD does.
+
+| Level | The code at HEAD … | Action |
+|-------|--------------------|--------|
+| **BULLSHIT** | (1) breaks a real entry point (CLI, MCP tool, daemon op, hook); (2) silently loses or corrupts state, or skews a measurement the release relies on; (3) traps the user or holds the harness without a bound; (4) leaves a test or guard that cannot fail for the property it claims; (5) is dead (rule 1); (6) is a cheap fix (rule 10). Any breach of a CLAUDE.md CRITICAL rule is BULLSHIT. | Fold, then a confirm-lite by probe. |
+| **GATE** | is correct today, but a mutation on the `src` change survives every test. | Merge needs a killing test, or a lead ruling that names why none is possible. |
+| **SKETCHY** | works, but a gap needs written justification (heuristic quality, letter-vs-intent, a missing pin with no live consequence). | Implementer folds; lead reads the diff. |
+| **MEH** | has a minor gap. | Noted or folded in the same commit. |
+
+Never rate DOWN because a gap is disclosed, documented, or fits the letter of a spec.
+Disclosure is not wiring. When torn between two levels, state the consequence that decides it.
+
+The category defaults in rules 3, 7 and 9 ("→ SKETCHY") are *starting points*: a finding is
+raised to BULLSHIT whenever its consequence matches a BULLSHIT clause (consequence package,
+L213, 2026-11-24).
 
 ## Escalation Rules {#escalation-rules}
 
@@ -348,12 +358,13 @@ A finding that matches a pattern from INDEX.md or IMPRESSIONS.md gets escalated:
 
 ### Update last_run.log {#update-last-run-log}
 
-Overwrite `workflow/bullshit/last_run.log` with a single line:
+APPEND one line to `workflow/bullshit/last_run.log`:
 ```
-{ISO-8601-timestamp} commit={short_hash} verdict={CLEAN/DIRTY} findings={count} ({XB/YS/ZM}) report={findings-filename.md}
+{ISO-8601-timestamp} commit={short_hash} verdict={CLEAN/DIRTY} findings={count} ({XB/YG/YS/ZM}) report={findings-filename.md}
 ```
-This file is always one line — the most recent run. Quick machine-readable check for
-the orchestrator to know whether the last audit passed.
+The file is an append log: its LAST line is the most recent run (F1, L213, 2026-11-24: the
+"overwrite, one line" contract was never followed and the history is worth keeping). Sessions
+read its last lines to know whether the latest audit passed.
 
 ### Update INDEX.md {#update-index-md}
 
@@ -530,7 +541,7 @@ Each finding file is GMD:
 gmd: "0.1"
 id: bsd-<plan>-<task>-<short-slug>
 title: <one-line finding>
-severity: BULLSHIT|SKETCHY|MEH
+severity: BULLSHIT|GATE|SKETCHY|MEH
 plan: <plan-id>
 task: <task-id>
 ---
@@ -553,6 +564,12 @@ task: <task-id>
 **Fix:** {what needs to happen to make this code live}
 **Pattern match:** {YES/NO — does this match a prior impression or pattern?}
 
+### GATE: {title}
+
+**Mutation:** {the src change mutated, and how}
+**Survived:** {the verify set it survived}
+**Needs:** a killing test (seen failing on the mutant) or a lead ruling
+
 ### SKETCHY: {title}
 ...
 
@@ -561,7 +578,7 @@ task: <task-id>
 
 ## Verdict {#verdict}
 
-{CLEAN | N findings (X BULLSHIT, Y SKETCHY, Z MEH)}
+{CLEAN | N findings (X BULLSHIT, G GATE, Y SKETCHY, Z MEH)}
 
 rel: contradicts -> [[<rule-the-finding-violates>]]
 ```
