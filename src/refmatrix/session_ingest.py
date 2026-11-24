@@ -12,14 +12,17 @@ The card model:
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import re
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 MAX_PROMPT_LEN = 600
 MAX_DECISION_LEN = 1200
@@ -368,3 +371,72 @@ def link_raw(jsonl_path: Path, dest_dir: Path) -> "tuple[str, Path | None]":
         reason = exc.strerror or str(exc)
         return (f"failed: {reason.lower()}", None)
     return (status, target)
+
+
+# ---- one indexer at a time (L206, 2026-11-24) ----------------------------------------------
+
+INDEXER_LOCK = "session-indexer.lock"
+
+
+def indexer_lock_path() -> Path:
+    """`~/.refmatrix/session-indexer.lock` (`$RMX_HOME` honoured): user-level, because the
+    overlap it stops is across stores — six launchd indexers, one per store, ran seven
+    `rmx session ingest` at once on 2026-11-24 (bug-309 note, bug-310)."""
+    from refmatrix.taxonomy import user_home
+    return user_home() / INDEXER_LOCK
+
+
+def _describe_holder(path: Path) -> str:
+    """The holder's own record (`pid`, `root`, `since`), as one phrase. A record that cannot
+    be read is said so, with the reason — never an empty name."""
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError as e:
+        return f"holder unreadable ({type(e).__name__}: {e})"
+    if not raw:
+        return "holder not recorded yet"
+    try:
+        rec = json.loads(raw)
+        return f"pid {int(rec['pid'])}, root {rec.get('root')}, since {rec.get('since')}"
+    except (ValueError, KeyError, TypeError) as e:
+        return f"holder record unparseable ({type(e).__name__}: {raw[:80]!r})"
+
+
+@contextmanager
+def indexer_lock(root: Path) -> Iterator[Optional[str]]:
+    """Hold the user-level session-indexer lock for the body, or yield who holds it.
+
+    Yields None when this process took the lock, else a phrase naming the holder (the
+    caller exits 0 with one counted line; it never waits — the next tick catches up).
+    `fcntl.flock` on an open file, not a pid file (L206): the kernel releases it when the
+    holder exits, however it exits, so a crashed or SIGKILLed indexer cannot leave the
+    next one locked out. The holder writes its record into the locked file after taking
+    the lock and clears it before releasing."""
+    path = indexer_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            took = True
+        except BlockingIOError:
+            took = False
+        if not took:
+            yield _describe_holder(path)
+            return
+        f.seek(0)
+        f.truncate()
+        f.write(json.dumps({
+            "pid": os.getpid(), "root": str(root),
+            "since": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }))
+        f.flush()
+        try:
+            yield None
+        finally:
+            f.seek(0)
+            f.truncate()
+            f.flush()
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    finally:
+        f.close()

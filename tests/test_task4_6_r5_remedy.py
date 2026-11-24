@@ -634,7 +634,9 @@ def test_session_reinstall_rerenders_with_the_installed_flags(root, tmp_path, mo
     slc.reinstall(root)
     d = plistlib.loads(p.read_bytes())
     assert d.get("ExitTimeOut") == int(lc.EXIT_TIMEOUT_S), d
-    assert d["StartInterval"] == 120 and "--all-projects" in d["ProgramArguments"], d
+    # L206: the 120 s interval is a 2-minute calendar step now, not StartInterval.
+    mins = [e["Minute"] for e in d["StartCalendarInterval"]]
+    assert len(mins) == 30 and "--all-projects" in d["ProgramArguments"], d
     assert slc.check(root)[0] is True
 
 
