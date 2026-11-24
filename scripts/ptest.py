@@ -408,14 +408,19 @@ def finish(s: Shard) -> None:
     s.counts = {"collected": int(m.group(1)) if m else None}
     finals = _FINAL_RX.findall(text)
     if finals:
+        # a parsed final line: a count it does not name is 0, not unknown
+        s.counts.update({k: 0 for k in _COUNT_KEYS[1:]})
         for num, what in _COUNT_RX.findall(finals[-1]):
             key = "errors" if what.startswith("error") else what
             s.counts[key] = int(num)
 
 
+_COUNT_KEYS = ("collected", "passed", "failed", "errors", "skipped", "xfailed", "xpassed")
+
+
 def fmt_counts(c: dict) -> str:
-    keys = ("collected", "passed", "failed", "errors", "skipped", "xfailed", "xpassed")
-    return " ".join(f"{k}={c.get(k, 0) if c.get(k) is not None else '?'}" for k in keys)
+    """`?` = not read from the shard's log (no `collected` line, or no final summary line)."""
+    return " ".join(f"{k}={c[k] if c.get(k) is not None else '?'}" for k in _COUNT_KEYS)
 
 
 def read_jsonl(p: Path) -> list:
@@ -553,10 +558,9 @@ def header_lines(run: Run, kind: str) -> list:
 
 def totals_line(run: Run) -> str:
     tot: dict = {}
-    for s in run.shards:
-        for k, v in s.counts.items():
-            if v is not None:
-                tot[k] = tot.get(k, 0) + v
+    for k in _COUNT_KEYS:
+        vals = [s.counts.get(k) for s in run.shards]
+        tot[k] = None if any(v is None for v in vals) else sum(vals)
     nonzero = sum(1 for s in run.shards if s.rc != 0)
     load1 = f"{run.load1:.2f}" if run.load1 is not None else "?"
     return (f"totals: shards={len(run.shards)} non-zero={nonzero} {fmt_counts(tot)} "
