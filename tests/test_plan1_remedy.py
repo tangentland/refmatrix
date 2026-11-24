@@ -117,13 +117,15 @@ def test_hub_status_renders_unverified_and_hub_identity(monkeypatch):
         "running": True, "pid": 7, "port": 7777, "registry_size": 2,
         "version": "9.9.9", "code_path": "/deploy/src/refmatrix/__init__.py", "dev_tree": False})
     monkeypatch.setattr(hub_mod, "rpc", lambda op, args=None: {"ok": True, "result": {"health": {
-        "/a/.refmatrix": {"history": [{"up": True}], "policy": "auto", "restart_count": 0},
+        "/a/very/long/store/path/for/wrapping/.refmatrix": {"history": [{"up": True}], "policy": "auto", "restart_count": 0},
         "/b/.refmatrix": {"history": [{"up": True}], "policy": "auto", "restart_count": 0},
     }}})
     monkeypatch.setattr(hub_mod, "_daemon_identity", lambda root: (
         {"unknown": True, "version": "0.65.0"} if str(root).startswith("/a")
         else {"code_path": "/dev/x", "dev_tree": True}))
-    out = CliRunner().invoke(cli_mod.main, ["hub", "status"]).output
+    # bug-294: narrow tty must not split the store path
+    out = CliRunner().invoke(cli_mod.main, ["hub", "status"], env={"COLUMNS": "40"}).output
+    assert "/a/very/long/store/path/for/wrapping/.refmatrix" in out
     assert "UNVERIFIED" in out and "0.65.0" in out
     assert "DEV TREE" in out
     assert "code: /deploy/src/refmatrix/__init__.py" in out
