@@ -1,0 +1,382 @@
+# local-lane slot=rmxtest2 sha=6cf74d6ca84b27aa4580dcd163d6bc334feebd66 start=2026-11-23 18:22:19 load={ 7.99 8.04 8.93 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest2/lane/runs/red-294a-fold.53GO/src/refmatrix as checked-hash (bug-037)
+..................FF....................FFFF..FF.F.................F.... [ 15%]
+....F................................................................... [ 31%]
+........................................................................ [ 47%]
+........................................................................ [ 63%]
+........................................................................ [ 78%]
+........................................................................ [ 94%]
+.........................                                                [100%]
+=================================== FAILURES ===================================
+____ test_normalise_e_line_keeps_what_tells_errors_apart[named-tmp-fixture] ____
+
+a = 'FileNotFoundError: /tmp/fixture_alpha'
+b = 'FileNotFoundError: /tmp/fixture_bravo'
+
+    @pytest.mark.parametrize("a,b", [
+        ("AssertionError: expected foo", "AssertionError: expected bar"),
+        ("KeyError: 'alpha'", "KeyError: 'beta'"),
+        ("assert 3 == 4", "assert 3 == 5"),
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
+        ("FileNotFoundError: /tmp/fixture_alpha", "FileNotFoundError: /tmp/fixture_bravo"),
+        ("FileNotFoundError: /private/tmp/fixture_alpha/x.json",
+         "FileNotFoundError: /private/tmp/fixture_bravo/x.json"),
+    ], ids=["word", "quoted-key", "plain-int", "path-tail", "named-tmp-fixture",
+            "named-private-tmp-fixture"])
+    def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
+        """...and nothing else (kills mutation 6: words replaced, different errors equal).
+    
+        bsd-294a r1 m-4 (ruling L197): a NAMED first-level /tmp path is not a random segment.
+        At 1bb14a5b the rule ate the tail of any name 8+ characters long, so `/tmp/fixture_alpha`
+        and `/tmp/fixture_bravo` both became `/tmp/fixtu<RAND>`, and the merge gate would read a
+        different failure as `seen`."""
+        norm = _ptest_module().normalise_e_line
+>       assert norm(a) != norm(b), (norm(a), norm(b))
+E       AssertionError: ('FileNotFoundError: /tmp/fixtu<RAND>', 'FileNotFoundError: /tmp/fixtu<RAND>')
+E       assert 'FileNotFoundError: /tmp/fixtu<RAND>' != 'FileNotFoundError: /tmp/fixtu<RAND>'
+E        +  where 'FileNotFoundError: /tmp/fixtu<RAND>' = <function normalise_e_line at 0x1163464b0>('FileNotFoundError: /tmp/fixture_alpha')
+E        +  and   'FileNotFoundError: /tmp/fixtu<RAND>' = <function normalise_e_line at 0x1163464b0>('FileNotFoundError: /tmp/fixture_bravo')
+
+tests/test_ptest_runner.py:399: AssertionError
+_ test_normalise_e_line_keeps_what_tells_errors_apart[named-private-tmp-fixture] _
+
+a = 'FileNotFoundError: /private/tmp/fixture_alpha/x.json'
+b = 'FileNotFoundError: /private/tmp/fixture_bravo/x.json'
+
+    @pytest.mark.parametrize("a,b", [
+        ("AssertionError: expected foo", "AssertionError: expected bar"),
+        ("KeyError: 'alpha'", "KeyError: 'beta'"),
+        ("assert 3 == 4", "assert 3 == 5"),
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
+        ("FileNotFoundError: /tmp/fixture_alpha", "FileNotFoundError: /tmp/fixture_bravo"),
+        ("FileNotFoundError: /private/tmp/fixture_alpha/x.json",
+         "FileNotFoundError: /private/tmp/fixture_bravo/x.json"),
+    ], ids=["word", "quoted-key", "plain-int", "path-tail", "named-tmp-fixture",
+            "named-private-tmp-fixture"])
+    def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
+        """...and nothing else (kills mutation 6: words replaced, different errors equal).
+    
+        bsd-294a r1 m-4 (ruling L197): a NAMED first-level /tmp path is not a random segment.
+        At 1bb14a5b the rule ate the tail of any name 8+ characters long, so `/tmp/fixture_alpha`
+        and `/tmp/fixture_bravo` both became `/tmp/fixtu<RAND>`, and the merge gate would read a
+        different failure as `seen`."""
+        norm = _ptest_module().normalise_e_line
+>       assert norm(a) != norm(b), (norm(a), norm(b))
+E       AssertionError: ('FileNotFoundError: /private/tmp/fixtu<RAND>/x.json', 'FileNotFoundError: /private/tmp/fixtu<RAND>/x.json')
+E       assert 'FileNotFoundError: /private/tmp/fixtu<RAND>/x.json' != 'FileNotFoundError: /private/tmp/fixtu<RAND>/x.json'
+E        +  where 'FileNotFoundError: /private/tmp/fixtu<RAND>/x.json' = <function normalise_e_line at 0x116345220>('FileNotFoundError: /private/tmp/fixture_alpha/x.json')
+E        +  and   'FileNotFoundError: /private/tmp/fixtu<RAND>/x.json' = <function normalise_e_line at 0x116345220>('FileNotFoundError: /private/tmp/fixture_bravo/x.json')
+
+tests/test_ptest_runner.py:399: AssertionError
+____ test_merge_gate_a_failed_gate_run_again_on_the_same_merge_still_fails _____
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0')
+
+    def test_merge_gate_a_failed_gate_run_again_on_the_same_merge_still_fails(tmp_path):
+        """bug-304 (b-1, P1): a merge adds a failing test; the gate fails with it NEW. Run again on
+        the same merge, the gate must fail again. At 1bb14a5b the second run took the first run's
+        moved-aside copy as its baseline, read the failure as `seen` and exited 0."""
+        tree, _ = _merging_checkout(tmp_path, "case_fail")
+        r1, s1 = _gate(tree)
+        assert r1.returncode == 1, f"run 1: exit {r1.returncode}, not 1:\n{s1}"
+        assert f"NEW FAILED {_FAILING_NODE}" in s1, s1
+        r2, s2 = _gate(tree)
+>       assert r2.returncode == 1, (f"run 2 of a failed gate on the same merge exited "
+                                    f"{r2.returncode}, not 1 (bug-304):\n{s2}")
+E       AssertionError: run 2 of a failed gate on the same merge exited 0, not 1 (bug-304):
+E         # ptest merge gate merge-gate-d5dd6505f271d3ccc34ce93e6424f237161f09bd: sha f73c31509c6d499fdfe1276394c17f03406f884f; checkout /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0/co (owning); started 2026-11-23T18:22:45; load at start 11.52
+E         # interpreter /Users/rmxtest2/.venv-lane/bin/python; logs in /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0/co/workflow/review-output/merge-gate-d5dd6505f271d3ccc34ce93e6424f237161f09bd
+E         # merge head d5dd6505f271d3ccc34ce93e6424f237161f09bd; touched test files: tests/test_topic.py; devtree files: 0; ALWAYS_FILES: 0
+E         # previous gate: /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0/co/workflow/review-output/merge-gate-d5dd6505f271d3ccc34ce93e6424f237161f09bd.20261123-182245
+E         unit-0 exit=1 root=/private/tmp/rmx-0qa0irpi collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=0.5s files=1 cmd: cd /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0/co && PYTHONPATH=/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_topic.py
+E         failures (1, from failures.jsonl):
+E           seen (open in the previous gate) FAILED tests/test_topic.py::test_fails_plainly [call] in unit-0: E       AssertionError: fixture: a plain failure
+E         lint gate ./scripts/lint-gmd.sh: exit code 0 ok (log lint-gmd.log)
+E         totals: shards=1 non-zero=1 collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=1.1s load at end 11.52
+E         merge gate passed: 1 shard(s), 1 failure record(s) all open in the previous gate, lint ok
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_failed_gate_0/co/scripts/p... at end 11.52\nmerge gate passed: 1 shard(s), 1 failure record(s) all open in the previous gate, lint ok\n', stderr='').returncode
+
+tests/test_ptest_runner.py:665: AssertionError
+_ test_merge_gate_a_different_merge_carrying_a_failure_from_a_failed_gate_fails _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0')
+
+    def test_merge_gate_a_different_merge_carrying_a_failure_from_a_failed_gate_fails(tmp_path):
+        """bug-304 (b-1, P1's second half): the gate fails on merge `topic`; the merge is aborted;
+        a DIFFERENT merge (`topic2`, another commit) carries the same failing test. Its gate must
+        fail: the failed gate was never a baseline. At 1bb14a5b it exited 0."""
+        tree, m1 = _merging_checkout(tmp_path, "case_fail")
+        r1, s1 = _gate(tree)
+        assert r1.returncode == 1, s1
+        _git(tree, "merge", "--abort")
+        m2 = _start_merge(tree, "topic2", {"test_topic.py": "case_fail",
+                                           "test_other.py": "case_trivial"})
+        assert m2 != m1
+        r2, s2 = _gate(tree)
+>       assert r2.returncode == 1, (f"a second merge carrying a failure first seen in a FAILED gate "
+                                    f"exited {r2.returncode}, not 1 (bug-304):\n{s2}")
+E       AssertionError: a second merge carrying a failure first seen in a FAILED gate exited 0, not 1 (bug-304):
+E         # ptest merge gate merge-gate-7ad6edb382fc056ee8bcf2fa75af6d97c6a9cc82: sha c6f0202e2bc898a2844123d1f5f8f5fa32fecdc0; checkout /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co (owning); started 2026-11-23T18:22:48; load at start 11.52
+E         # interpreter /Users/rmxtest2/.venv-lane/bin/python; logs in /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co/workflow/review-output/merge-gate-7ad6edb382fc056ee8bcf2fa75af6d97c6a9cc82
+E         # merge head 7ad6edb382fc056ee8bcf2fa75af6d97c6a9cc82; touched test files: tests/test_other.py, tests/test_topic.py; devtree files: 0; ALWAYS_FILES: 0
+E         # previous gate: /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co/workflow/review-output/merge-gate-19d3eb49273b22075e63d7bc1ebeb646d63770b3
+E         unit-0 exit=0 root=/private/tmp/rmx-zfuge4po collected=1 passed=1 failed=0 errors=0 skipped=0 xfailed=0 xpassed=0 wall=0.5s files=1 cmd: cd /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co && PYTHONPATH=/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_other.py
+E         unit-1 exit=1 root=/private/tmp/rmx-0mmrx76w collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=0.5s files=1 cmd: cd /private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co && PYTHONPATH=/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_topic.py
+E         no weight: tests/test_other.py (unit) placed at 1.00 s = the unit median 1.000 s/test x 1 test(s) (static count); add it to tests/shard_weights.json
+E         failures (1, from failures.jsonl):
+E           seen (open in the previous gate) FAILED tests/test_topic.py::test_fails_plainly [call] in unit-1: E       AssertionError: fixture: a plain failure
+E         lint gate ./scripts/lint-gmd.sh: exit code 0 ok (log lint-gmd.log)
+E         totals: shards=2 non-zero=1 collected=2 passed=1 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=1.1s load at end 10.84
+E         merge gate passed: 2 shard(s), 1 failure record(s) all open in the previous gate, lint ok
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_a_different_me0/co/scripts/p... at end 10.84\nmerge gate passed: 2 shard(s), 1 failure record(s) all open in the previous gate, lint ok\n', stderr='').returncode
+
+tests/test_ptest_runner.py:682: AssertionError
+_ test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_baseline_is_th0')
+
+    def test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy(tmp_path):
+        """bug-304 (b-1), the baseline itself, read from the summary's `# previous gate:` line.
+        `master` holds merge `topic`, gated and passed (M1). Then merge `topic2` adds a failing
+        test and is gated twice; the second run moves the first aside to
+        `merge-gate-<sha>.<ts>`. Both runs fail, and both name M1's gate dir as the baseline:
+        never the failed run, never the moved-aside copy, never a gate of an unmerged head. At
+        1bb14a5b run 2 named the moved-aside copy and passed."""
+        tree, m1 = _passed_merged_gate(tmp_path)
+        m1_dir = re.compile(rf"merge-gate-{m1}(?![.\w])")
+        m2 = _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+        for k in (1, 2):
+            r, summary = _gate(tree)
+            prev = _previous_gate_line(summary)
+>           assert m1_dir.search(prev) and prev.count("merge-gate-") == 1, (
+                f"run {k}: the baseline is {prev!r}, not the passed, merged gate merge-gate-{m1}")
+E           AssertionError: run 2: the baseline is '/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_baseline_is_th0/co/workflow/review-output/merge-gate-efc3bb8c24fb3fc9ea11ea02b33472282195c6ac.20261123-182253', not the passed, merged gate merge-gate-d15d40fd8ffd93cc10fed484ef461defb20e7fa8
+E           assert (None)
+E            +  where None = <built-in method search of re.Pattern object at 0x1146928e0>('/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_baseline_is_th0/co/workflow/review-output/merge-gate-efc3bb8c24fb3fc9ea11ea02b33472282195c6ac.20261123-182253')
+E            +    where <built-in method search of re.Pattern object at 0x1146928e0> = re.compile('merge-gate-d15d40fd8ffd93cc10fed484ef461defb20e7fa8(?![.\\w])').search
+
+tests/test_ptest_runner.py:700: AssertionError
+_ test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_carries_a_fail0')
+
+    def test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it(tmp_path):
+        """#r7 / L194, the carry-over that must survive the bug-304 fix: a failure recorded in the
+        last PASSED, merged gate's `failures.jsonl` is still open, so a later gate records it as
+        `seen`, names it, and passes. Kills MX1 (the gate never reads the previous gate: the open
+        failure is then NEW and the gate fails).
+    
+        Set-up: M1 (clean) is gated, passes and is merged. Merge `topic2` adds a failing test and
+        its first gate fails (NEW), which gives the real record. A passed gate holds a failure
+        only when it was carried into it, and a fresh tree has no such gate, so the record is
+        written into M1's `failures.jsonl`: the state a passed gate that carried it leaves. The
+        re-run on `topic2` then has M1 as its baseline and passes. RED at 1bb14a5b only on its last
+        assertion (the baseline named is run 1's moved-aside copy)."""
+        tree, m1 = _passed_merged_gate(tmp_path)
+        _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+        r1, s1 = _gate(tree)
+        assert r1.returncode == 1, s1
+        node = "tests/test_t2.py::test_fails_plainly"
+        merge_head = _git(tree, "rev-parse", "MERGE_HEAD")
+        recs = [x for x in _records(_gate_dir(tree, merge_head) / "failures.jsonl")
+                if x["nodeid"] == node]
+        assert len(recs) == 1, recs
+        m1_gate = _gate_dir(tree, m1)
+        with open(m1_gate / "failures.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({k: recs[0][k] for k in ("nodeid", "phase", "e")}) + "\n")
+        r2, s2 = _gate(tree)
+        # MX1's assertion first: it holds at 1bb14a5b (whose baseline is the moved-aside copy,
+        # which also holds the record), so the mutation is seen dying here, not on the line below
+        assert re.search(rf"\bseen\b[^\n]*FAILED {re.escape(node)}", s2), \
+            f"the carried failure is not named as seen (MX1's shape):\n{s2}"
+        assert r2.returncode == 0, (f"a failure open in the last passed, merged gate failed the "
+                                    f"gate (exit {r2.returncode}):\n{s2}")
+        prev = _previous_gate_line(s2)
+>       assert re.search(rf"merge-gate-{m1}(?![.\w])", prev) and prev.count("merge-gate-") == 1, \
+            f"the baseline is {prev!r}, not the passed, merged gate merge-gate-{m1} (bug-304)"
+E       AssertionError: the baseline is '/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_carries_a_fail0/co/workflow/review-output/merge-gate-16a34dec48173a9f2d2498bbb263f27a3d777a88.20261123-182257', not the passed, merged gate merge-gate-9018c7e16303063a8247198b6fe2f58aa7627be1 (bug-304)
+E       assert (None)
+E        +  where None = <function search at 0x100e82b90>('merge-gate-9018c7e16303063a8247198b6fe2f58aa7627be1(?![.\\w])', '/private/tmp/pytest-of-rmxtest2/pytest-25/test_merge_gate_carries_a_fail0/co/workflow/review-output/merge-gate-16a34dec48173a9f2d2498bbb263f27a3d777a88.20261123-182257')
+E        +    where <function search at 0x100e82b90> = re.search
+
+tests/test_ptest_runner.py:741: AssertionError
+________ test_a_single_threaded_hang_says_no_process_snapshot_was_taken ________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_a_single_threaded_hang_sa0')
+
+    def test_a_single_threaded_hang_says_no_process_snapshot_was_taken(tmp_path):
+        """bsd-294a r1 m-1 (ruling L197): a test that hangs in its main thread fails on
+        pytest-timeout (2 s, the fixture's own test-sized budget), but the `signal` method prints
+        no `+++ Timeout +++` banner, so the runner's watcher takes no process snapshot. That is
+        accepted (L194); a SILENT absence is not: the shard's summary line either names the
+        `<shard>.ps.txt` it wrote or says `no process snapshot`. At 1bb14a5b it said neither."""
+        tree = sht.build(tmp_path, {"test_hang.py": "case_hang_main_thread"},
+                         weights={"tests/test_hang.py": 1.0})
+        r = _ptest(tree, "--tier", "unit", "--shards", "1", "--name", "hang")
+        summary = _summary(tree, "hang", r)
+        rd = sht.run_dir(tree, "hang")
+        assert r.returncode == 1, f"exit {r.returncode}, not 1:\n{_out(r)[-2000:]}"
+        fails = [x for x in _records(rd / "failures.jsonl")
+                 if x["nodeid"] == "tests/test_hang.py::test_hangs_in_its_main_thread"]
+        assert fails and "Timeout" in fails[0]["e"], f"no timeout record: {fails}"
+        line = _shard_lines(summary).get("unit-0")
+        assert line, f"no unit-0 line:\n{summary}"
+        snaps = sorted(p.name for p in rd.glob("*.ps.txt"))
+        if snaps:
+            assert any(n in line for n in snaps), f"{snaps} written but not named:\n{line}"
+        else:
+>           assert "no process snapshot" in line.lower(), (
+                f"a timeout with no process snapshot is not said on the shard line:\n{line}")
+E           AssertionError: a timeout with no process snapshot is not said on the shard line:
+E             unit-0 exit=1 root=/private/tmp/rmx-bogl9prr collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=2.5s files=1 cmd: cd /private/tmp/pytest-of-rmxtest2/pytest-25/test_a_single_threaded_hang_sa0/co && PYTHONPATH=/private/tmp/pytest-of-rmxtest2/pytest-25/test_a_single_threaded_hang_sa0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_hang.py
+E           assert 'no process snapshot' in 'unit-0 exit=1 root=/private/tmp/rmx-bogl9prr collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wal...e_threaded_hang_sa0/co/src /users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfe tests/test_hang.py'
+E            +  where 'unit-0 exit=1 root=/private/tmp/rmx-bogl9prr collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wal...e_threaded_hang_sa0/co/src /users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfe tests/test_hang.py' = <built-in method lower of str object at 0x1162da330>()
+E            +    where <built-in method lower of str object at 0x1162da330> = 'unit-0 exit=1 root=/private/tmp/rmx-bogl9prr collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wal...e_threaded_hang_sa0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_hang.py'.lower
+
+tests/test_ptest_runner.py:825: AssertionError
+_ test_the_runner_refuses_when_pytest_timeout_is_importable_but_not_loaded[autoload-off-refused] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0')
+addopts = '', refused = True
+
+    @pytest.mark.parametrize("addopts,refused", [
+        ("", True),
+        ("-p pytest_timeout", False),
+    ], ids=["autoload-off-refused", "autoload-off-plugin-named-runs"])
+    def test_the_runner_refuses_when_pytest_timeout_is_importable_but_not_loaded(tmp_path, addopts,
+                                                                                 refused):
+        """bsd-294a r1 m-2 (ruling L197): with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` inherited,
+        `import pytest_timeout` still succeeds but pytest does not LOAD the plugin, the
+        `timeout = 600` key is only an unknown-option warning, and a hung test hangs the run. The
+        runner refuses (exit 2, a line naming pytest-timeout, no shard started). The control: the
+        same environment with the plugin named on `PYTEST_ADDOPTS` (`-p pytest_timeout`) is guarded,
+        so the runner runs it. At 1bb14a5b the first case ran unguarded and exited 0."""
+        tree = sht.build(tmp_path, {"test_pass.py": "case_trivial"},
+                         weights={"tests/test_pass.py": 1.0})
+        r = _ptest(tree, "--tier", "unit", "--shards", "1", "--name", "noload",
+                   env_extra={"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": addopts})
+        out = _out(r)
+        shard_logs = list(sht.run_dir(tree, "noload").glob("unit-*.log"))
+        if refused:
+>           assert r.returncode == 2, f"exit {r.returncode}, not 2:\n{out[-2000:]}"
+E           AssertionError: exit 0, not 2:
+E             started unit-0 (pid 38753): cd /private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co && PYTHONPATH=/private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_pass.py
+E             finished unit-0: exit=0 collected=1 passed=1 failed=0 errors=0 skipped=0 xfailed=0 xpassed=0 wall=0.5s
+E             tier devtree: NOT RUN here (clone); run it in the owning checkout before the merge commit
+E             
+E             # ptest tier unit noload: sha unknown (not a git checkout); checkout /private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co (clone); started 2026-11-23T18:23:04; load at start 11.42
+E             # interpreter /Users/rmxtest2/.venv-lane/bin/python; logs in /private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co/workflow/review-output/noload
+E             unit-0 exit=0 root=/private/tmp/rmx-c54aw4ry collected=1 passed=1 failed=0 errors=0 skipped=0 xfailed=0 xpassed=0 wall=0.5s files=1 cmd: cd /private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co && PYTHONPATH=/private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co/src /Users/rmxtest2/.venv-lane/bin/python -m pytest -p no:cacheprovider -rfE tests/test_pass.py
+E             failures: none recorded
+E             totals: shards=1 non-zero=0 collected=1 passed=1 failed=0 errors=0 skipped=0 xfailed=0 xpassed=0 wall=1.1s load at end 11.42
+E             tier devtree: NOT RUN here (clone); run it in the owning checkout before the merge commit
+E             INCOMPLETE for a merge: tier(s) not run: daemon (not asked), timing (not asked), devtree (NOT RUN here (clone)); this run passed: 1 shard(s), each exited 0
+E             
+E           assert 0 == 2
+E            +  where 0 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest2/pytest-25/test_the_runner_refuses_when_p0/co/scripts/p...t asked), timing (not asked), devtree (NOT RUN here (clone)); this run passed: 1 shard(s), each exited 0\n', stderr='').returncode
+
+tests/test_ptest_runner.py:848: AssertionError
+______________________ test_help_says_shards_is_per_tier _______________________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_help_says_shards_is_per_t0')
+
+    def test_help_says_shards_is_per_tier(tmp_path):
+        """bsd-294a r1 m-3 (ruling L197; L194 accepted `--shards N` per tier "said in `--help`"):
+        the `--shards` entry of `ptest.sh --help` says the count is per tier. At 1bb14a5b the
+        option had no help text."""
+        tree = sht.build(tmp_path, {})
+        r = _ptest(tree, "--help")
+        assert r.returncode == 0, _out(r)[-2000:]
+        lines = r.stdout.splitlines()
+        starts = [i for i, ln in enumerate(lines) if ln.lstrip().startswith("--shards")]
+        assert starts, f"--help lists no --shards:\n{r.stdout}"
+        block = [lines[starts[0]]]
+        for ln in lines[starts[0] + 1:]:
+            if ln.lstrip().startswith("-") or not ln.strip():
+                break
+            block.append(ln)
+        text = " ".join(" ".join(block).split())
+>       assert re.search(r"\bper (?:sharded )?tier\b", text, re.IGNORECASE), \
+            f"the --shards help does not say it is per tier: {text!r}"
+E       AssertionError: the --shards help does not say it is per tier: '--shards SHARDS'
+E       assert None
+E        +  where None = <function search at 0x100e82b90>('\\bper (?:sharded )?tier\\b', '--shards SHARDS', re.IGNORECASE)
+E        +    where <function search at 0x100e82b90> = re.search
+E        +    and   re.IGNORECASE = re.IGNORECASE
+
+tests/test_ptest_runner.py:873: AssertionError
+____________ test_devtree_tier_is_exactly_the_six_files_l192_names _____________
+
+    def test_devtree_tier_is_exactly_the_six_files_l192_names():
+        """Ruling L192 (1) and L197 (s-1): tier (c) is NOT RUN in every clone and lane worktree, so
+        a file that drifts into it silently stops running there. The set is pinned by name; a
+        file that joins or leaves it changes this list, with its reason, in the same commit."""
+        assert len(_DEVTREE_EXACT) == 6
+        tiering = _tiering()
+        got = {f.name for f in sorted(TESTS.glob("test_*.py")) if tiering.tier_of(f) == "devtree"}
+>       assert got == _DEVTREE_EXACT, (f"devtree has {sorted(got - _DEVTREE_EXACT)} extra and "
+                                       f"lacks {sorted(_DEVTREE_EXACT - got)}")
+E       AssertionError: devtree has ['test_suite_tiers.py'] extra and lacks []
+E       assert {'test_bug179...sync.py', ...} == frozenset({'t..._in_sync.py'})
+E         
+E         Extra items in the left set:
+E         'test_suite_tiers.py'
+E         Use -v to get more diff
+
+tests/test_suite_tiers.py:172: AssertionError
+_______ test_tier_rule_on_synthetic_sources[test_names_the_key.py-unit] ________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest2/pytest-25/test_tier_rule_on_synthetic_so8')
+name = 'test_names_the_key.py', tier = 'unit'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+        ("test_names_the_key.py", "unit"),
+        ("test_env_subscript.py", "devtree"),
+        ("test_env_get.py", "devtree"),
+        ("test_getenv.py", "devtree"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored).
+    
+        bsd-294a r1 s-1 (ruling L197): the `RMX_SANDBOX_REAL_HOME` key counts only as an
+        environment lookup (`os.environ[...]`, `.get(`, `getenv(`); the same key as a plain string
+        in an assert is not a read, so that file is `unit` (RED at 1bb14a5b: `devtree`)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+E       AssertionError: assert 'devtree' == 'unit'
+E         
+E         - unit
+E         + devtree
+
+tests/test_suite_tiers.py:255: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[named-tmp-fixture]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[named-private-tmp-fixture]
+FAILED tests/test_ptest_runner.py::test_merge_gate_a_failed_gate_run_again_on_the_same_merge_still_fails
+FAILED tests/test_ptest_runner.py::test_merge_gate_a_different_merge_carrying_a_failure_from_a_failed_gate_fails
+FAILED tests/test_ptest_runner.py::test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy
+FAILED tests/test_ptest_runner.py::test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it
+FAILED tests/test_ptest_runner.py::test_a_single_threaded_hang_says_no_process_snapshot_was_taken
+FAILED tests/test_ptest_runner.py::test_the_runner_refuses_when_pytest_timeout_is_importable_but_not_loaded[autoload-off-refused]
+FAILED tests/test_ptest_runner.py::test_help_says_shards_is_per_tier - Assert...
+FAILED tests/test_suite_tiers.py::test_devtree_tier_is_exactly_the_six_files_l192_names
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_names_the_key.py-unit]
+11 failed, 446 passed in 220.42s (0:03:40)
+exit 1
