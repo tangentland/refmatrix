@@ -74,6 +74,20 @@ removed; it can be steered to a single line, with the handoff carrying the state
    the R2 instruction applies to the `auto` trigger only, unless the user passes none.
 6. **R5 Generated and installed.** {#r5} Emitted by `hooks.py`, covered by `install-hooks --check`,
    rolled out by the next fleet `install-hooks --apply`.
+7. **R6 The active goal rides the handoff (L198; the user, 2026-11-24: "add the goal text to the
+   C1 handoff").** {#r6} Claude Code's docs do not say whether an active `/goal` survives
+   compaction, `/clear` removes it, and only the user can issue `/goal`. So:
+   - R1's save-state reads the session's active goal from the hook's `transcript_path`: the
+     newest `/goal <text>` command not followed by a clearing `/goal` (the transcript shape is
+     probed first on a real transcript, read-only, and recorded as a shape with hashes, never raw
+     text), and writes it verbatim into the save-state's `{#active-goal}` block with its set time;
+   - `rmx recall-state` output (so the R3 handoff file) carries that block, and the R3 pointer
+     block adds one line: `active goal: /goal <verbatim text>`, with the instruction to check a
+     bare `/goal` and, if none is active, ask the user to re-issue that exact command;
+   - on `clear` the goal comes from the newest save-state's block, labelled with its time (the
+     cleared session's transcript is not the hook's);
+   - no goal set: no line, never an empty or guessed one; a transcript that cannot be read or
+     parsed says so in one line (no silent failure).
 
 ## Acceptance {#acceptance}
 
@@ -89,10 +103,15 @@ removed; it can be steered to a single line, with the handoff carrying the state
   (mutation: the gate removed → the first non-Read call is allowed → fails); a missing file lets
   every call through with one stand-down line (mutation: the gate holds on a missing file → fails);
   the pointer is re-injected on each prompt until the marker exists.
+- **AC-6:** a fixture transcript with `/goal X` then a later `/goal Y` yields `Y` verbatim in the
+  save-state `{#active-goal}` block, the handoff file and the pointer line; a cleared goal yields
+  no line; on `clear` the line comes from the newest save-state with its time; an unparseable
+  transcript yields the one-line notice (mutations: take the first goal not the newest → fails;
+  ignore the clear → fails; drop the pointer line → fails).
 
 ## Files {#files}
 
-`src/refmatrix/hooks.py`, the PreCompact command bodies, tests under
+`src/refmatrix/hooks.py`, `src/refmatrix/handoff.py` (the `{#active-goal}` block, R6), the PreCompact command bodies, tests under
 `tests/test_compaction_handoff*.py`, `docs/INTEGRATION.md` (hooks section).
 
 ## Done {#done}
