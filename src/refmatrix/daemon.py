@@ -6646,11 +6646,15 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
 
     # The model call happens HERE, outside the lock (ch-bsd r9 #s-1).
     q_emb = _PrecomputedQuery(emb, query, emb.embed_texts([query]))
+    # bug-300 R3 (2026-11-23): a fused recall whose symbolic leg returned
+    # nothing says so on BOTH returns below; the verb, CLI and MCP pass
+    # `warnings` through.
+    fuse_warnings: list[str] = []
     with d._store_lock, d._st().with_partition(partition):
         if fuse:
             hits = hybrid_memory_recall(
                 d._st(), q_emb, query, k=retrieve_k, kinds=kinds,
-                candidate_ids=_cand)
+                candidate_ids=_cand, warnings=fuse_warnings)
         else:
             hits = dense_recall(d._st(), q_emb, query, k=retrieve_k, kinds=kinds,
                                 candidate_ids=_cand)
@@ -6679,16 +6683,19 @@ def _op_memory_recall(d: Daemon, args: dict) -> dict:
     if want_rerank and docs is not None:
         reranked = _apply_rerank_safe(d, query, docs, k, warnings=rr_warnings)
         if reranked is not None:
-            return {"hits": _m([{"id": eid, "score": sc, "fused": bool(fuse),
-                                 "reranked": True} for eid, sc in reranked])}
+            res = {"hits": _m([{"id": eid, "score": sc, "fused": bool(fuse),
+                                "reranked": True} for eid, sc in reranked])}
+            if fuse_warnings:
+                res["warnings"] = list(fuse_warnings)
+            return res
 
     hits = hits[:k]
     if fuse:
         out = {"hits": _m([{"id": eid, "score": sc, "fused": True} for eid, sc in hits])}
     else:
         out = {"hits": _m([{"id": eid, "distance": dist} for eid, dist in hits])}
-    if rr_warnings:
-        out["warnings"] = rr_warnings
+    if fuse_warnings or rr_warnings:
+        out["warnings"] = fuse_warnings + rr_warnings
     return out
 
 

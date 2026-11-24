@@ -101,16 +101,385 @@ def gmd_store(tmp_path):
     s.close()
 
 
-def test_body_terms_land_on_the_anchored_node_not_the_memory(gmd_store):
+def test_body_terms_land_on_the_anchored_node_and_score_for_the_memory(gmd_store):
     """Pins the graph shape the fix is built around. A GMD doc yields TWO
-    entities and the body term-frequency sweep hangs `mentions` on the node,
-    so ranking only code/doc/memory searches the half with no body index."""
+    entities and the body term-frequency sweep hangs `mentions` on the node.
+    Until bug-300 this test pinned the CONSEQUENCE too: ranking code/doc/memory
+    returned [] for a body word, because a memory's own `mentions` are its
+    title and tag words. bug-300 R1 (L193 option (a)): when `kinds` includes
+    `memory`, the memory's block postings are credited to the memory, so the
+    same call now returns the memory -- and never its block node."""
     node = gmd_store.get_entity("concept", "chat-alpha#root")
     assert node is not None
     hits = gmd_store.content_rank(["sneakers"], kinds=["concept"], limit=10)
     assert node.id in [eid for eid, _ in hits]
-    assert gmd_store.content_rank(
-        ["sneakers"], kinds=["code", "doc", "memory"], limit=10) == []
+    mem = gmd_store.get_entity("memory", "chat-alpha")
+    assert mem is not None
+    got = gmd_store.content_rank(["sneakers"], kinds=["code", "doc", "memory"], limit=10)
+    assert [eid for eid, _ in got] == [mem.id], got
+
+
+# ─── bug-300: a memory's BODY is searchable by content_rank ───────────────
+#
+# Fixture shape = the LongMemEval shape that made `memory recall --fuse` a no-op (T0.6,
+# 2026-11-24): memories TITLED BY AN ID, so their own `mentions` are `session` + id tokens and
+# every body word sits on a `<memory-id>#<anchor>` block node (kind=concept). R0 (live and
+# LongMemEval copies, workflow/review-output/b300-r0.md): the tie that is total is the block
+# NAME prefix (= `meta.doc`); a `part-of` walk is not (GMD `rel: part-of` lines share the
+# linkage: 4 live blocks are part-of a FOREIGN memory), and a SQL `LIKE '<id>#%'` treats the
+# `_` in ids like `s0042_1` as a wildcard. Both wrong joins have a planted case below.
+# Query terms are punctuation-free so bug-301 (content_terms keeps `work?`) cannot interact.
+
+def _gmd(doc_id: str, sections, *, preamble: str = "", rels=(), node_type="memory") -> str:
+    """A GMD file titled by its id. `sections` = [(heading, anchor, text)]; `preamble` is body
+    text under the H1 (it lands on `<id>#root`); `rels` are `rel:` lines on the root."""
+    rel_lines = "".join(f"rel: {r}\n" for r in rels)
+    body = "\n\n".join(f"## {t} {{#{a}}}\n\n{txt}" for t, a, txt in sections)
+    return (f'---\ngmd: "0.1"\nid: {doc_id}\ntitle: "Session {doc_id}"\ntags: [session]\n'
+            f"metadata:\n  node_type: {node_type}\n  type: test/session\n---\n\n"
+            f"# Session {doc_id} {{#root}}\n\n{preamble}\n\n{rel_lines}\n{body}\n")
+
+
+def _headingless(doc_id: str, text: str) -> str:
+    """A memory with NO heading: its body lands on the memory entity itself (the synthetic
+    `__root__` node IS the memory) -- the 179 live memories without block nodes (R0)."""
+    return (f'---\ngmd: "0.1"\nid: {doc_id}\ntitle: "Session {doc_id}"\ntags: [session]\n'
+            f"metadata:\n  node_type: memory\n  type: test/session\n---\n\n{text}\n")
+
+
+# Ingest ORDER matters for one case: `s0061_1` (one `glacier`) gets a LOWER entity id than
+# `s0060_1` (two), so a max-per-block join ties them and the id tie-break puts s0061 first.
+_MEMORIES = [
+    # s0063_1 (lower id) and s0062_1 say `fjord` once each, in the same sentence; s0063_1 also
+    # has a long block of other words. One document per memory (L199 3.): its length is its own
+    # postings PLUS every block's, so the longer s0063_1 ranks second. A length taken from the
+    # memory's own postings alone ties them, and the id tie-break puts s0063_1 first.
+    ("s0063_1", _gmd("s0063_1", [
+        ("Cruise", "cruise", "The fjord cruise passed steep green cliffs."),
+        ("Log", "log", "Breakfast porridge, deck chairs, binoculars, seabirds, waterfalls, "
+                       "rain jackets, postcards, harbour shops, woollen gloves, hot cocoa, "
+                       "camera batteries, folding maps, wooden benches, quiet cabins.")])),
+    ("s0062_1", _gmd("s0062_1", [
+        ("Cruise", "cruise", "The fjord cruise passed steep green cliffs.")])),
+    ("s0061_1", _gmd("s0061_1", [
+        ("Ice", "ice", "The glacier walk crossed a wide blue field of old snow."),
+        ("Rock", "rock", "The moraine walk crossed a wide grey field of old stone.")])),
+    ("s0060_1", _gmd("s0060_1", [
+        ("Ice", "ice", "The glacier walk crossed a wide blue field of old snow."),
+        ("Rock", "rock", "The glacier edge crossed a wide grey field of old stone.")])),
+    ("s0042_1", _gmd("s0042_1", [
+        ("Garden", "garden", "The tomatoes in the raised bed need staking before the storm."),
+        ("Travel", "travel", "My daily commute by train takes forty minutes.")])),
+    ("s0043_1", _gmd("s0043_1", [
+        ("Kitchen", "kitchen", "The kettle is blue and the toaster burns bread.")])),
+    # s0050_1's root block is `part-of` s0051_1 by a GMD rel: line (the live shape R0 found).
+    ("s0050_1", _gmd("s0050_1", [("Coast", "coast", "The lighthouse keeper logs every ship.")],
+                     rels=["part-of -> [[s0051_1]]"])),
+    ("s0051_1", _gmd("s0051_1", [("Hills", "hills", "The shepherd counts sheep at dusk.")])),
+    ("s0070_1", _headingless("s0070_1", "A smooth pebble from the river sits on the desk.")),
+]
+# A DOC (not a memory) whose id matches `s0042_1` under LIKE (`_` = any char): its block holds
+# `ferry`, a word no memory has.
+_LIKE_TWIN = _gmd("s0042x1", [("Harbour", "harbour", "The ferry leaves the harbour at noon.")],
+                  node_type="doc")
+
+
+@pytest.fixture
+def id_titled(tmp_path):
+    """A real store, real GMD ingest (`ingest_gmd_paths(as_memory=True)`, the bridge's path),
+    no mocks. Yields `(store, ids)` with `ids[name] = entity id` for every memory."""
+    import rmx_sandbox
+    base = Path(rmx_sandbox.short_root("b300c-"))
+    mem_dir, doc_dir = base / "memory", base / "docs"
+    mem_dir.mkdir()
+    doc_dir.mkdir()
+    s = Store(base / ".refmatrix")
+    s.init()
+    try:
+        for name, text in _MEMORIES:            # one call per file: the ingest order is the id order
+            (mem_dir / f"{name}.md").write_text(text, encoding="utf8")
+        ingest_gmd_paths(s, [mem_dir / f"{n}.md" for n, _ in _MEMORIES], as_memory=True,
+                         memory_mtype_default="test/session")
+        (doc_dir / "s0042x1.md").write_text(_LIKE_TWIN, encoding="utf8")
+        ingest_gmd_paths(s, [doc_dir / "s0042x1.md"])
+        ids = {n: s.get_entity("memory", n).id for n, _ in _MEMORIES}
+        assert s.get_entity("doc", "s0042x1") is not None
+        # An ORPHAN block: the shape R0 found live (3 blocks of
+        # `impression_bsd_isolation_drops_the_suite`, memory entity and file gone; logged as
+        # its own bug by the lead). Planted directly: a gmd_node concept whose `meta.doc` names
+        # a memory that does not exist, carrying the only `zeppelin`.
+        orphan = s.upsert_entity(
+            kind="concept", name="s0099_1#gone", path=str(mem_dir / "s0099_1.md"),
+            tldr="Gone\n\nThe zeppelin hangar", meta={"doc": "s0099_1", "anchor": "gone",
+                                                     "level": 2, "gmd_node": True})
+        s.link("mentions", s.upsert_entity(kind="concept", name="zeppelin"), orphan, 1.0)
+        assert s.get_entity("memory", "s0099_1") is None
+        yield s, ids
+    finally:
+        s.close()
+        rmx_sandbox.remove_tree(base)
+
+
+def _named(s: Store, hits) -> list:
+    return [(s.get_entity_by_id(eid).kind, s.get_entity_by_id(eid).name) for eid, _ in hits]
+
+
+@pytest.mark.parametrize("term,memory", [
+    ("commute", "s0042_1"),     # AC-1: a word only in the #travel block
+    ("tomatoes", "s0042_1"),    # another block of the same memory
+    ("kettle", "s0043_1"),
+    ("pebble", "s0070_1"),      # guard: a heading-less memory still scores from its own postings
+])
+def test_a_body_word_finds_its_id_titled_memory(id_titled, term, memory):
+    """bug-300 AC-1: `content_rank([term], kinds=["memory"])` returns the memory whose BODY
+    holds the term. RED at base for every block-held term: the leg read only the memory's own
+    title/tag `mentions` and returned []."""
+    s, _ids = id_titled
+    hits = s.content_rank([term], kinds=["memory"], limit=10)
+    assert _named(s, hits) == [("memory", memory)], _named(s, hits)
+
+
+def test_memory_kind_returns_each_memory_once_and_no_block_node(id_titled):
+    """bug-300 R1: block postings are CREDITED to their memory; a block node is never a hit of
+    its own under `kinds=["memory"]`, and a memory reached through two blocks is one row. (AC-5
+    mutation "return block nodes as hits" turns this red.)"""
+    s, ids = id_titled
+    hits = s.content_rank(["commute", "tomatoes", "kettle"], kinds=["memory"], limit=50)
+    named = _named(s, hits)
+    assert {k for k, _ in named} == {"memory"}, named
+    got = [eid for eid, _ in hits]
+    assert len(got) == len(set(got)), named
+    assert set(got) == {ids["s0042_1"], ids["s0043_1"]}, named
+    # s0042_1 matches two of the three terms (two blocks), s0043_1 one: one document each,
+    # so coverage puts s0042_1 first.
+    assert got[0] == ids["s0042_1"], named
+
+
+@pytest.mark.parametrize("term,expect", [
+    ("lighthouse", ["s0050_1"]),   # NOT s0051_1, which s0050_1#root is `part-of` by a rel: line
+    ("ferry", []),                 # NOT s0042_1: `s0042x1#harbour` is a DOC's block
+    ("zeppelin", []),              # an orphan block (its memory is gone) is not a hit
+])
+def test_block_credit_follows_the_block_name_not_part_of_or_a_like_pattern(
+        id_titled, term, expect):
+    """R0 + the lead's ruling: a block is credited to the memory named by its NAME prefix
+    (`split_part(name, '#', 1)`, which equals `meta.doc` on every block of both stores
+    measured), never through `part-of`. A `part-of` walk credits s0050_1's body to s0051_1,
+    the memory its GMD `rel: part-of` line names; a `LIKE 's0042_1#%'` join credits the doc
+    `s0042x1`'s block to memory `s0042_1`; an orphan block (no memory of that name) maps to
+    nothing and is not returned on its own."""
+    s, _ids = id_titled
+    hits = s.content_rank([term], kinds=["memory"], limit=10)
+    assert [n for _, n in _named(s, hits)] == expect, _named(s, hits)
+
+
+def test_one_memory_is_one_bm25_document_across_its_blocks(id_titled):
+    """R1: "the block postings and the memory's own postings are one document for BM25's tf
+    and length". s0060_1 says `glacier` in two blocks, s0061_1 in one; the files are the same
+    length, so tf decides: s0060_1 first. A max-over-blocks join ties them, and the entity-id
+    tie-break then puts s0061_1 (ingested first) on top."""
+    s, ids = id_titled
+    hits = s.content_rank(["glacier"], kinds=["memory"], limit=10)
+    assert [eid for eid, _ in hits] == [ids["s0060_1"], ids["s0061_1"]], _named(s, hits)
+    assert hits[0][1] > hits[1][1], hits
+
+
+def test_a_memorys_bm25_length_is_its_own_plus_its_blocks(id_titled):
+    """L199 ruling 3: one document per memory, length = the memory's own postings + all its
+    blocks' postings (the same grouped join). Same tf of `fjord`, but s0063_1 carries an extra
+    block of 20-odd other words: BM25's length norm must put the shorter s0062_1 first. A
+    length read from the memory's own `mentions` (title + tags, equal for both) ties them and
+    the id tie-break puts s0063_1 (ingested first) on top."""
+    s, ids = id_titled
+    hits = s.content_rank(["fjord"], kinds=["memory"], limit=10)
+    assert [eid for eid, _ in hits] == [ids["s0062_1"], ids["s0063_1"]], _named(s, hits)
+    assert hits[0][1] > hits[1][1], hits
+
+
+def _tagged(doc_id: str, tags: str, sections) -> str:
+    """`_gmd` with the memory's own tags chosen: a tag is a `mentions` edge on the MEMORY
+    entity, not on a block -- the title/tag-only match the length rule must still apply to."""
+    return _gmd(doc_id, sections).replace("tags: [session]", f"tags: [{tags}]", 1)
+
+
+@pytest.fixture
+def tag_matched():
+    """Its own store (the `id_titled` pins hold that store's N / avgdl): two memories that match
+    `quokka` ONLY through their own tag, one with a long block body; a third whose body alone
+    holds `kettle`. Ingested long-first, so the long memory has the lower entity id."""
+    import rmx_sandbox
+    base = Path(rmx_sandbox.short_root("b300t-"))
+    mem_dir = base / "memory"
+    mem_dir.mkdir()
+    files = [
+        ("s0081_1", _tagged("s0081_1", "session, quokka", [
+            ("Log", "log", "Breakfast porridge, deck chairs, binoculars, seabirds, waterfalls, "
+                           "rain jackets, postcards, harbour shops, woollen gloves, hot cocoa, "
+                           "camera batteries, folding maps, wooden benches, quiet cabins, "
+                           "ferry tickets, lighthouse tours, rock pools, sea glass, driftwood, "
+                           "puffins, oyster catchers, kelp beds, tide pools, salt marsh.")])),
+        ("s0080_1", _tagged("s0080_1", "session, quokka", [("Note", "note", "Tiny.")])),
+        ("s0082_1", _tagged("s0082_1", "session", [
+            ("Kitchen", "kitchen", "The kettle is blue.")])),
+    ]
+    s = Store(base / ".refmatrix")
+    s.init()
+    try:
+        for name, text in files:
+            (mem_dir / f"{name}.md").write_text(text, encoding="utf8")
+        ingest_gmd_paths(s, [mem_dir / f"{n}.md" for n, _ in files], as_memory=True,
+                         memory_mtype_default="test/session")
+        ids = {n: s.get_entity("memory", n).id for n, _ in files}
+        assert ids["s0081_1"] < ids["s0080_1"], ids     # the tie-break favours the LONG one
+        yield s, ids
+    finally:
+        s.close()
+        rmx_sandbox.remove_tree(base)
+
+
+@pytest.mark.parametrize("terms", [["quokka"], ["quokka", "kettle"]])
+def test_the_length_rule_holds_when_a_memory_matches_only_on_its_own_postings(
+        tag_matched, terms):
+    """L199 ruling 3, ch-bsd b300 r1 b-1 (L209): a memory's length is its own postings plus all
+    its blocks' on EVERY credited query, not only when some block row matched a query term. Both
+    quokka memories match through their TAG alone; s0081_1 also has a long block, so the
+    shorter s0080_1 ranks first -- with or without `kettle`, a word neither contains. At
+    5d28d2a5 the length was applied only `if _block_rows:`: `["quokka"]` scored the long memory
+    as its own few postings, tied it with the short one, and the id tie-break put it first,
+    while `["quokka", "kettle"]` (kettle is on a block) put the short one first."""
+    s, ids = tag_matched
+    hits = s.content_rank(terms, kinds=["memory"], limit=10)
+    order = [eid for eid, _ in hits if eid in (ids["s0080_1"], ids["s0081_1"])]
+    assert order == [ids["s0080_1"], ids["s0081_1"]], _named(s, hits)
+    score = dict(hits)
+    assert score[ids["s0080_1"]] > score[ids["s0081_1"]], _named(s, hits)
+
+
+# ─── L199 ruling 1: callers that ask for `concept` (context) or no kinds (net) ────────
+#
+# Block postings are credited to a memory ONLY when `kinds` includes `memory` and excludes
+# `concept`: with `concept` in `kinds` the blocks are already candidates of their own, and a
+# second credit would count each body word twice. `kinds=None` (net.py:114) is the same case.
+# Both are pinned at base (da6af511) on the memory-and-blocks fixture: `s0042_1` scores from its
+# own title postings (`s0042_1`), its blocks from their body words.
+
+_UNCHANGED_TERMS = ["s0042_1", "commute", "lighthouse", "fjord"]
+
+
+def _pinned(s: Store, kinds) -> list:
+    hits = s.content_rank(_UNCHANGED_TERMS, kinds=kinds, limit=50)
+    return [(k, n, round(sc, 9)) for (k, n), (_e, sc) in zip(_named(s, hits), hits)]
+
+
+_PIN_WITH_CONCEPT: list = [
+    ("concept", "s0050_1#coast", 0.827510148),
+    ("concept", "s0042_1#travel", 0.824554755),
+    ("concept", "s0063_1#cruise", 0.689592303),
+    ("concept", "s0062_1#cruise", 0.689592303),
+    ("concept", "s0042_1#root", 0.066583413),
+    ("memory", "s0042_1", 0.063045164),
+]
+# Same numbers: with `concept` in the kinds, the code/doc kinds add nothing on this store.
+_PIN_KINDS_NONE: list = list(_PIN_WITH_CONCEPT)
+
+
+@pytest.mark.parametrize("kinds,pin", [
+    (["code", "doc", "memory", "concept"], "_PIN_WITH_CONCEPT"),   # context.py:792/805
+    (None, "_PIN_KINDS_NONE"),                                      # net.py:114
+])
+def test_a_caller_that_also_asks_for_concept_or_for_every_kind_is_unchanged(
+        id_titled, kinds, pin):
+    """L199 ruling 1 (R2): a guard, GREEN at base by construction. It fails if GREEN credits
+    block postings to the memory while `concept` is in `kinds` (or `kinds` is None): the
+    memory's score moves and it gains rows for body words its blocks already answer."""
+    s, _ids = id_titled
+    want = globals()[pin]
+    got = _pinned(s, kinds)
+    assert got == want, f"{pin} moved; base pin {want!r}, now {got!r}"
+
+
+# ─── bug-300 R2 / AC-3: a caller over code and docs ranks exactly as before ──
+#
+# The pin was taken at base (da6af511) and must hold after the fix. The corpus has GMD DOCS
+# with `<doc-id>#<anchor>` blocks (the same name shape as a memory's), so a block join that is
+# not restricted to memories -- crediting a doc's blocks to the doc -- moves these numbers.
+
+_CODE = '''"""Harbour schedule helpers."""
+
+
+def ferry_departures(harbour):
+    """Return the ferry departures for a harbour, earliest first."""
+    return sorted(harbour.schedule)
+'''
+_DOCS = {
+    "harbour-guide": _gmd("harbour-guide", [
+        ("Ferries", "ferries", "The ferry schedule lists every departure from the harbour."),
+        ("Tides", "tides", "Tide tables decide when the ferry can dock at low water.")],
+        node_type="doc"),
+    "port-notes": _gmd("port-notes", [
+        ("Cargo", "cargo", "Cargo ships share the harbour with the morning ferry."),
+        ("Weather", "weather", "Storms cancel the schedule twice a winter.")],
+        node_type="doc"),
+}
+_PIN_QUERY = "ferry schedule harbour departures"
+# (kind, name, round(score, 9)) of build_context's content group, taken at base (da6af511).
+_PIN_CONTEXT: list = [
+    ("concept", "harbour-guide#ferries", 3.080788232),
+    ("code", "harbour.py::ferry_departures", 1.751547171),
+    ("concept", "port-notes#cargo", 0.631658671),
+    ("concept", "plain.md#_h1", 0.619939586),
+    ("concept", "port-notes#weather", 0.414953629),
+    ("concept", "harbour-guide#tides", 0.204990641),
+]
+# content_rank under context's own kinds, same base.
+_PIN_RANK: list = [
+    ("concept", "harbour-guide#ferries", 2.053858822),
+    ("code", "harbour.py::ferry_departures", 1.751547171),
+    ("concept", "port-notes#cargo", 0.631658671),
+    ("concept", "plain.md#_h1", 0.619939586),
+    ("concept", "port-notes#weather", 0.414953629),
+    ("concept", "harbour-guide#tides", 0.204990641),
+]
+
+
+@pytest.fixture
+def code_and_docs():
+    import rmx_sandbox
+    from refmatrix.ingest import ingest_path
+    base = Path(rmx_sandbox.short_root("b300p-"))
+    for d in ("src", "plain", "docs"):
+        (base / d).mkdir()
+    (base / "src" / "harbour.py").write_text(_CODE, encoding="utf8")
+    (base / "plain" / "plain.md").write_text(
+        "# Plain notes\n\nThe harbour master keeps the ferry log.\n", encoding="utf8")
+    for name, text in _DOCS.items():
+        (base / "docs" / f"{name}.md").write_text(text, encoding="utf8")
+    s = Store(base / ".refmatrix")
+    s.init()
+    try:
+        ingest_path(s, base / "src", semantic=True)   # plain ingest of Python mints no concepts
+        ingest_path(s, base / "plain")
+        ingest_gmd_paths(s, [base / "docs" / f"{n}.md" for n in _DOCS])
+        yield s
+    finally:
+        s.close()
+        rmx_sandbox.remove_tree(base)
+
+
+def test_context_over_code_and_docs_ranks_exactly_as_at_base(code_and_docs):
+    """bug-300 AC-3 (R2): `rmx context` over code and docs ranks byte-for-byte as at base,
+    through `build_context` (what the CLI/MCP call) and the `content_rank` call it makes. A
+    guard, GREEN at base by construction; it fails if the block join leaks to non-memory
+    blocks or the BM25 N / avgdl / doc-length base moves for a store with no memories."""
+    s = code_and_docs
+    hits = s.content_rank(_ref_terms(_PIN_QUERY), kinds=["code", "doc", "memory", "concept"],
+                          limit=30)
+    rank = [(k, n, round(sc, 9)) for (k, n), (_e, sc) in zip(_named(s, hits), hits)]
+    b = build_context(s, _PIN_QUERY, max_entities=10, grep_backstop=False)
+    ctx = [(e.entity.kind, e.entity.name, round(e.weight, 9))
+           for e in b.groups.get("content", [])]
+    assert rank == _PIN_RANK, f"content_rank moved; base pin {_PIN_RANK!r}, now {rank!r}"
+    assert ctx == _PIN_CONTEXT, f"context moved; base pin {_PIN_CONTEXT!r}, now {ctx!r}"
 
 
 def test_multi_word_phrase_reaches_the_index(gmd_store):
