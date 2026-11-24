@@ -85,16 +85,19 @@ roaring bitmap of the entity column ids that satisfy that relation.
 The model mirrors [Pilosa](https://github.com/FeatureBaseDB/featurebase)
 (index → field → row → column). Storage is a single **DuckDB** catalog plus
 in-process [pyroaring](https://github.com/Ezibenroc/PyRoaringBitMap) bitmaps;
-dense vectors (for memory/code recall) live in **Lance**. An optional per-store
-**daemon** owns the writer so editor + watcher + CLI never contend on the lock.
-No external server, no HTTP — a single-binary CLI.
+dense vectors (for memory/code recall) live in **Lance**. A per-store **daemon**
+(Unix socket) is the single writer: while it runs, every write from the CLI, hooks and the
+file watcher goes through it, so nothing contends on the catalog lock. One user-level
+**hub** (launchd-supervised) sits above the daemons: it restarts dead ones, owns the global
+memory store, hosts the shared embedder and reranker workers, and serves a web UI on
+`127.0.0.1:7777` when the `ui` extra is installed.
 
 ## Install
 
 ```bash
 git clone https://github.com/tangentland/refmatrix && cd refmatrix
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e '.[watch,dense,dev]'      # dense = Lance + sentence-transformers (memory recall)
+pip install -e '.[dev]'                  # Lance, sentence-transformers, watchdog are core deps
 rmx --version
 ```
 
@@ -231,6 +234,30 @@ context bundles injected for symbols it mentions. `build_context` is shared by
 over the concept graph (measured against a degree-walk alternative — PPR wins
 5x; see PERFORMANCE.md's negatives table).
 
+### Compaction and `/clear` as a handoff
+
+No hook can suppress the compaction summary, so the generated hooks make compaction behave
+like save-state → `/clear` → recall-state:
+
+- **PreCompact** saves state first, bounded at 10 s (`hooks.PRECOMPACT_SAVE_TIMEOUT_S`). The
+  `savestate_*.md` file and `MEMORY.md` reach disk before the store commit; a commit that
+  overruns the bound is deferred (the daemon applies it when the writer frees) and stderr says
+  so. A failed save exits 0 and names the last good save-state.
+- The summary is then steered to one line: name the task, treat the handoff as authoritative,
+  restate nothing. A manual `/compact <text>` saves and keeps your text.
+- **SessionStart `compact|clear`** writes the full recall-state to
+  `.refmatrix/handoffs/<session>.txt` and injects only a pointer to it.
+- Until that file is Read, every other tool call is denied. The gate never traps: a missing,
+  unreadable or day-old file, or a `handoffs/` dir it cannot write, stands it down in one line,
+  and a broken `rmx` lets the call through. Subagents are never gated; their compaction keeps
+  Claude Code's own summary.
+- The active `/goal` text rides the handoff: the pointer carries `active goal: /goal <text>`,
+  to re-issue if a bare `/goal` shows none.
+
+`rmx telemetry --context` reports the handoffs written, read, stood down and reaped. The full
+contract is in [`docs/INTEGRATION.md`](docs/INTEGRATION.md) ("Compaction and /clear as a
+handoff").
+
 ## Drop-in learning grep
 
 `bin/rmxgrep` and `bin/rmxrg` are byte-exact grep/rg drop-ins (`alias
@@ -274,13 +301,21 @@ rmx install-hooks --apply        # git post-commit/merge/checkout + Claude Code 
 rmx sync -f path/to/changed.py   # the freshness primitive hooks call
 rmx watch . --semantic           # watchdog daemon for editor-driven flows
 rmx daemon start                 # per-store socket server: single writer, hot bitmaps
+rmx session launchctl install    # launchd job: index new session transcripts every 10 min
 ```
+
+Each store's session indexer fires on its own clock minutes inside the interval, so the
+fleet's indexers do not start together, and `rmx session ingest` runs one at a time across
+the user (a lock on `~/.refmatrix/session-indexer.lock`). A run that finds another indexer
+running exits 0 with one `skipped=1` line naming the holder. An older plist on the fixed
+`StartInterval` form reports as drift in `rmx session launchctl install --check`;
+`rmx hub relaunch-fleet` re-renders it.
 
 | Target | Purpose |
 |---|---|
 | `.git/hooks/post-commit` | `rmx sync --since HEAD~1` after each commit |
 | `.git/hooks/post-merge` / `post-checkout` / `post-rewrite` | sync the relevant diff |
-| `.claude/settings.json` (committed) | generated rmx hook block — `PreToolUse` focus-pre + enforcement · `PostToolUse` enqueue + focus + adr-gate + Grep teach · `UserPromptSubmit` scan-prompt + focus input + memory recall · `Stop` flush + focus say + STM promote · `SubagentStop` flush · `SessionStart` (startup/resume/clear) sync + primer, memory recall, memory-bridge catch-up, resume focus context · `PreCompact` promote + recall + save-state checkpoint. Re-render is the check: `rmx install-hooks --check` (exit 1 on drift); flags recorded in `.claude/rmx-hooks.json` |
+| `.claude/settings.json` (committed) | generated rmx hook block — `PreToolUse` focus-pre + enforcement + handoff read-gate · `PostToolUse` enqueue + focus + adr-gate + Grep teach + a handoff `Read` lifts the gate · `UserPromptSubmit` scan-prompt + focus input + handoff reminder + memory recall · `Stop` flush + focus say + STM promote · `SubagentStop` flush · `SessionStart` (startup/resume) sync + primer, (startup/resume/clear) memory recall + memory-bridge catch-up, (compact/clear) handoff file + pointer, (resume) focus context · `PreCompact` save-state checkpoint, promote included, bounded at 10 s. Re-render is the check: `rmx install-hooks --check` (exit 1 on drift); flags recorded in `.claude/rmx-hooks.json` |
 | `.claude/settings.local.json` (per-machine) | only the `env` block (`BASH_ENV`, `RMXGREP_MODE`) — no hooks since 0.67 |
 | `.refmatrix/CLAUDE.md` · `PRIMER.md` | briefing + density-ranked symbol map |
 
@@ -326,6 +361,7 @@ Generated by `scripts/gen-cli-tree.py` from `hooks._claude_hook_block` (default 
 ├── facts.log                             # append-only mutation log (replayable: rmx rebuild --from-log)
 ├── rmxd.sock / rmxd.pid                  # daemon socket + lock
 ├── dirty.queue                           # hook-populated, drained by sync --flush-queue
+├── handoffs/<session>.txt                # compaction / `/clear` handoff + its read gate
 └── CLAUDE.md / PRIMER.md                 # agent briefing + symbol map
 ```
 
@@ -354,7 +390,7 @@ catalog. The forward index makes deletes O(links) instead of a full bitmap scan.
                                ▼
    ┌─────────────────────────────────────────────────────────────┐
    │  Daemon (per-store unix socket) — owns the writer, serves     │
-   │  reads from the snapshot, hosts the embedder + fs watcher     │
+   │  reads from the snapshot, hosts the fs watcher; embeds via hub│
    └───────────────────────────┬─────────────────────────────────┘
         ┌──────────────┬────────┴────────┬──────────────┐
         ▼              ▼                 ▼              ▼
@@ -369,7 +405,9 @@ catalog. The forward index makes deletes O(links) instead of a full bitmap scan.
 **Reads** come from the snapshot-tier copy (`catalog.read.duckdb`), never the
 write-locked slot — so a query never blocks on an ingest. The writer stays
 **pinned** to one catalog slot for the daemon's life (writer rotation was
-retired in 0.7.7); the snapshot is regenerated shortly after each write. Deeper
+retired in 0.7.7); the snapshot is regenerated shortly after each write. **Models**
+(embedder, reranker) run once for the fleet as hub workers over `~/.refmatrix/models.sock`; a
+daemon that cannot reach them falls back to a private worker of its own. Deeper
 detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 [`docs/SYSTEM.md`](docs/SYSTEM.md).
 
@@ -454,12 +492,29 @@ instance.
 
 ## Development
 
+Tests run from the `.venv-eval/` interpreter, with output captured to a log:
+
 ```bash
-source .venv/bin/activate
-env -u PYTHONPATH -u PYTHONUSERBASE PYTHONNOUSERSITE=1 pytest tests/ -q
+# Tiered, sharded runner (scripts/ptest.py); exits non-zero if ANY shard failed
+scripts/ptest.sh --tier all                     # unit + daemon sharded at once, then timing, devtree
+scripts/ptest.sh --tier unit --shards 4         # one tier; --shards is per sharded tier
+scripts/ptest.sh --files tests/test_hooks.py    # chosen files, still tiered
+scripts/ptest.sh --merge-gate                   # owning checkout, after git merge --no-commit
+
+# Plain full run, one process
+.venv-eval/bin/python -m pytest -q -p no:cacheprovider 2>&1 | tee workflow/review-output/pytest.log
 ```
 
-1361 tests.
+`tests/tiering.py::tier_of` puts each test file in one tier: `devtree` (needs the owning
+checkout), `timing` (a wall-clock bound, run alone), `daemon` (spawns a process or opens a
+socket) or `unit`. `unit` and `daemon` shard; `devtree` runs only in the owning checkout, and a
+clone's run says it did not. `--merge-gate` runs the devtree tier, the merge's touched test
+files and `ALWAYS_FILES`, then `scripts/lint-gmd.sh`, and fails on any failure not already
+open at the last passed gate. Each shard's pytest command is printed, so it can be re-run by
+hand. The interpreter is `$RMX_PYTEST_PY`, else `.venv-eval/bin/python`; pytest-timeout must
+be loaded in it.
+
+5,536 tests (`pytest --collect-only`, 2026-11-24).
 
 ## License
 
