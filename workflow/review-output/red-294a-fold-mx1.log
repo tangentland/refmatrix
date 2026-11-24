@@ -1,0 +1,82 @@
+.......FF                                                                [100%]
+=================================== FAILURES ===================================
+_ test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_baseline_is_th0')
+
+    def test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy(tmp_path):
+        """bug-304 (b-1), the baseline itself, read from the summary's `# previous gate:` line.
+        `master` holds merge `topic`, gated and passed (M1). Then merge `topic2` adds a failing
+        test and is gated twice; the second run moves the first aside to
+        `merge-gate-<sha>.<ts>`. Both runs fail, and both name M1's gate dir as the baseline:
+        never the failed run, never the moved-aside copy, never a gate of an unmerged head. At
+        1bb14a5b run 2 named the moved-aside copy and passed."""
+        tree, m1 = _passed_merged_gate(tmp_path)
+        m1_dir = re.compile(rf"merge-gate-{m1}(?![.\w])")
+        m2 = _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+        for k in (1, 2):
+            r, summary = _gate(tree)
+            prev = _previous_gate_line(summary)
+>           assert m1_dir.search(prev) and prev.count("merge-gate-") == 1, (
+                f"run {k}: the baseline is {prev!r}, not the passed, merged gate merge-gate-{m1}")
+E           AssertionError: run 2: the baseline is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_baseline_is_th0/co/workflow/review-output/merge-gate-27a9abd53bbbacfe4d5dfac2ed197da1cb55d530.20261123-182158', not the passed, merged gate merge-gate-3f5f303f0f791a01e9d6a849dfd68180d7672d75
+E           assert (None)
+E            +  where None = <built-in method search of re.Pattern object at 0x1077043e0>('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_baseline_is_th0/co/workflow/review-output/merge-gate-27a9abd53bbbacfe4d5dfac2ed197da1cb55d530.20261123-182158')
+E            +    where <built-in method search of re.Pattern object at 0x1077043e0> = re.compile('merge-gate-3f5f303f0f791a01e9d6a849dfd68180d7672d75(?![.\\w])').search
+
+tests/test_ptest_runner.py:700: AssertionError
+_ test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it _
+
+tmp_path = PosixPath('/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_carries_a_fail0')
+
+    def test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it(tmp_path):
+        """#r7 / L194, the carry-over that must survive the bug-304 fix: a failure recorded in the
+        last PASSED, merged gate's `failures.jsonl` is still open, so a later gate records it as
+        `seen`, names it, and passes. Kills MX1 (the gate never reads the previous gate: the open
+        failure is then NEW and the gate fails).
+    
+        Set-up: M1 (clean) is gated, passes and is merged. Merge `topic2` adds a failing test and
+        its first gate fails (NEW), which gives the real record. A passed gate holds a failure
+        only when it was carried into it, and a fresh tree has no such gate, so the record is
+        written into M1's `failures.jsonl`: the state a passed gate that carried it leaves. The
+        re-run on `topic2` then has M1 as its baseline and passes. RED at 1bb14a5b only on its last
+        assertion (the baseline named is run 1's moved-aside copy)."""
+        tree, m1 = _passed_merged_gate(tmp_path)
+        _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+        r1, s1 = _gate(tree)
+        assert r1.returncode == 1, s1
+        node = "tests/test_t2.py::test_fails_plainly"
+        merge_head = _git(tree, "rev-parse", "MERGE_HEAD")
+        recs = [x for x in _records(_gate_dir(tree, merge_head) / "failures.jsonl")
+                if x["nodeid"] == node]
+        assert len(recs) == 1, recs
+        m1_gate = _gate_dir(tree, m1)
+        with open(m1_gate / "failures.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({k: recs[0][k] for k in ("nodeid", "phase", "e")}) + "\n")
+        r2, s2 = _gate(tree)
+        # MX1's assertion first: it holds at 1bb14a5b (whose baseline is the moved-aside copy,
+        # which also holds the record), so the mutation is seen dying here, not on the line below
+>       assert re.search(rf"\bseen\b[^\n]*FAILED {re.escape(node)}", s2), \
+            f"the carried failure is not named as seen (MX1's shape):\n{s2}"
+E       AssertionError: the carried failure is not named as seen (MX1's shape):
+E         # ptest merge gate merge-gate-3d50e3445c2c3b8436e2bbdc61a887ba0dc89aa4: sha 11af02a36fc27219150883eb506698397196d01b; checkout /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_carries_a_fail0/co (owning); started 2026-11-23T18:22:02; load at start 7.42
+E         # interpreter /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python; logs in /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_carries_a_fail0/co/workflow/review-output/merge-gate-3d50e3445c2c3b8436e2bbdc61a887ba0dc89aa4
+E         # merge head 3d50e3445c2c3b8436e2bbdc61a887ba0dc89aa4; touched test files: tests/test_t2.py; devtree files: 0; ALWAYS_FILES: 0
+E         # previous gate: /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_carries_a_fail0/co/workflow/review-output/merge-gate-3d50e3445c2c3b8436e2bbdc61a887ba0dc89aa4.20261123-182202
+E         unit-0 exit=1 root=/private/tmp/rmx-gvxhvcch collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=0.5s files=1 cmd: cd /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_carries_a_fail0/co && PYTHONPATH=/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2719/test_merge_gate_carries_a_fail0/co/src /Users/tholley/claude_tools/refmatrix/.venv-eval/bin/python -m pytest -p no:cacheprovider -rfE tests/test_t2.py
+E         no weight: tests/test_t2.py (unit) placed at 1.00 s = the unit median 1.000 s/test x 1 test(s) (static count); add it to tests/shard_weights.json
+E         failures (1, from failures.jsonl):
+E           NEW FAILED tests/test_t2.py::test_fails_plainly [call] in unit-0: E       AssertionError: fixture: a plain failure
+E         lint gate ./scripts/lint-gmd.sh: exit code 0 ok (log lint-gmd.log)
+E         totals: shards=1 non-zero=1 collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=1.1s load at end 9.23
+E         merge gate FAILED: 1 new failure(s): tests/test_t2.py::test_fails_plainly [call]
+E         
+E       assert None
+E        +  where None = <function search at 0x10483bcc0>('\\bseen\\b[^\\n]*FAILED tests/test_t2\\.py::test_fails_plainly', '# ptest merge gate merge-gate-3d50e3445c2c3b8436e2bbdc61a887ba0dc89aa4: sha 11af02a36fc27219150883eb506698397196d01b;...assed=0 wall=1.1s load at end 9.23\nmerge gate FAILED: 1 new failure(s): tests/test_t2.py::test_fails_plainly [call]\n')
+E        +    where <function search at 0x10483bcc0> = re.search
+
+tests/test_ptest_runner.py:736: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ptest_runner.py::test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy
+FAILED tests/test_ptest_runner.py::test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it
+2 failed, 7 passed, 41 deselected in 20.09s
