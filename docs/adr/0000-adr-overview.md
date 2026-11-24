@@ -7,7 +7,7 @@ tags: [adr, meta]
 
 # ADR-0000: Architecture Decision Records {#root}
 
-> Status: Living Document · Last Updated: 2026-11-09
+> Status: Living Document · Last Updated: 2026-11-24
 
 Architecture Decision Records for refmatrix. This page is the authoring rules and
 the index. The prose rules are loose by design — what is **required** is three
@@ -21,6 +21,7 @@ rel: catalogs -> [[adr-0002-subject-memory-container]]
 rel: catalogs -> [[adr-0003-canonical-partition-layout]]
 rel: catalogs -> [[adr-0004-unified-location-space-index]]
 rel: catalogs -> [[refmatrix/adr-0005-memory-dir-layout]]
+rel: catalogs -> [[refmatrix/adr-0007-instruction-architecture]]
 rel: related-to -> [[adr-format]]
 
 ## The three requirements {#requirements}
@@ -58,6 +59,10 @@ rel: related-to -> [[adr-format]]
 | [[adr-0003-canonical-partition-layout]] | Canonical partition layout | Proposed |
 | [[adr-0004-unified-location-space-index]] | One location space: hierarchical ids, tiered bitmaps, helix on top | Proposed |
 | [[refmatrix/adr-0005-memory-dir-layout]] | Curated memory dir laid out by type and lifecycle; topic is a derived subject | Proposed |
+| [[refmatrix/adr-0007-instruction-architecture]] | Every rule delivered by the event that makes it actionable, from one generated source, with a recorded delivery | Proposed |
 
+> ADR-0006 is reserved for the layout and layering decision of plan-29 task 29.5 (not yet
+> written).
+>
 > ADR-0001 predates the GMD-required rule; converted to GMD 2026-09-06. It keeps the
 > extractor's key/value header from [[adr-format]] (id = filename stem, not adr-NNNN-slug).
