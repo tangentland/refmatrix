@@ -502,7 +502,11 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q54**. None open. Each reply that asks anything ends with the ids still open.
+Next id: **Q55**. Open: Q54. Each reply that asks anything ends with the ids still open.
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q54 | 2026-11-24 | The user: "where are the compact hooks at in the schedule? I'd like to pull them in so we can leverage them across compaction windows, which would allow me to set a goal for the bulk of the scheduled work." [[task-compaction-as-handoff]] is `drafting` and post-mod (Q28 = a, L127/L129); 25.1 (0.83.0) already runs promote + save-state on PreCompact and an inline budgeted recall-state on SessionStart `compact\|clear` | **(a, rec)** pull it in now in two steps: step 1 = R1, R2, R3, R4, R5 (PreCompact saves state then prints a one-line summary instruction; SessionStart `compact\|clear` writes the full recall-state to a per-session file and injects a pointer; a manual `/compact <text>` keeps the user's text); step 2 = R3b (the PreToolUse read-gate and its telemetry) after step 1 has run across a few real compactions. Spec finished to one page, then RED/GREEN/one bsd; a user-gated install window at its release. Reverses Q28 for this task only. **(b)** steps 1 and 2 together. **(c)** keep it post-mod | **open** |
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
