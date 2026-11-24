@@ -44,7 +44,7 @@
     "note": "r3, the L196 (a) re-run; it skipped 1 (6b168ec8) so the row is cited as reranked 119/120 (L196 (b)). r2 had skipped 2 (7405e8b1, 75832dbd)"
    },
    "skip_warning": "rerank skipped: TimeoutError: timed out; hits unreranked",
-   "skip_cause": "INFERRED, not measured: each skipped call returned early (about 2.0 s vs the fuse --rerank median 2.1-2.5 s) and its rows are recall's dense top 50, which fits the 1 s RERANK_PROBE_S probe to the hub's shared rerank worker timing out (bug-306)",
+   "skip_cause": "NOT MEASURED which: the warning 'rerank skipped: TimeoutError: timed out' is raised only in reranker.shared_reranker's try block (the connect to the hub's shared rerank worker or its 1 s RERANK_PROBE_S probe); timing does not separate a skip (about 2.0 s) from a rerank of the same questions (2.02-2.09 s); the skipped rows are recall's dense top 50 (bug-306)",
    "store": "same eval store, same deploy rmx 0.84.0 (cab0a7dc), no re-embed; hub status identical before and after each re-run"
   }
  },

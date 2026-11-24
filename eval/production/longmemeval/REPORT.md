@@ -83,8 +83,10 @@ every cell equal. Its rerank was skipped on one question, so it is labelled rera
 The `-rr` ceiling (0.642) is above `recall`'s (0.608) because a reranked call does not return the
 same depth-50 list: read from the deploy code (`recall.replica_memory_recall`), `--rerank` draws
 `min(max(k, 2k), 100)` = 100 dense candidates and the cross-encoder returns its top 50 of them, so
-gold from dense ranks 51-100 can enter the pool. That is a code reading; the dense ranks of the
-added gold were not measured here.
+gold from dense ranks 51-100 can enter the pool. That mechanism is a code reading. The net is
+measured (bsd-t06 confirm-lite, from the rank files): against `recall`'s depth-50 list, the
+reranked list gains gold on 7 questions and loses it on 3, net +4 of 120 (0.608 → 0.642); the
+ceiling is not only inflow.
 
 ## THE RESULT IS SATURATED — read this before the table {#saturation}
 
@@ -200,11 +202,13 @@ of a row reranked on fewer than all questions to carry its fraction.
 The tables take `recall-rr` from r2 and `recall-fuse-rr` from r3 (L196: re-run once, then label
 the true fraction). Each skip printed exactly `rerank skipped: TimeoutError: timed out; hits
 unreranked`, and each skipped answer is byte-identical to `recall`'s dense top 50. The skipped
-calls returned early: about 2.0 s (r2: 2,029 ms and 2,039 ms; r3: 1,904 ms) against a
-`--fuse --rerank` median of 2,463 ms in r2 and 2,121 ms in r3. They did not wait out the 30 s
-rerank budget. **Cause, inferred, not measured:** that early return fits the 1 s
-`RERANK_PROBE_S` probe to the hub's shared rerank worker (which serves the whole fleet) timing out
-with a single harness caller, and the deployed code turning that into the dense fallback (bug-306).
+calls took about 2.0 s (r2: 2,029 ms and 2,039 ms; r3: 1,904 ms); they did not wait out the 30 s
+rerank budget. The timing alone does not separate a skip from a rerank: the same questions took
+2.02-2.09 s when they were reranked in the other run. What places the skip is the warning text:
+`rerank skipped: TimeoutError: timed out` is raised only inside `reranker.shared_reranker`'s
+try block, i.e. by the connect to the hub's shared rerank worker (one process for the whole
+fleet) or by its 1 s `RERANK_PROBE_S` probe, and the deployed code turns it into the dense
+fallback. **Which of the two timed out, and why, is not measured** (bug-306).
 The probe keeps its deployed default here: the benchmark path is the production path. `rmx hub
 status` read the same before and after each re-run.
 
