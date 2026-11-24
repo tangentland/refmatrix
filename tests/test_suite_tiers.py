@@ -104,10 +104,11 @@ def test_tier_of_on_real_files(name, tier):
 
 
 def test_named_lists_exist_and_carry_their_reasons():
-    """task-29.4 #ac-1: every name in `DEVTREE_FILES`, `ALWAYS_FILES` and the serial group
-    exists on disk, with a reason; `ALWAYS_FILES` holds #r6-parts' set and the census tests."""
+    """task-29.4 #ac-1: every name in `DEVTREE_FILES`, `ALWAYS_FILES`, the serial group and
+    `SANDBOX_SELF_TESTS` (ruling L192 (1)) exists on disk, with a reason; `ALWAYS_FILES` holds
+    #r6-parts' set and the census tests; `SANDBOX_SELF_TESTS` holds the five sandbox tests."""
     tiering = _tiering()
-    for label in ("DEVTREE_FILES", "ALWAYS_FILES", "SERIAL_GROUP"):
+    for label in ("DEVTREE_FILES", "ALWAYS_FILES", "SERIAL_GROUP", "SANDBOX_SELF_TESTS"):
         d = getattr(tiering, label)
         assert isinstance(d, dict), f"{label} is a {type(d).__name__}, not path -> reason"
         for path, why in d.items():
@@ -121,6 +122,37 @@ def test_named_lists_exist_and_carry_their_reasons():
     have = {Path(p).name for p in tiering.ALWAYS_FILES}
     assert want <= have, f"ALWAYS_FILES lacks {sorted(want - have)}"
     assert "tests/test_bug230_repo_scope_gate.py" in tiering.DEVTREE_FILES
+    listed = {Path(k).name for k in tiering.SANDBOX_SELF_TESTS}
+    assert set(_SANDBOX_SELF_TESTS) <= listed, \
+        f"SANDBOX_SELF_TESTS lacks {sorted(set(_SANDBOX_SELF_TESTS) - listed)}"
+
+
+# Ruling L192 (1): the real-home devtree rule over-matched. At 33825985, ten test files read the
+# real home (`rmx_sandbox.real_home(` / `RMX_SANDBOX_REAL_HOME`). Five are the sandbox's own
+# tests: they read the real home to aim their deny and decoy checks, and they must run in every
+# clone and lane (tier (c) runs in neither), so `SANDBOX_SELF_TESTS` exempts them by name. The
+# other five depend on the owning checkout and stay devtree.
+_SANDBOX_SELF_TESTS = ("test_sandbox_children.py", "test_sandbox_refusal.py",
+                       "test_sandbox_hardening.py", "test_sandbox_child_extensions.py",
+                       "test_sandbox_redirect.py")
+_REAL_HOME_DEVTREE = ("test_grep_learning_replay.py", "test_bug179_anchor_parity.py",
+                      "test_lint_gmd_memdir_fallback.py", "test_gmd_lint_requires_version.py",
+                      "test_repo_hooks_in_sync.py")
+
+
+@pytest.mark.parametrize("name", _SANDBOX_SELF_TESTS + _REAL_HOME_DEVTREE, ids=lambda v: v)
+def test_real_home_readers_are_devtree_except_the_sandbox_self_tests(name):
+    """Ruling L192 (1). Every file here reads the real home (checked, so a file that stops
+    reading it is noticed); the five sandbox self-tests are not devtree, the other five are.
+    Must-fail: with the exemption dropped the five sandbox files come back devtree."""
+    src = (TESTS / name).read_text()
+    assert "real_home(" in src or "RMX_SANDBOX_REAL_HOME" in src, f"{name} no longer reads it"
+    tier = _tiering().tier_of(TESTS / name)
+    if name in _SANDBOX_SELF_TESTS:
+        assert tier != "devtree", f"{name}: a sandbox self-test was put in tier (c)"
+        assert tier in TIERS
+    else:
+        assert tier == "devtree", f"{name}: {tier}"
 
 
 # ---- must-fail: synthetic sources fed to the rule --------------------------------------------

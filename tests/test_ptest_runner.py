@@ -574,3 +574,60 @@ def test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate(tmp_path, case,
     else:
         assert r.returncode != 0, f"the merge gate passed:\n{_out(r)[-2000:]}"
         assert named in text, f"the gate's output does not name {named!r}:\n{text[-2000:]}"
+
+
+# ---- ruling L192 (6) and (3): the hang guard's plugin, and the default shard count ----------
+
+_NO_TIMEOUT_STUB = (
+    '"""A stand-in that makes `import pytest_timeout` fail (test_ptest_runner.py, L192 (6))."""\n'
+    'raise ImportError("fixture: pytest-timeout is not installed for this interpreter")\n')
+
+
+def test_the_runner_refuses_an_interpreter_without_pytest_timeout(tmp_path):
+    """Ruling L192 (6): the hang guard (`#r2`, `timeout = 600`) is a config key that pytest only
+    WARNS about when the plugin is missing, so a run without pytest-timeout would have no hang
+    guard and say nothing. `ptest.py` refuses instead: exit 2, a line naming pytest-timeout, and
+    no shard started.
+
+    The interpreter at `$RMX_PYTEST_PY` is a shim over this one that puts a stub
+    `pytest_timeout` module first on `PYTHONPATH`, so `import pytest_timeout` raises while
+    pytest itself still imports. No real venv is touched."""
+    stub = tmp_path / "no_timeout"
+    stub.mkdir()
+    (stub / "pytest_timeout.py").write_text(_NO_TIMEOUT_STUB)
+    shim = tmp_path / "python-no-timeout"
+    shim.write_text(f'#!/bin/bash\nexport PYTHONPATH="{stub}${{PYTHONPATH:+:$PYTHONPATH}}"\n'
+                    f'exec "{sys.executable}" "$@"\n')
+    shim.chmod(0o755)
+    probe = subprocess.run([str(shim), "-c", "import pytest; import pytest_timeout"],
+                           capture_output=True, text=True, timeout=60)
+    assert probe.returncode != 0 and "fixture: pytest-timeout" in probe.stderr, \
+        f"the shim does not hide pytest-timeout: {probe.stderr[-500:]}"
+    tree = sht.build(tmp_path, {"test_pass.py": "case_trivial"},
+                     weights={"tests/test_pass.py": 1.0})
+    env = dict(os.environ, RMX_PYTEST_PY=str(shim))
+    r = subprocess.run(["bash", str(tree / "scripts" / "ptest.sh"), "--tier", "unit",
+                        "--shards", "1", "--name", "notimeout"], cwd=str(tree), env=env,
+                       capture_output=True, text=True, timeout=_RUN_HANG_GUARD_S)
+    out = _out(r)
+    assert r.returncode == 2, f"exit {r.returncode}, not 2:\n{out[-2000:]}"
+    assert [ln for ln in out.splitlines() if "pytest-timeout" in ln], \
+        f"no line names pytest-timeout:\n{out[-2000:]}"
+    assert not list(sht.run_dir(tree, "notimeout").glob("unit-*.log")), \
+        "a shard ran although the hang guard's plugin is missing"
+
+
+def test_with_no_shards_flag_the_shard_count_is_the_cpu_derived_default(tmp_path):
+    """Ruling L192 (3): with no `--shards`, a tier is split into `ptest.default_shards()`
+    processes, derived from `os.cpu_count()`. The count is read from the runner's own function,
+    never hard-coded, and the tier gets one equal-weight file per shard so every shard has
+    work and appears in `summary.txt`."""
+    n = _ptest_module().default_shards()
+    assert isinstance(n, int) and 1 <= n <= (os.cpu_count() or 1), n
+    cases = {f"test_s{i:02d}.py": "case_trivial" for i in range(n)}
+    tree = sht.build(tmp_path, cases, weights={f"tests/{k}": 1.0 for k in cases})
+    r = _ptest(tree, "--tier", "unit", "--name", "dflt")
+    summary = _summary(tree, "dflt", r)
+    units = [s for s in _shard_lines(summary) if s.startswith("unit-")]
+    assert len(units) == n, f"{len(units)} unit shards, default_shards() = {n}:\n{summary}"
+    assert r.returncode == 0, _out(r)[-2000:]
