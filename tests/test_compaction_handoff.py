@@ -1106,17 +1106,31 @@ def test_precompact_save_state_budget_is_one_named_constant_inside_the_hook_time
         f"{PRECOMPACT_PRINT_MARGIN_S} s")
 
 
-def test_precompact_overrun_still_instructs_and_never_loses_the_commit():
+@pytest.mark.parametrize("spool", ["writable", "unwritable"])
+def test_precompact_overrun_still_instructs_and_never_loses_the_commit(spool):
     """s-2 / L203 ("an overrun never loses the commit"): with a held writer (a seeded
     `_PingOnlyDaemon`: answers ping, stalls every other op) and the budget knob test-sized
     (`--timeout 2` in place of N), the PreCompact command exits 0 with the instruction naming
-    a save-state, `savestate_<session>.md` is on disk, and stderr says the store commit was
-    deferred. L204: `rmx telemetry --context` then counts the deferral under
-    `handoff.precompact_deferred` (1, with the session), and a later in-time PreCompact adds
-    nothing. No elapsed assert: the subprocess deadline is the hang guard (rule 6).
-    cbbe9e3f: no `--timeout` on the command."""
+    a save-state, and `savestate_<session>.md` is on disk. No elapsed assert: the subprocess
+    deadline is the hang guard (rule 6). cbbe9e3f: no `--timeout` on the command.
+
+    task-hook-writes-queue (L212, 2026-11-24; R11.4-R11.5) split the held-writer outcome:
+    - `writable`: the promote no longer overruns, it QUEUES. stderr carries the queued note
+      (`QUEUED_WRITE_MSG`) and no "deferred" / "FAILED"; one spool entry waits for the drain.
+      Decided: a queued promote is NOT a deferral, so L204's `handoff.precompact_deferred`
+      stays 0 (the metric counts commits that did not reach the store or a durable queue).
+    - `unwritable`: the spool directory cannot be written, the enqueue fails, and the original
+      L203/L204 path holds: stderr says the store commit was deferred and the deferral is
+      counted (1, with the session); a later in-time PreCompact adds nothing."""
+    import os
+    from refmatrix import verbs
+    from tests.held_writer import flat, spool_dir, spool_files
     from tests.test_plan2_remedy import _PingOnlyDaemon
     d = _PingOnlyDaemon(seeded=True)
+    sp = spool_dir(d.root)
+    if spool == "unwritable":
+        sp.mkdir()
+        os.chmod(sp, 0o500)
     try:
         entry, n = precompact_save_entry(d.root)
         cmd = entry["command"].replace(f"--timeout {n}", "--timeout 2")
@@ -1136,13 +1150,24 @@ def test_precompact_overrun_still_instructs_and_never_loses_the_commit():
         md = s.memdir_of(proj)
         assert list(md.rglob(f"savestate_{SESSION}.md")), (
             f"L203: the overrun lost the save-state file; stderr {err[-600:]!r}")
-        assert re.search(r"(?i)(store )?commit\b.*\bdeferred|deferred.*\bcommit", err), (
-            f"L203: stderr does not say the store commit was deferred: {err[-800:]!r}")
+        if spool == "writable":
+            name = "focus_summary_" + re.sub(r"[^A-Za-z0-9]+", "", SESSION)[:12]
+            assert not re.search(r"(?i)deferred|FAILED", err), (
+                f"a queued promote is neither deferred nor failed: {err[-800:]!r}")
+            assert flat(verbs.QUEUED_WRITE_MSG.format(name=name)) in flat(err), err[-800:]
+            assert len(spool_files(d.root)) == 1, list(d.root.iterdir())
+            expected = (0, set())
+        else:
+            assert re.search(r"(?i)(store )?commit\b.*\bdeferred|deferred.*\bcommit", err), (
+                f"L203: stderr does not say the store commit was deferred: {err[-800:]!r}")
+            expected = (1, {SESSION})
         # L204: the deferral is counted (the post-release no-go signal), with its session; a
         # PreCompact that completes in time adds nothing. The writer is released first, so
         # the second PreCompact (another session, the generated budget) runs in time.
         _release(d)
-        assert _deferred(d.root, home) == (1, {SESSION}), _deferred(d.root, home)
+        if sp.exists():
+            os.chmod(sp, 0o700)
+        assert _deferred(d.root, home) == expected, _deferred(d.root, home)
         s.seed_ring(d.root, session=OTHER, n=4)
         r2 = h.run_hook_bytes(entry["command"], root=d.root, envelope={
             "session_id": OTHER, "hook_event_name": "PreCompact", "trigger": "auto",
@@ -1150,9 +1175,11 @@ def test_precompact_overrun_still_instructs_and_never_loses_the_commit():
             RMX_HOME=str(home), timeout=120)
         assert r2.returncode == 0 and list(md.rglob(f"savestate_{OTHER}.md")), (
             r2.returncode, r2.stderr.decode("utf-8", "replace")[-600:])
-        assert _deferred(d.root, home) == (1, {SESSION}), (
+        assert _deferred(d.root, home) == expected, (
             "L204: an in-time PreCompact changed the deferred count", _deferred(d.root, home))
     finally:
+        if sp.exists():
+            os.chmod(sp, 0o700)
         d.close()
 
 
