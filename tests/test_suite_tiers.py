@@ -155,6 +155,25 @@ def test_real_home_readers_are_devtree_except_the_sandbox_self_tests(name):
         assert tier == "devtree", f"{name}: {tier}"
 
 
+# bsd-294a r1 s-1 (ruling L197): the exact devtree set, by file name. L192 names six: the five
+# real-home readers above and bug-230's `DEVTREE_FILES` entry. At 1bb14a5b `tier_of` gave a
+# seventh, this file, because the L192 assert above holds the key as a string literal; only a
+# set pin sees that drift (the one-tier-per-file test does not).
+_DEVTREE_EXACT = frozenset(_REAL_HOME_DEVTREE + ("test_bug230_repo_scope_gate.py",))
+
+
+def test_devtree_tier_is_exactly_the_six_files_l192_names():
+    """Ruling L192 (1) and L197 (s-1): tier (c) is NOT RUN in every clone and lane worktree, so
+    a file that drifts into it silently stops running there. The set is pinned by name; a
+    file that joins or leaves it changes this list, with its reason, in the same commit."""
+    assert len(_DEVTREE_EXACT) == 6
+    tiering = _tiering()
+    got = {f.name for f in sorted(TESTS.glob("test_*.py")) if tiering.tier_of(f) == "devtree"}
+    assert got == _DEVTREE_EXACT, (f"devtree has {sorted(got - _DEVTREE_EXACT)} extra and "
+                                   f"lacks {sorted(_DEVTREE_EXACT - got)}")
+    assert {Path(p).name for p in tiering.DEVTREE_FILES} <= _DEVTREE_EXACT
+
+
 # ---- must-fail: synthetic sources fed to the rule --------------------------------------------
 
 _ALLOW_KEY = "test_bound.py::test_waits::elapsed < 2.0"
@@ -184,6 +203,16 @@ def _synthetic(tmp_path: Path) -> Path:
                                   "    elapsed = time.monotonic() - t0\n"
                                   "    assert elapsed < 2.0\n",
         "test_broken.py": "def test_x(:\n    pass\n",
+        # bsd-294a r1 s-1 (ruling L197): the key as a plain string (here inside an assert, as
+        # this file's own L192 test holds it) is not a read; an environment lookup of it is.
+        "test_names_the_key.py": "def test_x():\n    src = open(__file__).read()\n"
+                                 "    assert 'RMX_SANDBOX_REAL_HOME' in src\n",
+        "test_env_subscript.py": "import os\n\ndef test_x():\n"
+                                 "    assert os.environ['RMX_SANDBOX_REAL_HOME']\n",
+        "test_env_get.py": "import os\n\ndef test_x():\n"
+                           "    assert os.environ.get('RMX_SANDBOX_REAL_HOME', '/')\n",
+        "test_getenv.py": "import os\n\ndef test_x():\n"
+                          "    assert os.getenv('RMX_SANDBOX_REAL_HOME') is not None\n",
         "conftest.py": '_FOREIGN_HOOKS_PINS = {\n'
                        '    "tests/test_pinned.py::test_hooks": "pinned in this checkout",\n'
                        '}\n',
@@ -208,12 +237,20 @@ def _synthetic(tmp_path: Path) -> Path:
     ("test_realhome.py", "devtree"),
     ("test_bound.py", "timing"),
     ("test_bound_and_proc.py", "timing"),
+    ("test_names_the_key.py", "unit"),
+    ("test_env_subscript.py", "devtree"),
+    ("test_env_get.py", "devtree"),
+    ("test_getenv.py", "devtree"),
 ], ids=lambda v: v)
 def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
     """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
     transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
     real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
-    signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+    signal (the rule is ordered). Kills mutation 1 (helper imports ignored).
+
+    bsd-294a r1 s-1 (ruling L197): the `RMX_SANDBOX_REAL_HOME` key counts only as an
+    environment lookup (`os.environ[...]`, `.get(`, `getenv(`); the same key as a plain string
+    in an assert is not a read, so that file is `unit` (RED at 1bb14a5b: `devtree`)."""
     t = _synthetic(tmp_path)
     assert _tiering().tier_of(t / name) == tier
 

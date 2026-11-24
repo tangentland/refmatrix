@@ -38,7 +38,14 @@ the last shard only: the position-0 run passes), 3 (0 when a shard exits non-zer
 green" with tier (c) not run), 5 (`--compare` ignores the phase), 6 (the normaliser replaces
 words), 15 (the merge gate ignores teardown errors), 24 (no `xfailed` / `xpassed`), 25
 (`--compare --outcomes` ignores a node missing from one run), 26 (a strict XPASS recorded
-`xpassed`), 27 (`--expect` ignores its phase).
+`xpassed`), 27 (`--expect` ignores its phase), and bsd-294a r1's MX1 (the merge gate never
+reads the previous gate: a failure open in the last passed, merged gate is then NEW).
+
+bsd-294a r1's fold (ruling L197, 2026-11-24) adds: b-1 / bug-304 (the merge gate's baseline is
+only a gate that PASSED and whose merge head is an ancestor of HEAD, never a moved-aside
+`merge-gate-<sha>.<ts>` copy), m-1 (a single-threaded hang says no process snapshot was taken),
+m-2 (the refusal checks pytest-timeout is LOADED, not only importable), m-3 (`--help` says
+`--shards` is per tier) and m-4 (the /tmp rule replaces only random segments).
 """
 from __future__ import annotations
 
@@ -77,10 +84,11 @@ _TARGET = os.path.join(pwd.getpwuid(os.getuid()).pw_dir, ".refmatrix", "rmx-294a
 
 # ---- running the runner --------------------------------------------------------------------
 
-def _ptest(tree: Path, *args: str) -> "subprocess.CompletedProcess":
+def _ptest(tree: Path, *args: str, env_extra: "dict | None" = None
+           ) -> "subprocess.CompletedProcess":
     script = tree / "scripts" / "ptest.sh"
     assert script.is_file(), f"no runner at {script} (task-29.4 #r2: scripts/ptest.sh)"
-    env = dict(os.environ, RMX_PYTEST_PY=sys.executable)
+    env = dict(os.environ, RMX_PYTEST_PY=sys.executable, **(env_extra or {}))
     try:
         return subprocess.run(["bash", str(script), *args], cwd=str(tree), env=env,
                               capture_output=True, text=True, timeout=_RUN_HANG_GUARD_S)
@@ -353,10 +361,18 @@ def _ptest_module():
     ("daemon pid=12345 did not answer", "daemon pid=678 did not answer"),
     ("<Daemon object at 0x10a3b4c50>", "<Daemon object at 0x7f00deadbeef>"),
     ("AssertionError: stop took 10.05s", "AssertionError: stop took 9.02s"),
-], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds"])
+    ("FileNotFoundError: /private/tmp/tmpab_12xyz/x.json",
+     "FileNotFoundError: /private/tmp/tmp9q8w_7e6/x.json"),
+    ("OSError: /tmp/tmpk3j2h1g0", "OSError: /tmp/tmp0a9s8d7f"),
+    ("FileNotFoundError: /var/folders/xy/ab12cd34/T/tmpk3j2h1g0/x.json",
+     "FileNotFoundError: /var/folders/qr/zz99yy88/T/tmp0a9s8d7f/x.json"),
+], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds",
+        "private-tmp-segment", "tmp-segment-at-line-end", "tmpdir-segment"])
 def test_normalise_e_line_replaces_only_run_noise(a, b):
     """task-29.4 #r2: sandbox roots, /tmp random segments, pids, hex addresses and decimal
-    seconds become placeholders."""
+    seconds become placeholders. A random segment is mkdtemp's shape (`tmp` and 8 characters
+    of `[a-z0-9_]`, the whole path component), under /tmp, /private/tmp or the per-user temp
+    dir (bsd-294a r1 m-4 keeps these merging while named fixtures stay apart)."""
     norm = _ptest_module().normalise_e_line
     assert norm(a) == norm(b), (norm(a), norm(b))
 
@@ -367,9 +383,18 @@ def test_normalise_e_line_replaces_only_run_noise(a, b):
     ("assert 3 == 4", "assert 3 == 5"),
     ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
      "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
-], ids=["word", "quoted-key", "plain-int", "path-tail"])
+    ("FileNotFoundError: /tmp/fixture_alpha", "FileNotFoundError: /tmp/fixture_bravo"),
+    ("FileNotFoundError: /private/tmp/fixture_alpha/x.json",
+     "FileNotFoundError: /private/tmp/fixture_bravo/x.json"),
+], ids=["word", "quoted-key", "plain-int", "path-tail", "named-tmp-fixture",
+        "named-private-tmp-fixture"])
 def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
-    """...and nothing else (kills mutation 6: words replaced, different errors equal)."""
+    """...and nothing else (kills mutation 6: words replaced, different errors equal).
+
+    bsd-294a r1 m-4 (ruling L197): a NAMED first-level /tmp path is not a random segment.
+    At 1bb14a5b the rule ate the tail of any name 8+ characters long, so `/tmp/fixture_alpha`
+    and `/tmp/fixture_bravo` both became `/tmp/fixtu<RAND>`, and the merge gate would read a
+    different failure as `seen`."""
     norm = _ptest_module().normalise_e_line
     assert norm(a) != norm(b), (norm(a), norm(b))
 
@@ -576,6 +601,147 @@ def test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate(tmp_path, case,
         assert named in text, f"the gate's output does not name {named!r}:\n{text[-2000:]}"
 
 
+# ---- bug-304 (bsd-294a r1 b-1, ruling L197): the merge gate's baseline -------------------------
+#
+# #r7: "a row that is still open is recorded as seen, and a new node id or a new E line fails
+# the gate". At 1bb14a5b the baseline was "the newest earlier merge-gate-* run with a summary":
+# a FAILED gate, and the `merge-gate-<sha>.<ts>` copy `make_run_dir` moves aside on a re-run,
+# both qualified. So a failed gate passed when run again, and a different merge carrying the
+# same failure inherited it. The baseline is only a gate that PASSED and whose merge head is an
+# ancestor of HEAD (it was merged), never a moved-aside copy.
+
+_FAILING_NODE = "tests/test_topic.py::test_fails_plainly"
+_PREV_RX = re.compile(r"^# previous gate: (.*)$", re.MULTILINE)
+
+
+def _gate(tree: Path) -> "tuple[subprocess.CompletedProcess, str]":
+    """One `--merge-gate` run on the merge in progress: (result, that run's summary.txt)."""
+    merge_head = _git(tree, "rev-parse", "MERGE_HEAD")
+    r = _ptest(tree, "--merge-gate")
+    gate = _gate_dir(tree, merge_head)
+    assert gate is not None and (gate / "summary.txt").is_file(), \
+        f"no merge-gate-{merge_head[:12]}…/summary.txt (exit {r.returncode}):\n{_out(r)[-2000:]}"
+    return r, (gate / "summary.txt").read_text()
+
+
+def _start_merge(tree: Path, branch: str, files: dict) -> str:
+    """From `master`, a branch `branch` adding `files` (`tests/test_*.py` name -> case stem),
+    then `git merge --no-commit --no-ff branch` on `master`. Returns MERGE_HEAD."""
+    _git(tree, "checkout", "-q", "-b", branch, "master")
+    for name, case in files.items():
+        shutil.copy2(sht.CASES / f"{case}.py", tree / "tests" / name)
+        _git(tree, "add", f"tests/{name}")
+    _git(tree, "commit", "-q", "-m", branch)
+    _git(tree, "checkout", "-q", "master")
+    _git(tree, "merge", "--no-commit", "--no-ff", branch)
+    return _git(tree, "rev-parse", "MERGE_HEAD")
+
+
+def _passed_merged_gate(tmp_path) -> "tuple[Path, str]":
+    """A tree whose `master` holds one merge (`topic`, a clean file) gated and PASSED before its
+    merge commit: the one gate a later gate may take as its baseline. Returns (tree, its sha)."""
+    tree, m1 = _merging_checkout(tmp_path, "case_trivial")
+    r, summary = _gate(tree)
+    assert r.returncode == 0, f"the clean merge's gate failed:\n{summary}"
+    _git(tree, "commit", "-q", "-m", "merge topic")
+    return tree, m1
+
+
+def _previous_gate_line(summary: str) -> str:
+    m = _PREV_RX.search(summary)
+    assert m, f"summary.txt has no '# previous gate:' line:\n{summary}"
+    return m.group(1)
+
+
+def test_merge_gate_a_failed_gate_run_again_on_the_same_merge_still_fails(tmp_path):
+    """bug-304 (b-1, P1): a merge adds a failing test; the gate fails with it NEW. Run again on
+    the same merge, the gate must fail again. At 1bb14a5b the second run took the first run's
+    moved-aside copy as its baseline, read the failure as `seen` and exited 0."""
+    tree, _ = _merging_checkout(tmp_path, "case_fail")
+    r1, s1 = _gate(tree)
+    assert r1.returncode == 1, f"run 1: exit {r1.returncode}, not 1:\n{s1}"
+    assert f"NEW FAILED {_FAILING_NODE}" in s1, s1
+    r2, s2 = _gate(tree)
+    assert r2.returncode == 1, (f"run 2 of a failed gate on the same merge exited "
+                                f"{r2.returncode}, not 1 (bug-304):\n{s2}")
+    assert f"NEW FAILED {_FAILING_NODE}" in s2, f"run 2 does not call the failure NEW:\n{s2}"
+
+
+def test_merge_gate_a_different_merge_carrying_a_failure_from_a_failed_gate_fails(tmp_path):
+    """bug-304 (b-1, P1's second half): the gate fails on merge `topic`; the merge is aborted;
+    a DIFFERENT merge (`topic2`, another commit) carries the same failing test. Its gate must
+    fail: the failed gate was never a baseline. At 1bb14a5b it exited 0."""
+    tree, m1 = _merging_checkout(tmp_path, "case_fail")
+    r1, s1 = _gate(tree)
+    assert r1.returncode == 1, s1
+    _git(tree, "merge", "--abort")
+    m2 = _start_merge(tree, "topic2", {"test_topic.py": "case_fail",
+                                       "test_other.py": "case_trivial"})
+    assert m2 != m1
+    r2, s2 = _gate(tree)
+    assert r2.returncode == 1, (f"a second merge carrying a failure first seen in a FAILED gate "
+                                f"exited {r2.returncode}, not 1 (bug-304):\n{s2}")
+    assert f"NEW FAILED {_FAILING_NODE}" in s2, s2
+
+
+def test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy(tmp_path):
+    """bug-304 (b-1), the baseline itself, read from the summary's `# previous gate:` line.
+    `master` holds merge `topic`, gated and passed (M1). Then merge `topic2` adds a failing
+    test and is gated twice; the second run moves the first aside to
+    `merge-gate-<sha>.<ts>`. Both runs fail, and both name M1's gate dir as the baseline:
+    never the failed run, never the moved-aside copy, never a gate of an unmerged head. At
+    1bb14a5b run 2 named the moved-aside copy and passed."""
+    tree, m1 = _passed_merged_gate(tmp_path)
+    m1_dir = re.compile(rf"merge-gate-{m1}(?![.\w])")
+    m2 = _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+    for k in (1, 2):
+        r, summary = _gate(tree)
+        prev = _previous_gate_line(summary)
+        assert m1_dir.search(prev) and prev.count("merge-gate-") == 1, (
+            f"run {k}: the baseline is {prev!r}, not the passed, merged gate merge-gate-{m1}")
+        assert f"merge-gate-{m2}" not in prev, f"run {k} took its own merge's gate: {prev!r}"
+        assert r.returncode == 1, f"run {k}: exit {r.returncode}, not 1 (bug-304):\n{summary}"
+        assert "NEW FAILED tests/test_t2.py::test_fails_plainly" in summary, summary
+    asides = [d.name for d in (tree / "workflow" / "review-output").glob(f"merge-gate-{m2}.*")]
+    assert len(asides) == 1, f"run 2 did not move run 1 aside: {asides}"
+
+
+def test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it(tmp_path):
+    """#r7 / L194, the carry-over that must survive the bug-304 fix: a failure recorded in the
+    last PASSED, merged gate's `failures.jsonl` is still open, so a later gate records it as
+    `seen`, names it, and passes. Kills MX1 (the gate never reads the previous gate: the open
+    failure is then NEW and the gate fails).
+
+    Set-up: M1 (clean) is gated, passes and is merged. Merge `topic2` adds a failing test and
+    its first gate fails (NEW), which gives the real record. A passed gate holds a failure
+    only when it was carried into it, and a fresh tree has no such gate, so the record is
+    written into M1's `failures.jsonl`: the state a passed gate that carried it leaves. The
+    re-run on `topic2` then has M1 as its baseline and passes. RED at 1bb14a5b only on its last
+    assertion (the baseline named is run 1's moved-aside copy)."""
+    tree, m1 = _passed_merged_gate(tmp_path)
+    _start_merge(tree, "topic2", {"test_t2.py": "case_fail"})
+    r1, s1 = _gate(tree)
+    assert r1.returncode == 1, s1
+    node = "tests/test_t2.py::test_fails_plainly"
+    merge_head = _git(tree, "rev-parse", "MERGE_HEAD")
+    recs = [x for x in _records(_gate_dir(tree, merge_head) / "failures.jsonl")
+            if x["nodeid"] == node]
+    assert len(recs) == 1, recs
+    m1_gate = _gate_dir(tree, m1)
+    with open(m1_gate / "failures.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({k: recs[0][k] for k in ("nodeid", "phase", "e")}) + "\n")
+    r2, s2 = _gate(tree)
+    # MX1's assertion first: it holds at 1bb14a5b (whose baseline is the moved-aside copy,
+    # which also holds the record), so the mutation is seen dying here, not on the line below
+    assert re.search(rf"\bseen\b[^\n]*FAILED {re.escape(node)}", s2), \
+        f"the carried failure is not named as seen (MX1's shape):\n{s2}"
+    assert r2.returncode == 0, (f"a failure open in the last passed, merged gate failed the "
+                                f"gate (exit {r2.returncode}):\n{s2}")
+    prev = _previous_gate_line(s2)
+    assert re.search(rf"merge-gate-{m1}(?![.\w])", prev) and prev.count("merge-gate-") == 1, \
+        f"the baseline is {prev!r}, not the passed, merged gate merge-gate-{m1} (bug-304)"
+
+
 # ---- ruling L192 (6) and (3): the hang guard's plugin, and the default shard count ----------
 
 _NO_TIMEOUT_STUB = (
@@ -631,3 +797,78 @@ def test_with_no_shards_flag_the_shard_count_is_the_cpu_derived_default(tmp_path
     units = [s for s in _shard_lines(summary) if s.startswith("unit-")]
     assert len(units) == n, f"{len(units)} unit shards, default_shards() = {n}:\n{summary}"
     assert r.returncode == 0, _out(r)[-2000:]
+
+
+# ---- bsd-294a r1 m-1, m-2, m-3 (ruling L197) ---------------------------------------------------
+
+def test_a_single_threaded_hang_says_no_process_snapshot_was_taken(tmp_path):
+    """bsd-294a r1 m-1 (ruling L197): a test that hangs in its main thread fails on
+    pytest-timeout (2 s, the fixture's own test-sized budget), but the `signal` method prints
+    no `+++ Timeout +++` banner, so the runner's watcher takes no process snapshot. That is
+    accepted (L194); a SILENT absence is not: the shard's summary line either names the
+    `<shard>.ps.txt` it wrote or says `no process snapshot`. At 1bb14a5b it said neither."""
+    tree = sht.build(tmp_path, {"test_hang.py": "case_hang_main_thread"},
+                     weights={"tests/test_hang.py": 1.0})
+    r = _ptest(tree, "--tier", "unit", "--shards", "1", "--name", "hang")
+    summary = _summary(tree, "hang", r)
+    rd = sht.run_dir(tree, "hang")
+    assert r.returncode == 1, f"exit {r.returncode}, not 1:\n{_out(r)[-2000:]}"
+    fails = [x for x in _records(rd / "failures.jsonl")
+             if x["nodeid"] == "tests/test_hang.py::test_hangs_in_its_main_thread"]
+    assert fails and "Timeout" in fails[0]["e"], f"no timeout record: {fails}"
+    line = _shard_lines(summary).get("unit-0")
+    assert line, f"no unit-0 line:\n{summary}"
+    snaps = sorted(p.name for p in rd.glob("*.ps.txt"))
+    if snaps:
+        assert any(n in line for n in snaps), f"{snaps} written but not named:\n{line}"
+    else:
+        assert "no process snapshot" in line.lower(), (
+            f"a timeout with no process snapshot is not said on the shard line:\n{line}")
+
+
+@pytest.mark.parametrize("addopts,refused", [
+    ("", True),
+    ("-p pytest_timeout", False),
+], ids=["autoload-off-refused", "autoload-off-plugin-named-runs"])
+def test_the_runner_refuses_when_pytest_timeout_is_importable_but_not_loaded(tmp_path, addopts,
+                                                                             refused):
+    """bsd-294a r1 m-2 (ruling L197): with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` inherited,
+    `import pytest_timeout` still succeeds but pytest does not LOAD the plugin, the
+    `timeout = 600` key is only an unknown-option warning, and a hung test hangs the run. The
+    runner refuses (exit 2, a line naming pytest-timeout, no shard started). The control: the
+    same environment with the plugin named on `PYTEST_ADDOPTS` (`-p pytest_timeout`) is guarded,
+    so the runner runs it. At 1bb14a5b the first case ran unguarded and exited 0."""
+    tree = sht.build(tmp_path, {"test_pass.py": "case_trivial"},
+                     weights={"tests/test_pass.py": 1.0})
+    r = _ptest(tree, "--tier", "unit", "--shards", "1", "--name", "noload",
+               env_extra={"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": addopts})
+    out = _out(r)
+    shard_logs = list(sht.run_dir(tree, "noload").glob("unit-*.log"))
+    if refused:
+        assert r.returncode == 2, f"exit {r.returncode}, not 2:\n{out[-2000:]}"
+        assert [ln for ln in out.splitlines() if "pytest-timeout" in ln], \
+            f"no line names pytest-timeout:\n{out[-2000:]}"
+        assert not shard_logs, "a shard ran although pytest-timeout is not loaded"
+    else:
+        assert r.returncode == 0, f"a guarded run was refused or failed:\n{out[-2000:]}"
+        assert shard_logs, "no shard ran"
+
+
+def test_help_says_shards_is_per_tier(tmp_path):
+    """bsd-294a r1 m-3 (ruling L197; L194 accepted `--shards N` per tier "said in `--help`"):
+    the `--shards` entry of `ptest.sh --help` says the count is per tier. At 1bb14a5b the
+    option had no help text."""
+    tree = sht.build(tmp_path, {})
+    r = _ptest(tree, "--help")
+    assert r.returncode == 0, _out(r)[-2000:]
+    lines = r.stdout.splitlines()
+    starts = [i for i, ln in enumerate(lines) if ln.lstrip().startswith("--shards")]
+    assert starts, f"--help lists no --shards:\n{r.stdout}"
+    block = [lines[starts[0]]]
+    for ln in lines[starts[0] + 1:]:
+        if ln.lstrip().startswith("-") or not ln.strip():
+            break
+        block.append(ln)
+    text = " ".join(" ".join(block).split())
+    assert re.search(r"\bper (?:sharded )?tier\b", text, re.IGNORECASE), \
+        f"the --shards help does not say it is per tier: {text!r}"
