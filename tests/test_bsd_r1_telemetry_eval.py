@@ -154,3 +154,47 @@ def test_rank_all_reports_which_questions_failed():
         _run._rmx_json, _run.METHODS = orig_json, orig_methods
     assert rankings == {"q0": []}
     assert failed == ["q0"]
+
+
+def test_rank_all_counts_reranked_answers_and_keeps_the_skip_warning():
+    """bug-303: a `--rerank` answer that fell back to the dense order is not a rerank answer.
+
+    The rerank leg says so twice: the rows lack `reranked`, and stderr carries
+    `# rmx: warning: rerank skipped: …; hits unreranked`. run.py discarded both, so a skipped
+    rerank scored as a reranked one (bsd-t06 r1 #b-1, 2026-11-24)."""
+    skip = "rerank skipped: shared worker unavailable; hits unreranked"
+    answers = {
+        "q0": ([{"name": "s1", "reranked": True}, {"name": "s2", "reranked": True}], []),
+        "q1": ([{"name": "s2"}, {"name": "s1"}], [skip]),
+        "q2": ([{"name": "s3"}], [skip]),
+    }
+
+    class _M:
+        rerank = True
+
+        @staticmethod
+        def argv(q, *, k):
+            return ["memory", "recall", q, "--json", "-k", str(k), "--rerank"]
+
+    def fake(argv, rmx, root, warnings=None):
+        rows, ws = answers[argv[2]]
+        if warnings is not None:
+            warnings.extend(ws)
+        return rows
+
+    import run as _run
+    orig_json, orig_methods = _run._rmx_json, _run.METHODS
+    _run._rmx_json = fake
+    _run.METHODS = {"fake-rr": _M()}
+    try:
+        rankings, failed, rerank = _run.rank_all(
+            "fake-rr", [{"question_id": q, "question": q} for q in answers],
+            rmx="rmx", root=Path("/tmp"), depth=5, workers=1)
+    finally:
+        _run._rmx_json, _run.METHODS = orig_json, orig_methods
+    assert failed == []
+    assert rankings["q1"] == ["s2", "s1"]
+    assert rerank["n_reranked"] == 1
+    assert rerank["n_rerank_skipped"] == 2
+    assert sorted(rerank["unreranked_ids"]) == ["q1", "q2"]
+    assert rerank["rerank_warnings"] == {skip: 2}

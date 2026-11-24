@@ -147,3 +147,18 @@ def test_longmemeval_table_cites_every_surface_and_cell():
             for col, (mode, metric) in LME_COLUMNS.items():
                 want = _lme_value(d, surface, mode, metric)
                 assert cells[col] == want, (doc.name, surface, col, cells[col], want)
+
+
+# bug-303 (bsd-t06 r1 #b-1, 2026-11-24): `memory recall --rerank` falls back to the dense
+# order when its rerank cannot run ("rerank skipped: …; hits unreranked" on stderr), and run.py
+# kept only the ids, so `recall-rr` was published as a rerank row while 86 of its 120 answers were
+# the dense top 50. An `-rr` row is a rerank result only if every question was reranked.
+LME_RERANK_SURFACES = ("recall-rr", "recall-fuse-rr")
+
+
+def test_longmemeval_rerank_rows_were_reranked_on_every_question():
+    d = _lme_artifact()
+    for surface in LME_RERANK_SURFACES:
+        for mode in ("union", "restricted"):
+            meta = d[f"{surface}/{mode}"]["_meta"]
+            assert meta.get("n_reranked") == meta["n_questions"], (surface, mode, meta)
