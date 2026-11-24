@@ -146,18 +146,28 @@ def test_memory_recall_recent_cli_reads_the_replica_within_the_budget(held, monk
 
 # ---- #s-3 promote + per-hit get through the typed wrapper -----------------------------
 
-def test_promote_digest_is_typed_busy_on_a_held_writer(held, monkeypatch):
+def test_promote_digest_queues_on_a_held_writer(held, monkeypatch):
+    """Was `test_promote_digest_is_typed_busy_on_a_held_writer` (#s-3: typed busy, one
+    attempt). task-hook-writes-queue (L212, 2026-11-24; R11.4-R11.5, AC-8): the save-state
+    promote is best-effort, its handoff file is already on disk and the subject filing rides in
+    the entry, so a held writer now QUEUES the digest: `{"queued": <name>, "name": <name>,
+    "note": QUEUED_WRITE_MSG}` and no `error`. Still one attempt inside the budget (the dial
+    gets `deadline - now - ENQUEUE_RESERVE_S`), and the held slot is never written. The
+    budget is test-sized (2 s); the 30 s default stays pinned on the signature."""
     from refmatrix import stm as stm_mod
+    from tests.held_writer import spool_files
+    assert inspect.signature(handoff._promote_digest).parameters["timeout"].default == 30.0
     s = stm_mod.Stm(held.root, "s9")
     s.record("input", "hello")
     before = {p.name: (p.stat().st_mtime_ns, p.stat().st_size) for p in held.root.glob("catalog*.duckdb")}
-    # 29.4 R3 class B (T0.3 + 29.4c, 2026-11-15): `elapsed < 36.0` is replaced by the mechanism:
-    # the digest's write reaches the held daemon once, with `_promote_digest`'s 30 s budget.
     calls = record_transport(monkeypatch, dm)
-    out = handoff._promote_digest(held.root, s)
-    assert out.get("error") and "busy" in out["error"], out
-    assert "TimeoutError" not in out["error"]
-    assert_one_deadline(calls, budget=30.0, root=held.root)
+    out = handoff._promote_digest(held.root, s, timeout=2.0)
+    assert not out.get("error"), out
+    assert out.get("queued") == "focus_summary_s9" and out.get("name") == "focus_summary_s9", out
+    assert out.get("note") == verbs.QUEUED_WRITE_MSG.format(name="focus_summary_s9"), out
+    assert len(spool_files(held.root)) == 1, list(held.root.iterdir())
+    assert_one_deadline(calls, budget=2.0 - 1.0, root=held.root,
+                        what="the dial leaves ENQUEUE_RESERVE_S of the budget to enqueue")
     after = {p.name: (p.stat().st_mtime_ns, p.stat().st_size) for p in held.root.glob("catalog*.duckdb")}
     assert after == before, "the slot was written"
 
