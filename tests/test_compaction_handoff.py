@@ -647,3 +647,211 @@ def test_installed_hooks_gate_a_cleared_session_and_check_is_clean(fx):
     assert p is not None and p.is_file(), "R5: the installed clear entry wrote no handoff"
     assert denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"}, hooks=hooks)), (
         "R5: the installed PreToolUse hooks do not gate the cleared session")
+
+
+# ---- R6 / AC-6: the active /goal rides the handoff ----------------------------------------------
+#
+# The transcript shape (probed 2026-11-23, read-only, on the two real transcripts that hold a
+# `/goal`; recorded as shape + hashes only, no text): the command is a JSONL record with
+# `"type": "user"`, `message.role == "user"` and `message.content` a STRING that is exactly
+#   <command-name>/goal</command-name>\n<command-message>goal</command-message>\n
+#   <command-args>TEXT</command-args>
+# (both observed instances: args 46 chars, sha256[:12] 96ab8d893a6c), with an ISO `timestamp`;
+# the next record is a `type: user` string `<local-command-stdout>…` and then an `isMeta` user
+# record. The same command text recurs later inside `api-request-blob` records (list content), and
+# subagent transcripts quote the tags inside tool results (list content): neither is a command.
+# Every fixture transcript below is synthetic.
+
+GOAL_X = "draft the C1 spec review"
+GOAL_Y = 'ship C1 — the "pulled" handoff, verify set green;  then T0.7 (twice-spaced)'
+GOAL_DECOY = "a quoted goal inside a tool result, never a command"
+T_X = "2026-11-23T09:01:02.345Z"
+T_Y = "2026-11-23T10:15:30.123Z"
+T_Y_SECONDS = "2026-11-23T10:15:30"
+
+
+def _goal_cmd(args: str) -> str:
+    return (f"<command-name>/goal</command-name>\n<command-message>goal</command-message>\n"
+            f"<command-args>{args}</command-args>")
+
+
+def _rec(kind: str, ts: str, content, **extra) -> dict:
+    role = "assistant" if kind == "assistant" else "user"
+    return {"type": kind, "timestamp": ts, "sessionId": SESSION, "isSidechain": False,
+            "uuid": f"u-{ts}-{kind}", "parentUuid": None, "userType": "external",
+            "message": {"role": role, "content": content}, **extra}
+
+
+def goal_transcript(fx: Fx, records: "list[dict]", name: str = "goal.jsonl") -> Path:
+    p = fx.base / name
+    p.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    return p
+
+
+def x_then_y(extra_after: "list[dict] | None" = None) -> "list[dict]":
+    """`/goal X`, work, `/goal Y`, then a tool result QUOTING a goal command (not a command)."""
+    return [
+        _rec("user", T_X, _goal_cmd(GOAL_X)),
+        _rec("user", "2026-11-23T09:01:02.400Z",
+             "<local-command-stdout>Goal set</local-command-stdout>"),
+        _rec("assistant", "2026-11-23T09:05:00.000Z", [{"type": "text", "text": "working"}]),
+        _rec("user", T_Y, _goal_cmd(GOAL_Y)),
+        _rec("user", "2026-11-23T10:15:30.200Z",
+             "<local-command-stdout>Goal set</local-command-stdout>"),
+        _rec("user", "2026-11-23T10:20:00.000Z", [{
+            "type": "tool_result", "tool_use_id": "t1",
+            "content": "quoted: " + _goal_cmd(GOAL_DECOY)}]),
+        *(extra_after or []),
+    ]
+
+
+def precompact_with(fx: Fx, session: str, transcript: Path):
+    env = envelope(fx, "PreCompact", session, trigger="auto", custom_instructions="")
+    env["transcript_path"] = str(transcript)
+    return fire(fx, "PreCompact", "auto", env)
+
+
+def start_with(fx: Fx, source: str, session: str, transcript: Path) -> "tuple[Path, str]":
+    """The recall-state SessionStart command alone, with `transcript_path` set: (file, stdout)."""
+    env = envelope(fx, "SessionStart", session, source=source)
+    env["transcript_path"] = str(transcript)
+    r = run(fx, handoff_cmd(fx, source), env)
+    assert r.returncode == 0, r.stderr.decode()[-800:]
+    out = r.stdout.decode("utf-8")
+    p = handoff_path(fx, out)
+    assert p is not None, f"R3: the {source} entry named no handoff file: {out[:300]!r}"
+    return p, out
+
+
+def active_goal_block(fx: Fx, session: str) -> str:
+    """The `{#active-goal}` block of `savestate_<session>.md`: from the anchor's line to the next
+    heading. Fails (the RED line) when the save-state or the block is missing."""
+    saves = savestates_of(fx, session)
+    assert saves, f"R1/R6: PreCompact wrote no savestate_{session}.md"
+    text = saves[0].read_text(encoding="utf-8")
+    i = text.find("{#active-goal}")
+    assert i >= 0, f"R6: savestate_{session}.md has no {{#active-goal}} block"
+    start = text.rfind("\n", 0, i) + 1
+    nxt = re.search(r"^#{1,6} ", text[i:], re.M)
+    end = i + nxt.start() if nxt else len(text)
+    return text[start:end]
+
+
+def goal_lines(text: str) -> "list[str]":
+    return [ln for ln in text.splitlines() if "active goal: /goal" in ln]
+
+
+def test_newest_goal_rides_the_save_state_the_handoff_file_and_the_pointer(fx):
+    """AC-6 (mutations: the first goal taken, not the newest; the pointer line dropped): with
+    `/goal X` then `/goal Y` (and a tool result quoting a third goal after them), PreCompact's
+    save-state holds Y verbatim in its `{#active-goal}` block with Y's set time; the compact
+    handoff file (= `rmx recall-state`) carries Y; the pointer block has exactly one line
+    `active goal: /goal <Y verbatim>` and says to re-issue it when a bare `/goal` shows none.
+    X and the quoted goal appear nowhere. HEAD: no save-state from the PreCompact envelope."""
+    tr = goal_transcript(fx, x_then_y())
+    pre = precompact_with(fx, SESSION, tr)
+    block = active_goal_block(fx, SESSION)
+    assert GOAL_Y in block, f"R6: the block does not hold the newest goal verbatim: {block!r}"
+    assert T_Y_SECONDS in block, f"R6: the block does not carry the goal's set time: {block!r}"
+    assert GOAL_X not in block and GOAL_DECOY not in block, block
+    assert GOAL_Y not in stdout_of(pre), "R2: the goal must not ride the PreCompact instruction"
+    p, out = start_with(fx, "compact", SESSION, tr)
+    body = p.read_text(encoding="utf-8")
+    assert GOAL_Y in body and GOAL_X not in body, "R6: the handoff file lacks the newest goal"
+    rs = recall_state_full(fx, SESSION).decode("utf-8")
+    assert GOAL_Y in rs, "R6: `rmx recall-state` does not carry the {#active-goal} block"
+    lines = goal_lines(out)
+    assert len(lines) == 1, f"R6: want one `active goal:` line in the pointer: {out!r}"
+    tail = lines[0].split("active goal: /goal ", 1)[1]
+    assert tail.startswith(GOAL_Y), f"R6: the pointer line is not verbatim: {lines[0]!r}"
+    assert GOAL_X not in out and GOAL_DECOY not in out, out
+    assert re.search(r"(?i)re-?issue", out) and "/goal" in out, (
+        f"R6: the pointer does not say to re-issue the goal when none is active: {out!r}")
+
+
+def test_clear_takes_the_goal_from_the_newest_save_state_with_its_time(fx):
+    """AC-6 on `clear`: the new session's transcript is not the one that set the goal (here an
+    empty file), so the pointer line comes from the newest save-state's `{#active-goal}` block,
+    labelled with its time. HEAD: no save-state from the envelope, no goal line."""
+    precompact_with(fx, SESSION, goal_transcript(fx, x_then_y()))
+    assert GOAL_Y in active_goal_block(fx, SESSION)
+    fresh = goal_transcript(fx, [], name="fresh.jsonl")
+    _p, out = start_with(fx, "clear", CLEAR_SESSION, fresh)
+    lines = goal_lines(out)
+    assert len(lines) == 1, f"R6: no `active goal:` line on clear: {out!r}"
+    assert lines[0].split("active goal: /goal ", 1)[1].startswith(GOAL_Y), lines[0]
+    assert T_Y_SECONDS in out, f"R6: the clear pointer does not label the goal with its time: {out!r}"
+
+
+@pytest.mark.parametrize("how", ["garbage", "missing"])
+def test_unreadable_transcript_says_so_in_one_line_and_guesses_no_goal(fx, how):
+    """AC-6: a transcript that cannot be parsed (not JSON) or read (missing) is SAID in one line
+    of the save-state's `{#active-goal}` block naming the transcript, never a guessed or empty
+    goal; the save and the R2 instruction still happen, and the pointer has no goal line.
+    HEAD: no save-state from the envelope."""
+    tr = fx.base / "broken.jsonl"
+    if how == "garbage":
+        tr.write_bytes(b"\x00\xff not json {\n" + _goal_cmd(GOAL_Y).encode() + b"\n")
+    pre = precompact_with(fx, SESSION, tr)
+    block = active_goal_block(fx, SESSION)
+    assert "authoritative" in stdout_of(pre).lower(), "R2: the instruction did not print"
+    said = [ln for ln in block.splitlines()
+            if "transcript" in ln.lower() and re.search(r"(?i)could not|cannot|unreadable|"
+                                                         r"not (be )?(read|pars)|missing", ln)]
+    assert len(said) == 1, f"R6: want one line saying the transcript was unreadable: {block!r}"
+    assert GOAL_Y not in block and not goal_lines(block), block
+    _p, out = start_with(fx, "compact", SESSION, tr)
+    assert not goal_lines(out), f"R6: a goal line from an unreadable transcript: {out!r}"
+
+
+# The clearing form comes from Claude Code's docs (https://code.claude.com/docs/en/goal.md, read
+# 2026-11-23): "`/goal clear`" with "`stop`, `off`, `reset`, `none`, and `cancel` ... accepted as
+# aliases for `clear`", printing "Goal cleared:" (a bare `/goal` only SHOWS the state). No real
+# transcript holds a clear (probe 2026-11-23), so its record is the observed slash-command record
+# above with that argument; the lead has this flagged.
+CLEAR_ALIASES = ("clear", "stop", "off", "reset", "none", "cancel")
+
+
+@pytest.mark.parametrize("arg", CLEAR_ALIASES)
+def test_a_cleared_goal_gives_no_line(fx, arg):
+    """AC-6 (mutation: the clear ignored): `/goal X`, `/goal Y`, then `/goal <clear alias>` leaves
+    no active goal: the save-state block names neither goal and the compact pointer has no
+    `active goal:` line, never an empty or guessed one. A bare `/goal` (show) after the clear
+    changes nothing. HEAD: no save-state from the envelope."""
+    after = [_rec("user", "2026-11-23T11:00:00.000Z", _goal_cmd(arg)),
+             _rec("user", "2026-11-23T11:00:00.100Z",
+                  f"<local-command-stdout>Goal cleared: {GOAL_Y}</local-command-stdout>"),
+             _rec("user", "2026-11-23T11:05:00.000Z", _goal_cmd(""))]
+    tr = goal_transcript(fx, x_then_y(after))
+    precompact_with(fx, SESSION, tr)
+    block = active_goal_block(fx, SESSION)
+    assert not goal_lines(block), block
+    stated = block.replace(f"Goal cleared: {GOAL_Y}", "")
+    assert GOAL_Y not in stated and GOAL_X not in stated, (
+        f"R6: a cleared goal is still recorded as active: {block!r}")
+    _p, out = start_with(fx, "compact", SESSION, tr)
+    assert not goal_lines(out), f"R6: an `active goal:` line after `/goal {arg}`: {out!r}"
+
+
+@pytest.mark.parametrize("case", ["never-set", "set-after-clear"])
+def test_no_goal_gives_no_line_and_a_goal_set_after_a_clear_wins(fx, case):
+    """AC-6: a transcript with no `/goal` gives no line; `/goal X`, `/goal clear`, `/goal Y`
+    gives Y (the clear only ends the goals before it). HEAD: no save-state from the envelope."""
+    if case == "never-set":
+        recs = [_rec("user", T_X, "plain prompt, no command"),
+                _rec("assistant", T_Y, [{"type": "text", "text": "ok"}])]
+    else:
+        recs = [_rec("user", T_X, _goal_cmd(GOAL_X)),
+                _rec("user", "2026-11-23T09:30:00.000Z", _goal_cmd("clear")),
+                _rec("user", T_Y, _goal_cmd(GOAL_Y))]
+    tr = goal_transcript(fx, recs)
+    precompact_with(fx, SESSION, tr)
+    block = active_goal_block(fx, SESSION)
+    _p, out = start_with(fx, "compact", SESSION, tr)
+    if case == "never-set":
+        assert not goal_lines(out) and not goal_lines(block), (block, out)
+    else:
+        lines = goal_lines(out)
+        assert len(lines) == 1 and lines[0].split("active goal: /goal ", 1)[1].startswith(
+            GOAL_Y), (lines, out)
+        assert GOAL_Y in block and GOAL_X not in block, block
