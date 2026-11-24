@@ -83,7 +83,19 @@ Lane logs in `workflow/review-output/` (scripts/lane-local.sh, committed shas):
 - `hwq-green-r1` at `f76db480`: RED's five files, **88 passed**.
 - `hwq-green-replay-r2` at `b1b8df4d`: every replay / facts.log / reclassify / retag / bridge-move
   test file plus `test_hook_writes` and `test_deferrals_clean`, **191 passed**.
-- VERIFY_SET_PLACEHOLDER {#verify-body}
+- The verify set at `adf0ff1d` (308 files: every test file importing `store`, `daemon`,
+  `verbs`, `cli`, `handoff` or `hook_writes`, plus the nine repo guards), three local-lane
+  shards: `hwq-green-final-s0` **1544 passed**; `hwq-green-final-s2` **1388 passed**;
+  `hwq-green-final-s1` **1669 passed, 2 failed, 1 xpassed** (the xpass is
+  `test_task25_1_recall_budget` `replica-on`, a pre-existing non-strict xfail, bug-312). The two
+  failures are tests that assert the pre-L212 contract (a busy daemon FAILS the save-state
+  promote), reported to the lead, not edited: `test_plan3_remedy_r3::test_promote_digest_
+  reports_busy_and_never_opens_the_store` and `test_bug212_r6_red::test_mcp_save_state_error_
+  reply_carries_the_result` (it uses a busy daemon only to make the promote fail).
+- The same set at `f76db480` (`hwq-green-verify-s0..s2`) also failed
+  `test_bridge_move_safety::test_ac1b_legacy_refresh_survives_rebuild_from_log` ("replay
+  restored legacy-x at .../a/x.md, not .../b/x.md"): the replay tie of #replay-tie, fixed in
+  `b1b8df4d` and green since. {#verify-body}
 
 ## Self-audit {#self-audit}
 
@@ -134,6 +146,7 @@ Lane logs in `workflow/review-output/` (scripts/lane-local.sh, committed shas):
   events written inside it and bits set in in-memory bitmap fragments are not rolled back.
   This is the existing behaviour of every `transaction()` user (the bridge included), not
   new here; a partition apply that raises is the rare path. {#note-rollback}
-- `tests/test_plan3_remedy_r3.py::test_promote_digest_reports_busy_and_never_opens_the_store`
-  asserts the pre-L212 contract (a busy daemon fails the save-state promote) and is not one of
-  RED's converted tests; reported to the lead, not edited. {#note-r3}
+- Two existing tests assert the pre-L212 contract and are not among RED's conversions (see
+  #verify); reported to the lead, not edited. {#note-r3}
+- Not done here: the mutation pass on the `src/` change (the spec's large-change step), which
+  belongs to the review stage. {#note-mutations}

@@ -1,0 +1,94 @@
+# local-lane slot=rmxtest2 sha=adf0ff1d4f930e09988afeb03a29ff07bd3b2818 start=2026-11-24 14:36:41 load={ 2.75 4.46 5.46 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest2/lane/runs/hwq-green-final-s1.SEZW/src/refmatrix as checked-hash (bug-037)
+........................................................................ [  4%]
+.....................X.................................................. [  8%]
+............................................F........................... [ 12%]
+.............F.......................................................... [ 17%]
+........................................................................ [ 21%]
+........................................................................ [ 25%]
+........................................................................ [ 30%]
+........................................................................ [ 34%]
+........................................................................ [ 38%]
+........................................................................ [ 43%]
+........................................................................ [ 47%]
+........................................................................ [ 51%]
+........................................................................ [ 55%]
+........................................................................ [ 60%]
+........................................................................ [ 64%]
+........................................................................ [ 68%]
+........................................................................ [ 73%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 86%]
+........................................................................ [ 90%]
+........................................................................ [ 94%]
+........................................................................ [ 99%]
+................                                                         [100%]rmx sandbox: pid=62570 exempt, not reaped: the stdlib multiprocessing resource tracker, a direct child of this session (spawned in tests/test_recall.py::test_dense_recall_top1_matches_semantic_intent); it ends with its parent by construction (ruling L154)
+rmx sandbox: 0 leaks; 1 exempt process(es) (the stdlib multiprocessing resource tracker, which ends with this session by construction; ruling L154)
+
+=================================== FAILURES ===================================
+______________ test_mcp_save_state_error_reply_carries_the_result ______________
+
+busy_store = <tests.test_bug212_hooks_in_worktrees.Repo object at 0x12ed116a0>
+
+    @pytest.mark.timeout(300)
+    def test_mcp_save_state_error_reply_carries_the_result(busy_store):
+        """m-1 (L98): a busy daemon makes the promote fail. MCP `rmx_save_state` replies `isError`,
+        and its body is the RESULT with the error added -- `target` (the handoff file, which
+        exists), `remove_failed`, `lint`, `promoted`, and `error` naming the failure -- not the bare
+        message. At c854bad the body is `{"error": "<message>"}` only."""
+        from refmatrix import stm
+        repo = busy_store
+        session = "bug212-r6-mcp"
+        stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r6 MCP probe")
+        memdir = repo.base / "memdir"
+        memdir.mkdir()
+        replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+            "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
+            "message": "bug-212 r6 MCP probe"})])
+        assert 2 in replies and 99 in replies, f"the MCP server stopped answering\n{text}"
+        res = replies[2].get("result") or {}
+        raw = " ".join(c.get("text", "") for c in res.get("content", []))
+>       assert res.get("isError") is True, f"not an isError reply: {raw[:600]!r}"
+E       AssertionError: not an isError reply: '{"mem_id": "savestate_bug212r6mcp", "target": "/private/tmp/rmx-c8eeu6b2/t/b212d-usysdh1t/memdir/savestate_bug212r6mcp.md", "session": "bug212-r6-mcp", "events": 1, "dry_run": false, "branch": "main", "head": "23d04a2 c1", "dirty": false, "promoted": {"queued": "focus_summary_bug212r6mcp", "name": "focus_summary_bug212r6mcp", "note": "daemon busy: queued focus_summary_bug212r6mcp for the next drain; it is applied when the writer frees"}, "trunk_error": "", "memdir": "/private/tmp/rmx-c8eeu6b2/t/b212d-usysdh1t/memdir", "moved_legacy": null, "removed_duplicate": null, "kept_copy": null, "remove_'
+E       assert False is True
+E        +  where False = <built-in method get of dict object at 0x12fe1b100>('isError')
+E        +    where <built-in method get of dict object at 0x12fe1b100> = {'content': [{'text': '{"mem_id": "savestate_bug212r6mcp", "target": "/private/tmp/rmx-c8eeu6b2/t/b212d-usysdh1t/memdi... "filed_subject": null, "filed_subject_error": null, "sync": null, "embed": null}', 'type': 'text'}], 'isError': False}.get
+
+tests/test_bug212_r6_red.py:82: AssertionError
+__________ test_promote_digest_reports_busy_and_never_opens_the_store __________
+
+silent = <tests.test_plan2_remedy._SilentDaemon object at 0x12ed11940>
+
+    def test_promote_digest_reports_busy_and_never_opens_the_store(silent):
+        """#b-1: under a busy daemon the promote reports busy and never opens the writer slot.
+    
+        `handoff._promote_digest` keeps its contract (best-effort: it RETURNS `{"error"}`). The
+        verb's half changed: this test first pinned that `verbs.save_state` RETURNED the result
+        with `promoted.error`. bug-212 r5, ruling L95 (2026-11-14), reversed that returned-error
+        contract -- a save-state that wrote its handoff but whose promote (or memory bridge)
+        failed RAISES `verbs.SaveStateIncompleteError`, carrying the full `result`, so the CLI
+        exits 1 and MCP replies `isError` on the same outcome (ch-bsd r4 m-3: MCP had replied
+        SUCCESS while the CLI exited 1). So the busy word is read from the raised error and its
+        attached result; the handoff is still written; the slot is still never opened."""
+        from refmatrix import handoff, stm as stm_mod
+        s = stm_mod.Stm(silent.root, "s1"); s.record("input", "hi")
+        out = handoff._promote_digest(silent.root, s)
+>       assert "busy" in (out.get("error") or ""), out
+E       AssertionError: {'name': 'focus_summary_s1', 'note': 'daemon busy: queued focus_summary_s1 for the next drain; it is applied when the writer frees', 'queued': 'focus_summary_s1'}
+E       assert 'busy' in ((None or ''))
+E        +  where None = <built-in method get of dict object at 0x12fe5ca00>('error')
+E        +    where <built-in method get of dict object at 0x12fe5ca00> = {'name': 'focus_summary_s1', 'note': 'daemon busy: queued focus_summary_s1 for the next drain; it is applied when the writer frees', 'queued': 'focus_summary_s1'}.get
+
+tests/test_plan3_remedy_r3.py:53: AssertionError
+=============================== warnings summary ===============================
+tests/test_task4_5_r4_remedy.py::test_every_stop_path_hands_the_daemon_the_one_stop_grace[8-hub-ui-stop]
+  /Users/tholley/claude_tools/refmatrix/.venv-eval/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_bug212_r6_red.py::test_mcp_save_state_error_reply_carries_the_result
+FAILED tests/test_plan3_remedy_r3.py::test_promote_digest_reports_busy_and_never_opens_the_store
+2 failed, 1669 passed, 1 xpassed, 1 warning in 1118.28s (0:18:38)
+exit 1
