@@ -5,7 +5,7 @@ title: "Task T0.9: test isolation: the Docker lane, the test-daemon kit, the mac
 tags: [task, t0.9, tests, isolation, docker, lanes, daemon-kit, mac-mini, sandbox]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-15
 ---
 
