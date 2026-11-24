@@ -27,6 +27,13 @@ import pytest
 # real, read-only cache as `HF_HOME` (R1); a KeyError here means no sandbox ran.
 HF_HUB = Path(os.environ["HF_HOME"]) / "hub"
 
+# bug-298 (2026-11-23): `huggingface_hub` freezes HF_HUB_OFFLINE into `constants` at FIRST
+# import. Import it here, at collection, with the session's real environment, and remember
+# the value. The fixture below deletes the env var, so a first import inside it was born
+# False under HF_HUB_OFFLINE=1 and the "restored" test compared it to the env var.
+_hub_constants = pytest.importorskip("huggingface_hub.constants")
+_AMBIENT_HUB_OFFLINE = _hub_constants.HF_HUB_OFFLINE
+
 
 @pytest.fixture
 def no_network(monkeypatch):
@@ -51,7 +58,7 @@ def no_network(monkeypatch):
     # looked up) so monkeypatch records the pre-test value even when no test
     # before this one imported the hub: a constant born True inside a test was
     # never restored and left later tests offline (ch-bsd r7 #m-3).
-    constants = pytest.importorskip("huggingface_hub.constants")
+    constants = _hub_constants
     monkeypatch.setattr(constants, "HF_HUB_OFFLINE", False)
     return attempts
 
@@ -240,10 +247,8 @@ def test_a_config_the_check_passes_but_the_library_rejects_is_model_not_cached(
 
 
 def test_the_hub_constant_is_restored_after_the_offline_tests():
-    """r7 #m-3: runs after the tests above (file order). The ambient value is
-    whatever the session had before them, which is not offline here."""
-    import os
-
+    """r7 #m-3, bug-298 (2026-11-23): runs after the tests above (file order). The constant
+    must equal the value it had at import under the session's real environment, whatever
+    the offline tests flipped it to (enforce_offline sets it True; the opt-out sets False)."""
     import huggingface_hub.constants as constants
-    want = os.environ.get("HF_HUB_OFFLINE", "").upper() in {"1", "ON", "YES", "TRUE"}
-    assert constants.HF_HUB_OFFLINE is want
+    assert constants.HF_HUB_OFFLINE is _AMBIENT_HUB_OFFLINE
