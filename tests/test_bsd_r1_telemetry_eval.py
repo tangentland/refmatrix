@@ -138,7 +138,7 @@ def test_rank_all_reports_which_questions_failed():
         def argv(q, *, k):
             return ["context", q, "--format", "json"]
 
-    def boom(argv, rmx, root):
+    def boom(argv, rmx, root, warnings=None):
         calls["n"] += 1
         raise RuntimeError("surface is dead")
 
@@ -147,10 +147,74 @@ def test_rank_all_reports_which_questions_failed():
     _run._rmx_json = boom
     _run.METHODS = {"fake": _M()}
     try:
-        rankings, failed = _run.rank_all(
+        rankings, failed, rerank = _run.rank_all(
             "fake", [{"question_id": "q0", "question": "x"}],
             rmx="rmx", root=Path("/tmp"), depth=5, workers=1)
     finally:
         _run._rmx_json, _run.METHODS = orig_json, orig_methods
     assert rankings == {"q0": []}
     assert failed == ["q0"]
+    assert rerank is None   # not a rerank surface: no n_reranked to report
+
+
+def test_rank_all_counts_reranked_answers_and_keeps_the_skip_warning():
+    """bug-303: a `--rerank` answer that fell back to the dense order is not a rerank answer.
+
+    The rerank leg says so twice: the rows lack `reranked`, and stderr carries
+    `# rmx: warning: rerank skipped: …; hits unreranked`. run.py discarded both, so a skipped
+    rerank scored as a reranked one (bsd-t06 r1 #b-1, 2026-11-24)."""
+    skip = "rerank skipped: shared worker unavailable; hits unreranked"
+    answers = {
+        "q0": ([{"name": "s1", "reranked": True}, {"name": "s2", "reranked": True}], []),
+        "q1": ([{"name": "s2"}, {"name": "s1"}], [skip]),
+        "q2": ([{"name": "s3"}], [skip]),
+    }
+
+    class _M:
+        rerank = True
+
+        @staticmethod
+        def argv(q, *, k):
+            return ["memory", "recall", q, "--json", "-k", str(k), "--rerank"]
+
+    def fake(argv, rmx, root, warnings=None):
+        rows, ws = answers[argv[2]]
+        if warnings is not None:
+            warnings.extend(ws)
+        return rows
+
+    import run as _run
+    orig_json, orig_methods = _run._rmx_json, _run.METHODS
+    _run._rmx_json = fake
+    _run.METHODS = {"fake-rr": _M()}
+    try:
+        rankings, failed, rerank = _run.rank_all(
+            "fake-rr", [{"question_id": q, "question": q} for q in answers],
+            rmx="rmx", root=Path("/tmp"), depth=5, workers=1)
+    finally:
+        _run._rmx_json, _run.METHODS = orig_json, orig_methods
+    assert failed == []
+    assert rankings["q1"] == ["s2", "s1"]
+    assert rerank["n_reranked"] == 1
+    assert rerank["n_rerank_skipped"] == 2
+    assert sorted(rerank["unreranked_ids"]) == ["q1", "q2"]
+    assert rerank["rerank_warnings"] == {skip: 2}
+
+
+def test_rmx_json_keeps_the_stderr_warning_beside_a_list_payload(tmp_path):
+    """`memory recall --json` prints a bare list and says a skipped rerank only on stderr,
+    exit 0 (bug-303). A stand-in `rmx` executable is the process boundary."""
+    import run as _run
+    fake = tmp_path / "rmx"
+    fake.write_text("#!/bin/sh\n"
+                    "echo '# rmx: warning: rerank skipped: probe gave up; hits unreranked' >&2\n"
+                    "echo 'not a warning line' >&2\n"
+                    "echo '[{\"name\": \"s1\"}]'\n")
+    fake.chmod(0o755)
+    ws: list[str] = []
+    payload = _run._rmx_json(["memory", "recall", "q", "--json"], str(fake), tmp_path,
+                             warnings=ws)
+    assert payload == [{"name": "s1"}]
+    assert ws == ["rerank skipped: probe gave up; hits unreranked"]
+    assert _run.payload_reranked(payload) is False
+    assert _run.payload_reranked([{"name": "s1", "reranked": True}]) is True
