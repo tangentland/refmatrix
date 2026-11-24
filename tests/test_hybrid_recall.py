@@ -114,6 +114,11 @@ _FILLER = ("The tomatoes in the raised bed need staking before the storm. Basil 
            "by the greenhouse door while the compost heap steams in the cold air. ") * 30
 _B300_QUERY = "daily commute"
 _B300_NOTHING = "zyxwvut quuxbar"      # no concept in the store: the symbolic leg must be empty
+# Every word a stopword (L199, spec #r1-scope: R3 warns here too when fuse is on). Today
+# `content_terms` keeps an all-stopword query's words rather than return nothing, and ingest
+# indexes no stopword, so the leg runs and returns []; a GREEN that skips the leg for want of
+# terms must say so just the same.
+_B300_STOPWORDS = "what is it"
 _B300_WARN = "fuse: symbolic leg empty"
 
 
@@ -245,12 +250,14 @@ def _recall_warnings(surface: str, fx, query: str, *, fuse: bool) -> "list[str]"
     return [ln for ln in err.splitlines() if "warning" in ln]
 
 
+@pytest.mark.parametrize("query", [_B300_NOTHING, _B300_STOPWORDS])
 @pytest.mark.parametrize("surface", ["verb", "cli", "mcp"])
-def test_an_empty_symbolic_leg_is_said_on_every_surface(b300, surface):
-    """bug-300 AC-4 (R3): when `--fuse`'s symbolic leg returns nothing, the answer (still the
-    dense rows) carries a `fuse: symbolic leg empty` warning -- through the verb, the CLI and
-    MCP -- so a no-op fuse is never silent. RED at base: no surface says anything."""
-    ws = _recall_warnings(surface, b300, _B300_NOTHING, fuse=True)
+def test_an_empty_symbolic_leg_is_said_on_every_surface(b300, surface, query):
+    """bug-300 AC-4 (R3): when `--fuse`'s symbolic leg returns nothing -- terms that match no
+    concept, or a query of stopwords only -- the answer (still the dense rows) carries a
+    `fuse: symbolic leg empty` warning, through the verb, the CLI and MCP, so a no-op fuse is
+    never silent. RED at base: no surface says anything."""
+    ws = _recall_warnings(surface, b300, query, fuse=True)
     assert any(_B300_WARN in w for w in ws), f"{surface}: no {_B300_WARN!r} in {ws}"
 
 
