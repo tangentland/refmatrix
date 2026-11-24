@@ -1671,6 +1671,9 @@ def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
     out: dict = {"written": [], "pulls": [], "stand_downs": [], "reaps": [],
                  "precompact": {"saves": 0, "save_failures": 0, "commits_deferred": 0,
                                 "commits_deferred_by_bound": 0},
+                 # L204's no-go signal: one row per PreCompact store commit deferred by the
+                 # `--timeout` bound ({ts, session, cause}).
+                 "precompact_deferred": [],
                  "unreadable_lines": 0}
     p = handoffs_dir(root) / HANDOFF_LEDGER
     if not p.is_file():
@@ -1702,6 +1705,10 @@ def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
             pc["saves" if row.get("saved") else "save_failures"] += 1
             pc["commits_deferred"] += int(bool(row.get("commit_deferred")))
             pc["commits_deferred_by_bound"] += int(bool(row.get("deferred_by_bound")))
+            if row.get("deferred_by_bound"):
+                out["precompact_deferred"].append(
+                    {"ts": row.get("ts"), "session": row.get("session"),
+                     "cause": row.get("cause")})
             continue
         bucket, fields = keys[row["event"]]
         out[bucket].append({"ts": row.get("ts"),
