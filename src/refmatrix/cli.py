@@ -3079,7 +3079,8 @@ def hub_status():
                 if st.get("version") and dver != st.get("version"):
                     vflag = f"  [bold yellow]v{dver} STALE (hub v{st.get('version')})[/]"
             console.print(f"  {dot} {root}  policy={h['policy']} "
-                          f"restarts={h['restart_count']}{paused}{vflag}{idflag}")
+                          f"restarts={h['restart_count']}{paused}{vflag}{idflag}",
+                          soft_wrap=True)
 
 
 @hub.command("relaunch-fleet")
@@ -3097,7 +3098,10 @@ def hub_relaunch_fleet(rmx_bin):
     `reinstall` (which refused it, relaying an `--allow-dev` this command does
     not have) and then restarted every daemon on it (r5 #m-1). Session-
     indexer plists are re-rendered on drift too, supervised daemon or not —
-    nothing else ever did (r5 #s-3; task 4.6, 2026-10-19)."""
+    nothing else ever did (r5 #s-3; task 4.6, 2026-10-19).
+
+    Store paths print unwrapped (`soft_wrap=True`): rich split a long path
+    mid-word in a narrow tty (bug-294, 2026-11-23)."""
     import subprocess
     from refmatrix import discovery, launchctl as lc
     from refmatrix import session_launchctl as slc
@@ -3116,12 +3120,12 @@ def hub_relaunch_fleet(rmx_bin):
             if not ok:
                 try:
                     slc.reinstall(root, rmx=rmx)
-                    console.print(f"[yellow]reinstalled[/] {root} session-indexer plist ({why})")
+                    console.print(f"[yellow]reinstalled[/] {root} session-indexer plist ({why})", soft_wrap=True)
                 except Exception as e:  # noqa: BLE001 — named per store, then counted
                     failed += 1
-                    console.print(f"[red]FAILED[/] {root}  session-indexer plist reinstall: {e}")
+                    console.print(f"[red]FAILED[/] {root}  session-indexer plist reinstall: {e}", soft_wrap=True)
         if not lc.is_loaded(root):
-            console.print(f"[dim]skip[/] {root} (not supervised)")
+            console.print(f"[dim]skip[/] {root} (not supervised)", soft_wrap=True)
             continue
         # A plist rendered before a setting existed keeps the old behaviour
         # across every relaunch (r2 #b-1: two stores without RMX_SUPERVISED
@@ -3131,10 +3135,10 @@ def hub_relaunch_fleet(rmx_bin):
         if not ok:
             try:
                 lc.reinstall(root, rmx=rmx)
-                console.print(f"[yellow]reinstalled[/] {root} plist ({why})")
+                console.print(f"[yellow]reinstalled[/] {root} plist ({why})", soft_wrap=True)
             except Exception as e:  # noqa: BLE001 — named per store, then counted
                 failed += 1
-                console.print(f"[red]FAILED[/] {root}  plist reinstall: {e}")
+                console.print(f"[red]FAILED[/] {root}  plist reinstall: {e}", soft_wrap=True)
                 continue
         env = {**os.environ, "REFMATRIX_ROOT": str(root)}
         r = subprocess.run([rmx, "daemon", "restart", "--relaunch"], env=env,
@@ -3142,10 +3146,10 @@ def hub_relaunch_fleet(rmx_bin):
         tail = (r.stdout or r.stderr or "").strip().splitlines()
         line = tail[-1] if tail else "(no output)"
         if r.returncode == 0:
-            console.print(f"[green]relaunched[/] {root}  {line}")
+            console.print(f"[green]relaunched[/] {root}  {line}", soft_wrap=True)
         else:
             failed += 1
-            console.print(f"[red]FAILED[/] {root}  {line}")
+            console.print(f"[red]FAILED[/] {root}  {line}", soft_wrap=True)
     if failed:
         raise click.ClickException(f"{failed} store(s) failed to relaunch")
 

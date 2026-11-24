@@ -210,8 +210,11 @@ def test_relaunch_fleet_relaunches_every_supervised_store(monkeypatch, tmp_path)
         stdout = "relaunch verified pid 1->2 version=x code=/deploy\n"
         stderr = ""
     monkeypatch.setattr("subprocess.run", lambda argv, **kw: ran.append((argv, kw.get("env", {}).get("REFMATRIX_ROOT"))) or R())
-    r = CliRunner().invoke(cli_main, ["hub", "relaunch-fleet"])
+    # bug-294: a narrow tty must not split a store path mid-word (pinned width,
+    # so the result no longer depends on the caller's terminal)
+    r = CliRunner().invoke(cli_main, ["hub", "relaunch-fleet"], env={"COLUMNS": "40"})
     assert r.exit_code == 0, r.output
+    assert all(str(root) in r.output for root in roots), r.output
     assert len(ran) == 1 and ran[0][1] == str(roots[0]) and "daemon" in ran[0][0] and "--relaunch" in ran[0][0]
     assert "b/.refmatrix" in r.output and "not supervised" in r.output
 
