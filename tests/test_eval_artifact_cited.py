@@ -61,3 +61,89 @@ def test_partial_run_is_named_in_the_docs():
         assert d["sample_queries"], "partial run without a sample count"
         assert f"{d['sample_queries']} queries" in readme or \
             f"--sample-queries {d['sample_queries']}" in readme
+
+
+# ── LongMemEval (plan-7, T0.6) ─────────────────────────────────────────────
+# The dense and fused rows were blocked on bug-030 until T0.6 re-ran the embed on
+# 0.84.0 (2026-11-23). README and PERFORMANCE cite one table of every surface; the
+# test compares EVERY cell of that table with the committed artifact, not one row
+# (plan-6 r1 #m-3: a one-row check let the rest of a table drift).
+LME_ARTIFACT = "eval/production/longmemeval/results/summary-120-0.84.0.json"
+LME_HEADING = "LongMemEval-S, production path"
+# Column header -> (mode, metric) in the artifact. `ceiling` is the restricted pool's
+# recall ceiling, carried in `_meta` and printed beside every restricted figure.
+LME_COLUMNS = {
+    "restricted R@5": ("restricted", "recall@5"),
+    "restricted hit@5": ("restricted", "hit@5"),
+    "restricted MRR@20": ("restricted", "mrr"),
+    "ceiling": ("restricted", "recall_ceiling"),
+    "union R@5": ("union", "recall@5"),
+}
+
+
+def _lme_table(text: str) -> dict[str, dict[str, str]]:
+    """The cited LongMemEval table as {surface: {column: cell}}."""
+    at = text.find(LME_HEADING)
+    assert at >= 0, f"no '{LME_HEADING}' section"
+    lines = text[at:].splitlines()
+    start = next(i for i, ln in enumerate(lines) if ln.lstrip().startswith("|"))
+    rows = []
+    for ln in lines[start:]:
+        if not ln.lstrip().startswith("|"):
+            break
+        rows.append([c.strip() for c in ln.strip().strip("|").split("|")])
+    header, body = rows[0], rows[2:]
+    assert header[0] == "surface", header
+    assert set(header[1:]) == set(LME_COLUMNS), header
+    table = {}
+    for r in body:
+        # A surface may carry a footnote mark: * depth-uncontrolled, † / ‡ the bug-300
+        # labels on the two `--fuse` rows.
+        m = re.fullmatch(r"`([\w-]+)`\s*[*†‡]*", r[0])
+        assert m, f"unparseable surface cell {r[0]!r}"
+        table[m.group(1)] = {h: c.strip("*") for h, c in zip(header[1:], r[1:])}
+    return table
+
+
+def _lme_artifact() -> dict:
+    p = REPO / LME_ARTIFACT
+    assert p.exists(), f"{LME_ARTIFACT} missing — copy run.py's summary.json with provenance"
+    return json.loads(p.read_text())
+
+
+def _lme_value(d: dict, surface: str, mode: str, metric: str) -> str:
+    entry = d[f"{surface}/{mode}"]
+    v = entry["_meta"][metric] if metric == "recall_ceiling" else entry["overall"][metric]
+    return f"{v:.3f}"
+
+
+def test_longmemeval_artifact_carries_its_provenance():
+    d = _lme_artifact()
+    prov = d["_provenance"]
+    assert prov["harness"] == "eval/production/longmemeval/run.py"
+    assert prov["rmx_version"] == "0.84.0"
+    assert prov["n_questions"] == 120 and prov["depth"] == 50
+    assert prov["corpus_docs"] == 19829
+    assert prov["date"] and prov["command"]
+    for key, entry in d.items():
+        if key.startswith("_"):
+            continue
+        # A dead surface and an empty one both score 0.000 (ch-bsd r1 #s-13).
+        assert entry["_meta"]["n_failed"] == 0, (key, entry["_meta"])
+        assert entry["_meta"]["n_questions"] == 120, key
+
+
+def test_longmemeval_table_cites_every_surface_and_cell():
+    d = _lme_artifact()
+    surfaces = {k.split("/", 1)[0] for k in d if not k.startswith("_")}
+    assert surfaces == {"context", "scan", "recall", "recall-fuse", "recall-rr",
+                        "recall-fuse-rr"}
+    for doc in (README, PERF):
+        text = doc.read_text()
+        assert LME_ARTIFACT in text, f"{doc.name} does not cite {LME_ARTIFACT}"
+        table = _lme_table(text)
+        assert set(table) == surfaces, (doc.name, sorted(table))
+        for surface, cells in table.items():
+            for col, (mode, metric) in LME_COLUMNS.items():
+                want = _lme_value(d, surface, mode, metric)
+                assert cells[col] == want, (doc.name, surface, col, cells[col], want)

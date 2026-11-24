@@ -42,6 +42,29 @@ harness the symbolic win repeats across languages: JS **0.939 vs 0.916**,
 TS **0.365 vs 0.358** (real-world corpus with fork dupes; low absolute,
 still ahead).
 
+### LongMemEval-S, production path (120 questions · depth 50 · 0.84.0)
+
+| surface | restricted R@5 | restricted hit@5 | restricted MRR@20 | ceiling | union R@5 |
+|---|---:|---:|---:|---:|---:|
+| `context` | 0.605 | 0.683 | 0.679 | 0.683 | 0.411 |
+| `scan` * | 0.547 | 0.642 | 0.637 | 0.642 | 0.465 |
+| `recall` | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
+| `recall-fuse` † | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
+| `recall-rr` | 0.527 | 0.625 | 0.613 | 0.625 | 0.266 |
+| `recall-fuse-rr` ‡ | 0.513 | 0.608 | 0.604 | 0.608 | 0.298 |
+
+Read from the committed artifact
+`eval/production/longmemeval/results/summary-120-0.84.0.json` (19 829 session
+docs, 120 type-stratified questions, seed 42, deploy `rmx` 0.84.0, 2026-11-23);
+`tests/test_eval_artifact_cited.py` compares every cell with it. **Every
+restricted row is saturated** (hit@5 equals its ceiling): these figures measure
+how often retrieval reached the gold session within depth 50, not ranking
+quality. \* `scan` has no depth knob. † `recall-fuse` is `recall`: the symbolic
+leg returns nothing on this corpus (bug-300), so it is no fusion figure. ‡ the
+difference from `recall-rr` comes from the hybrid's wider dense pool, not from
+fusion. Full table, per-type rows and caveats:
+`eval/production/longmemeval/REPORT.md`.
+
 Latency: rmx ≈ 3–4 min ingest + seconds to retrieve, CPU only. CodeRankEmbed
 ≈ 100 min corpus encode (GPU/MPS). And every rmx score traces to `file:line`
 evidence. Full methodology, the proactive-retrieval (MemAware) benchmark, and

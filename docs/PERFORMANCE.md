@@ -298,6 +298,34 @@ hit@1 on a healthy store is 0.808 post-re-derive (the earlier 0.447 "ceiling"
 was pool contamination from the main-path incident), and questions whose gold
 document is never retrieved are untouchable by any reordering prior. {#memaware-ceiling}
 
+## Long-horizon memory — LongMemEval-S, production path {#longmemeval}
+
+`eval/production/longmemeval/` (Layer A: retrieval only, no LLM) scores whether a read surface
+finds the session that holds a question's answer, over 19 829 chat sessions ingested with
+`ingest-gmd --as-memory` and embedded with `rmx embed --kinds memory`. 120 type-stratified
+questions (seed 42), depth 50, deploy `rmx` 0.84.0, 2026-11-23:
+
+| surface | restricted R@5 | restricted hit@5 | restricted MRR@20 | ceiling | union R@5 |
+|---|---:|---:|---:|---:|---:|
+| `context` | 0.605 | 0.683 | 0.679 | 0.683 | 0.411 |
+| `scan` * | 0.547 | 0.642 | 0.637 | 0.642 | 0.465 |
+| `recall` | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
+| `recall-fuse` † | 0.515 | 0.608 | 0.596 | 0.608 | 0.239 |
+| `recall-rr` | 0.527 | 0.625 | 0.613 | 0.625 | 0.266 |
+| `recall-fuse-rr` ‡ | 0.513 | 0.608 | 0.604 | 0.608 | 0.298 |
+
+Read from the committed artifact `eval/production/longmemeval/results/summary-120-0.84.0.json`;
+`tests/test_eval_artifact_cited.py` compares every cell with it. **Every restricted row is
+saturated** (hit@5 equals its ceiling), so the table measures how often retrieval reached the
+gold session within depth 50, not ranking quality. \* `scan` has no depth knob (its pool is
+scan-prompt's default). † `recall-fuse` is `recall`, ranking for ranking: the symbolic leg,
+`content_rank(kinds=['memory'])`, returns nothing on this corpus because a memory's `mentions`
+hold only its title and tag words (bug-300). It is not a fusion result. ‡ The difference from
+`recall-rr` comes from the hybrid's wider dense pool, not from fusion. Dense beats symbolic on
+preference (R@5 0.450 vs 0.200) and multi-session questions and loses on knowledge-update and
+single-session-user; per-type rows, setup and history are in
+`eval/production/longmemeval/REPORT.md`. {#longmemeval-result}
+
 ## Measured negatives — do not re-derive these {#negatives}
 
 Ideas built, measured, and rejected; kept in-tree as documented conditions:
