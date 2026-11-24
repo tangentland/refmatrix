@@ -58,6 +58,9 @@ STOPWORDS = frozenset({
 })
 
 
+_EDGE_PUNCT = "?!,;:()[]{}\"'"
+
+
 def content_terms(
     text: str,
     *,
@@ -66,7 +69,9 @@ def content_terms(
 ) -> list[str]:
     """Tokenize `text` into content-search terms for `Store.content_rank`.
 
-    Whitespace split, drop sub-2-char tokens, dedupe case-insensitively,
+    Whitespace split, strip leading/trailing punctuation from each token
+    (bug-301, 2026-11-24: `work?` / `(backstop)` / `ok,` never resolved to
+    their concept), drop sub-2-char tokens, dedupe case-insensitively,
     preserve first-seen order and original case (per-term canonical/variant
     expansion happens inside `content_rank`).
 
@@ -75,6 +80,12 @@ def content_terms(
     whose every token is a function word has nothing else to search on. That
     rule came from `context._ref_terms` and is the reason it is safe to apply
     the stoplist unconditionally at every call site.
+
+    Only the edges are stripped (`?!,;:()[]{}"'`); internal `_ . / - :` stay
+    because symbols carry them (`fov_wedge`, `refmatrix.store`,
+    `src/refmatrix/terms.py`, `bug-301`). A leading `--` is KEPT: `-` is not in
+    the strip set, so `--fuse` stays the literal flag text that docs and code
+    contain, and a hit on `--fuse` is more precise than one on `fuse`.
 
     `strip_kind_prefix` handles `context`'s `kind:name` refs, where the head
     is a kind selector rather than a search term. Only stripped when the head
@@ -89,7 +100,7 @@ def content_terms(
     out: list[str] = []
     seen: set[str] = set()
     for tok in re.split(r"\s+", text):
-        tok = tok.strip()
+        tok = tok.strip().strip(_EDGE_PUNCT)
         if len(tok) < 2 or tok.lower() in seen:
             continue
         seen.add(tok.lower())

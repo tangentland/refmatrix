@@ -438,3 +438,10 @@ def test_bare_concepts_are_not_content_hits(gmd_store):
     for e in bundle.groups.get("content", []):
         if e.entity.kind == "concept":
             assert "#" in e.entity.name
+
+
+def test_query_ending_in_word_question_mark_finds_word(gmd_store):
+    """bug-301: `sneakers?` was grepped literally, so the grep backstop found
+    nothing (`content_rank` tolerated the `?`; the backstop did not)."""
+    bundle = build_context(gmd_store, "sneakers?", max_entities=10)
+    assert bundle.groups.get("grep"), sorted(bundle.groups)
