@@ -50,7 +50,12 @@ CHANNEL_BUDGET_BYTES: "dict[str, int]" = {
     "focus_input": 256,
     "session_start": 9_000,
     "focus_context": 1_500,
-    "precompact": 9_000,
+    # task-compaction-as-handoff R3b (L202 fold, 2026-11-24): `rmx handoff remind`, ONE line
+    # naming `<store>/handoffs/<session>.txt` while a handoff is unread. 512 B holds the line
+    # with a UUID session under a deep store path (the line is ~200 B plus the path).
+    # (`precompact`, 9,000 B, is retired: R2 removed the generated PreCompact recall, and
+    # bsd-cah r1 #m-4 found the channel kept alive only by a hand-written test argv.)
+    "handoff_remind": 512,
     # R11 (rev 6): `rmx recall-state --max-bytes N` on SessionStart compact|clear, own command.
     "recall_state": 9_000,
 }
@@ -64,7 +69,7 @@ HOOK_COMMAND_CHANNELS: "dict[str, tuple[str, ...]]" = {
     "prompt_recall_cmd": ("prompt_recall",),
     "session_start_cmd": ("session_start",),
     "focus_context_cmd": ("focus_context",),
-    "precompact_recall_cmd": ("precompact",),
+    "handoff_remind_cmd": ("handoff_remind",),
     "recall_state_cmd": ("recall_state",),
 }
 
@@ -77,7 +82,7 @@ HOOK_COMMAND_CHANNELS: "dict[str, tuple[str, ...]]" = {
 EVENT_SPLIT: "dict[str, dict[str, int]]" = {
     "UserPromptSubmit": {c: CHANNEL_BUDGET_BYTES[c]
                          for c in ("scan_prompt", "curator_status", "focus_input",
-                                   "prompt_recall")},
+                                   "prompt_recall", "handoff_remind")},
     "SessionStart": {c: CHANNEL_BUDGET_BYTES[c]
                      for c in ("curator_status", "session_start", "focus_context",
                                "recall_state")},
@@ -146,10 +151,11 @@ def _check_tables() -> None:
                              f"{MIN_USEFUL_RECALL_BYTES} B")
 
 
-# PreCompact is not an R0 outcome event (its cap cuts; `#outcome-precompact`), so its channel is
-# placed on no EVENT_SPLIT. The recall channels are the `memory recall --pack` producers.
-_NON_R0_EVENT_CHANNELS = ("precompact",)
-_RECALL_CHANNELS = ("prompt_recall", "session_start", "precompact")
+# Channels on no R0 outcome event: none since the PreCompact recall channel was retired
+# (task-compaction-as-handoff, L202 #m-4). The recall channels are the `memory recall --pack`
+# producers.
+_NON_R0_EVENT_CHANNELS: "tuple[str, ...]" = ()
+_RECALL_CHANNELS = ("prompt_recall", "session_start")
 
 
 _check_tables()

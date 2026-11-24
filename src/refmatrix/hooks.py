@@ -62,6 +62,21 @@ HOOK_ENV = ('export RMX_INVOCATION_SOURCE=hook PATH="$HOME/bin:$HOME/.local/bin:
             "export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; "
             "export TOKENIZERS_PARALLELISM=false; ")
 
+# PreCompact's save-state budget, seconds: ONE overall bound on the save (task-compaction-as-
+# handoff s-2, bsd-cah r1, 2026-11-24). The savestate file is written to disk first (~0.6 s); the
+# budget bounds the STORE COMMIT after it (the STM digest promote: a daemon write that waits on
+# the single writer), the subject filing and the lint. An overrun never loses the commit: the
+# file is on disk, the promote is queued and applied when the writer frees (measured
+# 2026-11-24), and the hook says the commit was deferred. PROVISIONAL: L203 measures the value
+# (live-shaped p99 1.45 s with no writer contention; a held writer adds its whole hold) and the
+# user sets it.
+PRECOMPACT_SAVE_TIMEOUT_S = 10
+# The PreCompact entry's Claude Code `timeout` (seconds) sits this far above the budget, so the
+# harness never kills the hook before rmx's own budget fires and the instruction prints
+# (interpreter start, the instruction, a last short attempt).
+PRECOMPACT_HOOK_MARGIN_S = 30
+
+
 def _store_gate() -> str:
     """The shell lines every generated git hook gates on: exit 0 unless THIS checkout holds a
     store of its own that a sync may write -- a live daemon's socket, or a writer catalog git
@@ -175,7 +190,9 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
     Options (recorded in `.claude/rmx-hooks.json` on apply so --check can
     re-render identically):
       composite_every       scan-prompt `--composite-every N` (None = off)
-      precompact_checkpoint PreCompact `rmx save-state --no-promote --no-sync`
+      precompact_checkpoint PreCompact `rmx save-state --precompact --no-sync` (saves with
+                            promote, then prints the one-line summary instruction); off =
+                            `rmx handoff precompact` (the instruction only)
       stop_promote          Stop runs `rmx focus summarize --promote`
       resume_focus          SessionStart(resume) `rmx focus context --top N`
       enforce               emit the cat-herder enforcement hooks
@@ -411,21 +428,42 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
             ],
         })
         # Task 25.1 R11 (user, 2026-11-11): after compaction and after /clear, re-orient
-        # from the save-state handoff -- PreCompact's `save-state --no-promote` checkpoint
-        # (below) is the newest one when compaction fires. Its OWN entry and command, never
-        # chained: Claude Code drops a SessionStart command's stdout when it exits non-zero
-        # (the 26.2 r2 lesson), and R0 caps each command separately. N is
-        # hook_budget's recall_state TABLE entry, baked as a literal: no `$` in a generated
-        # argv, and never the RMX_HOOK_BUDGET_BYTES override, so the generated text (and
-        # `install-hooks --check`) does not depend on the installing shell's environment.
+        # from the save-state handoff -- PreCompact's checkpoint (below) is the newest one
+        # when compaction fires. Its OWN entry and command, never chained: Claude Code drops
+        # a SessionStart command's stdout when it exits non-zero (the 26.2 r2 lesson), and R0
+        # caps each command separately. N is hook_budget's recall_state TABLE entry, baked as
+        # a literal: no `$` in a generated argv, and never the RMX_HOOK_BUDGET_BYTES override,
+        # so the generated text (and `install-hooks --check`) does not depend on the
+        # installing shell's environment.
+        # task-compaction-as-handoff R3 (L91/L92, 2026-11-14; built L195, 2026-11-24):
+        # `--handoff` writes the FULL report to `.refmatrix/handoffs/<session>.txt` and
+        # injects only a pointer (a full handoff measured 45,870 B, over the hook cap); the
+        # budgeted `--max-bytes N` report is the fallback when the file cannot be written.
         from refmatrix.hook_budget import CHANNEL_BUDGET_BYTES
         block["hooks"]["SessionStart"].append({
             "matcher": "compact|clear",
             "hooks": [{
                 "type": "command",
                 "command": HOOK_ENV
-                + f"rmx recall-state --max-bytes {int(CHANNEL_BUDGET_BYTES['recall_state'])}",
+                + "rmx recall-state --handoff --max-bytes "
+                + f"{int(CHANNEL_BUDGET_BYTES['recall_state'])}",
             }],
+        })
+        # R3b (L93): until the session reads that file, every other tool call is denied, the
+        # pointer is re-said on every prompt, and a Read of it lifts the gate. No matcher on
+        # the gate: every tool, MCP tools included.
+        block["hooks"].setdefault("PreToolUse", []).append({
+            "hooks": [{"type": "command",
+                       "command": _handoff_cmd(refmatrix_root, "gate", per_session=True)}],
+        })
+        block["hooks"]["PostToolUse"].append({
+            "matcher": "Read",
+            "hooks": [{"type": "command",
+                       "command": _handoff_cmd(refmatrix_root, "pulled", per_session=False)}],
+        })
+        block["hooks"].setdefault("UserPromptSubmit", []).append({
+            "hooks": [{"type": "command",
+                       "command": _handoff_cmd(refmatrix_root, "remind", per_session=True)}],
         })
         if resume_focus:
             # The prior session's live STM threads, on resume only.
@@ -458,55 +496,68 @@ def _claude_hook_block(refmatrix_root: Path, primer: bool = True,
                 ),
             }],
         })
-        block["hooks"]["PreCompact"] = [{
-            "hooks": [
-                # Inject the FULL STM digest before compaction so the compacted
-                # context keeps the session's topics, git milestones, intent
-                # arc, and top-N symbols — with L<n> refs into the on-disk full
-                # log, so depth is still recoverable post-compact (`focus show`).
-                # This is the "compaction keeps the real summary" path.
-                {
-                    "type": "command",
-                    # --promote: the digest must GRADUATE, not just print
-                    # (2026-07-06 leak: without it compaction kept the
-                    # digest on screen and never wrote it). Loud. PreCompact
-                    # is the catch-up for a Stop promote that timed out, so
-                    # its budget is longer — but bounded: past 30 s rmx fails
-                    # loud instead of the harness killing it silently at 60 s
-                    # (bsd-plan2-r3 #m-5).
-                    "command": HOOK_ENV + "rmx focus summarize --promote --timeout 30",
-                },
-                {
-                    "type": "command",
-                    # Task 25.1 R7: PreCompact stdout reaches the agent (R0: cut at the
-                    # same 10,000-unit cap, head kept), so the recall stays, packed.
-                    "command": (
-                        HOOK_ENV
-                        + "rmx memory recall --recent --since 1h "
-                        "--k 30 --scope both --pack --timeout 30"
-                    ),
-                },
-                # Pre-compact checkpoint: the handoff file for the next
-                # instance. --no-promote (the summarize above did it),
-                # --no-sync (a 30 s bridge at compaction is the wrong
-                # moment; SessionStart catch-up + manual save-state cover
-                # the store). Output NOT swallowed — a red "memory bridge
-                # FAILED" or lint line must reach the transcript.
-                *([{
-                    "type": "command",
-                    "command": (
-                        HOOK_ENV + "rmx save-state --no-promote --no-sync "
-                        "-m \"auto: pre-compact checkpoint\""
-                    ),
-                }] if precompact_checkpoint else []),
-            ],
-        }]
+        # task-compaction-as-handoff R1/R2/R4 (L195, 2026-11-24): ONE PreCompact command.
+        # It saves state WITH promote for the envelope's session (the promote that
+        # `focus summarize --promote` did beside it moved in, first), and only then prints
+        # the one-line summary instruction: every PreCompact stdout byte becomes summary
+        # instructions, so the `memory recall --recent` pack and save-state's progress lines
+        # that used to print here are gone (progress and errors go to stderr). --no-sync: a
+        # 30 s bridge at compaction is the wrong moment; SessionStart catch-up and manual
+        # save-state cover the store. It exits 0 even when the save fails (lead ruling L200),
+        # naming the last good save-state. Checkpoint off: the instruction only.
+        # s-2 (bsd-cah r1, L203): ONE overall bound, `PRECOMPACT_SAVE_TIMEOUT_S`, and the
+        # entry's Claude Code `timeout` above it, so rmx fails loud (commit deferred, the
+        # instruction still printed) before the harness could kill the hook.
+        if precompact_checkpoint:
+            pre_hook = {"type": "command",
+                        "command": (HOOK_ENV + "rmx save-state --precompact --no-sync "
+                                    f"--timeout {int(PRECOMPACT_SAVE_TIMEOUT_S)} "
+                                    "-m \"auto: pre-compact checkpoint\""),
+                        "timeout": int(PRECOMPACT_SAVE_TIMEOUT_S + PRECOMPACT_HOOK_MARGIN_S)}
+        else:
+            pre_hook = {"type": "command", "command": HOOK_ENV + "rmx handoff precompact"}
+        block["hooks"]["PreCompact"] = [{"hooks": [pre_hook]}]
 
     # cat-herder enforcement hooks — emitted by THIS generator so the
     # settings file has one author. Auto mode: each entry only when its
     # script is on disk under the project.
     _add_enforce_entries(block, project_root, enforce)
     return block
+
+
+# The session id as the hook envelope spells it, for the shell fast path of the handoff hooks.
+# Its character class is `handoff.SESSION_SLUG_RE`'s, so the file the shell tests is the file
+# Python writes.
+_ENVELOPE_SESSION_RE = '"session_id"[[:space:]]*:[[:space:]]*"([A-Za-z0-9_-]+)"'
+
+
+def _handoff_cmd(refmatrix_root: Path, sub: str, *, per_session: bool) -> str:
+    """A `rmx handoff <sub>` hook behind a shell fast path (task-compaction-as-handoff R3b,
+    2026-11-24). The gate fires on EVERY tool call and the reminder on every prompt; starting
+    Python for each, when nearly always no handoff is pending, would cost an interpreter start
+    per call. So bash answers first: `per_session` reads the envelope's session id and exits
+    0 unless `<store>/handoffs/<session>.gate` exists (an id the pattern does not match falls
+    through to Python, which decides); otherwise any `*.gate` sends the call to Python. The
+    envelope is handed on unchanged.
+
+    Python decides on the SAME store the shell tested (bsd-cah r1 #m-1): `REFMATRIX_ROOT` is
+    set to the baked root for that one `rmx`, so a hook whose cwd is outside the project does
+    not resolve another store and allow.
+
+    Exit 2 is never passed through (bsd-cah r1 #s-1, bug-308): Claude Code reads a PreToolUse
+    exit 2 as a block, and click exits 2 for a usage error, so an older `rmx` with no
+    `handoff` group (a rollback while a gate exists) blocked every tool with no way out. The
+    gate denies with JSON at exit 0; any other failure is exit 1: loud, and the call goes
+    ahead. No `|| true`."""
+    root = str(Path(refmatrix_root))
+    hd = str(Path(refmatrix_root) / "handoffs")
+    run = (f"REFMATRIX_ROOT='{root}' rmx handoff {sub}; s=$?; "
+           "if [ $s -eq 2 ]; then exit 1; fi; exit $s")
+    if per_session:
+        return (HOOK_ENV + f"J=$(cat); re='{_ENVELOPE_SESSION_RE}'; "
+                f"if [[ $J =~ $re ]] && [ ! -e '{hd}/'\"${{BASH_REMATCH[1]}}\".gate ]; "
+                f"then exit 0; fi; printf '%s' \"$J\" | {run}")
+    return (HOOK_ENV + f"set -- '{hd}/'*.gate; if [ ! -e \"$1\" ]; then exit 0; fi; {run}")
 
 
 def _optional_project_hook(script: str) -> str:
@@ -1037,6 +1088,8 @@ SessionStart hook re-runs the bridge in the background as catch-up for files
 written outside save-state. Write memory files BEFORE `rmx save-state`, not
 after.
 
+After compaction or `/clear` the handoff is a file: Read the `.refmatrix/handoffs/<session>.txt` the hook names before any other action; it is the authoritative state (every other tool call is denied until it is read).
+
 ## To remove
 
 Delete `.refmatrix/`, the `rmx` lines from `.git/hooks/*`, and the rmx
@@ -1306,7 +1359,7 @@ _RMX_HOOK_SIGNATURES = (
     # rmx-generated memory/STM hooks (also carry the marker) and the
     # cat-herder enforcement hooks this generator now emits.
     "rmx ingest-gmd --as-memory", "rmx save-state", "rmx focus summarize",
-    "rmx focus context",
+    "rmx focus context", "rmx recall-state", "rmx handoff",
     # EXACT script names — a prefix (`.claude/hooks/enforce-`) classified any
     # user hook named enforce-*.sh as rmx's and `--force` deleted it
     # (bsd-plan2 #b-2, the failure mode this plan exists to end).

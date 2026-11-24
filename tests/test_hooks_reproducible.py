@@ -52,7 +52,9 @@ def test_precompact_checkpoint_is_loud_and_no_sync(tmp_path):
     pre = [c for _, _, c in _cmds(block, "PreCompact")]
     ss = [c for c in pre if "rmx save-state" in c]
     assert ss, "PreCompact must checkpoint via save-state"
-    assert "--no-sync" in ss[0] and "--no-promote" in ss[0]
+    # task-compaction-as-handoff R1 (L195, 2026-11-24): PreCompact's save-state runs WITH
+    # promote, first; it was `--no-promote` beside a separate `focus summarize --promote`.
+    assert "--no-sync" in ss[0] and "--no-promote" not in ss[0], ss[0]
     assert ">/dev/null" not in ss[0] and "|| true" not in ss[0]
     off = _claude_hook_block(tmp_path / ".refmatrix", precompact_checkpoint=False)
     assert not [c for _, _, c in _cmds(off, "PreCompact") if "save-state" in c]

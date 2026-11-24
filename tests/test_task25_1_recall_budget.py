@@ -108,10 +108,6 @@ def _ss(fx, *, append: str = "", session: str = s.SESSION, **extra):
                                                 source="resume"), **extra)
 
 
-def _pc_cmds(fx) -> list[str]:
-    return s.precompact_recall_cmds(fx.root)
-
-
 def _ok(r, what):
     assert r.returncode == 0, (f"{what}: exit {r.returncode}; stderr: "
                                f"{r.stderr.decode('utf-8', 'replace')[-1500:]}")
@@ -130,9 +126,11 @@ def _pack(r, what) -> "s.Pack":
 
 
 # R1's seven channels plus rev 6's `recall_state` (R11: "a CHANNEL_BUDGET_BYTES entry like every
-# other producer").
+# other producer"), less `precompact`: task-compaction-as-handoff R2 removed the generated
+# PreCompact recall, and bsd-cah r1 #m-4 (L202) retires its budget channel with it; plus
+# `handoff_remind`, the R3b UserPromptSubmit reminder's own channel (L202 fold).
 CHANNELS = {"prompt_recall", "scan_prompt", "curator_status", "focus_input", "session_start",
-            "focus_context", "precompact", "recall_state"}
+            "focus_context", "recall_state", "handoff_remind"}
 EVENTS = {"UserPromptSubmit", "SessionStart"}
 
 
@@ -574,25 +572,12 @@ def test_ac1_ac4a_session_start_argv_within_budget(fx):
     _pack(r, "SessionStart argv")
 
 
-def test_ac1_ac4a_precompact_argv_within_budget_or_dropped(fx):
-    """AC-1 + AC-4 (a) `--recent --since 1h`: ≤ budget("precompact"), or (R0 drops it) the
-    generated PreCompact block has no recall command."""
-    cmds = _pc_cmds(fx)
-    if not cmds:
-        return            # R7: R0 found PreCompact stdout does not reach the agent
-    (cmd,) = cmds
-    r = s.run_cmd(fx, cmd, env_in=s.envelope("", event="PreCompact"))
-    _ok(r, "PreCompact argv")
-    s.assert_within(len(r.stdout), "precompact", "AC-1 PreCompact argv")
-    _pack(r, "PreCompact argv")
-
-
 # ---- AC-2: --max-bytes N on every channel, multibyte ------------------------------------------------
 
 
 @pytest.mark.parametrize("n", [2000, 4000, 9000])
-@pytest.mark.parametrize("channel", ["prompt_recall", "session_start", "precompact",
-                                     "scan_prompt", "focus_context"])
+@pytest.mark.parametrize("channel", ["prompt_recall", "session_start", "scan_prompt",
+                                     "focus_context"])
 def test_ac2_max_bytes_bounds_every_channel(fx, channel, n):
     """AC-2: `--max-bytes N` caps the payload at N UTF-8 bytes on every channel (the fixture's
     hook lines and bodies carry ≥ 4 `—`/`→` each)."""
@@ -601,11 +586,6 @@ def test_ac2_max_bytes_bounds_every_channel(fx, channel, n):
         r = _q(fx, append=flag)
     elif channel == "session_start":
         r = _ss(fx, append=flag)
-    elif channel == "precompact":
-        cmds = _pc_cmds(fx)
-        if not cmds:
-            return
-        r = s.run_cmd(fx, cmds[0] + flag, env_in=s.envelope("", event="PreCompact"))
     elif channel == "scan_prompt":
         cmd = s.scan_prompt_part(fx.root).replace(" 2>/dev/null || true", "")
         r = s.run_cmd(fx, cmd + flag, env_in=s.envelope(QUESTION))
@@ -1402,6 +1382,37 @@ def test_ac7_cli_prints_the_verbs_text_byte_for_byte(fx, monkeypatch):
     assert r.stdout == res["text"].encode("utf-8"), (len(r.stdout), res["payload_bytes"])
 
 
+def test_every_pack_mode_resolves_to_a_live_budget_channel():
+    """bsd-cah confirm-lite #s-3 (L208, 2026-11-24): `verbs._PACK_CHANNEL_OF_MODE` is THE map
+    from a recall mode to the budget channel it packs for when the caller names none (the CLI
+    reads it too, so the copies cannot drift). Every value must be a live
+    `hook_budget.CHANNEL_BUDGET_BYTES` channel. 4784cdd5: `"recent"` still mapped to the
+    retired `precompact`, so `pack_recall(mode="recent")` raised "unknown channel"."""
+    from refmatrix import hook_budget, verbs
+    dead = {m: c for m, c in verbs._PACK_CHANNEL_OF_MODE.items()
+            if c not in hook_budget.CHANNEL_BUDGET_BYTES}
+    assert not dead, f"s-3: pack modes mapped to no budget channel: {dead}"
+    assert set(verbs._PACK_CHANNEL_OF_MODE) >= {"session-start", "recent", "subject", "dense"}
+
+
+@pytest.mark.parametrize("via", ["verb", "mcp"])
+def test_recent_pack_through_the_verb_and_the_mcp_tool(fx, monkeypatch, via):
+    """bsd-cah confirm-lite #s-3 (L208): `rmx_memory_recall(recent=true, pack=true)` with no
+    `max_bytes`, through the verb and through the MCP tool function, on the daemon-served
+    fixture: a pack within the `session_start` budget, no error. 4784cdd5: `VerbArgsError
+    "unknown channel 'precompact'"` (it worked at cbbe9e3f)."""
+    from refmatrix import mcp, verbs
+    monkeypatch.setenv("RMX_HOME", str(fx.home))
+    if via == "verb":
+        res = verbs.memory_recall(fx.root, recent=True, k=8, scope="both", pack=True)
+    else:
+        res = mcp.TOOLS["rmx_memory_recall"]["fn"](
+            {"recent": True, "k": 8, "scope": "both", "pack": True, "root": str(fx.root)})
+    assert isinstance(res, dict) and not res.get("error"), f"s-3 ({via}): {res!r}"[:600]
+    assert "text" in res and res["text"], f"s-3 ({via}): no pack text: keys {sorted(res)}"
+    assert res["payload_bytes"] <= s.budget_or_none("session_start"), res["payload_bytes"]
+
+
 def test_ac7_schema_has_pack_params_and_never_embedder_policy():
     """AC-7 / r4 #n2: `pack`, `max_bytes`, `include_subjects` are verb params (MCP schema) and
     CLI options; `embedder_policy` rides `**internal` and is absent from the schema."""
@@ -1679,23 +1690,72 @@ def test_ac12_curator_status_alone_within_its_budget(fx):
     s.assert_within(len(r.stdout), "curator_status", "AC-12 curator status")
 
 
+# The budget of each generated UserPromptSubmit COMMAND, by what it runs; None = unbudgeted (a
+# command this map does not know is a failure, never silently charged to prompt_recall).
+def _ups_budget_of(cmd: str) -> "int | None":
+    hb = s.hook_budget_mod()
+    if hb is None:
+        return None
+    if "rmx scan-prompt" in cmd:
+        return s.command_budget("scan_cmd")
+    for needle, chan in (("rmx focus hook --event input", "focus_input"),
+                         ("rmx memory recall --stdin-json", "prompt_recall"),
+                         ("rmx handoff remind", "handoff_remind")):
+        if needle in cmd:
+            return hb.budget(chan) if chan in hb.CHANNEL_BUDGET_BYTES else None
+    return None
+
+
+# A Claude Code session id is a UUID (36 chars): the reminder's worst case names
+# `<root>/handoffs/<uuid>.txt` in its one line.
+_REMIND_SESSION = "5f1c2a9e-0b7d-4e3a-9c41-2d8e6f7a1b30"
+
+
 def test_ac12_each_user_prompt_submit_command_within_its_command_budget(fx):
     """AC-12 under R0 outcome (A): each generated UserPromptSubmit COMMAND's stdout ≤ its
-    command budget (`scan_cmd` = scan_prompt + curator_status; focus input; recall)."""
-    got = {}
-    for _ev, _m, cmd in h.hook_entries(fx.root, "UserPromptSubmit"):
-        r = s.run_cmd(fx, cmd, env_in=s.envelope(QUESTION))
-        got[cmd] = len(r.stdout)
-    assert len(got) == 3, list(got)
-    for cmd, n in got.items():
-        if "scan-prompt" in cmd:
-            b = s.command_budget("scan_cmd")
-        elif "focus hook --event input" in cmd:
-            b = s.budget_or_none("focus_input")
-        else:
-            b = s.budget_or_none("prompt_recall")
-        assert b is not None, f"R1 not built; {s.after_env(cmd)[:60]!r} printed {n} B"
-        assert n <= b, f"{s.after_env(cmd)[:60]!r}: {n} B > {b} B"
+    command budget (`scan_cmd` = scan_prompt + curator_status; focus input; recall; and, since
+    task-compaction-as-handoff R3b, the handoff reminder against its own channel
+    `handoff_remind`, L202 fold).
+
+    The reminder prints only while a session's handoff is unread, so a UUID-shaped session is
+    handed off first (the generated compact|clear `recall-state` entry, source clear) and the
+    prompt is that session's: its one line names the longest real path under this short root.
+    The gate is lifted afterwards through the generated PostToolUse Read hook, so the module's
+    other tests see no pending handoff. Must-fail case: a 5th, unbudgeted command has no
+    budget. cbbe9e3f: `hook_budget` has no `handoff_remind` channel."""
+    (_m, rs_cmd), = [(m, c) for _e, m, c in h.hook_entries(fx.root, "SessionStart")
+                     if "recall-state" in c]
+    r = s.run_cmd(fx, rs_cmd, env_in=s.envelope("", session=_REMIND_SESSION,
+                                                event="SessionStart", source="clear"))
+    _ok(r, "compact|clear recall-state (arming the reminder)")
+    m = re.search(r"/\S+/handoffs/\S+?\.txt", r.stdout.decode("utf-8", "replace"))
+    assert m, r.stdout[:400]
+    path = m.group(0)
+    try:
+        got = {}
+        for _ev, _m2, cmd in h.hook_entries(fx.root, "UserPromptSubmit"):
+            rr = s.run_cmd(fx, cmd, env_in=s.envelope(QUESTION, session=_REMIND_SESSION))
+            got[cmd] = rr.stdout
+        assert len(got) == 4, [s.after_env(c)[:50] for c in got]
+        reminder = [out for c, out in got.items() if "rmx handoff remind" in c]
+        assert len(reminder) == 1 and path.encode() in reminder[0], (
+            "fixture: the reminder did not fire for the handed-off session", reminder)
+        assert len(reminder[0].decode("utf-8").strip().splitlines()) == 1, reminder[0]
+        for cmd, out in got.items():
+            b = _ups_budget_of(cmd)
+            assert b is not None, (f"no budget for {s.after_env(cmd)[:60]!r} (printed "
+                                   f"{len(out)} B); `handoff_remind` must be a hook_budget channel")
+            assert len(out) <= b, f"{s.after_env(cmd)[:60]!r}: {len(out)} B > {b} B"
+    finally:
+        pulled = [c for _e, _m3, c in h.hook_entries(fx.root, "PostToolUse")
+                  if "rmx handoff pulled" in c]
+        for c in pulled:
+            s.run_cmd(fx, c, env_in={"session_id": _REMIND_SESSION, "hook_event_name":
+                                     "PostToolUse", "tool_name": "Read",
+                                     "tool_input": {"file_path": path},
+                                     "tool_response": {"type": "text"}, "cwd": "",
+                                     "transcript_path": ""})
+    assert _ups_budget_of(s.HOOK_ENV + "rmx brand-new-prompt-hook --stdin-json") is None
 
 
 def test_ac12b_focus_context_within_its_budget(fx):
@@ -1804,8 +1864,14 @@ def _rs_entry(root: Path) -> "tuple[str | None, str]":
 
 def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tmp_path):
     """AC-15 (a): exactly one SessionStart entry whose matcher covers compact AND clear, whose
-    command is `rmx recall-state --max-bytes N` (N = budget("recall_state") ≤ 9,000), alone
-    (not chained to another command); startup|resume keep their entries."""
+    command is `rmx recall-state … --max-bytes N` (N = budget("recall_state") ≤ 9,000), alone
+    (not chained to another command); startup|resume keep their entries.
+
+    Amended for task-compaction-as-handoff R3 (L195, 2026-11-24): the entry now writes the FULL
+    report to a per-session handoff file and prints a pointer; the budgeted inline report is its
+    fallback, so `--max-bytes N` stays in the argv but the argv is no longer exactly
+    `rmx recall-state --max-bytes N` (the pulled form is pinned in
+    tests/test_compaction_handoff.py)."""
     root = tmp_path / "proj" / ".refmatrix"
     root.mkdir(parents=True)
     matcher, cmd = _rs_entry(root)
@@ -1813,7 +1879,8 @@ def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tm
     tail = s.after_env(cmd)
     n = s.budget_or_none("recall_state")
     assert n is not None and n <= 9000, f"R1 recall_state budget: {n}"
-    assert tail == f"rmx recall-state --max-bytes {n}", tail
+    assert tail.startswith("rmx recall-state") and f"--max-bytes {n}" in tail, tail
+    assert "$" not in tail and ";" not in tail and "&&" not in tail, tail
     entries = [e for e in h.hook_block(root)["hooks"]["SessionStart"]
                if any("recall-state" in x["command"] for x in e["hooks"])]
     assert len(entries) == 1 and len(entries[0]["hooks"]) == 1, entries
@@ -1822,10 +1889,18 @@ def test_ac15a_generator_emits_one_unchained_compact_clear_recall_state_entry(tm
     assert starts, "startup|resume entries vanished"
 
 
+def _rs_fallback_cmd() -> str:
+    """The budgeted inline recall-state, as a hook runs it: 25.1's compact|clear payload, which
+    task-compaction-as-handoff R3 keeps as the FALLBACK when the handoff file cannot be written
+    (the generated entry now prints a pointer; tests/test_compaction_handoff.py pins that)."""
+    return s.HOOK_ENV + f"rmx recall-state --max-bytes {s.budget_or_none('recall_state')}"
+
+
 def test_ac15b_compact_runs_recall_state_naming_the_checkpoint_within_n(rs):
     """AC-15 (b): run through bash -c with a SessionStart {"source": "compact"} envelope: stdout
-    ≤ N bytes, it names the PreCompact checkpoint as the handoff, exit 0."""
-    _m, cmd = _rs_entry(rs.root)
+    ≤ N bytes, it names the PreCompact checkpoint as the handoff, exit 0. Since
+    task-compaction-as-handoff R3 this is the budgeted fallback form, run as a hook."""
+    cmd = _rs_fallback_cmd()
     r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="compact"))
     _ok(r, "recall-state entry (compact)")
     n = s.budget_or_none("recall_state")
@@ -1841,7 +1916,7 @@ def test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer(rs):
     _ok(full, "rmx recall-state (full)")
     n = 700
     assert len(full.stdout) > n, f"fixture: full recall-state is only {len(full.stdout)} B"
-    _m, cmd = _rs_entry(rs.root)
+    cmd = _rs_fallback_cmd()      # the budgeted form (task-compaction-as-handoff R3 fallback)
     r = s.run_cmd(rs, cmd + f" --max-bytes {n}",
                   env_in=s.envelope("", event="SessionStart", source="compact"))
     _ok(r, f"recall-state --max-bytes {n}")
@@ -1853,8 +1928,10 @@ def test_ac15c_recall_state_over_n_keeps_whole_blocks_head_and_a_trailer(rs):
 
 def test_ac15d_no_daemon_prints_the_file_blocks_and_exits_0(rs):
     """AC-15 (d): no daemon: exit 0 and the file-based blocks (the handoff, git) printed; the
-    missing daemon leg is SAID (the spec's "counted" names no recorder; see the summary)."""
-    _m, cmd = _rs_entry(rs.root)
+    missing daemon leg is SAID (the spec's "counted" names no recorder; see the summary).
+    The budgeted fallback form since task-compaction-as-handoff R3 (the file it writes is
+    pinned in tests/test_compaction_handoff.py)."""
+    cmd = _rs_fallback_cmd()
     r = s.run_cmd(rs, cmd, env_in=s.envelope("", event="SessionStart", source="clear"))
     _ok(r, "recall-state entry (clear, no daemon)")
     out = r.stdout.decode("utf-8")
@@ -1974,8 +2051,8 @@ _PRODUCER_OF = (
     ("UserPromptSubmit", "rmx memory recall --stdin-json", "prompt_recall"),
     ("SessionStart", "rmx memory recall --session-start", "session_start"),
     ("SessionStart", "rmx focus context", "focus_context"),
-    ("PreCompact", "rmx memory recall --recent", "precompact"),
     ("SessionStart", "rmx recall-state", "recall_state"),
+    ("UserPromptSubmit", "rmx handoff remind", "handoff_remind"),
 )
 
 
@@ -1992,7 +2069,7 @@ def _generated_argv(root: Path, event: str, needle: str) -> list[str]:
 
 
 def test_m2_by_producer_counts_every_hook_producer(tmp_path):
-    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for all 8 channels, not only
+    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for every channel (`precompact` retired and `handoff_remind` added by the L202 fold), not only
     `recall_state`. A cli.log is written whose rows carry the argv of each GENERATED hook
     producer (source "hook", a distinct size each, two for `prompt_recall`), plus rows that
     must count nowhere: the same commands run interactively, a hook `focus hook --event tool`,

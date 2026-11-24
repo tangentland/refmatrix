@@ -20,6 +20,15 @@
         ]
       },
       {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; set -- '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'*.gate; if [ ! -e \"$1\" ]; then exit 0; fi; REFMATRIX_ROOT='/Users/tholley/claude_tools/refmatrix/.refmatrix' rmx handoff pulled; s=$?; if [ $s -eq 2 ]; then exit 1; fi; exit $s"
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
           {
@@ -52,7 +61,7 @@
           },
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx focus summarize --promote --timeout 5"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx focus summarize --promote --timeout 8"
           }
         ]
       }
@@ -108,7 +117,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx recall-state --max-bytes 9000"
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx recall-state --handoff --max-bytes 9000"
           }
         ]
       },
@@ -148,6 +157,14 @@
         "hooks": [
           {
             "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; J=$(cat); re='\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\"'; if [[ $J =~ $re ]] && [ ! -e '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'\"${BASH_REMATCH[1]}\".gate ]; then exit 0; fi; printf '%s' \"$J\" | REFMATRIX_ROOT='/Users/tholley/claude_tools/refmatrix/.refmatrix' rmx handoff remind; s=$?; if [ $s -eq 2 ]; then exit 1; fi; exit $s"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx memory recall --stdin-json --k 12 --scope both --pack --timeout 5"
           }
         ]
@@ -160,6 +177,14 @@
           {
             "type": "command",
             "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx focus hook --event tool-pre 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; J=$(cat); re='\"session_id\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\"'; if [[ $J =~ $re ]] && [ ! -e '/Users/tholley/claude_tools/refmatrix/.refmatrix/handoffs/'\"${BASH_REMATCH[1]}\".gate ]; then exit 0; fi; printf '%s' \"$J\" | REFMATRIX_ROOT='/Users/tholley/claude_tools/refmatrix/.refmatrix' rmx handoff gate; s=$?; if [ $s -eq 2 ]; then exit 1; fi; exit $s"
           }
         ]
       },
@@ -191,15 +216,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx focus summarize --promote --timeout 30"
-          },
-          {
-            "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx memory recall --recent --since 1h --k 30 --scope both --pack --timeout 30"
-          },
-          {
-            "type": "command",
-            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx save-state --no-promote --no-sync -m \"auto: pre-compact checkpoint\""
+            "command": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; rmx save-state --precompact --no-sync --timeout 10 -m \"auto: pre-compact checkpoint\"",
+            "timeout": 40
           }
         ]
       }

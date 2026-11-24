@@ -187,10 +187,6 @@ def recall_cmd(root: Path, event: str) -> str:
     return h.generated_cmd(root, event, needle)
 
 
-def precompact_recall_cmds(root: Path) -> list[str]:
-    return [c for ev, _m, c in h.hook_entries(root, "PreCompact") if "memory recall" in c]
-
-
 def scan_prompt_part(root: Path) -> str:
     """The generated scan-prompt command WITHOUT its chained `curator status` (the same command
     text up to the ` ; ` that starts the curator leg)."""

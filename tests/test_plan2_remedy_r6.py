@@ -336,7 +336,9 @@ def test_budget_spent_before_the_global_leg_keeps_the_project_rows(tmp_path, mon
 def test_precompact_recall_is_bounded_and_hook_env_is_hook_mode(tmp_path, held, monkeypatch):
     block = _claude_hook_block(tmp_path / ".refmatrix")
     pre = [c for _, _, c in _cmds(block, "PreCompact") if "memory recall --recent" in c]
-    assert pre and all("--timeout 30" in c for c in pre), pre
+    # task-compaction-as-handoff R2 (L195, 2026-11-24) removes the generated PreCompact recall;
+    # where one is generated it stays bounded. The hook-mode half below is unchanged.
+    assert all("--timeout 30" in c for c in pre), pre
     # the generated env marks every hook; the CLI treats it as hook mode
     monkeypatch.setattr(cli_mod, "_root", lambda: held.root)
     monkeypatch.setenv("RMX_INVOCATION_SOURCE", "hook")

@@ -35,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from refmatrix.hooks import HOOK_ENV
 from tests import task21_1_support as h
 
 SESSION = "sess-emit"
@@ -515,11 +516,17 @@ def test_ac8c_session_start_channel_through_the_generated_sessionstart_recall(st
 
 
 def test_ac8c_precompact_channel_and_it_is_the_only_generated_recent_recall(store):
-    """AC-8c precompact: the GENERATED PreCompact recall command (`--recent`, hook invocation)
-    appends `precompact` events; and a scan of the generated config shows it is the ONLY
-    generated command combining `memory recall` with `--recent` (R11's recall_channel rule 3)."""
+    """AC-8c precompact: a hook-invoked `--recent` recall (the command 25.1 generated for
+    PreCompact) appends `precompact` events; and a scan of the generated config shows NO other
+    generated command combines `memory recall` with `--recent` (R11's recall_channel rule 3).
+
+    Amended for task-compaction-as-handoff R2 (L195, 2026-11-24): PreCompact may print only the
+    one-line summary instruction, so the generated PreCompact recall is gone and the channel is
+    exercised through the same argv run as a hook; the generated config holds no `--recent`
+    recall at all."""
     root = store
-    cmd = h.generated_cmd(root, "PreCompact", "memory recall --recent")
+    cmd = (HOOK_ENV + "rmx memory recall --recent --since 1h --k 30 --scope both --pack "
+           "--timeout 30")
     before = h.line_count(_ev_path(root))
     h.run_hook(cmd, root=root, envelope={"session_id": SESSION, "trigger": "auto",
                                          "hook_event_name": "PreCompact"},
@@ -528,7 +535,7 @@ def test_ac8c_precompact_channel_and_it_is_the_only_generated_recent_recall(stor
                    kind_ok=lambda k: k == "memory", partition_ok=lambda p: p == "intuition")
     recents = [(ev, c) for ev, _m, c in h.hook_entries(root)
                if "memory recall" in c and "--recent" in c]
-    assert recents == [("PreCompact", cmd)], recents
+    assert recents == [], recents
 
 
 @pytest.mark.parametrize("argv", [["memory", "recall", "quasar ledger", "--json"],

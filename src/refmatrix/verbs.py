@@ -1131,8 +1131,12 @@ def recall_rows_filter(rows: "list[dict]", patterns) -> "list[dict]":
             if not mt_excluded(r.get("mtype"), patterns) and not is_stale_subject(r)]
 
 
-# The channel each recall mode packs for when the caller names none (an MCP `pack=true`).
-_PACK_CHANNEL_OF_MODE = {"session-start": "session_start", "recent": "precompact",
+# The channel each recall mode packs for when the caller names none (an MCP `pack=true`), THE
+# map: `cli.memory_recall`'s `--pack` reads it too. `recent` packs like the session-start list
+# since the PreCompact recall's `precompact` channel was retired (task-compaction-as-handoff
+# L202 #m-4); bsd-cah confirm-lite #s-3 (L208, 2026-11-24) found this copy still naming it, so
+# `rmx_memory_recall(recent=true, pack=true)` raised "unknown channel".
+_PACK_CHANNEL_OF_MODE = {"session-start": "session_start", "recent": "session_start",
                          "subject": "prompt_recall", "dense": "prompt_recall"}
 
 
@@ -1621,15 +1625,27 @@ def ingest(root: Path, *, path: str | None = None,
 def save_state(root: Path, *, message: str | None = None,
                promote: bool = True, dry_run: bool = False,
                session: str | None = None, memory_dir: str | None = None,
-               lint: bool = True, sync: bool = True) -> dict:
+               lint: bool = True, sync: bool = True,
+               transcript: str | None = None, timeout: float | None = None) -> dict:
     """The CLI `rmx save-state` calls this and renders; `--commit` (git) is a
     CLI-only post-step. `dry_run` returns the rendered `doc` and writes
     nothing. Result carries `events`, `target`, `promoted`, `subject`,
-    `lint`, `filed_subject`, `sync`. A failed promote or memory bridge raises
-    `SaveStateIncompleteError` (with that result) AFTER the handoff is written."""
+    `lint`, `filed_subject`, `sync`, `active_goal`. A failed promote or memory bridge raises
+    `SaveStateIncompleteError` (with that result) AFTER the handoff is written.
+
+    `transcript` (task-compaction-as-handoff R6, L198, 2026-11-24): the session's Claude Code
+    transcript, whose active `/goal` becomes the save-state's `{#active-goal}` block; the
+    PreCompact hook passes its envelope's `transcript_path`. Without it, the transcript Claude
+    Code keeps for the session id is used when it exists (`handoff.session_transcript_path`).
+
+    `timeout` (s-2, L202/L203): ONE overall bound in seconds. The savestate file is written to
+    disk first; the store commit (the promote), the subject filing and the lint then get what
+    is left, one attempt each. An overrun raises `SaveStateIncompleteError` with the file
+    written, so the caller says the commit was deferred; nothing is lost."""
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
+    deadline = _time.monotonic() + float(timeout) if timeout is not None else None
     sess, session_source = resolve_session_source(root, session, purpose="write")
     s = stm_mod.Stm(root, sess)
     memdir = (Path(memory_dir).resolve() if memory_dir
@@ -1638,7 +1654,7 @@ def save_state(root: Path, *, message: str | None = None,
         res = handoff.compose_save_state(
             s, root, repo=repo, memdir=memdir,
             today=_time.strftime("%Y-%m-%d"), message=message,
-            promote=promote, dry_run=dry_run)
+            promote=promote, dry_run=dry_run, transcript=transcript, deadline=deadline)
     except handoff.SaveStateWriteError as exc:
         # A save that could not write is an error to EVERY caller, never a
         # result with a `target` (task 26.3 remedy-r1).
@@ -1656,7 +1672,8 @@ def save_state(root: Path, *, message: str | None = None,
     if dry_run:
         res["dry_run"] = True
         return res
-    fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync)
+    fin = handoff.finalize_save_state(s, root, res, repo=repo, lint=lint, sync=sync,
+                                      deadline=deadline)
     res["lint"] = fin.get("lint")
     res["filed_subject"] = fin.get("filed_subject")
     # A subject-filing failure is a memory-path failure: carried, not dropped
@@ -3588,6 +3605,13 @@ INTERNAL_CLI: dict[tuple[str, ...], str] = {
     ("learn", "on"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
     ("learn", "off"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
     ("learn", "status"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
+    # task-compaction-as-handoff R3b (L202 fold; classification ruled L204, 2026-11-24).
+    **{("handoff", sub): (f"hook plumbing, invoked only by the generated hooks "
+                          f"(task-compaction-as-handoff): the {what} — {_INTERNAL_DECISION}")
+       for sub, what in (("gate", "PreToolUse read gate"),
+                         ("pulled", "PostToolUse(Read) pull marker"),
+                         ("remind", "UserPromptSubmit reminder"),
+                         ("precompact", "PreCompact instruction with the checkpoint off"))},
 }
 
 # The six `_alias` copies: a HIDDEN command running the same callback as a
