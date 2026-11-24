@@ -1090,7 +1090,9 @@ def test_precompact_overrun_still_instructs_and_never_loses_the_commit():
     `_PingOnlyDaemon`: answers ping, stalls every other op) and the budget knob test-sized
     (`--timeout 2` in place of N), the PreCompact command exits 0 with the instruction naming
     a save-state, `savestate_<session>.md` is on disk, and stderr says the store commit was
-    deferred. No elapsed assert: the subprocess deadline is the hang guard (rule 6).
+    deferred. L204: `rmx telemetry --context` then counts the deferral under
+    `handoff.precompact_deferred` (1, with the session), and a later in-time PreCompact adds
+    nothing. No elapsed assert: the subprocess deadline is the hang guard (rule 6).
     cbbe9e3f: no `--timeout` on the command."""
     from tests.test_plan2_remedy import _PingOnlyDaemon
     d = _PingOnlyDaemon(seeded=True)
@@ -1115,8 +1117,63 @@ def test_precompact_overrun_still_instructs_and_never_loses_the_commit():
             f"L203: the overrun lost the save-state file; stderr {err[-600:]!r}")
         assert re.search(r"(?i)(store )?commit\b.*\bdeferred|deferred.*\bcommit", err), (
             f"L203: stderr does not say the store commit was deferred: {err[-800:]!r}")
+        # L204: the deferral is counted (the post-release no-go signal), with its session; a
+        # PreCompact that completes in time adds nothing. The writer is released first, so
+        # the second PreCompact (another session, the generated budget) runs in time.
+        _release(d)
+        assert _deferred(d.root, home) == (1, {SESSION}), _deferred(d.root, home)
+        s.seed_ring(d.root, session=OTHER, n=4)
+        r2 = h.run_hook_bytes(entry["command"], root=d.root, envelope={
+            "session_id": OTHER, "hook_event_name": "PreCompact", "trigger": "auto",
+            "custom_instructions": "", "cwd": str(proj), "transcript_path": ""},
+            RMX_HOME=str(home), timeout=120)
+        assert r2.returncode == 0 and list(md.rglob(f"savestate_{OTHER}.md")), (
+            r2.returncode, r2.stderr.decode("utf-8", "replace")[-600:])
+        assert _deferred(d.root, home) == (1, {SESSION}), (
+            "L204: an in-time PreCompact changed the deferred count", _deferred(d.root, home))
     finally:
         d.close()
+
+
+def _release(d) -> None:
+    """Stop a `_PingOnlyDaemon` holding the writer WITHOUT removing its tree (its `close()`
+    deletes the base): connections and socket closed, the lookalike process reaped, the held
+    writer closed, the socket and pid files removed, so the store is daemon-less."""
+    from refmatrix import daemon as daemon_mod
+    d._stop = True
+    for c in d.held:
+        try:
+            c.close()
+        except OSError:
+            pass
+    d.sock.close()
+    d.proc.kill()
+    d.proc.wait()
+    if d.writer is not None:
+        d.writer.close()
+        d.writer = None
+    for f in (daemon_mod.socket_path(d.root), daemon_mod.pid_path(d.root)):
+        Path(f).unlink(missing_ok=True)
+
+
+def _deferred(root: Path, home: Path) -> "tuple[int, set]":
+    """`handoff.precompact_deferred` from `rmx telemetry --context --format json` (L204; the
+    field name is green-cah's to confirm): (count, sessions). A list of rows, or a mapping
+    with a count (`n` / `count`) and its rows or sessions, are both read."""
+    r = h.run_rmx(["telemetry", "--context", "--format", "json"], root=root,
+                  RMX_HOME=str(home))
+    assert r.returncode == 0, r.stderr[-600:]
+    hv = json.loads(r.stdout).get("handoff")
+    assert isinstance(hv, dict) and "precompact_deferred" in hv, (
+        f"L204: telemetry has no handoff.precompact_deferred: {hv!r}"[:600])
+    v = hv["precompact_deferred"]
+    if isinstance(v, list):
+        return len(v), {x.get("session") for x in v if isinstance(x, dict)}
+    assert isinstance(v, dict), v
+    n = v.get("n", v.get("count"))
+    rows = v.get("rows") or v.get("sessions") or []
+    sess = {x.get("session") if isinstance(x, dict) else x for x in rows}
+    return int(n), sess
 
 
 # -- m-1: the gate resolves the baked store, whatever the cwd -------------------------------------

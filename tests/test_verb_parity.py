@@ -587,6 +587,9 @@ import click
 _INTERNAL_SEED = {
     ("derive", "log"), ("derive", "diff"), ("derive", "status"), ("derive", "unstamp"),
     ("learn",), ("learn", "on"), ("learn", "off"), ("learn", "status"),
+    # task-compaction-as-handoff R3b hook plumbing (L204): the generated PreToolUse gate,
+    # PostToolUse pull marker, UserPromptSubmit reminder and PreCompact instruction-only form.
+    ("handoff", "gate"), ("handoff", "pulled"), ("handoff", "remind"), ("handoff", "precompact"),
 }
 _ACTIONS_SEED = {
     ("memory", "list"): ("rmx_memory", "list"),
