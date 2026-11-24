@@ -408,25 +408,32 @@ def test_b1_guard_purges_anchors_when_the_memorys_source_path_names_another_file
 
 def test_b1_forgetting_the_memory_releases_its_anchors_to_the_purge(gitproj_inproc):
     """(b2), form 2: the property the `source_path` design is justified by -- ownership ends
-    with the memory. After `rmx memory forget x`, `sync -f <its path>` leaves no x#anchor
+    with the memory. Once memory x's row is gone, `sync -f <its path>` leaves no x#anchor
     there.
 
-    Forget hard-deletes the memory row and its sidecar (`purge_entity`) but leaves the anchor
-    concepts, so the precondition below proves the SYNC releases them, through the guard. A
-    stamp read off the anchors themselves would survive the forget and protect these orphans
-    forever (the guard's docstring); this pin is what kills that design."""
+    Since bug-302 (2026-11-24) `rmx memory forget` takes the anchors with the memory itself
+    (pinned in tests/test_memory.py), but every forget before it purged the row ALONE and left
+    them (3 such orphans on the live dev store). The fixture builds exactly that state --
+    `purge_entity` on the memory row, which is what the pre-fix forget ran -- so the
+    precondition below proves the SYNC releases them, through the guard. A stamp read off the
+    anchors themselves would survive the row's removal and protect these orphans forever (the
+    guard's docstring); this pin is what kills that design."""
     base, proj, root = gitproj_inproc
     memdir = _proj_memdir(proj, marker=False)
     _bridge(memdir)
     p = str((memdir / "a" / "x.md").resolve())
     _assert_anchors_at(root, p, "after the bridge (fixture)")
-    out = _invoke(["memory", "forget", "x", "--yes"])
-    assert "forgot" in out, f"fixture: memory x was not forgotten:\n{out}"
+
+    def _pre_bug302_forget(s):
+        eid = s._connect().execute(
+            "SELECT id FROM entities WHERE kind = 'memory' AND name = 'x'").fetchone()[0]
+        s.purge_entity(int(eid))
+    _with_store(root, _pre_bug302_forget)
     gone = _with_store(root, lambda s: s._connect().execute(
         "SELECT count(*) FROM entities WHERE kind = 'memory' AND name = 'x'").fetchone()[0])
-    assert gone == 0, f"fixture: {gone} memory row(s) named x after the forget"
-    _assert_anchors_at(root, p, "after the forget, before the sync (fixture: the forget itself "
-                                "must not be what removes them)")
+    assert gone == 0, f"fixture: {gone} memory row(s) named x after the row purge"
+    _assert_anchors_at(root, p, "after the row purge, before the sync (fixture: the purge "
+                                "itself must not be what removes them)")
     _invoke(["sync", "--project-root", str(proj), "-f", p])
     got = _anchor_paths(root, "x")
     assert p not in got.values(), f"orphaned anchors at {p} survived the purge: {got}"
