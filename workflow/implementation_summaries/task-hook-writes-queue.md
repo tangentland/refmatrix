@@ -46,8 +46,10 @@ and return; the daemon drains it on its flush tick and at boot, newest authoring
 - **`cli.py`.** `focus summarize --promote` computes its deadline at entry, drops its own
   probe and routes through `_write_or_local(queue=…, local=None, origin="stop-hook")`; on
   `queued` it prints `queued: <name>` + the message and exits 0. `rmx save-state` prints the
-  queued note in place of `promoted … (id=…)`. PreCompact reports a queued promote as a
-  deferred store commit and records it (`handoff.record_precompact_save(promote_queued=)`).
+  queued note in place of `promoted … (id=…)`. PreCompact prints the queued note on stderr
+  and records `queued: true` without counting a deferral (lead ruling L215: a queued commit is
+  durable); a FAILED enqueue keeps the L203/L204 deferral path, and its error says the write
+  was "not confirmed within the timeout" so the ledger counts it by the bound.
   `rmx daemon status` prints a `hook_writes:` line when pending or bad is non-zero (read with
   `hook_writes.counts`, so it shows with the daemon up, busy or down). {#c-cli}
 - **`handoff.py`.** `_promote_digest` uses `discovery.resolve_partition`, stamps

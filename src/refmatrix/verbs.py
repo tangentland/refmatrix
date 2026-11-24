@@ -622,10 +622,12 @@ HOOK_WRITES_QUEUE = "hook_writes"
 
 
 def _enqueue_hook_write(root: Path, op: str, payload: dict, *, partition: str,
-                        subject: "str | None", origin: str) -> dict:
+                        subject: "str | None", origin: str, why: str) -> dict:
     """Append the R11.2 entry and return the queued result. A spool that cannot take it
-    raises `VerbError` naming the path and the OS error (D6: an enqueue that fails is not a
-    queued promote; it stays loud)."""
+    raises `VerbError` naming why the write was queued, the path and the OS error (D6: an
+    enqueue that fails is not a queued promote; it stays loud). The enqueue is reached only
+    when the write was not confirmed inside the caller's timeout, and the message says so:
+    PreCompact's L204 ledger counts such a failure as a commit deferred by the bound."""
     from refmatrix import hook_writes
     name = payload["name"]
     entry = {"op": op, "partition": partition, "name": name, "args": dict(payload),
@@ -633,9 +635,9 @@ def _enqueue_hook_write(root: Path, op: str, payload: dict, *, partition: str,
     try:
         path = hook_writes.enqueue(root, entry)
     except OSError as exc:
-        raise VerbError(f"daemon busy and {name} could not be queued to "
-                        f"{hook_writes.spool_dir(root)}: {type(exc).__name__}: {exc}; the "
-                        f"write was NOT saved") from exc
+        raise VerbError(f"{name} was not confirmed within the timeout ({why}) and could not "
+                        f"be queued to {hook_writes.spool_dir(root)}: {type(exc).__name__}: "
+                        f"{exc}; the write was NOT saved") from exc
     return {"queued": name, "queue": HOOK_WRITES_QUEUE, "source": "queue", "spool": str(path)}
 
 
@@ -693,25 +695,26 @@ def _write_or_local(root: Path, op: str, payload: dict, *, timeout: float,
         raise VerbArgsError("_write_or_local: a queued write's payload needs a numeric "
                             "updated_at (its authoring time)")
 
-    def _enqueue() -> dict:
+    def _enqueue(why: str) -> dict:
         return _enqueue_hook_write(root, op, payload, partition=partition, subject=subject,
-                                   origin=origin)
+                                   origin=origin, why=why)
 
     try:
         require_daemon(root, retries=0)
-    except VerbBusyError:
-        return _enqueue()
+    except VerbBusyError as exc:
+        return _enqueue(str(exc))
     except VerbAbsentError:
         if local is None:
             raise
         return local_write(root, local, partition=partition, create=local_create)
     left = deadline - _time.monotonic() - ENQUEUE_RESERVE_S
     if left < MIN_DIAL_S:
-        return _enqueue()
+        return _enqueue(f"under {MIN_DIAL_S:g}s of the budget left for a dial after the "
+                        f"{ENQUEUE_RESERVE_S:g}s enqueue reserve")
     try:
         res = _dial(root, op, full, timeout=left, retries=0, write=True)
-    except VerbBusyError:
-        return _enqueue()
+    except VerbBusyError as exc:
+        return _enqueue(str(exc))
     except VerbAbsentError:
         if local is None:
             raise

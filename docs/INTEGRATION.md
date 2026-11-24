@@ -132,7 +132,8 @@ on a held writer). One probe classifies the daemon:
   `<store>/hook_writes.spool/` as one durable file. The hook prints `queued: <name>` and
   `daemon busy: queued <name> for the next drain; it is applied when the writer frees`, and
   exits 0. `rmx save-state` prints the same note in place of `promoted … (id=…)`. PreCompact
-  reports the queued promote as a deferred store commit;
+  prints the note on stderr and does not count it as a deferred commit (L215): the write is
+  durable. Only an enqueue that FAILS is a deferred commit there;
 - **absent**: the Stop hook refuses (exit 1, nothing queued); save-state writes in-process as
   before. A spool that cannot take the entry exits 1 naming the path and the OS error.
 

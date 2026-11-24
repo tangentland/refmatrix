@@ -14480,13 +14480,13 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
             promo = ((saved or {}).get("promoted") or {})
             queued = promo.get("note") if promo.get("queued") else None
             if queued and not err and not incomplete:
-                # task-hook-writes-queue (L212, 2026-11-24): a QUEUED promote is a store
-                # commit deferred past the bound -- durable in the hook-writes spool, applied
-                # at the daemon's next drain, but not confirmed this turn. Said and counted as
-                # deferred (L203/L204), never as promoted.
-                click.echo(f"{tag}: the store commit was deferred: {queued}. "
-                           f"{saved.get('target')} is on disk and is the durable record.",
-                           err=True)
+                # task-hook-writes-queue (L212; lead ruling L215, 2026-11-24): a QUEUED promote
+                # is NOT a deferred commit. It is durable in the hook-writes spool and the daemon
+                # applies it at its next drain, so stderr carries the queued note only and the
+                # L204 counter (commits left undone) is not touched; counting it would report a
+                # risk that does not exist (L211). Only a FAILED enqueue takes the deferral
+                # path above (SaveStateIncompleteError).
+                click.echo(f"{tag}: {queued}", err=True)
             _handoff.record_precompact_save(root, session, saved=bool(saved),
                                             promote_error=perr, promote_queued=queued,
                                             save_error=None if saved else err)

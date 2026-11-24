@@ -1667,18 +1667,17 @@ def record_precompact_save(root: Path, session: str, *, saved: bool,
     `--timeout` bound. The count of commits deferred by the bound is L204's no-go signal
     after release, so it is recorded, not inferred.
 
-    `promote_queued` (task-hook-writes-queue, L212, 2026-11-24): the queued note of a
-    promote the busy daemon could not confirm inside the bound, appended to the hook-writes
-    spool instead. Durable, but still a commit deferred by the bound: the queue is taken only
-    when the writer did not answer in the budget, which is exactly what L204 counts."""
+    `promote_queued` (task-hook-writes-queue, L212; lead ruling L215, 2026-11-24): the
+    queued note of a promote the busy daemon could not confirm, appended durably to the
+    hook-writes spool. It is recorded (`queued: true`) but NOT as deferred: L204 counts commits
+    left undone, and a queued commit is applied at the daemon's next drain (L211). A FAILED
+    enqueue arrives as `promote_error` and is counted as before."""
     err = promote_error or ""
     by_bound = bool(err) and bool(re.search(r"did not answer within|timed out|timeout", err,
                                             re.I))
-    if promote_queued and not err:
-        err, by_bound = promote_queued, True
     _record_event(root, {"event": "precompact", "session": str(session), "saved": bool(saved),
                          "commit_deferred": bool(err), "deferred_by_bound": by_bound,
-                         **({"queued": True} if promote_queued else {}),
+                         **({"queued": True} if promote_queued and not err else {}),
                          **({"cause": " ".join((err or save_error or "").split())[:300]}
                             if (err or save_error) else {})})
 
