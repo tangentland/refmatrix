@@ -118,6 +118,11 @@ def _content_terms(query: str) -> list[str]:
     return content_terms(query)
 
 
+# bug-300 R3 (2026-11-23): the stable prefix of the warning a fused recall
+# carries when its symbolic leg returned nothing. Surfaces match on it.
+FUSE_LEG_EMPTY = "fuse: symbolic leg empty"
+
+
 def hybrid_memory_recall(
     store: Store,
     embedder,
@@ -127,6 +132,7 @@ def hybrid_memory_recall(
     kinds: Sequence[str] | None = None,
     rrf_k: int = 60,
     candidate_ids: Sequence[int] | None = None,
+    warnings: "list[str] | None" = None,
 ) -> list[tuple[int, float]]:
     """Dense ⊕ symbolic RRF fusion for `rmx memory recall`.
 
@@ -137,6 +143,13 @@ def hybrid_memory_recall(
     (e.g. "grep backstop protected query concept" — symbolic nailed it, dense
     didn't). `content_rank` is partition-scoped, so the CALLER must already
     have `store` bound to the target memory partition.
+
+    When the symbolic leg returns nothing -- no content term, terms that
+    match no memory, or a query of stopwords only -- the fusion is dense
+    alone and `warnings` gains a `FUSE_LEG_EMPTY` line (bug-300 R3,
+    2026-11-23): `--fuse` equalled plain recall on 120 of 120 LongMemEval
+    rankings (T0.6) and nothing said so. A caller that drops `warnings`
+    makes that silent again; the daemon op and the replica leg pass theirs.
 
     Returns `[(entity_id, fused_score)]` descending by RRF score."""
     terms = _content_terms(query)
@@ -152,6 +165,10 @@ def hybrid_memory_recall(
                 limit=max(k, rrf_k),
             )
         ]
+    if not symbolic_hits and warnings is not None:
+        why = (f"no memory matched the query terms {terms!r}" if terms
+               else "the query has no content terms")
+        warnings.append(f"{FUSE_LEG_EMPTY} ({why}); the ranking is dense only")
     return hybrid_recall(
         store, embedder, query,
         k=k, kinds=kinds, symbolic_hits=symbolic_hits, rrf_k=rrf_k,
@@ -1052,8 +1069,13 @@ def replica_memory_recall(root, *, partition: str, query: str, k: int,
         qvec_emb = PrecomputedQuery(emb, query, emb.embed_texts([query])) if query else emb
         out_hits: "list[dict] | None" = None
         with lock, s.with_partition(partition):
+            # bug-300 R3: the empty-symbolic-leg warning joins `ws` only when this leg
+            # SERVES (below), so a leg that fails after fusing and hands over to the
+            # daemon RPC does not say it twice.
+            fuse_ws: list[str] = []
             if fuse:
-                hits = hybrid_memory_recall(s, qvec_emb, query, k=retrieve_k, kinds=kinds)
+                hits = hybrid_memory_recall(s, qvec_emb, query, k=retrieve_k, kinds=kinds,
+                                            warnings=fuse_ws)
             else:
                 hits = dense_recall(s, qvec_emb, query, k=retrieve_k, kinds=kinds)
             if want_rerank and hits:
@@ -1100,6 +1122,7 @@ def replica_memory_recall(root, *, partition: str, query: str, k: int,
         def fetch(eid: int) -> "dict | None":
             with lock, s.with_partition(partition):
                 return entity_row(s, int(eid), kinds)
+        ws.extend(fuse_ws)
         return {"hits": out_hits, "fetch": fetch, "embedder": kind}
     except _verbs.VerbBusyError:
         raise                       # the deadline itself: the caller degrades

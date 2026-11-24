@@ -4949,6 +4949,72 @@ class Store:
         self._doclen_cache = (self._partition_id, dl)
         return dl
 
+    # bug-300 (2026-11-23): the block -> memory tie. A GMD block node is
+    # `kind=concept`, `name = "<doc-id>#<anchor>"`; its memory is the `memory`
+    # entity NAMED by that prefix in the same partition. R0
+    # (workflow/review-output/b300-r0.md #join-choice) measured it total on the
+    # live and LongMemEval stores and equal to `meta.doc`; it is indexed through
+    # the `(partition_id, kind, name)` key. Never `part-of` (a GMD `rel: part-of`
+    # line writes the same linkage, so 4 live blocks are part-of a FOREIGN
+    # memory) and never `b.name LIKE m.name || '#%'` (`_` is a LIKE wildcard and
+    # memory ids are full of it). A block whose prefix names no memory (an
+    # orphan, or a doc's block) joins nothing and so credits nothing.
+    _MEMORY_BLOCK_JOIN = (
+        "JOIN entities m ON m.partition_id = b.partition_id "
+        "AND m.kind = 'memory' AND m.name = split_part(b.name, '#', 1) "
+    )
+
+    def _memory_block_postings(
+        self, mentions_lid: int, concept_ids: "list[int]",
+    ) -> "list[tuple[int, int, float, int]]":
+        """`[(memory_id, concept_id, summed weight, NULL-weight count)]`: the
+        `mentions` postings of every memory's block nodes for `concept_ids`,
+        aggregated per memory in ONE grouped SQL pass (bug-300 R4: no per-memory
+        loop and no Python fold over the block rows -- one LongMemEval hub term
+        sits on 199,563 blocks). The NULL count lets the caller resolve NULL
+        weights by the same `RMX_NULL_TF` rule as a memory's own postings."""
+        if not concept_ids:
+            return []
+        ph = ",".join("?" * len(concept_ids))
+        return self._connect().execute(
+            f"SELECT m.id, el.concept_id, SUM(el.weight), "
+            f"COUNT(*) - COUNT(el.weight) "
+            f"FROM entity_links el "
+            f"JOIN entities b ON b.id = el.entity_id "
+            f"{self._MEMORY_BLOCK_JOIN}"
+            f"WHERE el.linkage_id = ? AND b.partition_id = ? "
+            f"AND b.kind = 'concept' AND b.name LIKE '%#%' "
+            f"AND el.concept_id IN ({ph}) "
+            f"GROUP BY m.id, el.concept_id",
+            (mentions_lid, self._partition_id, *concept_ids),
+        ).fetchall()
+
+    def _memory_block_doclen(self, mentions_lid: int) -> "dict[int, float]":
+        """`memory_id -> summed tf of all its block nodes' mentions`, the block
+        half of a memory's BM25 length on bug-300's credited path (L199: one
+        document per memory, length = own postings + every block's).
+
+        Built from `_mentions_doclen` (already the per-entity summed tf) and one
+        scan of `entities` for the block -> memory tie -- never a second pass
+        over the block postings themselves (12.8M rows on LongMemEval). Cached
+        per (instance, partition) on the same terms as `_mentions_doclen`, and
+        dropped with it by `_invalidate_content_rank_caches`."""
+        cache = getattr(self, "_memblocklen_cache", None)
+        if cache is not None and cache[0] == self._partition_id:
+            return cache[1]
+        doc_len = self._mentions_doclen(mentions_lid)
+        out: dict[int, float] = {}
+        for bid, mid in self._connect().execute(
+            f"SELECT b.id, m.id FROM entities b "
+            f"{self._MEMORY_BLOCK_JOIN}"
+            f"WHERE b.partition_id = ? AND b.kind = 'concept' AND b.name LIKE '%#%'",
+            (self._partition_id,),
+        ):
+            mid = int(mid)
+            out[mid] = out.get(mid, 0.0) + doc_len.get(int(bid), 0.0)
+        self._memblocklen_cache = (self._partition_id, out)
+        return out
+
     def concept_df(self, mentions_lid: int) -> "dict[int, int]":
         """`concept_id -> document frequency` over `mentions` in the active
         partition.
@@ -5043,7 +5109,8 @@ class Store:
         # write-batch freshness contract with the BM25 caches.
         self._adjacency_cache: "tuple | None" = None
         for attr in ("_bm25_stats_cache", "_doclen_cache", "_leafidx_cache",
-                     "_conceptdf_cache", "_codefrac_cache", "_tftail_cache"):
+                     "_conceptdf_cache", "_codefrac_cache", "_tftail_cache",
+                     "_memblocklen_cache"):
             if hasattr(self, attr):
                 delattr(self, attr)
 
@@ -5238,12 +5305,43 @@ class Store:
                 f"AND el.concept_id IN ({ph}){kind_clause}",
                 (mlid, self._partition_id, *flat, *(kinds or [])),
             ).fetchall()
-            if rows:
+            _raw_tf = _null_tf_fn()
+            # bug-300 (2026-11-23, L193 option (a), scope ruling L199): a GMD
+            # memory's BODY words hang off its block nodes (`<memory-id>#<anchor>`,
+            # kind=concept); the memory entity's own `mentions` are its title and
+            # tag words. So a caller that asks for memories but filters blocks out
+            # (`memory recall --fuse`'s symbolic leg, `kinds=["memory"]`) scored
+            # titles only -- [] on 40 of 40 LongMemEval questions (T0.6). Credit
+            # the blocks' postings to their memory exactly when `memory` is asked
+            # for and `concept` is NOT: a caller that also asks for `concept`
+            # (context) or for every kind (`kinds=None`, net) already gets the
+            # blocks as hits of their own, and a second credit would count each
+            # body word twice. Block ids are never returned by this path.
+            credit_blocks = (bool(kinds) and "memory" in kinds
+                             and "concept" not in kinds)
+            _scored: list = rows
+            _block_len: "dict[int, float] | None" = None
+            if credit_blocks:
+                _block_rows = self._memory_block_postings(mlid, flat)
+                if _block_rows:
+                    # One BM25 document per memory: tf = its own count plus its
+                    # blocks' counts for the same concept.
+                    _merged: dict[tuple[int, int], float] = {}
+                    for eid, cid, w in rows:
+                        _k = (int(eid), int(cid))
+                        _merged[_k] = _merged.get(_k, 0.0) + _raw_tf(w)
+                    _null_w = _raw_tf(None)
+                    for mid, cid, wsum, n_null in _block_rows:
+                        _k = (int(mid), int(cid))
+                        _merged[_k] = (_merged.get(_k, 0.0) + float(wsum or 0.0)
+                                       + int(n_null or 0) * _null_w)
+                    _scored = [(e, c, t) for (e, c), t in _merged.items()]
+                    _block_len = self._memory_block_doclen(mlid)
+            if _scored:
                 doc_len = self._mentions_doclen(mlid)
                 _tf_fn, _ = self._tf_transform()
                 _tf_tail = self.mentions_tf_tail(mlid)
-                _raw_tf = _null_tf_fn()
-                for eid, cid, w in rows:
+                for eid, cid, w in _scored:
                     ti = cid_to_term.get(cid)
                     if ti is None:
                         continue
@@ -5252,11 +5350,20 @@ class Store:
                         continue
                     idf = math.log((N - nt + 0.5) / (nt + 0.5) + 1.0)
                     _idf_by_cid[cid] = idf
-                    tf = _tf_fn(_raw_tf(w), _tf_tail)
+                    # `w` is already a raw tf on the credited path (own + block
+                    # counts, NULLs resolved per RMX_NULL_TF); a stored weight
+                    # otherwise.
+                    tf = _tf_fn(w if _block_len is not None else _raw_tf(w), _tf_tail)
                     # `dl` stays the RAW summed weight on purpose: document
                     # length is a property of the document, not of how we
-                    # choose to score a term inside it.
-                    dl = doc_len.get(eid, avgdl)
+                    # choose to score a term inside it. On the credited path a
+                    # memory's length is its own postings plus all its blocks'
+                    # (L199: inside the memory credit only; N, avgdl and df stay
+                    # the partition's, unchanged).
+                    if _block_len is not None and (eid in doc_len or eid in _block_len):
+                        dl = doc_len.get(eid, 0.0) + _block_len.get(eid, 0.0)
+                    else:
+                        dl = doc_len.get(eid, avgdl)
                     denom = tf + k1 * (1.0 - b + b * dl / avgdl)
                     if denom <= 0:
                         continue
