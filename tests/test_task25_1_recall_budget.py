@@ -108,10 +108,6 @@ def _ss(fx, *, append: str = "", session: str = s.SESSION, **extra):
                                                 source="resume"), **extra)
 
 
-def _pc_cmds(fx) -> list[str]:
-    return s.precompact_recall_cmds(fx.root)
-
-
 def _ok(r, what):
     assert r.returncode == 0, (f"{what}: exit {r.returncode}; stderr: "
                                f"{r.stderr.decode('utf-8', 'replace')[-1500:]}")
@@ -130,9 +126,10 @@ def _pack(r, what) -> "s.Pack":
 
 
 # R1's seven channels plus rev 6's `recall_state` (R11: "a CHANNEL_BUDGET_BYTES entry like every
-# other producer").
+# other producer"), less `precompact`: task-compaction-as-handoff R2 removed the generated
+# PreCompact recall, and bsd-cah r1 #m-4 (L202) retires its budget channel with it.
 CHANNELS = {"prompt_recall", "scan_prompt", "curator_status", "focus_input", "session_start",
-            "focus_context", "precompact", "recall_state"}
+            "focus_context", "recall_state"}
 EVENTS = {"UserPromptSubmit", "SessionStart"}
 
 
@@ -574,25 +571,12 @@ def test_ac1_ac4a_session_start_argv_within_budget(fx):
     _pack(r, "SessionStart argv")
 
 
-def test_ac1_ac4a_precompact_argv_within_budget_or_dropped(fx):
-    """AC-1 + AC-4 (a) `--recent --since 1h`: ≤ budget("precompact"), or (R0 drops it) the
-    generated PreCompact block has no recall command."""
-    cmds = _pc_cmds(fx)
-    if not cmds:
-        return            # R7: R0 found PreCompact stdout does not reach the agent
-    (cmd,) = cmds
-    r = s.run_cmd(fx, cmd, env_in=s.envelope("", event="PreCompact"))
-    _ok(r, "PreCompact argv")
-    s.assert_within(len(r.stdout), "precompact", "AC-1 PreCompact argv")
-    _pack(r, "PreCompact argv")
-
-
 # ---- AC-2: --max-bytes N on every channel, multibyte ------------------------------------------------
 
 
 @pytest.mark.parametrize("n", [2000, 4000, 9000])
-@pytest.mark.parametrize("channel", ["prompt_recall", "session_start", "precompact",
-                                     "scan_prompt", "focus_context"])
+@pytest.mark.parametrize("channel", ["prompt_recall", "session_start", "scan_prompt",
+                                     "focus_context"])
 def test_ac2_max_bytes_bounds_every_channel(fx, channel, n):
     """AC-2: `--max-bytes N` caps the payload at N UTF-8 bytes on every channel (the fixture's
     hook lines and bodies carry ≥ 4 `—`/`→` each)."""
@@ -601,11 +585,6 @@ def test_ac2_max_bytes_bounds_every_channel(fx, channel, n):
         r = _q(fx, append=flag)
     elif channel == "session_start":
         r = _ss(fx, append=flag)
-    elif channel == "precompact":
-        cmds = _pc_cmds(fx)
-        if not cmds:
-            return
-        r = s.run_cmd(fx, cmds[0] + flag, env_in=s.envelope("", event="PreCompact"))
     elif channel == "scan_prompt":
         cmd = s.scan_prompt_part(fx.root).replace(" 2>/dev/null || true", "")
         r = s.run_cmd(fx, cmd + flag, env_in=s.envelope(QUESTION))
@@ -1981,17 +1960,8 @@ _PRODUCER_OF = (
     ("UserPromptSubmit", "rmx memory recall --stdin-json", "prompt_recall"),
     ("SessionStart", "rmx memory recall --session-start", "session_start"),
     ("SessionStart", "rmx focus context", "focus_context"),
-    ("PreCompact", "rmx memory recall --recent", "precompact"),
     ("SessionStart", "rmx recall-state", "recall_state"),
 )
-
-
-# task-compaction-as-handoff R2 (L195, 2026-11-24): no generated PreCompact entry may print but
-# the one-line instruction, so the PreCompact recall leaves the generated config; the
-# `precompact` channel keeps its producer argv (the CLI flags `recall_channel` maps) for the
-# by_producer count, written here as 25.1 generated it.
-_PRECOMPACT_RECALL_ARGV = ["memory", "recall", "--recent", "--since", "1h", "--k", "30",
-                           "--scope", "both", "--pack", "--timeout", "30"]
 
 
 def _generated_argv(root: Path, event: str, needle: str) -> list[str]:
@@ -2007,7 +1977,7 @@ def _generated_argv(root: Path, event: str, needle: str) -> list[str]:
 
 
 def test_m2_by_producer_counts_every_hook_producer(tmp_path):
-    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for all 8 channels, not only
+    """bsd-251 m-2 / L68 (2026-11-14): `by_producer` is pinned for all 7 channels (8 before bsd-cah r1 #m-4 retired `precompact`), not only
     `recall_state`. A cli.log is written whose rows carry the argv of each GENERATED hook
     producer (source "hook", a distinct size each, two for `prompt_recall`), plus rows that
     must count nowhere: the same commands run interactively, a hook `focus hook --event tool`,
@@ -2018,8 +1988,7 @@ def test_m2_by_producer_counts_every_hook_producer(tmp_path):
     root.mkdir(parents=True)
     rows, want = [], {}
     for i, (ev, needle, prod) in enumerate(_PRODUCER_OF):
-        argv = (_PRECOMPACT_RECALL_ARGV if prod == "precompact"
-                else _generated_argv(root, ev, needle))
+        argv = _generated_argv(root, ev, needle)
         sizes = [100 + i] + ([300 + i] if prod == "prompt_recall" else [])
         for sz in sizes:
             rows.append({"ts": f"2026-11-14T01:00:{i:02d}", "argv": argv, "source": "hook",

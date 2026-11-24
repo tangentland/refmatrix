@@ -203,19 +203,27 @@ def denials(results) -> "list[str]":
     return out
 
 
-def pre_tool(fx: Fx, session: str, tool: str, tool_input: dict, *, hooks=None):
+def pre_tool(fx: Fx, session: str, tool: str, tool_input: dict, *, hooks=None, **extra):
+    """`extra` adds envelope fields: `agent_id` / `agent_type` make it a subagent's or a
+    teammate's call (Claude Code's common hook input carries the PARENT's `session_id` plus
+    `agent_id: g?.agentId, agent_type`, bsd-cah r1 #b-1)."""
     return fire(fx, "PreToolUse", tool,
-                envelope(fx, "PreToolUse", session, tool_name=tool, tool_input=tool_input),
+                envelope(fx, "PreToolUse", session, tool_name=tool, tool_input=tool_input,
+                         **extra),
                 hooks=hooks)
 
 
-def post_read(fx: Fx, session: str, path: Path) -> None:
+def read_envelope(fx: Fx, session: str, path: Path, **extra) -> dict:
     content = path.read_text(encoding="utf-8") if path.exists() else ""
-    res = fire(fx, "PostToolUse", "Read", envelope(
+    return envelope(
         fx, "PostToolUse", session, tool_name="Read", tool_input={"file_path": str(path)},
         tool_response={"type": "text", "file": {
             "filePath": str(path), "content": content, "numLines": content.count("\n"),
-            "startLine": 1, "totalLines": content.count("\n")}}))
+            "startLine": 1, "totalLines": content.count("\n")}}, **extra)
+
+
+def post_read(fx: Fx, session: str, path: Path, **extra) -> None:
+    res = fire(fx, "PostToolUse", "Read", read_envelope(fx, session, path, **extra))
     for cmd, r in res:
         assert r.returncode == 0, (s.after_env(cmd)[:80], r.stderr.decode()[-600:])
 
@@ -855,3 +863,319 @@ def test_no_goal_gives_no_line_and_a_goal_set_after_a_clear_wins(fx, case):
         assert len(lines) == 1 and lines[0].split("active goal: /goal ", 1)[1].startswith(
             GOAL_Y), (lines, out)
         assert GOAL_Y in block and GOAL_X not in block, block
+
+
+# ---- L202 fold: bsd-cah r1 findings on cbbe9e3f ---------------------------------------------------
+#
+# Report: workflow/bullshit/2026-11-24-0400-cah-r1-cbbe9e3f.md. Envelopes are real-shaped: a
+# subagent's or a teammate's hook input is the LEAD's `session_id` plus `agent_id` and
+# `agent_type` (Claude Code 2.1.331's hook-input builder, `agent_id:g?.agentId,agent_type:h`;
+# its PreCompact input carries `agentId` too; bsd-cah p5).
+
+TEAMMATE = {"agent_id": "a123", "agent_type": "ch-bsd"}
+SUBAGENT = {"agent_id": "a999", "agent_type": "ch-implementer"}
+SIBLING = {"agent_id": "a777", "agent_type": "ch-test-engineer"}
+TEAMMATE_TOOLS = (("Bash", {"command": "ls"}),
+                  ("Edit", {"file_path": "/x/a.py", "old_string": "a", "new_string": "b"}),
+                  ("mcp__refmatrix__rmx_context", {"ref": "x"}))
+
+
+def fire_with(fx: Fx, event: str, value, env: dict, **env_extra):
+    """`fire` with extra process environment (a test-sized knob)."""
+    out = []
+    for e in h.hook_block(fx.root)["hooks"].get(event, []):
+        if not _matches(e.get("matcher"), value):
+            continue
+        for hk in e["hooks"]:
+            out.append((hk["command"], h.run_hook_bytes(
+                hk["command"], root=fx.root, envelope=env, RMX_HOME=str(fx.home), **env_extra)))
+    return out
+
+
+def lead_pulls(fx: Fx, session: str) -> "list[dict]":
+    return [x for x in (telemetry_handoff(fx).get("pulls") or []) if x.get("session") == session]
+
+
+# -- b-1 / b-2 (bug-307): the gate is the lead's; subagents and teammates never trip or lift it --
+
+
+@pytest.mark.parametrize("tool,ti", TEAMMATE_TOOLS, ids=[t for t, _ in TEAMMATE_TOOLS])
+def test_teammate_calls_pass_a_gated_lead_session(fx, tool, ti):
+    """b-1: after the LEAD's /clear armed its gate, a teammate's call (same `session_id`,
+    `agent_id` set) is allowed, while the lead's own call is still denied. cbbe9e3f: the
+    teammate is denied with "read …/handoffs/<lead>.txt first"."""
+    p, _ = written_handoff(fx, "clear", CLEAR_SESSION)
+    got = denials(pre_tool(fx, CLEAR_SESSION, tool, ti, **TEAMMATE))
+    assert not got, f"b-1: the lead's gate denied a teammate's {tool}: {got}"
+    assert denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"})), (
+        "the lead itself must stay gated")
+    assert p.is_file()
+
+
+def test_teammate_read_does_not_lift_the_leads_gate_nor_count_as_its_pull(fx):
+    """b-1: a teammate's Read of the lead's handoff lifts nothing and is not the lead's pull in
+    telemetry; the lead is still denied and still reminded; the lead's OWN Read then lifts the
+    gate and is the one pull. cbbe9e3f: the teammate's Read lifts the lead's gate and telemetry
+    logs it as the lead's pull."""
+    p, _ = written_handoff(fx, "clear", CLEAR_SESSION)
+    post_read(fx, CLEAR_SESSION, p, **TEAMMATE)
+    assert denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"})), (
+        "b-1: a teammate's Read lifted the lead's gate")
+    assert pointer_lines(fx, prompt(fx, CLEAR_SESSION), p), (
+        "b-1: the lead's reminder stopped after a teammate's Read")
+    assert not lead_pulls(fx, CLEAR_SESSION), (
+        f"b-1: telemetry counts the teammate's Read as the lead's pull: {lead_pulls(fx, CLEAR_SESSION)}")
+    post_read(fx, CLEAR_SESSION, p)
+    assert not denials(pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"}))
+    pulls = lead_pulls(fx, CLEAR_SESSION)
+    assert len(pulls) == 1 and not pulls[0].get("agent_id"), pulls
+
+
+def test_subagent_compact_writes_no_handoff_and_arms_no_gate(fx):
+    """b-1 / b-2: a subagent's own auto-compaction fires SessionStart(compact) with the lead's
+    `session_id` and its `agent_id`: it names no handoff file, and neither the lead nor a
+    sibling is denied or reminded. cbbe9e3f: it writes handoffs/<lead>.txt and arms the gate,
+    so the lead and every sibling are denied."""
+    res = fire(fx, "SessionStart", "compact",
+               envelope(fx, "SessionStart", SESSION, source="compact", **SUBAGENT))
+    out = stdout_of(res)
+    named = handoff_path(fx, out)
+    assert named is None, f"b-2: a subagent's compaction wrote the lead's handoff {named}"
+    for who, extra in (("lead", {}), ("sibling", SIBLING)):
+        got = denials(pre_tool(fx, SESSION, "Bash", {"command": "git status"}, **extra))
+        assert not got, f"b-1: a subagent's compaction gated the {who}: {got}"
+    remind = [ln for ln in prompt(fx, SESSION).splitlines()
+              if "handoffs/" in ln and "authoritative" in ln.lower()]
+    assert not remind, f"b-1: the lead is reminded of a subagent's handoff: {remind}"
+
+
+def test_subagent_precompact_prints_nothing_and_saves_no_lead_state(fx):
+    """b-2: a subagent's PreCompact (lead's `session_id`, `agent_id` set) prints nothing, so
+    Claude Code's own summary stands, and writes no save-state for the lead's session.
+    cbbe9e3f: it prints the lead's one-line instruction and writes savestate_<lead>."""
+    res = fire(fx, "PreCompact", "auto", envelope(
+        fx, "PreCompact", SESSION, trigger="auto", custom_instructions="", **SUBAGENT))
+    out = stdout_of(res)
+    assert not out.strip(), f"b-2: a subagent's PreCompact printed summary instructions: {out!r}"
+    assert not savestates_of(fx, SESSION), "b-2: a subagent's PreCompact saved the lead's state"
+
+
+# -- b-3 (bug-308): a gate that cannot be lifted stands down; never a 24 h trap --------------------
+
+
+def test_unwritable_handoffs_dir_after_arming_never_traps_the_session(fx):
+    """b-3: the gate is armed, then `handoffs/` is made unwritable. The Read lifts the gate or
+    stands it down (at most one line naming the file), and the next non-Read calls are
+    allowed. cbbe9e3f: `pulled` fails (exit 1, PermissionError on the marker) and every later
+    Bash is denied until the 24 h expiry."""
+    p, _ = written_handoff(fx, "clear", CLEAR_SESSION)
+    hd = p.parent
+    os.chmod(hd, 0o555)
+    try:
+        said = fire(fx, "PostToolUse", "Read", read_envelope(fx, CLEAR_SESSION, p))
+        for _turn in range(3):
+            calls = pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"})
+            said += calls
+            got = denials(calls)
+            assert not got, f"b-3: the session is trapped behind an unliftable gate: {got}"
+    finally:
+        os.chmod(hd, 0o755)
+    lines = [ln for ln in said_of(said).splitlines() if str(p) in ln]
+    assert len(lines) <= 1, f"b-3: want at most one line about the stand-down: {lines}"
+
+
+# -- s-1 (bug-308): deny is JSON at exit 0; any other failure of the gate allows ------------------
+
+
+def test_deny_is_json_at_exit_0_never_exit_2(fx):
+    """s-1: a deny is `hookSpecificOutput.permissionDecision: "deny"` on stdout at exit 0, so
+    exit 2 is never the deny channel. cbbe9e3f: the gate denies by exiting 2."""
+    written_handoff(fx, "clear", CLEAR_SESSION)
+    res = pre_tool(fx, CLEAR_SESSION, "Bash", {"command": "ls"})
+    assert not [s.after_env(c)[:60] for c, r in res if r.returncode == 2], (
+        "s-1: a PreToolUse command exited 2 (the deny channel must be JSON at exit 0)")
+    json_denies = []
+    for _c, r in res:
+        try:
+            j = json.loads(r.stdout.decode("utf-8", "replace") or "null")
+        except ValueError:
+            continue
+        if isinstance(j, dict) and (j.get("hookSpecificOutput") or {}).get(
+                "permissionDecision") == "deny" and r.returncode == 0:
+            json_denies.append(j)
+    assert len(json_denies) == 1, f"s-1: want one JSON deny at exit 0: {json_denies}"
+    hso = json_denies[0]["hookSpecificOutput"]
+    assert hso.get("hookEventName") == "PreToolUse" and "authoritative" in str(
+        hso.get("permissionDecisionReason")).lower(), hso
+
+
+_OLD_RMX = """#!/bin/sh
+# An older deployed rmx with no `handoff` group (bsd-cah p7: a rollback while a gate exists).
+echo "Usage: rmx [OPTIONS] COMMAND [ARGS]..." >&2
+echo "Try 'rmx --help' for help." >&2
+echo "" >&2
+echo "Error: No such command 'handoff'." >&2
+exit 2
+"""
+
+
+def test_a_failing_gate_command_allows_the_call(fx):
+    """s-1: with a gate file present and an `rmx` on the hook PATH that exits 2 ("No such
+    command"), no PreToolUse command exits 2 and nothing denies: a broken gate allows, loudly
+    (non-zero, not 2). cbbe9e3f: the wrapper passes click's exit 2 through, a block on every
+    tool with no way out."""
+    written_handoff(fx, "clear", CLEAR_SESSION)
+    home = fx.base / "oldhome"
+    (home / "bin").mkdir(parents=True)
+    stub = home / "bin" / "rmx"
+    stub.write_text(_OLD_RMX)
+    stub.chmod(0o755)
+    env = h.rmx_env(fx.root, RMX_HOME=str(fx.home))
+    env["HOME"] = str(home)                      # HOOK_ENV puts $HOME/bin first on PATH
+    data = json.dumps(envelope(fx, "PreToolUse", CLEAR_SESSION, tool_name="Bash",
+                               tool_input={"command": "ls"})).encode()
+    res = []
+    for e in h.hook_block(fx.root)["hooks"].get("PreToolUse", []):
+        if _matches(e.get("matcher"), "Bash"):
+            for hk in e["hooks"]:
+                res.append((hk["command"], subprocess.run(
+                    ["/bin/bash", "-c", hk["command"]], input=data, env=env, cwd=str(fx.proj),
+                    capture_output=True, timeout=120)))
+    twos = [s.after_env(c)[:70] for c, r in res if r.returncode == 2]
+    assert not twos, f"s-1: a failing gate command exited 2 and blocks every tool: {twos}"
+    assert not denials(res), denials(res)
+
+
+# -- s-2: PreCompact's save-state has one overall time bound --------------------------------------
+
+
+def test_precompact_save_state_is_bounded_and_still_instructs_on_overrun():
+    """s-2: the generated PreCompact save-state carries ONE overall `--timeout N` (N <= 30, as
+    Stop's promote has `--timeout 8`). With a held writer (a `_PingOnlyDaemon`: answers ping,
+    stalls every other op) and the knob set test-sized (2), it still exits 0 with the
+    instruction naming a save-state, and says the overrun on stderr. No elapsed assert: the
+    subprocess deadline is the hang guard (rule 6). cbbe9e3f: no `--timeout` on the command."""
+    from tests.test_plan2_remedy import _PingOnlyDaemon
+    d = _PingOnlyDaemon(seeded=True)
+    try:
+        cmds = [c for _e, _m, c in h.hook_entries(d.root, "PreCompact")]
+        assert len(cmds) == 1, cmds
+        m = re.search(r"--timeout (\d+)", cmds[0])
+        assert m and 0 < int(m.group(1)) <= 30, (
+            f"s-2: the generated PreCompact save-state has no overall --timeout: {cmds[0]!r}")
+        cmd = cmds[0].replace(m.group(0), "--timeout 2")
+        proj = d.root.parent
+        s.copy_memdir(proj, include={"savestate_fx01"})
+        s.seed_ring(d.root, session=SESSION, n=4)
+        home = d.base / "g" / ".refmatrix"
+        s._init_store(home, partition="global")
+        r = h.run_hook_bytes(cmd, root=d.root, envelope={
+            "session_id": SESSION, "hook_event_name": "PreCompact", "trigger": "auto",
+            "custom_instructions": "", "cwd": str(proj), "transcript_path": ""},
+            RMX_HOME=str(home), timeout=120)
+        out = r.stdout.decode("utf-8", "replace")
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode == 0, (r.returncode, err[-800:])
+        assert "authoritative" in out.lower() and "savestate_" in out, out
+        assert re.search(r"(?i)time(d)? ?out|budget|not confirmed", err), err[-800:]
+    finally:
+        d.close()
+
+
+# -- m-1: the gate resolves the baked store, whatever the cwd -------------------------------------
+
+
+def test_gate_holds_with_the_cwd_outside_the_project(fx):
+    """m-1: the shell fast path tests `<baked root>/handoffs`; Python must decide on the SAME
+    store when the hook's cwd is outside the project (no REFMATRIX_ROOT in a real hook).
+    cbbe9e3f: Python walks up from the cwd, consults another store, and allows."""
+    p, _ = written_handoff(fx, "clear", CLEAR_SESSION)
+    elsewhere = fx.base / "elsewhere"
+    elsewhere.mkdir()
+    env = h.rmx_env(fx.root, RMX_HOME=str(fx.home))
+    env.pop("REFMATRIX_ROOT")
+    env_in = envelope(fx, "PreToolUse", CLEAR_SESSION, tool_name="Bash",
+                      tool_input={"command": "ls"})
+    env_in["cwd"] = str(elsewhere)
+    res = []
+    for e in h.hook_block(fx.root)["hooks"].get("PreToolUse", []):
+        if _matches(e.get("matcher"), "Bash"):
+            for hk in e["hooks"]:
+                res.append((hk["command"], subprocess.run(
+                    ["/bin/bash", "-c", hk["command"]], input=json.dumps(env_in).encode(),
+                    env=env, cwd=str(elsewhere), capture_output=True, timeout=120)))
+    assert denials(res), f"m-1: with the cwd outside the project the gate allowed ({p})"
+
+
+# -- m-2: install-hooks help ----------------------------------------------------------------------
+
+
+def test_precompact_checkpoint_help_names_the_current_command(fx):
+    """m-2: `rmx install-hooks --help` describes `--precompact-checkpoint` without the old
+    `--no-promote` checkpoint. cbbe9e3f: "PreCompact `rmx save-state --no-promote --no-sync`
+    checkpoint"."""
+    r = h.run_rmx(["install-hooks", "--help"], root=fx.root, RMX_HOME=str(fx.home),
+                  COLUMNS="200")
+    assert r.returncode == 0, r.stderr[-400:]
+    i = r.stdout.find("--precompact-checkpoint")
+    assert i >= 0, r.stdout[:400]
+    nxt = r.stdout.find("\n  --", i + 1)
+    block = r.stdout[i:nxt if nxt > 0 else None]
+    assert "--no-promote" not in block, f"m-2: stale help: {block!r}"
+
+
+# -- m-3: SessionStart reaps expired gates and week-old handoffs ----------------------------------
+
+DAY = 86_400
+
+
+def test_session_start_reaps_expired_gates_and_week_old_handoffs(fx):
+    """m-3: a SessionStart that writes a handoff reaps what no session will consult again.
+    `RMX_HANDOFF_NOW` (epoch seconds) is the test clock knob. At now+6 d: an unread gate past
+    its 24 h expiry is gone (that session is no longer denied), a 6-day-old handoff file stays.
+    At now+8 d: handoff files older than 7 days and their telemetry rows are gone; the file
+    just written stays. cbbe9e3f: nothing is reaped (the expired session stays denied until it
+    consults its own gate)."""
+    import time as _time
+    a, _ = written_handoff(fx, "clear", "cahreapa01")        # read: a pull row, no gate
+    post_read(fx, "cahreapa01", a)
+    c, _ = written_handoff(fx, "clear", "cahreapc01")        # never read: an armed gate
+    assert lead_pulls(fx, "cahreapa01")
+    now = int(_time.time())
+
+    def start_at(session: str, days: int) -> Path:
+        res = fire_with(fx, "SessionStart", "clear",
+                        envelope(fx, "SessionStart", session, source="clear"),
+                        RMX_HANDOFF_NOW=str(now + days * DAY))
+        p = handoff_path(fx, stdout_of(res))
+        assert p is not None and p.is_file(), f"no handoff written for {session}"
+        return p
+
+    start_at("cahreapb01", 6)
+    assert not denials(pre_tool(fx, "cahreapc01", "Bash", {"command": "ls"})), (
+        "m-3: an expired, unread gate was not reaped by the next SessionStart")
+    assert a.is_file() and c.is_file(), "m-3: a 6-day-old handoff file was reaped"
+    b8 = start_at("cahreapd01", 8)
+    assert not a.exists() and not c.exists(), "m-3: handoff files older than 7 days remain"
+    assert b8.is_file(), "m-3: the reap removed the handoff it had just written"
+    assert not lead_pulls(fx, "cahreapa01"), "m-3: week-old handoff telemetry rows remain"
+
+
+# -- m-4: no generated precompact recall channel or budget ----------------------------------------
+
+
+def test_no_precompact_budget_channel_or_producer_remains(fx):
+    """m-4: R2 removed the generated PreCompact recall, so its budget channel goes too: no
+    `precompact` in `hook_budget.CHANNEL_BUDGET_BYTES` / `HOOK_COMMAND_CHANNELS`, none in
+    `rmx telemetry --context`'s `by_producer`, and no generated `--recent` recall. cbbe9e3f:
+    `"precompact": 9_000` and `precompact_recall_cmd` remain."""
+    from refmatrix import hook_budget
+    assert "precompact" not in hook_budget.CHANNEL_BUDGET_BYTES, sorted(
+        hook_budget.CHANNEL_BUDGET_BYTES)
+    assert not [k for k, v in hook_budget.HOOK_COMMAND_CHANNELS.items() if "precompact" in v]
+    r = h.run_rmx(["telemetry", "--context", "--format", "json"], root=fx.root,
+                  RMX_HOME=str(fx.home))
+    assert r.returncode == 0, r.stderr[-400:]
+    assert "precompact" not in json.loads(r.stdout)["by_producer"]
+    assert not [c for _e, _m, c in h.hook_entries(fx.root)
+                if "memory recall" in c and "--recent" in c]

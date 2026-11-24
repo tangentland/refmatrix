@@ -352,16 +352,41 @@ def test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget(silent, monke
     assert abs(float(m.group(1)) - elapsed) < 0.6, (m.group(1), elapsed)
 
 
+def _unbounded_precompact_promotes(block: dict) -> "list[str]":
+    """The PreCompact commands that promote with no `--timeout N` (N <= 30), or one problem
+    line when NO generated PreCompact command promotes. Empty = bounded. bsd-cah r1 #s-2: the
+    amended form asserted `all(...)` over an EMPTY list once the promote moved into
+    save-state, so it constrained nothing."""
+    import re as _re
+    pre = [c for _, _, c in _cmds(block, "PreCompact")]
+    promoting = [c for c in pre if ("rmx save-state" in c and "--no-promote" not in c)
+                 or "focus summarize --promote" in c]
+    if not promoting:
+        return ["no PreCompact command promotes"]
+    bad = []
+    for c in promoting:
+        m = _re.search(r"--timeout (\d+)", c)
+        if not m or not 0 < int(m.group(1)) <= 30:
+            bad.append(c)
+    return bad
+
+
 def test_precompact_promote_is_bounded_too(tmp_path):
     """#m-5: PreCompact is the catch-up, so its budget is longer — but it is
-    a budget, not the 180 s default the harness kills at 60 s."""
+    a budget, not the 180 s default the harness kills at 60 s. Since
+    task-compaction-as-handoff R1 the promote runs inside PreCompact's save-state, which
+    must carry the bound (bsd-cah r1 #s-2). Must-fail cases: no promoting command, a
+    promote without `--timeout`, and one over 30 s."""
     block = _claude_hook_block(tmp_path / ".refmatrix")
-    # task-compaction-as-handoff R1 (L195, 2026-11-24): the promote moved into PreCompact's
-    # save-state (whose daemon write is bounded at 30 s, `handoff._promote_digest`); a
-    # `focus summarize --promote` entry, where one is still generated, keeps its bound.
-    pre = [c for _, _, c in _cmds(block, "PreCompact") if "focus summarize --promote" in c]
-    assert all("--timeout 30" in c for c in pre), pre
-    assert pre or [c for _, _, c in _cmds(block, "PreCompact") if "rmx save-state" in c]
+    assert _unbounded_precompact_promotes(block) == []
+    for cmds in ([], ["rmx save-state --precompact --no-sync"],
+                 ["rmx save-state --precompact --no-sync --timeout 300"],
+                 ["rmx focus summarize --promote"]):
+        planted = {"hooks": {"PreCompact": [{"hooks": [{"command": c} for c in cmds]}]}}
+        assert _unbounded_precompact_promotes(planted), cmds
+    ok = {"hooks": {"PreCompact": [{"hooks": [
+        {"command": "rmx save-state --precompact --no-sync --timeout 20"}]}]}}
+    assert _unbounded_precompact_promotes(ok) == []
 
 
 def test_no_claude_apply_reaps_a_previously_installed_block(tmp_path):
