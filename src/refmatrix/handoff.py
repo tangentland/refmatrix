@@ -24,10 +24,13 @@ never `cli`, so it is safe to import from the MCP process.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
-from datetime import datetime
+import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Shell/path tokens that pollute the STM focus graph (Bash hooks extract them
@@ -285,9 +288,15 @@ def _ss_updated_stamp(today: str) -> str:
 
 def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
                git: dict, focus: dict, tasks: list, recents: list,
-               created: str, today: str, updated: str | None = None) -> str:
+               created: str, today: str, updated: str | None = None,
+               goal: "dict | None" = None) -> str:
     """Render the handoff as a GMD memory doc (MEMORY-RULES shape). `updated`
-    defaults to `_ss_updated_stamp(today)`; `created` stays a frozen date."""
+    defaults to `_ss_updated_stamp(today)`; `created` stays a frozen date.
+
+    `goal` (task-compaction-as-handoff R6, L198, 2026-11-24) is `read_active_goal`'s answer
+    for the session's transcript; it is rendered as the `{#active-goal}` block, last before
+    the `rel:` lines (recall-state renders it as its own block, so it never depends on the
+    24-line excerpt). None = no transcript was known: no block, never a guessed one."""
     head_sha = (git["head"].split() or ["?"])[0]
     headline = message or f"{repo.name} @ {head_sha}"
     L: list[str] = []
@@ -366,6 +375,10 @@ def _ss_render(*, mem_id: str, session: str, repo: Path, message: str | None,
         L.append("")
         for mid, title in recents:
             L.append(f"- [[{mid}]] — {title}")
+        L.append("")
+
+    if goal is not None:
+        L.extend(_goal_block_lines(goal))
         L.append("")
 
     L.append("rel: realizes -> [[feedback_save_state_means_handoff]]")
@@ -538,12 +551,18 @@ class SaveStateWriteError(OSError):
 
 def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
                        message: str | None = None, promote: bool = True,
-                       dry_run: bool = False) -> dict:
+                       dry_run: bool = False, transcript: "str | None" = None) -> dict:
     """Compile + persist the session handoff memory. `s` is a live Stm.
 
     Returns a structured result the caller renders. Side effects (unless
     dry_run): writes the GMD handoff file, refreshes the MEMORY.md index, and
     (when promote) writes the condensed STM digest to durable memory.
+
+    `transcript` (R6, L198, 2026-11-24): the session's Claude Code transcript, which the
+    PreCompact hook passes from its envelope's `transcript_path`; without one, the transcript
+    Claude Code keeps for this session id under `~/.claude/projects/<slug>/` is used when it
+    exists (a `/save-state` then `/clear` keeps the goal too). Its active `/goal` becomes the
+    `{#active-goal}` block; no transcript known = no block.
     """
     events = s.all_events()
     focus = s.focus_graph(top=20)
@@ -571,11 +590,13 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         created_from = target if target.exists() or not legacy.exists() else legacy
     created = _ss_frozen_created(created_from, today)
     recents = _ss_recent_memories(memdir, exclude=mem_id)
+    goal_src = transcript or session_transcript_path(repo, s.session)
+    goal = read_active_goal(goal_src) if goal_src else None
 
     doc = _ss_render(mem_id=mem_id, session=s.session, repo=repo,
                      message=message, git=git, focus=focus, tasks=tasks,
                      recents=recents, created=created, today=today,
-                     updated=_ss_updated_stamp(today))
+                     updated=_ss_updated_stamp(today), goal=goal)
 
     head_sha = (git["head"].split() or ["?"])[0]
     result = {
@@ -591,6 +612,7 @@ def compose_save_state(s, root: Path, *, repo: Path, memdir: Path, today: str,
         # copy whose `created:` it kept, and a removal that failed (said).
         "removed_duplicate": None, "kept_copy": str(pair[0]) if pair else None,
         "remove_failed": None,
+        "active_goal": goal,
     }
     if dry_run:
         return result
@@ -743,7 +765,10 @@ def _latest_savestate(memdir: Path, *, head_chars: int = 1800) -> dict | None:
     if truncated:
         body = (body[:head_chars].rstrip() +
                 f"\n\n… [truncated — full handoff: `rmx memory get {p.stem}`]")
-    return {"id": p.stem, "path": str(p), "body": body, "truncated": truncated}
+    # R6 (L198): the `{#active-goal}` block is read from the WHOLE file, not the capped body,
+    # so a long handoff never hides the goal.
+    return {"id": p.stem, "path": str(p), "body": body, "truncated": truncated,
+            "active_goal": parse_active_goal_block(txt)}
 
 
 def session_pointer_anomalies(root: Path, *, window_s: float = 86400.0) -> list[str]:
@@ -870,8 +895,9 @@ def recall_state_blocks(rep: dict, *, handoff_lines: int = 24,
                         recent_limit: int = 8) -> "list[str]":
     """`rmx recall-state`'s report as WHOLE text blocks, in the order a byte budget keeps them
     (task 25.1 R11, user 2026-11-11): the handoff head (the session line and which save-state
-    is the handoff), the handoff's body head, anomalies, git, daemon, recent memories, the STM
-    digest. Each block ends with a newline.
+    is the handoff), the save-state's active goal (task-compaction-as-handoff R6, when its
+    `{#active-goal}` block exists), the handoff's body head, anomalies, git, daemon, recent
+    memories, the STM digest. Each block ends with a newline.
 
     ONE renderer for the CLI and the `recall_state` verb's `text` (`max_bytes`), so a hook's
     fitted output and an interactive run start with the same lines. Plain text: a hook's
@@ -886,6 +912,10 @@ def recall_state_blocks(rep: dict, *, handoff_lines: int = 24,
     else:
         head.append("no prior save-state handoff found")
     blocks = ["\n".join(head) + "\n"]
+    goal_text = active_goal_report_line(ss.get("active_goal"), ss["id"]) if ss else None
+    if goal_text:
+        # R6 (L198): second, right after the head, so a byte budget keeps it before the excerpt.
+        blocks.append(goal_text + "\n")
     if ss and ss.get("body"):
         excerpt = "\n".join(str(ss["body"]).splitlines()[:handoff_lines])
         blocks.append(excerpt.rstrip("\n") + "\n")
@@ -926,3 +956,593 @@ def fit_recall_state(rep: dict, max_bytes: "int | None") -> "tuple[str, int]":
         trailer=lambda n: f"+{n} block(s) omitted to fit {int(max_bytes)} B; "
                           f"full: rmx recall-state")
     return f.text, f.dropped
+
+
+# ==== compaction and /clear as a handoff (task-compaction-as-handoff, L195, 2026-11-24) ========
+#
+# The user, 2026-11-14 (Q17 a, L91-L93): compaction should behave like save-state -> /clear ->
+# recall-state. No hook can suppress the compaction summary or trigger /clear, so:
+# - PreCompact saves state (with promote) and prints ONE instruction: summarise in one line, the
+#   handoff is authoritative (`precompact_instruction`);
+# - SessionStart(compact|clear) writes the FULL `rmx recall-state` report to a per-session file
+#   here and injects only a pointer (`write_pulled_handoff`, `handoff_pointer`): the measured
+#   45,870 B report (2026-11-14) is over the ~10 KB hook cap and the Bash tool's 30,000-char
+#   output cap, and a Read carries neither;
+# - a pointer alone is not trusted (session 37b7498f read none of the dozens of oversized hook
+#   outputs Claude Code had saved to files), so until the file is Read every other tool call of
+#   that session is denied (`gate_status`), the pointer is re-said on every prompt, and each
+#   pull and stand-down is recorded for `rmx telemetry --context` (`handoff_events`);
+# - the gate can never trap a session: a missing, unreadable or expired file stands it down in
+#   one line.
+# R6 (L198, the user 2026-11-24: "add the goal text to the C1 handoff"): the session's active
+# `/goal`, read from its transcript, rides the save-state (`{#active-goal}`), the report and
+# the pointer, because /clear removes it and only the user can re-issue it.
+
+HANDOFFS_DIR = "handoffs"
+HANDOFF_EVENTS = "events.jsonl"
+POINTER_MAX_BYTES = 1024        # the SessionStart pointer block (RED's contract)
+PRECOMPACT_MAX_BYTES = 1000     # the PreCompact instruction (RED's contract; 3 lines at most)
+FALLBACK_HEAD_MAX_BYTES = 500   # the "could not be written" line above the inline fallback
+GATE_EXPIRY_S = 24 * 3600       # an unread handoff older than this stands its gate down
+
+# Session ids the generated shell fast path can test without Python (`hooks._handoff_cmd`):
+# the same character class there and here, so the shell and Python name the same file.
+SESSION_SLUG_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _say(msg: str) -> None:
+    print(msg, file=sys.stderr)
+
+
+def handoff_slug(session: str) -> str:
+    """The per-session file stem: the session id itself when it is `[A-Za-z0-9_-]+` (every
+    Claude Code session id, a UUID), else a sanitised stem plus a hash, so two ids never
+    share a file."""
+    sid = str(session)
+    if SESSION_SLUG_RE.fullmatch(sid):
+        return sid
+    import hashlib
+    clean = re.sub(r"[^A-Za-z0-9_-]+", "_", sid).strip("_")[:64] or "session"
+    return f"{clean}-{hashlib.sha256(sid.encode('utf-8')).hexdigest()[:10]}"
+
+
+def handoffs_dir(root: Path) -> Path:
+    return Path(root) / HANDOFFS_DIR
+
+
+def handoff_file_path(root: Path, session: str) -> Path:
+    """`<store>/handoffs/<session>.txt`: one file per session, the next write replaces it."""
+    return handoffs_dir(root) / f"{handoff_slug(session)}.txt"
+
+
+def _gate_path(root: Path, session: str) -> Path:
+    return handoffs_dir(root) / f"{handoff_slug(session)}.gate"
+
+
+def _marker_path(root: Path, session: str, kind: str) -> Path:
+    return handoffs_dir(root) / f"{handoff_slug(session)}.{kind}"
+
+
+def _now_ts() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _record_event(root: Path, row: dict) -> bool:
+    """Append one row to `<store>/handoffs/events.jsonl` (what `rmx telemetry --context`
+    reads). A row that cannot be written is said on stderr, never dropped silently."""
+    p = handoffs_dir(root) / HANDOFF_EVENTS
+    row = {"ts": _now_ts(), **row}
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, sort_keys=True) + "\n")
+        return True
+    except OSError as e:
+        _say(f"rmx handoff: could not record the {row.get('event')} event in {p}: "
+             f"{type(e).__name__}: {e}")
+        return False
+
+
+def _clip(text: str, max_bytes: int) -> str:
+    from refmatrix import hook_budget
+    return hook_budget.clip_utf8(text, max_bytes)
+
+
+def _nbytes(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+# ---- R6: the active /goal ------------------------------------------------------------------
+
+# Claude Code's documented clearing forms (goal docs, read 2026-11-23): `/goal clear` and the
+# aliases below. A bare `/goal` only SHOWS the goal and changes nothing.
+GOAL_CLEAR_ALIASES = frozenset({"clear", "stop", "off", "reset", "none", "cancel"})
+_GOAL_TAG = "<command-name>/goal</command-name>"
+# The probed record shape (RED, 2026-11-23, shape + hashes only): a `type: user` record whose
+# `message.content` is a STRING that is exactly this. A quote of it inside a tool result (list
+# content) or an api-request blob is not a command.
+_GOAL_CMD = re.compile(
+    r"\A<command-name>/goal</command-name>\s*<command-message>goal</command-message>\s*"
+    r"<command-args>(.*)</command-args>\s*\Z", re.S)
+_JSONL_PROBE_LINES = 5
+
+
+def _utc_second(ts) -> str:
+    """An ISO timestamp as `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole seconds)."""
+    if not ts:
+        return "an unknown time"
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return f"an unparsed time ({str(ts)[:40]})"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def session_transcript_path(repo: Path, session: "str | None") -> "str | None":
+    """The transcript Claude Code keeps for `session` in this project
+    (`~/.claude/projects/<slug>/<session>.jsonl`, the slug `default_memory_dir` uses), when it
+    exists; None otherwise. Lets a save-state with no hook envelope (`/save-state`, the MCP
+    tool) still record the goal."""
+    if not session:
+        return None
+    p = default_memory_dir(Path(repo)).parent / f"{session}.jsonl"
+    return str(p) if p.is_file() else None
+
+
+def read_active_goal(transcript: "str | Path") -> dict:
+    """The session's active goal from its transcript: the NEWEST `/goal <text>` command not
+    followed by a clearing `/goal` (`GOAL_CLEAR_ALIASES`).
+
+    Returns `{"state": "set", "text", "set_at"}`, `{"state": "cleared", "by", "at"}`,
+    `{"state": "none"}` or `{"state": "unknown", "note"}`; each also carries `transcript`.
+    `text` is verbatim; `set_at` is the record's time to the UTC second. A transcript that
+    cannot be read, or holds no JSON at all, is `unknown` with a one-line `note` naming it:
+    never a guessed or an empty goal. Only lines that hold the command tag, plus the first few
+    lines (to tell a JSONL file from garbage), are parsed, so a long transcript costs little;
+    a tag line that is not JSON is counted (`skipped`) and said, never dropped silently."""
+    p = Path(transcript)
+    base = {"transcript": str(p)}
+    try:
+        raw = p.read_bytes()
+    except OSError as e:
+        why = e.strerror or str(e)
+        return {**base, "state": "unknown",
+                "note": f"the transcript {p} could not be read ({type(e).__name__}: {why})"}
+    probed = parsed = bad = bad_tag = 0
+    goal: "dict | None" = None
+    cleared: "dict | None" = None
+    for line in raw.decode("utf-8", "replace").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        tagged = _GOAL_TAG in s
+        if not tagged:
+            if probed >= _JSONL_PROBE_LINES:
+                continue
+            probed += 1
+        try:
+            rec = json.loads(s)
+        except ValueError:
+            bad += 1
+            bad_tag += int(tagged)
+            continue
+        parsed += 1
+        if not tagged or not isinstance(rec, dict):
+            continue
+        if rec.get("type") != "user" or rec.get("isSidechain") or rec.get("isMeta"):
+            continue
+        msg = rec.get("message")
+        if not isinstance(msg, dict) or msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str):
+            continue
+        m = _GOAL_CMD.match(content)
+        if not m:
+            continue
+        arg = m.group(1)
+        word = arg.strip()
+        if not word:
+            continue                      # a bare `/goal` shows the goal; it sets nothing
+        at = _utc_second(rec.get("timestamp"))
+        if word.lower() in GOAL_CLEAR_ALIASES:
+            goal, cleared = None, {"by": word, "at": at}
+        else:
+            goal, cleared = {"text": arg, "set_at": at}, None
+    if parsed == 0 and bad:
+        return {**base, "state": "unknown",
+                "note": f"the transcript {p} could not be parsed ({bad} line(s) read, none "
+                        f"of them JSON)"}
+    extra = {"skipped": bad_tag} if bad_tag else {}
+    if goal:
+        return {**base, **extra, "state": "set", **goal}
+    if cleared:
+        return {**base, **extra, "state": "cleared", **cleared}
+    return {**base, **extra, "state": "none"}
+
+
+def _goal_block_lines(g: dict) -> "list[str]":
+    """The save-state's `{#active-goal}` block for `read_active_goal`'s answer. A set goal is
+    `- goal: /goal <text>` (verbatim; a multi-line goal continues on lines indented two
+    spaces) and `- set: <UTC second>`; anything else is ONE `- goal:` line saying why there is
+    no goal. `parse_active_goal_block` reads it back."""
+    L = ["## Active goal {#active-goal}", ""]
+    st = g.get("state")
+    if st == "set":
+        first, *rest = str(g.get("text") or "").split("\n")
+        L.append(f"- goal: /goal {first}")
+        L.extend(f"  {ln}" for ln in rest)
+        L.append(f"- set: {g.get('set_at') or 'an unknown time'}")
+        L.append(f"- source: `{g.get('transcript')}`")
+    elif st == "cleared":
+        L.append(f"- goal: none (cleared by `/goal {g.get('by')}` at {g.get('at')})")
+        L.append(f"- source: `{g.get('transcript')}`")
+    elif st == "none":
+        L.append("- goal: none (no `/goal` was set in this session's transcript)")
+        L.append(f"- source: `{g.get('transcript')}`")
+    else:
+        L.append(f"- goal: unknown: {g.get('note') or 'no reason recorded'}")
+    if g.get("skipped"):
+        L.append(f"- note: {g['skipped']} `/goal` line(s) in the transcript are not JSON and "
+                 f"were skipped")
+    return L
+
+
+def parse_active_goal_block(doc: str) -> "dict | None":
+    """A save-state's `{#active-goal}` block as `{"state", "text"?, "set_at"?, "note"?}`, or
+    None when the file has no block (written before R6, or with no transcript known)."""
+    i = doc.find("{#active-goal}")
+    if i < 0:
+        return None
+    nl = doc.find("\n", i)
+    start = len(doc) if nl < 0 else nl + 1
+    nxt = re.search(r"^(#{1,6} |rel: )", doc[start:], re.M)
+    lines = (doc[start:start + nxt.start()] if nxt else doc[start:]).splitlines()
+    out: dict = {"state": None}
+    j = 0
+    while j < len(lines):
+        ln = lines[j]
+        if ln.startswith("- goal: /goal "):
+            text = [ln[len("- goal: /goal "):]]
+            while j + 1 < len(lines) and lines[j + 1].startswith("  "):
+                text.append(lines[j + 1][2:])
+                j += 1
+            out.update(state="set", text="\n".join(text))
+        elif ln.startswith("- goal: unknown: "):
+            out.update(state="unknown", note=ln[len("- goal: unknown: "):])
+        elif ln.startswith("- goal: none"):
+            out.update(state="none", note=ln[len("- goal: "):])
+        elif ln.startswith("- set: "):
+            out["set_at"] = ln[len("- set: "):].strip()
+        j += 1
+    if out["state"] is None:
+        return {"state": "unknown", "note": "the {#active-goal} block holds no `- goal:` line"}
+    return out
+
+
+def active_goal_report_line(g: "dict | None", ss_id: str) -> "str | None":
+    """The recall-state report's goal block (no trailing newline), or None with no block."""
+    if not g:
+        return None
+    st = g.get("state")
+    if st == "set":
+        return (f"active goal: /goal {g.get('text')}\n"
+                f"     set {g.get('set_at') or 'at an unknown time'} (from {ss_id})")
+    if st == "none":
+        return f"active goal: {g.get('note') or 'none'} (from {ss_id})"
+    return f"active goal: unknown, {g.get('note')} (from {ss_id})"
+
+
+def goal_pointer_lines(g: "dict | None", ss_id: str, *, max_bytes: int) -> "list[str]":
+    """The pointer's goal lines (R6): `active goal: /goal <verbatim>` and what to do with it,
+    within `max_bytes` (a goal too long for the pointer is clipped there and named whole in
+    the handoff file). No goal, or a cleared one: no line."""
+    if not g or g.get("state") in (None, "none"):
+        return []
+    if g.get("state") == "set":
+        first, *rest = str(g.get("text") or "").split("\n")
+        more = " (it continues in the handoff file)" if rest else ""
+        line2 = (f"It was set {g.get('set_at') or 'at an unknown time'} ({ss_id}). Run a bare "
+                 f"/goal to check that it is still active; if none is, ask the user to "
+                 f"re-issue that exact command.")
+        line1 = f"active goal: /goal {first}{more}"
+        if _nbytes(line1) + _nbytes(line2) + 2 > max_bytes:
+            tail = " … (clipped; the full text is in the handoff file)"
+            room = max_bytes - _nbytes(line2) - 2 - _nbytes(tail)
+            line1 = _clip(f"active goal: /goal {first}", max(room, 40)) + tail
+        return [line1, line2]
+    line = (f"active goal: unknown, {g.get('note')}; run a bare /goal to check whether one "
+            f"is active.")
+    return [_clip(line, max_bytes - 1)]
+
+
+# ---- R3: the per-session handoff file and its pointer ---------------------------------------
+
+
+def write_pulled_handoff(root: Path, session: str, text: str, *, source: str) -> dict:
+    """Write the FULL recall-state report to `handoff_file_path` (atomically: a temp file then
+    `os.replace`, so a reader never sees half of it) and arm the session's read gate.
+
+    Raises OSError when the FILE cannot be written (the caller then falls back to the inline
+    report, R3). A gate that cannot be armed after the file landed is returned in
+    `gate_error` for the pointer to say: the file is still the handoff."""
+    path = handoff_file_path(root, session)
+    data = text.encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+    state = {"session": str(session), "path": str(path), "bytes": len(data),
+             "written_at": time.time(), "source": source or "unknown"}
+    gate_error = None
+    try:
+        for kind in ("pulled", "stood-down"):
+            _marker_path(root, session, kind).unlink(missing_ok=True)
+        _gate_path(root, session).write_text(json.dumps(state), encoding="utf-8")
+    except OSError as e:
+        gate_error = f"{type(e).__name__}: {e}"
+        _say(f"rmx recall-state --handoff: the read gate for {path} could not be armed: "
+             f"{gate_error}")
+    _record_event(root, {"event": "write", "session": str(session), "path": str(path),
+                         "bytes": len(data), "source": state["source"],
+                         **({"gate_error": gate_error} if gate_error else {})})
+    return {**state, "gate_error": gate_error}
+
+
+def handoff_pointer(written: dict, *, source: str, savestate: "dict | None") -> str:
+    """The block SessionStart(compact|clear) injects instead of the report: the file's
+    absolute path, its byte count, "read it before any other action; it is the authoritative
+    state", and the R6 goal lines; at most `POINTER_MAX_BYTES`."""
+    when = {"compact": "compaction", "clear": "/clear"}.get(source, source or "session start")
+    path, n = written["path"], written["bytes"]
+    lines = [f"Handoff after {when}: the full recall-state report is in {path} ({n} B)."]
+    if written.get("gate_error"):
+        lines.append(_clip(f"Read {path} before any other action: it is the authoritative "
+                           f"state (the read gate could not be armed: "
+                           f"{written['gate_error']}).", 600))
+    else:
+        lines.append(f"Read {path} before any other action: it is the authoritative state; "
+                     f"every other tool call is denied until it is read.")
+    room = POINTER_MAX_BYTES - _nbytes("\n".join(lines) + "\n") - 1
+    if savestate:
+        lines.extend(goal_pointer_lines(savestate.get("active_goal"), savestate.get("id") or "?",
+                                        max_bytes=room))
+    return _clip("\n".join(lines) + "\n", POINTER_MAX_BYTES)
+
+
+def handoff_fallback(reason: str, fitted: str) -> str:
+    """R3's fallback: one line saying the handoff file could not be written, then 25.1's
+    budgeted inline report. Nothing is gated (no file was written)."""
+    head = _clip(" ".join(f"handoff file could not be written ({reason}); the budgeted "
+                          f"recall-state report follows inline and nothing is gated.".split()),
+                 FALLBACK_HEAD_MAX_BYTES)
+    return head + "\n" + fitted
+
+
+# ---- R3b: the read gate, the pull marker and the re-injection --------------------------------
+
+
+def _same_file(a, b: str) -> bool:
+    if not isinstance(a, str) or not a:
+        return False
+    return os.path.realpath(a) == os.path.realpath(b)
+
+
+def _load_gate(root: Path, session: str) -> "tuple[dict | None, str | None]":
+    """(gate state, problem). (None, None) = this session is not gated."""
+    gp = _gate_path(root, session)
+    try:
+        raw = gp.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, None
+    except OSError as e:
+        return {"path": str(gp)}, f"its gate state {gp} is unreadable ({type(e).__name__}: {e})"
+    try:
+        st = json.loads(raw)
+    except ValueError:
+        st = None
+    if not isinstance(st, dict) or not isinstance(st.get("path"), str):
+        return {"path": str(gp)}, f"its gate state {gp} is not a JSON object with a path"
+    return st, None
+
+
+def _stand_down(root: Path, session: str, state: dict, reason: str) -> str:
+    """Lift a gate that cannot be satisfied, record it, and return the ONE line that says so."""
+    path = state.get("path") or "?"
+    try:
+        _marker_path(root, session, "stood-down").write_text(
+            json.dumps({"session": session, "path": path, "reason": reason, "ts": _now_ts()}),
+            encoding="utf-8")
+        _gate_path(root, session).unlink(missing_ok=True)
+    except OSError as e:
+        reason += f"; the gate could not be cleared ({type(e).__name__}: {e})"
+    _record_event(root, {"event": "stand_down", "session": session, "path": path,
+                         "reason": reason})
+    return f"rmx handoff gate stood down: {path} {reason}; nothing is gated."
+
+
+def gate_status(root: Path, session: "str | None") -> "tuple[str, dict | None, str]":
+    """`("none" | "armed" | "stood_down", state, line)` for `session`. A gate whose file is
+    missing, unreadable or past `GATE_EXPIRY_S` stands down here, once, with its line."""
+    if not session:
+        return "none", None, ""
+    session = str(session)
+    if _marker_path(root, session, "pulled").exists():
+        # A pull whose gate file could not be removed must not keep the session trapped.
+        _gate_path(root, session).unlink(missing_ok=True)
+        return "none", None, ""
+    state, problem = _load_gate(root, session)
+    if state is None:
+        return "none", None, ""
+    if problem:
+        return "stood_down", state, _stand_down(root, session, state, problem)
+    path = state["path"]
+    age = time.time() - float(state.get("written_at") or 0)
+    if age > GATE_EXPIRY_S:
+        why = f"was written {age / 3600:.0f} h ago, past the {GATE_EXPIRY_S // 3600} h expiry"
+        return "stood_down", state, _stand_down(root, session, state, why)
+    if not os.path.isfile(path):
+        return "stood_down", state, _stand_down(root, session, state, "is missing")
+    if not os.access(path, os.R_OK):
+        return "stood_down", state, _stand_down(root, session, state, "is not readable")
+    return "armed", state, ""
+
+
+def gate_decision(root: Path, envelope: dict) -> "tuple[str, str]":
+    """PreToolUse: `("allow", "")`, `("deny", reason)` or `("stand_down", line)`. While the
+    session's handoff is unread, every tool call but a Read of that exact file is denied."""
+    status, state, line = gate_status(root, envelope.get("session_id"))
+    if status != "armed":
+        return ("stand_down", line) if status == "stood_down" else ("allow", "")
+    path = state["path"]
+    ti = envelope.get("tool_input") or {}
+    if envelope.get("tool_name") == "Read" and isinstance(ti, dict) \
+            and _same_file(ti.get("file_path"), path):
+        return "allow", ""
+    return "deny", (f"read {path} first: it is the authoritative state (the "
+                    f"{state.get('source')} handoff, {state.get('bytes')} B); every other tool "
+                    f"call is denied until that Read.")
+
+
+def _offset_ok(ti: dict) -> bool:
+    off = ti.get("offset")
+    if off in (None, ""):
+        return True
+    try:
+        return int(off) <= 1
+    except (TypeError, ValueError):
+        return False
+
+
+def record_pull(root: Path, envelope: dict) -> "dict | None":
+    """PostToolUse(Read): a successful Read of the session's handoff, from its start (no
+    offset, or offset <= 1; lead ruling L200), writes the `.pulled` marker, lifts the gate and
+    records the pull (path, bytes, seconds since the file was written). Anything else: None."""
+    session = envelope.get("session_id")
+    status, state, _line = gate_status(root, session)
+    if status != "armed" or envelope.get("tool_name") != "Read":
+        return None
+    ti = envelope.get("tool_input") or {}
+    if not isinstance(ti, dict) or not _same_file(ti.get("file_path"), state["path"]) \
+            or not _offset_ok(ti):
+        return None
+    resp = envelope.get("tool_response")
+    if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
+        return None
+    session = str(session)
+    path = state["path"]
+    try:
+        nbytes = os.stat(path).st_size
+    except OSError:
+        nbytes = int(state.get("bytes") or 0)
+    seconds = round(max(0.0, time.time() - float(state.get("written_at") or time.time())), 3)
+    row = {"session": session, "path": path, "bytes": nbytes, "seconds": seconds}
+    _marker_path(root, session, "pulled").write_text(
+        json.dumps({**row, "ts": _now_ts()}), encoding="utf-8")
+    _gate_path(root, session).unlink(missing_ok=True)
+    _record_event(root, {"event": "pull", **row})
+    return row
+
+
+def remind_line(root: Path, session: "str | None") -> str:
+    """UserPromptSubmit: the one-line pointer while the session's handoff is unread (so a
+    tool-less reply cannot skip it for more than one turn), the stand-down line when the gate
+    just stood down, else ''."""
+    status, state, line = gate_status(root, session)
+    if status == "stood_down":
+        return line
+    if status != "armed":
+        return ""
+    return (f"Handoff pending: read {state['path']} before any other action; it is the "
+            f"authoritative state ({state.get('bytes')} B, written after "
+            f"{state.get('source')}).")
+
+
+def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
+    """`rmx telemetry --context`'s `handoff` view: every handoff written, pulled and stood
+    down, from `<store>/handoffs/events.jsonl`. Compliance is `len(pulls) / len(written)`;
+    `seconds` is from the write (the session's start) to the Read. Unreadable lines are
+    counted, never skipped silently."""
+    out: dict = {"written": [], "pulls": [], "stand_downs": [], "unreadable_lines": 0}
+    p = handoffs_dir(root) / HANDOFF_EVENTS
+    if not p.is_file():
+        return out
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError as e:
+        out["error"] = f"{p}: {type(e).__name__}: {e}"
+        return out
+    keys = {"write": ("written", ("session", "path", "bytes", "source", "gate_error")),
+            "pull": ("pulls", ("session", "path", "bytes", "seconds")),
+            "stand_down": ("stand_downs", ("session", "path", "reason"))}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            out["unreadable_lines"] += 1
+            continue
+        if not isinstance(row, dict) or row.get("event") not in keys:
+            out["unreadable_lines"] += 1
+            continue
+        if since and str(row.get("ts") or "") < since:
+            continue
+        bucket, fields = keys[row["event"]]
+        out[bucket].append({"ts": row.get("ts"),
+                            **{k: row[k] for k in fields if k in row}})
+    return out
+
+
+# ---- R1 / R2: the PreCompact instruction ----------------------------------------------------
+
+
+def precompact_instruction(root: Path, session: "str | None", *, memdir: Path,
+                           saved: "dict | None", save_failed: bool,
+                           checkpoint: bool = True) -> str:
+    """PreCompact's whole stdout (R2): at most one summary line naming the task in progress,
+    the handoff is authoritative, do not restate files, decisions or plans; it names the
+    save-state (R1: the one just written, else the last good one) and the handoff file the
+    SessionStart(compact) entry will write (R3: "names the same first action"). Two lines,
+    at most `PRECOMPACT_MAX_BYTES`."""
+    from refmatrix import memory_layout
+    hfile = (str(handoff_file_path(root, session)) if session
+             else f"{handoffs_dir(root)}/<this session>.txt")
+    after = f"after compaction its full report is written to {hfile} and read before any other action."
+    line1 = ("Compaction summary: write at most one line, naming the task in progress. "
+             "Do not restate files, decisions or plans.")
+
+    def compose(with_paths: bool) -> str:
+        if saved and not save_failed:
+            ref = saved["mem_id"] + (f" ({saved['target']})" if with_paths else "")
+            line2 = f"The handoff is authoritative: save-state {ref}; {after}"
+        else:
+            lead = ("This session's save-state could not be written (the cause is on stderr)"
+                    if save_failed else
+                    "No checkpoint was saved (precompact_checkpoint is off)")
+            try:
+                cands = memory_layout.iter_savestates(memdir) if memdir.is_dir() else []
+            except OSError as e:
+                _say(f"rmx precompact: could not list the save-states in {memdir}: "
+                     f"{type(e).__name__}: {e}")
+                cands = []
+            if cands:
+                last = Path(cands[0])
+                ref = last.stem + (f" ({last})" if with_paths else "")
+                line2 = f"{lead}; the last good handoff, {ref}, is authoritative; {after}"
+            else:
+                line2 = (f"{lead}, and no earlier save-state exists; the report written after "
+                         f"compaction to {hfile} is authoritative and is read before any "
+                         f"other action.")
+        return line1 + "\n" + line2 + "\n"
+
+    text = compose(True)
+    if _nbytes(text) > PRECOMPACT_MAX_BYTES:
+        text = compose(False)
+    return _clip(text, PRECOMPACT_MAX_BYTES)

@@ -1621,12 +1621,18 @@ def ingest(root: Path, *, path: str | None = None,
 def save_state(root: Path, *, message: str | None = None,
                promote: bool = True, dry_run: bool = False,
                session: str | None = None, memory_dir: str | None = None,
-               lint: bool = True, sync: bool = True) -> dict:
+               lint: bool = True, sync: bool = True,
+               transcript: str | None = None) -> dict:
     """The CLI `rmx save-state` calls this and renders; `--commit` (git) is a
     CLI-only post-step. `dry_run` returns the rendered `doc` and writes
     nothing. Result carries `events`, `target`, `promoted`, `subject`,
-    `lint`, `filed_subject`, `sync`. A failed promote or memory bridge raises
-    `SaveStateIncompleteError` (with that result) AFTER the handoff is written."""
+    `lint`, `filed_subject`, `sync`, `active_goal`. A failed promote or memory bridge raises
+    `SaveStateIncompleteError` (with that result) AFTER the handoff is written.
+
+    `transcript` (task-compaction-as-handoff R6, L198, 2026-11-24): the session's Claude Code
+    transcript, whose active `/goal` becomes the save-state's `{#active-goal}` block; the
+    PreCompact hook passes its envelope's `transcript_path`. Without it, the transcript Claude
+    Code keeps for the session id is used when it exists (`handoff.session_transcript_path`)."""
     import time as _time
     from refmatrix import handoff, stm as stm_mod
     repo = Path(root).parent
@@ -1638,7 +1644,7 @@ def save_state(root: Path, *, message: str | None = None,
         res = handoff.compose_save_state(
             s, root, repo=repo, memdir=memdir,
             today=_time.strftime("%Y-%m-%d"), message=message,
-            promote=promote, dry_run=dry_run)
+            promote=promote, dry_run=dry_run, transcript=transcript)
     except handoff.SaveStateWriteError as exc:
         # A save that could not write is an error to EVERY caller, never a
         # result with a `target` (task 26.3 remedy-r1).

@@ -1196,7 +1196,11 @@ def summarize_context(root: Path, *, since: "str | None" = None,
         _close()
 
     total_bytes = sum(int(r["out_bytes"]) for r in counted)
+    # task-compaction-as-handoff R3b (L93, 2026-11-14): "telemetry records each pull (path,
+    # bytes, seconds from session start to the read) so compliance is measured, not assumed".
+    from refmatrix.handoff import handoff_events
     return {
+        "handoff": handoff_events(root, since=since),
         # Task 31.5 R0.6 (2026-11-15): the injection capture's state and coverage, the ONE
         # `capture:` line. The scan hook discards stderr, so this is where a capture that
         # stopped, or a composite that failed (bug-256), becomes visible.
