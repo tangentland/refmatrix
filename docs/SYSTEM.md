@@ -241,11 +241,13 @@ index, so the next equivalent query lands at the `rmx query` step instead.
 
 ## What refmatrix is not {#what-refmatrix-is-not}
 
-- **Not a vector store.** No embeddings in the core. The scoring stack
+- **Not a vector store first.** Retrieval is symbolic first: the scoring stack
   (BM25 + docstring linkage + coverage^3 + linkage-coupled co-mention^2)
   consistently beats CodeRankEmbed on CSN Python/JavaScript MRR@10 — see
-  `eval/` and [[PERFORMANCE#benchmark-results]]. Embedding integration is on the roadmap
-  but not currently in the index path.
+  `eval/` and [[PERFORMANCE#benchmark-results]]. Dense vectors are a second leg, not the
+  index: `pylance` and `sentence-transformers` are core dependencies, a store keeps a Lance
+  vector dataset per partition, and memory recall is dense ANN that `--fuse` combines with
+  the symbolic leg (corrected 2026-11-24; this line said embeddings were only on the roadmap).
 - **Not a code-execution sandbox.** rmx never runs project code; all
   extraction is static (AST / regex / fenced-block parsing).
 - **Not a network service.** The daemons and the hub talk over local Unix sockets; the only
