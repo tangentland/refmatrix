@@ -622,12 +622,26 @@ def test_a_memory_re_added_after_forget_is_not_ranked_by_the_old_body(tmp_path):
 
 def test_forget_matches_blocks_by_exact_name_not_a_like_pattern(tmp_path):
     """`_` is a LIKE wildcard and memory ids contain it: forgetting `a_b` must
-    take `a_b#…` and leave `axb#…`, and leave `a_b#…` in another partition."""
+    take `a_b#…` and leave `axb#…`, and leave `a_b#…` in another partition.
+
+    Two planted `axb` rows pin each matching layer on its own: `axb#legacy`
+    has no `meta.doc` (a name-only row, which a `LIKE 'a_b#%'` would take),
+    and `axb#cites` names `a_b` in its meta but is `axb`'s (which a match on
+    the meta text alone would take)."""
+    import os
+    from pathlib import Path
     _b302_seed(tmp_path, {"a_b": "alpha", "axb": "beta"},
                partitions=(_B302_PART, "memory-other"))
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    with s.with_partition(_B302_PART):
+        s.add_concept("axb#legacy")
+        s.upsert_entity(kind="concept", name="axb#cites",
+                        meta={"doc": "axb", "anchor": "cites", "see": "a_b"})
+    s.close()
     _b302_cli(["memory", "forget", "a_b", "--yes"])
     assert _b302_blocks("a_b") == []
-    assert _b302_blocks("axb") == ["axb#how-to-apply", "axb#notes", "axb#root"]
+    assert _b302_blocks("axb") == [
+        "axb#cites", "axb#how-to-apply", "axb#legacy", "axb#notes", "axb#root"]
     assert _b302_blocks("a_b", "memory-other") == [
         "a_b#how-to-apply", "a_b#notes", "a_b#root"]
 
