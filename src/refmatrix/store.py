@@ -4998,7 +4998,10 @@ class Store:
         scan of `entities` for the block -> memory tie -- never a second pass
         over the block postings themselves (12.8M rows on LongMemEval). Cached
         per (instance, partition) on the same terms as `_mentions_doclen`, and
-        dropped with it by `_invalidate_content_rank_caches`."""
+        dropped with it by `_invalidate_content_rank_caches`: the same one-flush
+        staleness contract as the other BM25 caches (a block written since the
+        last write boundary, up to one ~30 s flush, is missing from a memory's
+        length until the next one; accepted as bsd-b300 r1 m-1, L209)."""
         cache = getattr(self, "_memblocklen_cache", None)
         if cache is not None and cache[0] == self._partition_id:
             return cache[1]
@@ -5323,19 +5326,24 @@ class Store:
             _block_len: "dict[int, float] | None" = None
             if credit_blocks:
                 _block_rows = self._memory_block_postings(mlid, flat)
-                if _block_rows:
-                    # One BM25 document per memory: tf = its own count plus its
-                    # blocks' counts for the same concept.
-                    _merged: dict[tuple[int, int], float] = {}
-                    for eid, cid, w in rows:
-                        _k = (int(eid), int(cid))
-                        _merged[_k] = _merged.get(_k, 0.0) + _raw_tf(w)
-                    _null_w = _raw_tf(None)
-                    for mid, cid, wsum, n_null in _block_rows:
-                        _k = (int(mid), int(cid))
-                        _merged[_k] = (_merged.get(_k, 0.0) + float(wsum or 0.0)
-                                       + int(n_null or 0) * _null_w)
-                    _scored = [(e, c, t) for (e, c), t in _merged.items()]
+                # One BM25 document per memory: tf = its own count plus its
+                # blocks' counts for the same concept. The LENGTH rule (own +
+                # all blocks) holds for every memory scored on this path, even
+                # when no block matched a query term (L209, bsd-b300 r1 b-1,
+                # 2026-11-24): gated on `_block_rows`, a memory matching only on
+                # its own postings was normed by its title length alone and
+                # outranked a shorter memory it should trail.
+                _merged: dict[tuple[int, int], float] = {}
+                for eid, cid, w in rows:
+                    _k = (int(eid), int(cid))
+                    _merged[_k] = _merged.get(_k, 0.0) + _raw_tf(w)
+                _null_w = _raw_tf(None)
+                for mid, cid, wsum, n_null in _block_rows:
+                    _k = (int(mid), int(cid))
+                    _merged[_k] = (_merged.get(_k, 0.0) + float(wsum or 0.0)
+                                   + int(n_null or 0) * _null_w)
+                _scored = [(e, c, t) for (e, c), t in _merged.items()]
+                if _scored:
                     _block_len = self._memory_block_doclen(mlid)
             if _scored:
                 doc_len = self._mentions_doclen(mlid)
