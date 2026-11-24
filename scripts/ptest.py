@@ -190,7 +190,7 @@ class Shard:
         self.log = self.failures = self.outcomes = None
 
 
-def default_shards(concurrent_tiers: int) -> int:
+def default_shards(concurrent_tiers: int = 1) -> int:
     """Ruling L192 (3): load stays at or under the core count. A daemon-tier shard keeps a
     child (a daemon, a CLI, an inner pytest) busy beside its pytest process, so the budget is
     half the cores, split between the tiers that run at the same time."""
