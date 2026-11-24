@@ -2763,7 +2763,9 @@ class Store:
         eid = self._memory_entity_id(name_or_id)
         if eid is None:
             return False
+        blocks = self._memory_block_rows([eid])
         self.purge_entity(eid)
+        self._purge_memory_blocks(blocks)
         return True
 
     def _memory_entity_id(self, name_or_id: str | int) -> "int | None":
@@ -2784,6 +2786,62 @@ class Store:
                 (self._partition_id, name_or_id),
             ).fetchone()
         return int(row["id"]) if row is not None else None
+
+    def _memory_block_rows(
+        self, memory_ids: "Iterable[int]"
+    ) -> "list[tuple[int, str, str]]":
+        """`(id, 'concept', name)` of every GMD block node the memories with
+        `memory_ids` own, for a forget to purge with them (bug-302, 2026-11-24).
+
+        WHY: a GMD memory's `{#anchor}` blocks are `kind=concept` rows named
+        `<memory>#<anchor>` with `meta.doc` = the memory's name (ingest_gmd pass
+        1), and every forget path dropped only the memory row. The blocks and
+        their `mentions` edges outlived it (3 on the live dev store), so a NEW
+        memory re-added under that name was credited the dead body through
+        bug-300's by-name block join (bsd-b300 r1 s-1).
+
+        A block is matched in the MEMORY'S OWN partition (an `id` forget may
+        name another partition's row), by EXACT name prefix `<name>#` or by
+        `meta.doc == name`, never by a SQL LIKE: `_` is a LIKE wildcard and
+        memory ids contain it, so `a_b#%` would take `axb`'s blocks. A
+        prefix-matched row whose readable `meta.doc` names a DIFFERENT doc is
+        not this memory's (memory `a` vs a doc whose id is `a#b`). A row whose
+        meta does not parse is decided by its name alone."""
+        con = self._connect()
+        out: dict[int, tuple[int, str, str]] = {}
+        for mid in memory_ids:
+            mem = con.execute(
+                "SELECT partition_id, name FROM entities WHERE id=? AND kind='memory'",
+                (int(mid),)).fetchone()
+            if mem is None:
+                continue
+            pid, name = int(mem[0]), str(mem[1])
+            prefix = f"{name}#"
+            for eid, bname, meta in con.execute(
+                    "SELECT id, name, meta FROM entities "
+                    "WHERE partition_id=? AND kind='concept' "
+                    "AND (substr(name, 1, ?) = ? OR instr(meta, ?) > 0)",
+                    (pid, len(prefix), prefix, json.dumps(name))).fetchall():
+                try:
+                    m = json.loads(meta) if meta else {}
+                except (TypeError, ValueError):
+                    m = {}
+                doc = m.get("doc") if isinstance(m, dict) else None
+                if doc == name or (doc is None and str(bname).startswith(prefix)):
+                    out[int(eid)] = (int(eid), "concept", str(bname))
+        return sorted(out.values())
+
+    def _purge_memory_blocks(self, blocks: "list[tuple[int, str, str]]") -> int:
+        """Purge the block rows `_memory_block_rows` found (bug-302): one batched
+        purge (one Lance drop, chunked SQL, a tombstone per row so a log replay
+        drops them too). Counted on `memory_blocks_purged`, a running total the
+        caller reads as a delta like `vector_delete_failures`, and every forget
+        path reports it: never a silent removal."""
+        if not blocks:
+            return 0
+        self._bulk_purge_ids(blocks)
+        self.memory_blocks_purged = getattr(self, "memory_blocks_purged", 0) + len(blocks)
+        return len(blocks)
 
     def memory_facets(self) -> dict:
         """Distinct mtypes + tags (with counts) for memories in the active
@@ -2992,11 +3050,16 @@ class Store:
         failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch(ids_by_kind)
 
+        # The memories' GMD block nodes go with them (bug-302); found before
+        # the rows they are matched against are purged.
+        blocks = self._memory_block_rows(id_list)
         for eid in id_list:
             self.purge_entity(eid, _skip_lance=True)
+        blocks_purged = self._purge_memory_blocks(blocks)
         return {
             "forgotten": len(id_list), "ids": id_list,
             "by_mtype": per_mtype, "dry_run": False,
+            "blocks_purged": blocks_purged,
             # ch-bsd r8 #s-1: a memory path; the failure reaches the caller.
             "vector_delete_failed":
                 getattr(self, "vector_delete_failures", 0) - failed0,
@@ -6415,6 +6478,63 @@ class Store:
                 "vector_delete_failed":
                     getattr(self, "vector_delete_failures", 0) - failed0}
 
+    def purge_orphan_gmd_blocks(self, *, dry_run: bool = True) -> dict:
+        """Purge the GMD block nodes whose memory or doc is gone, in the ACTIVE
+        partition (bug-302, 2026-11-24): the debt every forget left before
+        bug-302 made forgets take their blocks (3 on the live dev store, which
+        bug-300's by-name block join would credit to any memory re-added under
+        that name). `rmx memory dedup --orphan-blocks`; DRY RUN BY DEFAULT --
+        the dry run lists them and purges nothing.
+
+        Its own step, not folded into `fold_concept_dups`: on the live dev
+        store that fold would also merge 403 body-term concepts into their
+        same-named memories (a read-only copy, 2026-11-24), a graph change this
+        repair must not carry. A candidate whose meta does not parse cannot be
+        judged; it is named in `orphan_blocks_unreadable` and kept.
+
+        Returns {orphan_blocks, orphan_block_names, orphan_blocks_unreadable,
+        dry_run, vector_delete_failed}."""
+        orphans, unreadable = self._orphan_gmd_block_rows()
+        failed0 = getattr(self, "vector_delete_failures", 0)
+        if not dry_run and orphans:
+            self._bulk_purge_ids(orphans)
+            self.flush_fragments()
+        return {"orphan_blocks": len(orphans),
+                "orphan_block_names": [n for _i, _k, n in orphans],
+                "orphan_blocks_unreadable": unreadable, "dry_run": dry_run,
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
+
+    def _orphan_gmd_block_rows(self) -> "tuple[list[tuple[int, str, str]], list[str]]":
+        """`(rows, unreadable)`: the GMD block nodes in the ACTIVE partition whose
+        `meta.doc` names no `kind=memory` and no `kind=doc` row there, as
+        `(id, 'concept', name)`; and the names of `#`-named concepts whose meta
+        does not parse, which cannot be judged (bug-302). Only rows ingest_gmd
+        stamped `gmd_node` are candidates, so a concept that merely has `#` in
+        its name (a learned `query/…#…`) is never one."""
+        con = self._connect()
+        pid = self._partition_id
+        owners = {str(r[0]) for r in con.execute(
+            "SELECT name FROM entities WHERE partition_id=? AND kind IN ('memory','doc')",
+            (pid,)).fetchall()}
+        rows: list[tuple[int, str, str]] = []
+        unreadable: list[str] = []
+        for eid, name, meta in con.execute(
+                "SELECT id, name, meta FROM entities WHERE partition_id=? "
+                "AND kind='concept' AND instr(name, '#') > 0 AND meta IS NOT NULL "
+                "ORDER BY name", (pid,)).fetchall():
+            try:
+                m = json.loads(meta)
+            except (TypeError, ValueError):
+                unreadable.append(str(name))
+                continue
+            if not isinstance(m, dict) or not m.get("gmd_node"):
+                continue
+            doc = m.get("doc")
+            if isinstance(doc, str) and doc and doc not in owners:
+                rows.append((int(eid), "concept", str(name)))
+        return rows, unreadable
+
     def purge_path(self, abs_path: str) -> int:
         """Remove every entity (file + per-function) anchored at abs_path.
         Returns the number of *entities* removed. Scoped to the active
@@ -6614,8 +6734,15 @@ class Store:
         if dry_run:
             return {"forgotten": 0, "names": names, "dry_run": True}
         failed0 = getattr(self, "vector_delete_failures", 0)
+        # A selected memory's GMD block nodes go with it (bug-302), minus any
+        # block the selector already matched (it is counted in `forgotten`).
+        selected = {int(r[0]) for r in rows}
+        blocks = [b for b in self._memory_block_rows(
+            int(r[0]) for r in rows if r[2] == "memory") if b[0] not in selected]
         self._bulk_purge_ids([(int(r[0]), r[2], r[1]) for r in rows])
+        blocks_purged = self._purge_memory_blocks(blocks)
         return {"forgotten": len(rows), "names": names, "dry_run": False,
+                "blocks_purged": blocks_purged,
                 "vector_delete_failed":
                     getattr(self, "vector_delete_failures", 0) - failed0}
 

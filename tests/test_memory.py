@@ -510,3 +510,172 @@ def test_pending_embeddings_requeues_on_partition_mismatch(tmp_path, monkeypatch
     con.commit()
     assert eid not in [r[0] for r in s.pending_embeddings(kinds=["memory"])]
 
+
+
+# --- bug-302: forgetting a GMD memory takes its block nodes with it ----------
+#
+# A GMD-ingested memory owns `kind=concept` block nodes named `<memory>#<anchor>`
+# (meta.doc = the memory's name). Before bug-302 every forget path dropped the
+# memory row and left those blocks, their `mentions` edges included, so a NEW
+# memory re-added under the same name was credited the dead body (bsd-b300 r1
+# s-1, 2026-11-24). The forgets run through the real CLI on the sandbox store
+# (no daemon there, so the verb's absent branch runs the store method).
+
+_B302_PART = "memory-b302"
+
+
+def _b302_gmd(path, doc_id: str, word: str):
+    path.write_text(
+        f'---\ngmd: "0.1"\nid: {doc_id}\ntitle: "{doc_id}"\ntags: [feedback]\n'
+        f'metadata:\n  type: feedback\n---\n\n# {doc_id} {{#root}}\n\nlead line\n\n'
+        f'## Notes {{#notes}}\n\n{word} {word} detour {word}\n\n'
+        f'## How to apply {{#how-to-apply}}\n\n{word} again\n',
+        encoding="utf-8")
+    return path
+
+
+def _b302_seed(tmp_path, docs: "dict[str, str]", partitions=(_B302_PART,)):
+    """Ingest each `{doc_id: body word}` as a GMD memory in each partition of
+    the sandbox store the CLI resolves, then close it for the CLI."""
+    import os
+    from pathlib import Path
+
+    from refmatrix.ingest_gmd import ingest_gmd_paths
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    paths = [_b302_gmd(tmp_path / f"{d}.md", d, w) for d, w in docs.items()]
+    for part in partitions:
+        with s.with_partition(part):
+            ingest_gmd_paths(s, paths, as_memory=True)
+    s.close()
+
+
+def _b302_blocks(name: str, part: str = _B302_PART) -> "list[str]":
+    """Every concept named `<name>#…` in `part`, matched in Python (no LIKE)."""
+    import os
+    from pathlib import Path
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    try:
+        with s.with_partition(part):
+            rows = s._connect().execute(
+                "SELECT name FROM entities WHERE partition_id=? AND kind='concept'",
+                (s._partition_id,)).fetchall()
+    finally:
+        s.close()
+    return sorted(r[0] for r in rows if r[0].startswith(f"{name}#"))
+
+
+def _b302_cli(argv):
+    """The dev `rmx` as a child process: one store open per command, as a user
+    runs it (an in-process CliRunner leaves each command's store open, and the
+    next command's open of the same catalog then fails)."""
+    import subprocess
+
+    from devbin import dev_env, dev_rmx
+    env = dev_env()
+    env["RMX_PARTITION"] = _B302_PART
+    r = subprocess.run([str(dev_rmx()), *argv], env=env, capture_output=True,
+                       text=True, timeout=120)
+    assert r.returncode == 0, (argv, r.stdout, r.stderr)
+    return r
+
+
+@pytest.mark.parametrize("argv", [
+    ["memory", "forget", "fb_traffic", "--yes"],
+    ["memory", "bulk-forget", "--name", "fb_traffic", "-y"],
+    ["forget", "fb_traffic", "-y"],
+], ids=["memory-forget", "memory-bulk-forget", "forget-by-name"])
+def test_forget_removes_the_memorys_gmd_blocks(tmp_path, argv):
+    _b302_seed(tmp_path, {"fb_traffic": "traffic"})
+    assert _b302_blocks("fb_traffic") == [
+        "fb_traffic#how-to-apply", "fb_traffic#notes", "fb_traffic#root"]
+    r = _b302_cli(argv)
+    assert _b302_blocks("fb_traffic") == [], r.stdout
+    # counted and said, never silent
+    assert "3 GMD block node(s)" in r.stdout, r.stdout
+
+
+def test_a_memory_re_added_after_forget_is_not_ranked_by_the_old_body(tmp_path):
+    """bsd-b300 r1 s-1 through the CLI: forget, `rmx memory add` the same name
+    with new text, and the old body word must reach neither the new memory nor
+    any block node carrying its name (bug-300 credits those to the memory)."""
+    import os
+    from pathlib import Path
+    _b302_seed(tmp_path, {"fb_traffic": "traffic"})
+    _b302_cli(["memory", "forget", "fb_traffic", "--yes"])
+    _b302_cli(["memory", "add", "fb_traffic", "-c", "cats sleep on warm laptops"])
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    try:
+        with s.with_partition(_B302_PART):
+            new_id = s.get_memory("fb_traffic")["id"]
+            names = dict(s._connect().execute(
+                "SELECT id, name FROM entities WHERE partition_id=?",
+                (s._partition_id,)).fetchall())
+            mem_hits = s.content_rank(["traffic"], kinds=["memory"])
+            any_hits = s.content_rank(["traffic"], kinds=["memory", "concept"])
+    finally:
+        s.close()
+    assert [e for e, _ in mem_hits if e == new_id] == [], mem_hits
+    stale = [names.get(e) for e, _ in any_hits
+             if names.get(e) == "fb_traffic" or str(names.get(e)).startswith("fb_traffic#")]
+    assert stale == [], stale
+
+
+def test_forget_matches_blocks_by_exact_name_not_a_like_pattern(tmp_path):
+    """`_` is a LIKE wildcard and memory ids contain it: forgetting `a_b` must
+    take `a_b#…` and leave `axb#…`, and leave `a_b#…` in another partition.
+
+    Two planted `axb` rows pin each matching layer on its own: `axb#legacy`
+    has no `meta.doc` (a name-only row, which a `LIKE 'a_b#%'` would take),
+    and `axb#cites` names `a_b` in its meta but is `axb`'s (which a match on
+    the meta text alone would take)."""
+    import os
+    from pathlib import Path
+    _b302_seed(tmp_path, {"a_b": "alpha", "axb": "beta"},
+               partitions=(_B302_PART, "memory-other"))
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    with s.with_partition(_B302_PART):
+        s.add_concept("axb#legacy")
+        s.upsert_entity(kind="concept", name="axb#cites",
+                        meta={"doc": "axb", "anchor": "cites", "see": "a_b"})
+    s.close()
+    _b302_cli(["memory", "forget", "a_b", "--yes"])
+    assert _b302_blocks("a_b") == []
+    assert _b302_blocks("axb") == [
+        "axb#cites", "axb#how-to-apply", "axb#legacy", "axb#notes", "axb#root"]
+    assert _b302_blocks("a_b", "memory-other") == [
+        "a_b#how-to-apply", "a_b#notes", "a_b#root"]
+
+
+def test_memory_dedup_orphan_blocks_purges_orphans_dry_run_first(tmp_path):
+    """The repair for blocks a pre-bug-302 forget left behind: the memory row
+    is purged alone (what every forget did before), `memory dedup
+    --orphan-blocks --dry-run` lists the orphans and keeps them, `memory dedup
+    --orphan-blocks` purges them, a live memory's blocks stay, and the
+    concept↔memory fold does NOT run (on the live dev store it would merge 403
+    body-term concepts; the seed's body-term concept `axb` stands in for them)."""
+    import os
+    from pathlib import Path
+    _b302_seed(tmp_path, {"a_b": "alpha", "axb": "beta"})
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    with s.with_partition(_B302_PART):
+        s.purge_entity(s.get_memory("a_b")["id"])
+        assert s.get_entity("concept", "axb") is not None, "fixture: no axb body-term concept"
+    s.close()
+    orphans = ["a_b#how-to-apply", "a_b#notes", "a_b#root"]
+
+    dry = _b302_cli(["memory", "dedup", "--orphan-blocks", "--dry-run"])
+    assert "would purge 3 orphan GMD block node(s)" in dry.stdout, dry.stdout
+    assert all(n in dry.stdout for n in orphans), dry.stdout
+    assert _b302_blocks("a_b") == orphans
+
+    real = _b302_cli(["memory", "dedup", "--orphan-blocks"])
+    assert "purged 3 orphan GMD block node(s)" in real.stdout, real.stdout
+    assert "fold" not in real.stdout, real.stdout
+    assert _b302_blocks("a_b") == []
+    assert _b302_blocks("axb") == ["axb#how-to-apply", "axb#notes", "axb#root"]
+    s = Store(Path(os.environ["REFMATRIX_ROOT"]))
+    try:
+        with s.with_partition(_B302_PART):
+            assert s.get_entity("concept", "axb") is not None, "the fold ran"
+    finally:
+        s.close()

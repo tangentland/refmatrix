@@ -5410,11 +5410,14 @@ def _op_memory_forget(d: Daemon, args: dict) -> dict:
         raise ValueError("memory_forget requires 'name' or 'id'")
     with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
         failed0 = getattr(d._st(), "vector_delete_failures", 0)
+        blocks0 = getattr(d._st(), "memory_blocks_purged", 0)
         ok = d._st().forget_memory(target)
         failed = getattr(d._st(), "vector_delete_failures", 0) - failed0
+        blocks = getattr(d._st(), "memory_blocks_purged", 0) - blocks0
     d._request_snapshot()
-    # the count leaves the daemon (ch-bsd r9 #s-2: a single forget dropped it)
-    return {"forgotten": ok, "vector_delete_failed": failed}
+    # the count leaves the daemon (ch-bsd r9 #s-2: a single forget dropped it);
+    # so does the GMD block-node count (bug-302)
+    return {"forgotten": ok, "vector_delete_failed": failed, "blocks_purged": blocks}
 
 
 def _op_memory_retag(d: Daemon, args: dict) -> dict:
@@ -5451,9 +5454,14 @@ def _op_memory_reclassify(d: Daemon, args: dict) -> dict:
 
 
 def _op_memory_dedup(d: Daemon, args: dict) -> dict:
-    """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt)."""
+    """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt), or,
+    with `orphan_blocks`, ONLY purge the GMD block nodes whose memory/doc is
+    gone (bug-302; `Store.purge_orphan_gmd_blocks`)."""
     with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
-        result = d._st().fold_concept_dups(dry_run=bool(args.get("dry_run")))
+        if args.get("orphan_blocks"):
+            result = d._st().purge_orphan_gmd_blocks(dry_run=bool(args.get("dry_run")))
+        else:
+            result = d._st().fold_concept_dups(dry_run=bool(args.get("dry_run")))
     if not args.get("dry_run"):
         d._request_snapshot()
     return result

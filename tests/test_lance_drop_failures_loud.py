@@ -266,7 +266,7 @@ def test_the_memory_forget_op_returns_the_count(tmp_path):
             pass
 
     out = _op_memory_forget(D(), {"name": "m1", "partition": s._partition_name})
-    assert out == {"forgotten": True, "vector_delete_failed": 1}, out
+    assert out == {"forgotten": True, "vector_delete_failed": 1, "blocks_purged": 0}, out
 
 
 def test_untrack_returns_the_count(tmp_path):
