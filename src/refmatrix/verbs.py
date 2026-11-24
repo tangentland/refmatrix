@@ -1131,8 +1131,12 @@ def recall_rows_filter(rows: "list[dict]", patterns) -> "list[dict]":
             if not mt_excluded(r.get("mtype"), patterns) and not is_stale_subject(r)]
 
 
-# The channel each recall mode packs for when the caller names none (an MCP `pack=true`).
-_PACK_CHANNEL_OF_MODE = {"session-start": "session_start", "recent": "precompact",
+# The channel each recall mode packs for when the caller names none (an MCP `pack=true`), THE
+# map: `cli.memory_recall`'s `--pack` reads it too. `recent` packs like the session-start list
+# since the PreCompact recall's `precompact` channel was retired (task-compaction-as-handoff
+# L202 #m-4); bsd-cah confirm-lite #s-3 (L208, 2026-11-24) found this copy still naming it, so
+# `rmx_memory_recall(recent=true, pack=true)` raised "unknown channel".
+_PACK_CHANNEL_OF_MODE = {"session-start": "session_start", "recent": "session_start",
                          "subject": "prompt_recall", "dense": "prompt_recall"}
 
 

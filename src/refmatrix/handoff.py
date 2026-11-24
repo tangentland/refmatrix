@@ -1007,7 +1007,7 @@ def fit_recall_state(rep: dict, max_bytes: "int | None") -> "tuple[str, int]":
 
 HANDOFFS_DIR = "handoffs"
 # The handoff ledger (writes, pulls, stand-downs, reaps). Not `*events.jsonl`: that name family
-# is reserved for recall items (21.1 AC-9's one-sink rule, `recall-events.jsonl`).
+# is reserved for recall items (21.1 AC-9: one recall sink, named in telemetry.py only).
 HANDOFF_LEDGER = "ledger.jsonl"
 POINTER_MAX_BYTES = 1024        # the SessionStart pointer block (RED's contract)
 PRECOMPACT_MAX_BYTES = 1000     # the PreCompact instruction (RED's contract; 3 lines at most)
@@ -1337,6 +1337,10 @@ def write_pulled_handoff(root: Path, session: str, text: str, *, source: str) ->
     try:
         for kind in ("pulled", "stood-down"):
             _marker_path(root, session, kind).unlink(missing_ok=True)
+        # A stand-down remembered from an earlier unwritable `handoffs/` (b-3) belongs to that
+        # episode, not to this handoff (bsd-cah confirm-lite #m-5, L208, 2026-11-24): left in
+        # place it silently dropped this new gate on its first call.
+        _unwritable_marker(root, session).unlink(missing_ok=True)
         _gate_path(root, session).write_text(json.dumps(state), encoding="utf-8")
     except OSError as e:
         gate_error = f"{type(e).__name__}: {e}"

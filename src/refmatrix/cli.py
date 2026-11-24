@@ -12803,12 +12803,10 @@ def _memory_recall_impl(query, prompt_query, text, stdin_json, k, recent, since,
         from refmatrix import hook_budget as _hb
         _mode = ("session-start" if session_start else "recent" if recent else
                  "subject" if subject else "dense")
-        # `--recent` has no channel of its own since the PreCompact recall left the generated
-        # config (task-compaction-as-handoff R2; L202 #m-4 retired `precompact`): a recency
-        # list packs like the session-start list, so it takes that budget.
+        # The mode → channel map is the verb's, one copy (bsd-cah confirm-lite #s-3, L208).
+        from refmatrix.verbs import _PACK_CHANNEL_OF_MODE
         _key = rec_channel if rec_channel in _hb.CHANNEL_BUDGET_BYTES else \
-            {"session-start": "session_start", "recent": "session_start"}.get(_mode,
-                                                                             "prompt_recall")
+            _PACK_CHANNEL_OF_MODE.get(_mode, "prompt_recall")
         try:
             pack_bytes = _hb.resolve(_key, max_bytes)
         except ValueError as e:
