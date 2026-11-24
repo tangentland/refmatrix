@@ -987,8 +987,10 @@ def _verb_named(root: Path, **kw) -> list[str]:
     # bug-312 (2026-11-24): replica-on ranks the fixture's rows differently from the verb
     # (`'fx_mem_06' != 'fx_mem_10'` at index 0); the same E line at the 0.84.0 release commit
     # cab0a7dc, at master 643f9628 and 749608ce, and on the C1 branch, so it predates them all.
-    # Known failure (rule 8) until bisected and fixed; strict, so a fix turns it red here.
-    pytest.param("replica-on", marks=pytest.mark.xfail(strict=True, reason="bug-312")),
+    # It is INTERMITTENT: it passed in green-cah's final batch at 76b6cf5e (2026-11-24 ~01:30)
+    # after failing four times. A strict xfail on a flaky test would make the gate flaky, so this
+    # one is non-strict (rule 8's exception for a known-flaky case) until bug-312 is fixed.
+    pytest.param("replica-on", marks=pytest.mark.xfail(strict=False, reason="bug-312 (flaky)")),
     "replica-first-0",
     "no-worker",
 ])
