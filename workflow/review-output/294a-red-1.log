@@ -1,0 +1,2006 @@
+# local-lane slot=rmxtest1 sha=a5ff9293b4a633dcbbe49e5b5de8c87c60fa15aa start=2026-11-23 17:11:25 load={ 6.74 6.40 6.09 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/294a-red-1.2I3y/src/refmatrix as checked-hash (bug-037)
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF............... [ 16%]
+........................................................................ [ 33%]
+........................................................................ [ 50%]
+........................................................................ [ 67%]
+........................................................................ [ 84%]
+...................................................................      [100%]
+=================================== FAILURES ===================================
+_ test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position[in-process] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0')
+case = 'case_live_touch', filler = 'case_trivial', tier = 'unit'
+test_name = 'test_touches_a_live_path'
+
+    @pytest.mark.sandbox_probe
+    @pytest.mark.parametrize("case,filler,tier,test_name", [
+        ("case_live_touch", "case_trivial", "unit", "test_touches_a_live_path"),
+        ("case_live_touch_child", "case_pass_child", "daemon", "test_child_touches_a_live_path"),
+    ], ids=["in-process", "spawned-child"])
+    def test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position(
+            tmp_path, case, filler, tier, test_name):
+        """task-29.4 #ac-12: a test that touches a deny-set target without the probe marker fails
+        its test, its shard and the run, and `summary.txt` names the test and the target. Run once
+        with the probe as the heavier file and once as the lighter, so the deterministic greedy
+        placement puts it in each of the two shard positions; the filler's shard passes. The
+        outer test is a `sandbox_probe` (its children's touches-log lines are flagged deliberate);
+        the inner probe test is not.
+    
+        Kills AC-12's mutation (the run's exit code from the last shard only): in the run where the
+        probe sits in shard 0, the run exits 0."""
+        node = f"tests/test_probe.py::{test_name}"
+        positions = set()
+        for k, (w_probe, w_fill) in enumerate(((30.0, 10.0), (10.0, 30.0))):
+            tree = sht.build(tmp_path / f"p{k}", {"test_probe.py": case, "test_fill.py": filler},
+                             weights={"tests/test_probe.py": w_probe, "tests/test_fill.py": w_fill})
+            name = f"ac12p{k}{tier}"
+            r = _ptest(tree, "--tier", tier, "--shards", "2", "--name", name)
+>           summary = _summary(tree, name, r)
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co')
+name = 'ac12p0unit'
+r = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co/script...st-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n')
+
+    def _summary(tree: Path, name: str, r) -> str:
+        p = sht.run_dir(tree, name) / "summary.txt"
+>       assert p.is_file(), (f"run {name!r} wrote no summary.txt at {p} (exit {r.returncode}); "
+                             f"runner output:\n{_out(r)[-3000:]}")
+E       AssertionError: run 'ac12p0unit' wrote no summary.txt at /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co/workflow/review-output/ac12p0unit/summary.txt (exit 1); runner output:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co/scripts/ptest.sh: line 16: tier: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i0/p0/co/workflow/review-output/ac12p0unit/summary.txt').is_file
+
+tests/test_ptest_runner.py:99: AssertionError
+_ test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position[spawned-child] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1')
+case = 'case_live_touch_child', filler = 'case_pass_child', tier = 'daemon'
+test_name = 'test_child_touches_a_live_path'
+
+    @pytest.mark.sandbox_probe
+    @pytest.mark.parametrize("case,filler,tier,test_name", [
+        ("case_live_touch", "case_trivial", "unit", "test_touches_a_live_path"),
+        ("case_live_touch_child", "case_pass_child", "daemon", "test_child_touches_a_live_path"),
+    ], ids=["in-process", "spawned-child"])
+    def test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position(
+            tmp_path, case, filler, tier, test_name):
+        """task-29.4 #ac-12: a test that touches a deny-set target without the probe marker fails
+        its test, its shard and the run, and `summary.txt` names the test and the target. Run once
+        with the probe as the heavier file and once as the lighter, so the deterministic greedy
+        placement puts it in each of the two shard positions; the filler's shard passes. The
+        outer test is a `sandbox_probe` (its children's touches-log lines are flagged deliberate);
+        the inner probe test is not.
+    
+        Kills AC-12's mutation (the run's exit code from the last shard only): in the run where the
+        probe sits in shard 0, the run exits 0."""
+        node = f"tests/test_probe.py::{test_name}"
+        positions = set()
+        for k, (w_probe, w_fill) in enumerate(((30.0, 10.0), (10.0, 30.0))):
+            tree = sht.build(tmp_path / f"p{k}", {"test_probe.py": case, "test_fill.py": filler},
+                             weights={"tests/test_probe.py": w_probe, "tests/test_fill.py": w_fill})
+            name = f"ac12p{k}{tier}"
+            r = _ptest(tree, "--tier", tier, "--shards", "2", "--name", name)
+>           summary = _summary(tree, name, r)
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co')
+name = 'ac12p0daemon'
+r = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co/script...st-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n')
+
+    def _summary(tree: Path, name: str, r) -> str:
+        p = sht.run_dir(tree, name) / "summary.txt"
+>       assert p.is_file(), (f"run {name!r} wrote no summary.txt at {p} (exit {r.returncode}); "
+                             f"runner output:\n{_out(r)[-3000:]}")
+E       AssertionError: run 'ac12p0daemon' wrote no summary.txt at /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co/workflow/review-output/ac12p0daemon/summary.txt (exit 1); runner output:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co/scripts/ptest.sh: line 16: tier: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_fails_i1/p0/co/workflow/review-output/ac12p0daemon/summary.txt').is_file
+
+tests/test_ptest_runner.py:99: AssertionError
+___________ test_ac12_a_live_touch_in_the_serial_group_fails_the_run ___________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0')
+
+    @pytest.mark.sandbox_probe
+    def test_ac12_a_live_touch_in_the_serial_group_fails_the_run(tmp_path):
+        """task-29.4 #ac-12, the serial group: a file named in `tiering.SERIAL_GROUP` runs as one
+        extra shard after the others, and a live touch there fails the run like any other shard."""
+        tree = sht.build(
+            tmp_path, {"test_probe.py": "case_live_touch", "test_fill_a.py": "case_trivial",
+                       "test_fill_b.py": "case_trivial"},
+            weights={"tests/test_probe.py": 5.0, "tests/test_fill_a.py": 20.0,
+                     "tests/test_fill_b.py": 10.0},
+            tiering_extra='SERIAL_GROUP["tests/test_probe.py"] = '
+                          '"fixture: AC-12, a live touch in the serial group"')
+        r = _ptest(tree, "--tier", "unit", "--shards", "2", "--name", "ac12-serial")
+>       summary = _summary(tree, "ac12-serial", r)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co')
+name = 'ac12-serial'
+r = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n')
+
+    def _summary(tree: Path, name: str, r) -> str:
+        p = sht.run_dir(tree, name) / "summary.txt"
+>       assert p.is_file(), (f"run {name!r} wrote no summary.txt at {p} (exit {r.returncode}); "
+                             f"runner output:\n{_out(r)[-3000:]}")
+E       AssertionError: run 'ac12-serial' wrote no summary.txt at /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co/workflow/review-output/ac12-serial/summary.txt (exit 1); runner output:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co/scripts/ptest.sh: line 16: tier: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac12_a_live_touch_in_the_0/co/workflow/review-output/ac12-serial/summary.txt').is_file
+
+tests/test_ptest_runner.py:99: AssertionError
+_ test_ac2_tier_all_in_a_clone_logs_every_shard_and_fails_when_any_shard_fails _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0')
+
+    def test_ac2_tier_all_in_a_clone_logs_every_shard_and_fails_when_any_shard_fails(tmp_path):
+        """task-29.4 #ac-2 and #r2: `--tier all` in a clone. One log per shard; `summary.txt` has
+        an exit code and a distinct sandbox root for every shard, each root also in its own log;
+        every file runs in exactly one shard; a failing, a teardown-erroring and an unpinned-skip
+        file each fail their shard and so the run; `failures.jsonl` records each by phase; the
+        devtree tier is NOT RUN, said verbatim, and the last line says the run is incomplete.
+    
+        Kills mutation 3 (exit 0 although shards failed) and 4 ("all green" with tier (c) not run)."""
+        tree = sht.build(tmp_path, _AC2_CASES, weights=_AC2_WEIGHTS, tiering_extra=_DEVTREE_EXTRA)
+        r = _ptest(tree, "--tier", "all", "--shards", "2", "--name", "ac2")
+        out = _out(r)
+>       summary = _summary(tree, "ac2", r)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:227: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co')
+name = 'ac2'
+r = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n')
+
+    def _summary(tree: Path, name: str, r) -> str:
+        p = sht.run_dir(tree, name) / "summary.txt"
+>       assert p.is_file(), (f"run {name!r} wrote no summary.txt at {p} (exit {r.returncode}); "
+                             f"runner output:\n{_out(r)[-3000:]}")
+E       AssertionError: run 'ac2' wrote no summary.txt at /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co/workflow/review-output/ac2/summary.txt (exit 1); runner output:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co/scripts/ptest.sh: line 16: tier: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac2_tier_all_in_a_clone_l0/co/workflow/review-output/ac2/summary.txt').is_file
+
+tests/test_ptest_runner.py:99: AssertionError
+__________ test_tier_all_in_the_owning_checkout_runs_the_devtree_tier __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0')
+
+    def test_tier_all_in_the_owning_checkout_runs_the_devtree_tier(tmp_path):
+        """task-29.4 #r2: in the owning checkout (its own `.refmatrix/`, a `.venv-eval` inside it)
+        `--tier all` runs tier (c) after the others, prints no NOT RUN line, and does not call
+        the run incomplete."""
+        tree = sht.build(tmp_path, {"test_pass.py": "case_trivial", "test_devtree.py": "case_trivial"},
+                         owning=True, weights={"tests/test_pass.py": 2.0, "tests/test_devtree.py": 1.0},
+                         tiering_extra=_DEVTREE_EXTRA)
+        r = _ptest(tree, "--tier", "all", "--shards", "2", "--name", "own")
+>       summary = _summary(tree, "own", r)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:287: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co')
+name = 'own'
+r = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n')
+
+    def _summary(tree: Path, name: str, r) -> str:
+        p = sht.run_dir(tree, name) / "summary.txt"
+>       assert p.is_file(), (f"run {name!r} wrote no summary.txt at {p} (exit {r.returncode}); "
+                             f"runner output:\n{_out(r)[-3000:]}")
+E       AssertionError: run 'own' wrote no summary.txt at /private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co/workflow/review-output/own/summary.txt (exit 1); runner output:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co/scripts/ptest.sh: line 16: tier: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_all_in_the_owning_ch0/co/workflow/review-output/own/summary.txt').is_file
+
+tests/test_ptest_runner.py:99: AssertionError
+___________ test_ac3_outcomes_jsonl_follows_the_normalisation_table ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_outcomes_jsonl_follow0')
+
+    def test_ac3_outcomes_jsonl_follows_the_normalisation_table(tmp_path):
+        """task-29.4 #r2-outcomes: one record per node and phase, derived from pytest's report by
+        the table; a strict XPASS is `failed` in its call phase and is in `failures.jsonl`.
+    
+        Kills mutation 24 (no xfailed / xpassed) and 26 (strict XPASS recorded `xpassed`)."""
+        tree = sht.build(tmp_path, {"test_outcomes.py": "case_outcomes"},
+                         weights={"tests/test_outcomes.py": 1.0})
+        r = _ptest(tree, "--tier", "unit", "--shards", "1", "--name", "outc")
+        rd = sht.run_dir(tree, "outc")
+>       recs = _records(rd / "outcomes.jsonl")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:312: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_outcomes_jsonl_follow0/co/workflow/review-output/outc/outcomes.jsonl')
+
+    def _records(path: Path) -> list:
+>       assert path.is_file(), f"{path} was not written"
+E       AssertionError: /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_outcomes_jsonl_follow0/co/workflow/review-output/outc/outcomes.jsonl was not written
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_outcomes_jsonl_follow0/co/workflow/review-output/outc/outcomes.jsonl').is_file
+
+tests/test_ptest_runner.py:125: AssertionError
+_________ test_normalise_e_line_replaces_only_run_noise[sandbox-root] __________
+
+a = 'FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock'
+b = 'FileNotFoundError: /private/tmp/rmx-z9y8x7w6/r/3/.refmatrix/rmxd.sock'
+
+    @pytest.mark.parametrize("a,b", [
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-z9y8x7w6/r/3/.refmatrix/rmxd.sock"),
+        ("JSONDecodeError in /tmp/tmpk3j2h1g0/x.json", "JSONDecodeError in /tmp/tmp0a9s8d7f/x.json"),
+        ("daemon pid=12345 did not answer", "daemon pid=678 did not answer"),
+        ("<Daemon object at 0x10a3b4c50>", "<Daemon object at 0x7f00deadbeef>"),
+        ("AssertionError: stop took 10.05s", "AssertionError: stop took 9.02s"),
+    ], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds"])
+    def test_normalise_e_line_replaces_only_run_noise(a, b):
+        """task-29.4 #r2: sandbox roots, /tmp random segments, pids, hex addresses and decimal
+        seconds become placeholders."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+__________ test_normalise_e_line_replaces_only_run_noise[tmp-segment] __________
+
+a = 'JSONDecodeError in /tmp/tmpk3j2h1g0/x.json'
+b = 'JSONDecodeError in /tmp/tmp0a9s8d7f/x.json'
+
+    @pytest.mark.parametrize("a,b", [
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-z9y8x7w6/r/3/.refmatrix/rmxd.sock"),
+        ("JSONDecodeError in /tmp/tmpk3j2h1g0/x.json", "JSONDecodeError in /tmp/tmp0a9s8d7f/x.json"),
+        ("daemon pid=12345 did not answer", "daemon pid=678 did not answer"),
+        ("<Daemon object at 0x10a3b4c50>", "<Daemon object at 0x7f00deadbeef>"),
+        ("AssertionError: stop took 10.05s", "AssertionError: stop took 9.02s"),
+    ], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds"])
+    def test_normalise_e_line_replaces_only_run_noise(a, b):
+        """task-29.4 #r2: sandbox roots, /tmp random segments, pids, hex addresses and decimal
+        seconds become placeholders."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+______________ test_normalise_e_line_replaces_only_run_noise[pid] ______________
+
+a = 'daemon pid=12345 did not answer', b = 'daemon pid=678 did not answer'
+
+    @pytest.mark.parametrize("a,b", [
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-z9y8x7w6/r/3/.refmatrix/rmxd.sock"),
+        ("JSONDecodeError in /tmp/tmpk3j2h1g0/x.json", "JSONDecodeError in /tmp/tmp0a9s8d7f/x.json"),
+        ("daemon pid=12345 did not answer", "daemon pid=678 did not answer"),
+        ("<Daemon object at 0x10a3b4c50>", "<Daemon object at 0x7f00deadbeef>"),
+        ("AssertionError: stop took 10.05s", "AssertionError: stop took 9.02s"),
+    ], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds"])
+    def test_normalise_e_line_replaces_only_run_noise(a, b):
+        """task-29.4 #r2: sandbox roots, /tmp random segments, pids, hex addresses and decimal
+        seconds become placeholders."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+__________ test_normalise_e_line_replaces_only_run_noise[hex-address] __________
+
+a = '<Daemon object at 0x10a3b4c50>', b = '<Daemon object at 0x7f00deadbeef>'
+
+    @pytest.mark.parametrize("a,b", [
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-z9y8x7w6/r/3/.refmatrix/rmxd.sock"),
+        ("JSONDecodeError in /tmp/tmpk3j2h1g0/x.json", "JSONDecodeError in /tmp/tmp0a9s8d7f/x.json"),
+        ("daemon pid=12345 did not answer", "daemon pid=678 did not answer"),
+        ("<Daemon object at 0x10a3b4c50>", "<Daemon object at 0x7f00deadbeef>"),
+        ("AssertionError: stop took 10.05s", "AssertionError: stop took 9.02s"),
+    ], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds"])
+    def test_normalise_e_line_replaces_only_run_noise(a, b):
+        """task-29.4 #r2: sandbox roots, /tmp random segments, pids, hex addresses and decimal
+        seconds become placeholders."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+____________ test_normalise_e_line_replaces_only_run_noise[seconds] ____________
+
+a = 'AssertionError: stop took 10.05s', b = 'AssertionError: stop took 9.02s'
+
+    @pytest.mark.parametrize("a,b", [
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-z9y8x7w6/r/3/.refmatrix/rmxd.sock"),
+        ("JSONDecodeError in /tmp/tmpk3j2h1g0/x.json", "JSONDecodeError in /tmp/tmp0a9s8d7f/x.json"),
+        ("daemon pid=12345 did not answer", "daemon pid=678 did not answer"),
+        ("<Daemon object at 0x10a3b4c50>", "<Daemon object at 0x7f00deadbeef>"),
+        ("AssertionError: stop took 10.05s", "AssertionError: stop took 9.02s"),
+    ], ids=["sandbox-root", "tmp-segment", "pid", "hex-address", "seconds"])
+    def test_normalise_e_line_replaces_only_run_noise(a, b):
+        """task-29.4 #r2: sandbox roots, /tmp random segments, pids, hex addresses and decimal
+        seconds become placeholders."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+__________ test_normalise_e_line_keeps_what_tells_errors_apart[word] ___________
+
+a = 'AssertionError: expected foo', b = 'AssertionError: expected bar'
+
+    @pytest.mark.parametrize("a,b", [
+        ("AssertionError: expected foo", "AssertionError: expected bar"),
+        ("KeyError: 'alpha'", "KeyError: 'beta'"),
+        ("assert 3 == 4", "assert 3 == 5"),
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
+    ], ids=["word", "quoted-key", "plain-int", "path-tail"])
+    def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
+        """...and nothing else (kills mutation 6: words replaced, different errors equal)."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+_______ test_normalise_e_line_keeps_what_tells_errors_apart[quoted-key] ________
+
+a = "KeyError: 'alpha'", b = "KeyError: 'beta'"
+
+    @pytest.mark.parametrize("a,b", [
+        ("AssertionError: expected foo", "AssertionError: expected bar"),
+        ("KeyError: 'alpha'", "KeyError: 'beta'"),
+        ("assert 3 == 4", "assert 3 == 5"),
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
+    ], ids=["word", "quoted-key", "plain-int", "path-tail"])
+    def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
+        """...and nothing else (kills mutation 6: words replaced, different errors equal)."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+________ test_normalise_e_line_keeps_what_tells_errors_apart[plain-int] ________
+
+a = 'assert 3 == 4', b = 'assert 3 == 5'
+
+    @pytest.mark.parametrize("a,b", [
+        ("AssertionError: expected foo", "AssertionError: expected bar"),
+        ("KeyError: 'alpha'", "KeyError: 'beta'"),
+        ("assert 3 == 4", "assert 3 == 5"),
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
+    ], ids=["word", "quoted-key", "plain-int", "path-tail"])
+    def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
+        """...and nothing else (kills mutation 6: words replaced, different errors equal)."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+________ test_normalise_e_line_keeps_what_tells_errors_apart[path-tail] ________
+
+a = 'FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock'
+b = 'FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid'
+
+    @pytest.mark.parametrize("a,b", [
+        ("AssertionError: expected foo", "AssertionError: expected bar"),
+        ("KeyError: 'alpha'", "KeyError: 'beta'"),
+        ("assert 3 == 4", "assert 3 == 5"),
+        ("FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.sock",
+         "FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/3/.refmatrix/rmxd.pid"),
+    ], ids=["word", "quoted-key", "plain-int", "path-tail"])
+    def test_normalise_e_line_keeps_what_tells_errors_apart(a, b):
+        """...and nothing else (kills mutation 6: words replaced, different errors equal)."""
+>       norm = _ptest_module().normalise_e_line
+               ^^^^^^^^^^^^^^^
+
+tests/test_ptest_runner.py:373: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ptest_module():
+>       assert _PTEST_PY.is_file(), "scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)"
+E       AssertionError: scripts/ptest.py does not exist (task-29.4 #r2: the logic is Python)
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/Users/rmxtest1/lane/runs/294a-red-1.2I3y/scripts/ptest.py').is_file
+
+tests/test_ptest_runner.py:342: AssertionError
+_____________ test_ac3_compare_failures_equal_apart_from_run_noise _____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_equa0')
+
+    def test_ac3_compare_failures_equal_apart_from_run_noise(tmp_path):
+        """task-29.4 #ac-3, failures: runs differing only in a sandbox path, a pid and a duration
+        compare equal."""
+        tree = _compare_tree(tmp_path)
+        b = dict(_FAIL_A, e="E   FileNotFoundError: /private/tmp/rmx-qq77ww88/r/1/.refmatrix/rmxd.sock "
+                            "(pid=31) after 12.5s")
+        da = _run_with(tmp_path / "runs", "A", failures=[_FAIL_A])
+        db = _run_with(tmp_path / "runs", "B", failures=[b])
+        r = _ptest(tree, "--compare", str(da), str(db))
+>       assert r.returncode == 0, _out(r)[-2000:]
+E       AssertionError: ls: tests/test_*.py: No such file or directory
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_equa0/co/scripts/ptest.sh: line 16: compare: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_equa0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_equa0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_equa0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n').returncode
+
+tests/test_ptest_runner.py:405: AssertionError
+________ test_ac3_compare_failures_unequal_names_the_difference[e-line] ________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0')
+change = {'e': 'E   FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/1/.refmatrix/rmxd.pid (pid=4242) after 1.25s'}
+named = 'tests/test_a.py::test_x'
+
+    @pytest.mark.parametrize("change,named", [
+        ({"e": "E   FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/1/.refmatrix/rmxd.pid "
+               "(pid=4242) after 1.25s"}, "tests/test_a.py::test_x"),
+        ({"nodeid": "tests/test_a.py::test_y"}, "tests/test_a.py::test_y"),
+        ({"phase": "teardown"}, "teardown"),
+    ], ids=["e-line", "node-id", "phase"])
+    def test_ac3_compare_failures_unequal_names_the_difference(tmp_path, change, named):
+        """task-29.4 #ac-3, failures: one E line, one node id or one phase apart compares unequal
+        and the output names it (kills mutation 5: the phase ignored)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", failures=[_FAIL_A])
+        db = _run_with(tmp_path / "runs", "B", failures=[dict(_FAIL_A, **change)])
+        r = _ptest(tree, "--compare", str(da), str(db))
+        assert r.returncode != 0, f"runs that differ compared equal:\n{_out(r)[-2000:]}"
+>       assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E       AssertionError: the output does not name 'tests/test_a.py::test_x':
+E         ls: tests/test_*.py: No such file or directory
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0/co/scripts/ptest.sh: line 16: compare: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert 'tests/test_a.py::test_x' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_u...pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E        +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_u...pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:422: AssertionError
+_______ test_ac3_compare_failures_unequal_names_the_difference[node-id] ________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1')
+change = {'nodeid': 'tests/test_a.py::test_y'}
+named = 'tests/test_a.py::test_y'
+
+    @pytest.mark.parametrize("change,named", [
+        ({"e": "E   FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/1/.refmatrix/rmxd.pid "
+               "(pid=4242) after 1.25s"}, "tests/test_a.py::test_x"),
+        ({"nodeid": "tests/test_a.py::test_y"}, "tests/test_a.py::test_y"),
+        ({"phase": "teardown"}, "teardown"),
+    ], ids=["e-line", "node-id", "phase"])
+    def test_ac3_compare_failures_unequal_names_the_difference(tmp_path, change, named):
+        """task-29.4 #ac-3, failures: one E line, one node id or one phase apart compares unequal
+        and the output names it (kills mutation 5: the phase ignored)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", failures=[_FAIL_A])
+        db = _run_with(tmp_path / "runs", "B", failures=[dict(_FAIL_A, **change)])
+        r = _ptest(tree, "--compare", str(da), str(db))
+        assert r.returncode != 0, f"runs that differ compared equal:\n{_out(r)[-2000:]}"
+>       assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E       AssertionError: the output does not name 'tests/test_a.py::test_y':
+E         ls: tests/test_*.py: No such file or directory
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1/co/scripts/ptest.sh: line 16: compare: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert 'tests/test_a.py::test_y' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_u...pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E        +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_u...pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:422: AssertionError
+________ test_ac3_compare_failures_unequal_names_the_difference[phase] _________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2')
+change = {'phase': 'teardown'}, named = 'teardown'
+
+    @pytest.mark.parametrize("change,named", [
+        ({"e": "E   FileNotFoundError: /private/tmp/rmx-a1b2c3d4/r/1/.refmatrix/rmxd.pid "
+               "(pid=4242) after 1.25s"}, "tests/test_a.py::test_x"),
+        ({"nodeid": "tests/test_a.py::test_y"}, "tests/test_a.py::test_y"),
+        ({"phase": "teardown"}, "teardown"),
+    ], ids=["e-line", "node-id", "phase"])
+    def test_ac3_compare_failures_unequal_names_the_difference(tmp_path, change, named):
+        """task-29.4 #ac-3, failures: one E line, one node id or one phase apart compares unequal
+        and the output names it (kills mutation 5: the phase ignored)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", failures=[_FAIL_A])
+        db = _run_with(tmp_path / "runs", "B", failures=[dict(_FAIL_A, **change)])
+        r = _ptest(tree, "--compare", str(da), str(db))
+        assert r.returncode != 0, f"runs that differ compared equal:\n{_out(r)[-2000:]}"
+>       assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E       AssertionError: the output does not name 'teardown':
+E         ls: tests/test_*.py: No such file or directory
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2/co/scripts/ptest.sh: line 16: compare: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert 'teardown' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_u...pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E        +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_u...pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_failures_uneq2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:422: AssertionError
+__________________ test_ac3_compare_outcomes_is_exact[equal] ___________________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e0')
+a_over = {}, b_over = {}, expects = [], ok = True, named = None
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+>           assert r.returncode == 0, _out(r)[-2000:]
+E           AssertionError: ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e0/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n').returncode
+
+tests/test_ptest_runner.py:479: AssertionError
+_________ test_ac3_compare_outcomes_is_exact[xfail-to-pass-unexpected] _________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1')
+a_over = {}, b_over = {'n2_call': 'passed'}, expects = [], ok = False
+named = 'test_xf'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_xf':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_xf' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+__________ test_ac3_compare_outcomes_is_exact[xfail-to-pass-expected] __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e2')
+a_over = {}, b_over = {'n2_call': 'passed'}
+expects = ['tests/test_o.py::test_xf:call:xfailed->passed'], ok = True
+named = None
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+>           assert r.returncode == 0, _out(r)[-2000:]
+E           AssertionError: ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e2/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e2/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n').returncode
+
+tests/test_ptest_runner.py:479: AssertionError
+______________ test_ac3_compare_outcomes_is_exact[second-change] _______________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3')
+a_over = {}, b_over = {'n1_call': 'failed', 'n2_call': 'passed'}
+expects = ['tests/test_o.py::test_xf:call:xfailed->passed'], ok = False
+named = 'test_one'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_one':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_one' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e3/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+__________ test_ac3_compare_outcomes_is_exact[expected-change-absent] __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4')
+a_over = {}, b_over = {}
+expects = ['tests/test_o.py::test_xf:call:xfailed->passed'], ok = False
+named = 'test_xf'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_xf':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_xf' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e4/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+___________ test_ac3_compare_outcomes_is_exact[from-was-not-xfailed] ___________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5')
+a_over = {'n2_call': 'failed'}, b_over = {'n2_call': 'passed'}
+expects = ['tests/test_o.py::test_xf:call:xfailed->passed'], ok = False
+named = 'test_xf'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_xf':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_xf' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e5/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+______ test_ac3_compare_outcomes_is_exact[same-node-other-phase-changed] _______
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6')
+a_over = {}, b_over = {'n2_call': 'passed', 'n2_teardown': 'error'}
+expects = ['tests/test_o.py::test_xf:call:xfailed->passed'], ok = False
+named = 'teardown'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'teardown':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'teardown' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e6/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+____________ test_ac3_compare_outcomes_is_exact[expect-wrong-phase] ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7')
+a_over = {}, b_over = {'n2_call': 'passed'}
+expects = ['tests/test_o.py::test_xf:setup:xfailed->passed'], ok = False
+named = 'test_xf'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_xf':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_xf' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e7/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+___________ test_ac3_compare_outcomes_is_exact[node-missing-from-b] ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8')
+a_over = {}, b_over = {'n3_call': None, 'n3_setup': None, 'n3_teardown': None}
+expects = [], ok = False, named = 'test_param'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_param':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_param' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e8/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+___________ test_ac3_compare_outcomes_is_exact[phase-missing-from-b] ___________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9')
+a_over = {}, b_over = {'n1_teardown': None}, expects = [], ok = False
+named = 'test_one'
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+            assert r.returncode == 0, _out(r)[-2000:]
+        else:
+            assert r.returncode != 0, f"compared equal but should not:\n{_out(r)[-2000:]}"
+>           assert named in _out(r), f"the output does not name {named!r}:\n{_out(r)[-2000:]}"
+E           AssertionError: the output does not name 'test_one':
+E             ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 'test_one' in 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'
+E            +  where 'ls: tests/test_*.py: No such file or directory\n/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_i...pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n' = _out(CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e9/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n'))
+
+tests/test_ptest_runner.py:482: AssertionError
+___________ test_ac3_compare_outcomes_is_exact[node-id-with-a-colon] ___________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e10')
+a_over = {}, b_over = {'n3_call': 'xfailed'}
+expects = ['tests/test_o.py::test_param[a:b]:call:passed->xfailed'], ok = True
+named = None
+
+    @pytest.mark.parametrize("a_over,b_over,expects,ok,named", [
+        ({}, {}, [], True, None),
+        ({}, {"n2_call": "passed"}, [], False, "test_xf"),
+        ({}, {"n2_call": "passed"}, [_XF_EXPECT], True, None),
+        ({}, {"n2_call": "passed", "n1_call": "failed"}, [_XF_EXPECT], False, "test_one"),
+        ({}, {}, [_XF_EXPECT], False, "test_xf"),
+        ({"n2_call": "failed"}, {"n2_call": "passed"}, [_XF_EXPECT], False, "test_xf"),
+        ({}, {"n2_call": "passed", "n2_teardown": "error"}, [_XF_EXPECT], False, "teardown"),
+        ({}, {"n2_call": "passed"}, [_P + "test_xf:setup:xfailed->passed"], False, "test_xf"),
+        ({}, {"n3_setup": None, "n3_call": None, "n3_teardown": None}, [], False, "test_param"),
+        ({}, {"n1_teardown": None}, [], False, "test_one"),
+        ({}, {"n3_call": "xfailed"}, [_COLON + ":call:passed->xfailed"], True, None),
+    ], ids=["equal", "xfail-to-pass-unexpected", "xfail-to-pass-expected", "second-change",
+            "expected-change-absent", "from-was-not-xfailed", "same-node-other-phase-changed",
+            "expect-wrong-phase", "node-missing-from-b", "phase-missing-from-b",
+            "node-id-with-a-colon"])
+    def test_ac3_compare_outcomes_is_exact(tmp_path, a_over, b_over, expects, ok, named):
+        """task-29.4 #ac-3, outcomes: equal runs are equal; every change of outcome, phase by
+        phase, fails unless an `--expect` names exactly that node, phase, from and to; a node or a
+        phase present in one run only fails; an `--expect` is parsed from the right (a node id may
+        hold a colon).
+    
+        Kills mutation 25 (a missing node ignored) and 27 (`--expect` ignores its phase)."""
+        tree = _compare_tree(tmp_path)
+        da = _run_with(tmp_path / "runs", "A", outcomes=_outcomes(**a_over))
+        db = _run_with(tmp_path / "runs", "B", outcomes=_outcomes(**b_over))
+        args = ["--compare", "--outcomes", str(da), str(db)]
+        for e in expects:
+            args += ["--expect", e]
+        r = _ptest(tree, *args)
+        if ok:
+>           assert r.returncode == 0, _out(r)[-2000:]
+E           AssertionError: ls: tests/test_*.py: No such file or directory
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e10/co/scripts/ptest.sh: line 16: compare: unbound variable
+E             /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e10/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e10/co/scripts/...test-of-rmxtest1/pytest-76/test_ac3_compare_outcomes_is_e10/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n').returncode
+
+tests/test_ptest_runner.py:479: AssertionError
+_ test_ac9_merge_gate_refuses_a_checkout_that_is_not_the_owning_one[no-refmatrix] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_0')
+shape = 'no-refmatrix', why = '.refmatrix'
+
+    @pytest.mark.parametrize("shape,why", [
+        ("no-refmatrix", ".refmatrix"),
+        ("venv-outside", ".venv-eval"),
+    ], ids=["no-refmatrix", "venv-resolves-outside"])
+    def test_ac9_merge_gate_refuses_a_checkout_that_is_not_the_owning_one(tmp_path, shape, why):
+        """task-29.4 #r7 item 1 / #ac-9: exit 2, saying why, in a checkout with no `.refmatrix/`
+        or whose `.venv-eval` resolves outside it (a littlebig clone's is a symlink to the dev
+        tree's)."""
+        tree, _ = _merging_checkout(tmp_path, "case_trivial", owning=True)
+        if shape == "no-refmatrix":
+            (tree / ".refmatrix").rmdir()
+        else:
+            (tree / ".venv-eval").rmdir()
+            (tree / ".venv-eval").symlink_to(Path(sys.prefix).resolve())
+        r = _ptest(tree, "--merge-gate")
+>       assert r.returncode == 2, f"exit {r.returncode}, not 2:\n{_out(r)[-2000:]}"
+E       AssertionError: exit 1, not 2:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_0/co/scripts/ptest.sh: line 16: merge: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert 1 == 2
+E        +  where 1 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_0/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n').returncode
+
+tests/test_ptest_runner.py:547: AssertionError
+_ test_ac9_merge_gate_refuses_a_checkout_that_is_not_the_owning_one[venv-resolves-outside] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_1')
+shape = 'venv-outside', why = '.venv-eval'
+
+    @pytest.mark.parametrize("shape,why", [
+        ("no-refmatrix", ".refmatrix"),
+        ("venv-outside", ".venv-eval"),
+    ], ids=["no-refmatrix", "venv-resolves-outside"])
+    def test_ac9_merge_gate_refuses_a_checkout_that_is_not_the_owning_one(tmp_path, shape, why):
+        """task-29.4 #r7 item 1 / #ac-9: exit 2, saying why, in a checkout with no `.refmatrix/`
+        or whose `.venv-eval` resolves outside it (a littlebig clone's is a symlink to the dev
+        tree's)."""
+        tree, _ = _merging_checkout(tmp_path, "case_trivial", owning=True)
+        if shape == "no-refmatrix":
+            (tree / ".refmatrix").rmdir()
+        else:
+            (tree / ".venv-eval").rmdir()
+            (tree / ".venv-eval").symlink_to(Path(sys.prefix).resolve())
+        r = _ptest(tree, "--merge-gate")
+>       assert r.returncode == 2, f"exit {r.returncode}, not 2:\n{_out(r)[-2000:]}"
+E       AssertionError: exit 1, not 2:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_1/co/scripts/ptest.sh: line 16: merge: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert 1 == 2
+E        +  where 1 = CompletedProcess(args=['bash', '/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_1/co/scripts/p...ytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_refuses_a_1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable\n').returncode
+
+tests/test_ptest_runner.py:547: AssertionError
+_ test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[teardown-error] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t0')
+case = 'case_teardown_error', lint_exit = 0, ok = False
+named = 'tests/test_topic.py::test_passes_then_errors_at_teardown'
+
+    @pytest.mark.parametrize("case,lint_exit,ok,named", [
+        ("case_teardown_error", 0, False,
+         "tests/test_topic.py::test_passes_then_errors_at_teardown"),
+        ("case_trivial", 0, True, None),
+        ("case_trivial", 1, False, "lint"),
+    ], ids=["teardown-error", "clean", "lint-gate-fails"])
+    def test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate(tmp_path, case, lint_exit, ok,
+                                                                      named):
+        """task-29.4 #r7 items 2-4 / #ac-9: in the owning checkout, mid-merge, the gate runs the
+        test files the merge touches and the lint gate; a test that passes and errors at teardown
+        (bug-230's shape) fails it, named; a non-zero lint gate fails it; the run's logs are in
+        `workflow/review-output/merge-gate-<merge head sha>/`.
+    
+        Kills mutation 15 (teardown errors ignored)."""
+        tree, merge_head = _merging_checkout(tmp_path, case, lint_exit=lint_exit)
+        r = _ptest(tree, "--merge-gate")
+        gate = _gate_dir(tree, merge_head)
+>       assert gate is not None and (gate / "summary.txt").is_file(), \
+            f"no merge-gate-{merge_head[:12]}…/summary.txt:\n{_out(r)[-2000:]}"
+E       AssertionError: no merge-gate-27315ac0428c…/summary.txt:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t0/co/scripts/ptest.sh: line 16: merge: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t0/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert (None is not None)
+
+tests/test_ptest_runner.py:568: AssertionError
+_____ test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[clean] ______
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t1')
+case = 'case_trivial', lint_exit = 0, ok = True, named = None
+
+    @pytest.mark.parametrize("case,lint_exit,ok,named", [
+        ("case_teardown_error", 0, False,
+         "tests/test_topic.py::test_passes_then_errors_at_teardown"),
+        ("case_trivial", 0, True, None),
+        ("case_trivial", 1, False, "lint"),
+    ], ids=["teardown-error", "clean", "lint-gate-fails"])
+    def test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate(tmp_path, case, lint_exit, ok,
+                                                                      named):
+        """task-29.4 #r7 items 2-4 / #ac-9: in the owning checkout, mid-merge, the gate runs the
+        test files the merge touches and the lint gate; a test that passes and errors at teardown
+        (bug-230's shape) fails it, named; a non-zero lint gate fails it; the run's logs are in
+        `workflow/review-output/merge-gate-<merge head sha>/`.
+    
+        Kills mutation 15 (teardown errors ignored)."""
+        tree, merge_head = _merging_checkout(tmp_path, case, lint_exit=lint_exit)
+        r = _ptest(tree, "--merge-gate")
+        gate = _gate_dir(tree, merge_head)
+>       assert gate is not None and (gate / "summary.txt").is_file(), \
+            f"no merge-gate-{merge_head[:12]}…/summary.txt:\n{_out(r)[-2000:]}"
+E       AssertionError: no merge-gate-a35a13e78c1c…/summary.txt:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t1/co/scripts/ptest.sh: line 16: merge: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t1/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert (None is not None)
+
+tests/test_ptest_runner.py:568: AssertionError
+_ test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[lint-gate-fails] _
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t2')
+case = 'case_trivial', lint_exit = 1, ok = False, named = 'lint'
+
+    @pytest.mark.parametrize("case,lint_exit,ok,named", [
+        ("case_teardown_error", 0, False,
+         "tests/test_topic.py::test_passes_then_errors_at_teardown"),
+        ("case_trivial", 0, True, None),
+        ("case_trivial", 1, False, "lint"),
+    ], ids=["teardown-error", "clean", "lint-gate-fails"])
+    def test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate(tmp_path, case, lint_exit, ok,
+                                                                      named):
+        """task-29.4 #r7 items 2-4 / #ac-9: in the owning checkout, mid-merge, the gate runs the
+        test files the merge touches and the lint gate; a test that passes and errors at teardown
+        (bug-230's shape) fails it, named; a non-zero lint gate fails it; the run's logs are in
+        `workflow/review-output/merge-gate-<merge head sha>/`.
+    
+        Kills mutation 15 (teardown errors ignored)."""
+        tree, merge_head = _merging_checkout(tmp_path, case, lint_exit=lint_exit)
+        r = _ptest(tree, "--merge-gate")
+        gate = _gate_dir(tree, merge_head)
+>       assert gate is not None and (gate / "summary.txt").is_file(), \
+            f"no merge-gate-{merge_head[:12]}…/summary.txt:\n{_out(r)[-2000:]}"
+E       AssertionError: no merge-gate-870ef87c5dc5…/summary.txt:
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t2/co/scripts/ptest.sh: line 16: merge: unbound variable
+E         /private/tmp/pytest-of-rmxtest1/pytest-76/test_ac9_merge_gate_runs_the_t2/co/scripts/ptest.sh: line 17: pids[@]: unbound variable
+E         
+E       assert (None is not None)
+
+tests/test_ptest_runner.py:568: AssertionError
+__________ test_tier_of_gives_every_test_file_exactly_one_known_tier ___________
+
+    def test_tier_of_gives_every_test_file_exactly_one_known_tier():
+        """task-29.4 #ac-1: one of the four names for every `tests/test_*.py`; the four per-tier
+        lists are disjoint and their union is every test file."""
+>       tiering = _tiering()
+                  ^^^^^^^^^^
+
+tests/test_suite_tiers.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+________________ test_tier_of_on_real_files[test_kwic.py-unit] _________________
+
+name = 'test_kwic.py', tier = 'unit'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_kwic.py", "unit"),
+        ("test_daemon_reaper.py", "daemon"),
+        ("test_plan2_remedy.py", "timing"),
+        ("test_repo_hooks_in_sync.py", "devtree"),
+        ("test_bug230_repo_scope_gate.py", "devtree"),
+    ], ids=lambda v: v)
+    def test_tier_of_on_real_files(name, tier):
+        """One real file per tier, each for its rule: no signal; `subprocess` and a real daemon;
+        eleven entries in `wallclock_allow.json`; a skip pin in conftest (`_FOREIGN_HOOKS_PINS`)
+        and a real-home read; `DEVTREE_FILES` (bug-230)."""
+>       assert _tiering().tier_of(TESTS / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+___________ test_tier_of_on_real_files[test_daemon_reaper.py-daemon] ___________
+
+name = 'test_daemon_reaper.py', tier = 'daemon'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_kwic.py", "unit"),
+        ("test_daemon_reaper.py", "daemon"),
+        ("test_plan2_remedy.py", "timing"),
+        ("test_repo_hooks_in_sync.py", "devtree"),
+        ("test_bug230_repo_scope_gate.py", "devtree"),
+    ], ids=lambda v: v)
+    def test_tier_of_on_real_files(name, tier):
+        """One real file per tier, each for its rule: no signal; `subprocess` and a real daemon;
+        eleven entries in `wallclock_allow.json`; a skip pin in conftest (`_FOREIGN_HOOKS_PINS`)
+        and a real-home read; `DEVTREE_FILES` (bug-230)."""
+>       assert _tiering().tier_of(TESTS / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+___________ test_tier_of_on_real_files[test_plan2_remedy.py-timing] ____________
+
+name = 'test_plan2_remedy.py', tier = 'timing'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_kwic.py", "unit"),
+        ("test_daemon_reaper.py", "daemon"),
+        ("test_plan2_remedy.py", "timing"),
+        ("test_repo_hooks_in_sync.py", "devtree"),
+        ("test_bug230_repo_scope_gate.py", "devtree"),
+    ], ids=lambda v: v)
+    def test_tier_of_on_real_files(name, tier):
+        """One real file per tier, each for its rule: no signal; `subprocess` and a real daemon;
+        eleven entries in `wallclock_allow.json`; a skip pin in conftest (`_FOREIGN_HOOKS_PINS`)
+        and a real-home read; `DEVTREE_FILES` (bug-230)."""
+>       assert _tiering().tier_of(TESTS / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+________ test_tier_of_on_real_files[test_repo_hooks_in_sync.py-devtree] ________
+
+name = 'test_repo_hooks_in_sync.py', tier = 'devtree'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_kwic.py", "unit"),
+        ("test_daemon_reaper.py", "daemon"),
+        ("test_plan2_remedy.py", "timing"),
+        ("test_repo_hooks_in_sync.py", "devtree"),
+        ("test_bug230_repo_scope_gate.py", "devtree"),
+    ], ids=lambda v: v)
+    def test_tier_of_on_real_files(name, tier):
+        """One real file per tier, each for its rule: no signal; `subprocess` and a real daemon;
+        eleven entries in `wallclock_allow.json`; a skip pin in conftest (`_FOREIGN_HOOKS_PINS`)
+        and a real-home read; `DEVTREE_FILES` (bug-230)."""
+>       assert _tiering().tier_of(TESTS / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+______ test_tier_of_on_real_files[test_bug230_repo_scope_gate.py-devtree] ______
+
+name = 'test_bug230_repo_scope_gate.py', tier = 'devtree'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_kwic.py", "unit"),
+        ("test_daemon_reaper.py", "daemon"),
+        ("test_plan2_remedy.py", "timing"),
+        ("test_repo_hooks_in_sync.py", "devtree"),
+        ("test_bug230_repo_scope_gate.py", "devtree"),
+    ], ids=lambda v: v)
+    def test_tier_of_on_real_files(name, tier):
+        """One real file per tier, each for its rule: no signal; `subprocess` and a real daemon;
+        eleven entries in `wallclock_allow.json`; a skip pin in conftest (`_FOREIGN_HOOKS_PINS`)
+        and a real-home read; `DEVTREE_FILES` (bug-230)."""
+>       assert _tiering().tier_of(TESTS / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+________________ test_named_lists_exist_and_carry_their_reasons ________________
+
+    def test_named_lists_exist_and_carry_their_reasons():
+        """task-29.4 #ac-1: every name in `DEVTREE_FILES`, `ALWAYS_FILES` and the serial group
+        exists on disk, with a reason; `ALWAYS_FILES` holds #r6-parts' set and the census tests."""
+>       tiering = _tiering()
+                  ^^^^^^^^^^
+
+tests/test_suite_tiers.py:109: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+___________ test_tier_rule_on_synthetic_sources[test_plain.py-unit] ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so0')
+name = 'test_plain.py', tier = 'unit'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+_________ test_tier_rule_on_synthetic_sources[test_subproc.py-daemon] __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so1')
+name = 'test_subproc.py', tier = 'daemon'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+__________ test_tier_rule_on_synthetic_sources[test_helper.py-daemon] __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so2')
+name = 'test_helper.py', tier = 'daemon'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+___________ test_tier_rule_on_synthetic_sources[test_deep.py-daemon] ___________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so3')
+name = 'test_deep.py', tier = 'daemon'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+_________ test_tier_rule_on_synthetic_sources[test_pinned.py-devtree] __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so4')
+name = 'test_pinned.py', tier = 'devtree'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+________ test_tier_rule_on_synthetic_sources[test_realhome.py-devtree] _________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so5')
+name = 'test_realhome.py', tier = 'devtree'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+__________ test_tier_rule_on_synthetic_sources[test_bound.py-timing] ___________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so6')
+name = 'test_bound.py', tier = 'timing'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+______ test_tier_rule_on_synthetic_sources[test_bound_and_proc.py-timing] ______
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_rule_on_synthetic_so7')
+name = 'test_bound_and_proc.py', tier = 'timing'
+
+    @pytest.mark.parametrize("name,tier", [
+        ("test_plain.py", "unit"),
+        ("test_subproc.py", "daemon"),
+        ("test_helper.py", "daemon"),
+        ("test_deep.py", "daemon"),
+        ("test_pinned.py", "devtree"),
+        ("test_realhome.py", "devtree"),
+        ("test_bound.py", "timing"),
+        ("test_bound_and_proc.py", "timing"),
+    ], ids=lambda v: v)
+    def test_tier_rule_on_synthetic_sources(tmp_path, name, tier):
+        """task-29.4 #ac-1's must-fail cases: `subprocess.run(` is not unit; a helper (direct or
+        transitive) that calls `spawn_daemon_subprocess` is not unit; a skip pin is devtree; a
+        real-home read is devtree; an allow-listed bound is timing, and timing wins over a process
+        signal (the rule is ordered). Kills mutation 1 (helper imports ignored)."""
+        t = _synthetic(tmp_path)
+>       assert _tiering().tier_of(t / name) == tier
+               ^^^^^^^^^^
+
+tests/test_suite_tiers.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+________ test_tier_of_raises_rather_than_defaulting[in-a-subdirectory] _________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_of_raises_rather_tha0')
+rel = 'sub/test_nested.py'
+
+    @pytest.mark.parametrize("rel", ["sub/test_nested.py", "test_missing.py", "test_broken.py"],
+                             ids=["in-a-subdirectory", "missing", "unparseable"])
+    def test_tier_of_raises_rather_than_defaulting(tmp_path, rel):
+        """task-29.4 #r1-also: a test file in a subdirectory of `tests/`, or one `tier_of` cannot
+        read, is an error, not a default tier."""
+        t = _synthetic(tmp_path)
+>       tiering = _tiering()
+                  ^^^^^^^^^^
+
+tests/test_suite_tiers.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+_____________ test_tier_of_raises_rather_than_defaulting[missing] ______________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_of_raises_rather_tha1')
+rel = 'test_missing.py'
+
+    @pytest.mark.parametrize("rel", ["sub/test_nested.py", "test_missing.py", "test_broken.py"],
+                             ids=["in-a-subdirectory", "missing", "unparseable"])
+    def test_tier_of_raises_rather_than_defaulting(tmp_path, rel):
+        """task-29.4 #r1-also: a test file in a subdirectory of `tests/`, or one `tier_of` cannot
+        read, is an error, not a default tier."""
+        t = _synthetic(tmp_path)
+>       tiering = _tiering()
+                  ^^^^^^^^^^
+
+tests/test_suite_tiers.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+___________ test_tier_of_raises_rather_than_defaulting[unparseable] ____________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_tier_of_raises_rather_tha2')
+rel = 'test_broken.py'
+
+    @pytest.mark.parametrize("rel", ["sub/test_nested.py", "test_missing.py", "test_broken.py"],
+                             ids=["in-a-subdirectory", "missing", "unparseable"])
+    def test_tier_of_raises_rather_than_defaulting(tmp_path, rel):
+        """task-29.4 #r1-also: a test file in a subdirectory of `tests/`, or one `tier_of` cannot
+        read, is an error, not a default tier."""
+        t = _synthetic(tmp_path)
+>       tiering = _tiering()
+                  ^^^^^^^^^^
+
+tests/test_suite_tiers.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _tiering():
+>       from tests import tiering
+E       ImportError: cannot import name 'tiering' from 'tests' (unknown location)
+
+tests/test_suite_tiers.py:56: ImportError
+_ test_plain_collection_is_clean_and_every_item_carries_its_files_tier_marker __
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_plain_collection_is_clean0')
+
+    def test_plain_collection_is_clean_and_every_item_carries_its_files_tier_marker(tmp_path):
+        """task-29.4 #ac-1 / #ac-10 on the real suite: the PLAIN command (no path, no `-m`)
+        collects with exit 0; every item carries exactly one `tier_<name>` marker, the one
+        `tier_of` gives its file; so the four tiers' item counts sum to the plain count. Every
+        collected item is in a top-level `tests/test_*.py` (no fixture leaks in).
+    
+        Kills mutation 2 (the marker hook skips one tier's files). RED at the base sha for two
+        reasons: the collection error (module docstring) and no markers."""
+        plugin_dir = tmp_path / "plugin"
+        plugin_dir.mkdir()
+        (plugin_dir / "rmx294a_tier_dump.py").write_text(_DUMP_PLUGIN)
+        dump = tmp_path / "items.jsonl"
+        pp = os.pathsep.join([str(plugin_dir)] + [p for p in os.environ.get("PYTHONPATH", "")
+                                                  .split(os.pathsep) if p])
+        r = _run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+                  "-p", "rmx294a_tier_dump"], REPO, PYTHONPATH=pp, RMX_294A_TIER_DUMP=str(dump))
+        out = r.stdout + r.stderr
+>       assert r.returncode == 0, f"the plain collection exited {r.returncode}:\n{out[-3000:]}"
+E       AssertionError: the plain collection exited 2:
+E         entry
+E         tests/test_wallclock_census.py::test_r3_scope_the_four_heaviest_tier_d_files_hold_no_entry
+E         tests/test_wallclock_census.py::test_r3_scope_no_class_c_or_d_legacy_entry_remains
+E         tests/test_wallclock_census.py::test_r3_scope_tier_d_projected_within_its_band
+E         tests/test_watch.py::test_is_relevant_filters_unsupported_and_ignored
+E         tests/test_watch.py::test_debouncer_coalesces_and_fires
+E         tests/test_watch.py::test_debouncer_final_flush_on_stop
+E         tests/test_watch.py::test_debouncer_swallows_callback_exceptions
+E         tests/test_watch.py::test_run_watcher_picks_up_new_file
+E         tests/test_worker_budget_invariant.py::test_the_work_budget_is_never_smaller_than_the_qualifying_budget
+E         tests/test_worker_budget_invariant.py::test_the_work_budget_covers_a_measured_cold_load
+E         tests/test_worker_budget_invariant.py::test_the_probe_budget_still_covers_a_cold_load
+E         tests/test_worker_budget_invariant.py::test_the_op_budget_still_bounds_a_wedged_worker
+E         tests/test_worker_budget_invariant.py::test_the_daemon_hands_its_client_the_op_budget
+E         tests/test_workflow_ignore.py::test_builtin_defaults_minimal_no_workflow
+E         tests/test_workflow_ignore.py::test_ignorespec_pattern_shapes
+E         tests/test_workflow_ignore.py::test_empty_or_missing_spec_is_none
+E         tests/test_workflow_ignore.py::test_load_spec_reads_from_dot_refmatrix_dir
+E         tests/test_workflow_ignore.py::test_should_ignore_combines_builtin_and_spec
+E         tests/test_workflow_ignore.py::test_watcher_is_relevant_honors_spec
+E         tests/test_workflow_ignore.py::test_spec_cache_refreshes_on_mtime
+E         
+E         ==================================== ERRORS ====================================
+E         _____ ERROR collecting tests/fixtures/suite_health/case_killed_mid_test.py _____
+E         ImportError while importing test module '/Users/rmxtest1/lane/runs/294a-red-1.2I3y/tests/fixtures/suite_health/case_killed_mid_test.py'.
+E         Hint: make sure your test modules/packages have valid Python names.
+E         Traceback:
+E         /opt/local/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/importlib/__init__.py:88: in import_module
+E             return _bootstrap._gcd_import(name[level:], package, level)
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         tests/fixtures/suite_health/case_killed_mid_test.py:7: in <module>
+E             from suite_health_support import report, store_root
+E         E   ModuleNotFoundError: No module named 'suite_health_support'
+E         =============================== warnings summary ===============================
+E         tests/test_cctree_web.py:17
+E           /Users/rmxtest1/lane/runs/294a-red-1.2I3y/tests/test_cctree_web.py:17: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+E             from starlette.testclient import TestClient  # noqa: E402
+E         
+E         -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+E         =========================== short test summary info ============================
+E         ERROR tests/fixtures/suite_health/case_killed_mid_test.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         5427 tests collected, 1 error in 8.54s
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/python', '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cach...!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n5427 tests collected, 1 error in 8.54s\n', stderr='').returncode
+
+tests/test_suite_tiers.py:234: AssertionError
+_________ test_dash_m_selects_one_tier_and_the_markers_are_registered __________
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_dash_m_selects_one_tier_a0')
+
+    def test_dash_m_selects_one_tier_and_the_markers_are_registered(tmp_path):
+        """task-29.4 #r1-also: `-m tier_<name>` selects that tier's files, `--strict-markers`
+        accepts the four markers (registered in `pytest_configure`), and with no `-m` every tier
+        is collected. On a fixture checkout of one unit and one daemon file."""
+        tree = sht.build(tmp_path, {"test_plain.py": "case_trivial", "test_proc.py": "case_pass_child"})
+        base = [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+                "--strict-markers"]
+    
+        def nodes(*extra):
+            r = _run(base + list(extra), tree)
+            ids = [ln for ln in r.stdout.splitlines() if "::" in ln]
+            return r, ids
+    
+        r, unit = nodes("-m", "tier_unit")
+>       assert r.returncode == 0, (r.stdout + r.stderr)[-2000:]
+E       AssertionError: pyc-guard: recompiled 33 timestamp pyc(s) under /private/tmp/pytest-of-rmxtest1/pytest-76/test_dash_m_selects_one_tier_a0/co/src/refmatrix as checked-hash (bug-037)
+E         
+E         no tests collected (2 deselected) in 0.01s
+E         
+E       assert 5 == 0
+E        +  where 5 = CompletedProcess(args=['/Users/rmxtest1/.venv-lane/bin/python', '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cach...cts_one_tier_a0/co/src/refmatrix as checked-hash (bug-037)\n\nno tests collected (2 deselected) in 0.01s\n', stderr='').returncode
+
+tests/test_suite_tiers.py:268: AssertionError
+__________ test_no_fixture_file_matches_pytests_default_test_patterns __________
+
+    def test_no_fixture_file_matches_pytests_default_test_patterns():
+        """task-29.4 #r1-fixtures: fixtures are `case_*.py`; nothing under `tests/fixtures/` may be
+        named as pytest collects by default (`test_*.py` OR `*_test.py`). At the base sha
+        `case_killed_mid_test.py` matches the second and broke the plain collection."""
+        hits = sorted(p.relative_to(REPO).as_posix() for p in (TESTS / "fixtures").rglob("*.py")
+                      if p.name.startswith("test_") or p.stem.endswith("_test"))
+>       assert hits == [], f"fixture files pytest would collect: {hits}"
+E       AssertionError: fixture files pytest would collect: ['tests/fixtures/suite_health/case_killed_mid_test.py']
+E       assert ['tests/fixtu..._mid_test.py'] == []
+E         
+E         Left contains one more item: 'tests/fixtures/suite_health/case_killed_mid_test.py'
+E         Use -v to get more diff
+
+tests/test_suite_tiers.py:285: AssertionError
+___ test_norecursedirs_keeps_a_planted_test_file_out_of_the_plain_collection ___
+
+tmp_path = PosixPath('/private/tmp/pytest-of-rmxtest1/pytest-76/test_norecursedirs_keeps_a_pla0')
+
+    def test_norecursedirs_keeps_a_planted_test_file_out_of_the_plain_collection(tmp_path):
+        """task-29.4 #r1-fixtures: `[tool.pytest.ini_options]` `norecursedirs` holds `fixtures` and
+        `sandbox_site`, so a `test_*.py` dropped under either is not collected by the plain
+        command. Behaviour, on a copy of this checkout's `pyproject.toml` and a planted file in
+        each directory (the must-fail case: at the base sha both are collected)."""
+        co = tmp_path / "co"
+        (co / "tests" / "fixtures" / "x").mkdir(parents=True)
+        (co / "tests" / "sandbox_site").mkdir(parents=True)
+        (co / "pyproject.toml").write_text((REPO / "pyproject.toml").read_text())
+        (co / "tests" / "test_real.py").write_text("def test_real():\n    assert True\n")
+        planted = "def test_planted():\n    assert True\n"
+        (co / "tests" / "fixtures" / "x" / "test_planted.py").write_text(planted)
+        (co / "tests" / "sandbox_site" / "test_planted.py").write_text(planted)
+        r = _run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
+                 co)
+        ids = [ln for ln in r.stdout.splitlines() if "::" in ln]
+>       assert ids == ["tests/test_real.py::test_real"], (ids, (r.stdout + r.stderr)[-2000:])
+E       AssertionError: (['tests/fixtures/x/test_planted.py::test_planted', 'tests/test_real.py::test_real'], 'tests/fixtures/x/test_planted.p...!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         2 tests collected, 1 error in 0.07s
+E         ')
+E       assert ['tests/fixtu...y::test_real'] == ['tests/test_...y::test_real']
+E         
+E         At index 0 diff: 'tests/fixtures/x/test_planted.py::test_planted' != 'tests/test_real.py::test_real'
+E         Left contains one more item: 'tests/test_real.py::test_real'
+E         Use -v to get more diff
+
+tests/test_suite_tiers.py:304: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ptest_runner.py::test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position[in-process]
+FAILED tests/test_ptest_runner.py::test_ac12_a_live_touch_fails_its_shard_and_the_run_in_every_shard_position[spawned-child]
+FAILED tests/test_ptest_runner.py::test_ac12_a_live_touch_in_the_serial_group_fails_the_run
+FAILED tests/test_ptest_runner.py::test_ac2_tier_all_in_a_clone_logs_every_shard_and_fails_when_any_shard_fails
+FAILED tests/test_ptest_runner.py::test_tier_all_in_the_owning_checkout_runs_the_devtree_tier
+FAILED tests/test_ptest_runner.py::test_ac3_outcomes_jsonl_follows_the_normalisation_table
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_replaces_only_run_noise[sandbox-root]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_replaces_only_run_noise[tmp-segment]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_replaces_only_run_noise[pid]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_replaces_only_run_noise[hex-address]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_replaces_only_run_noise[seconds]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[word]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[quoted-key]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[plain-int]
+FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[path-tail]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_failures_equal_apart_from_run_noise
+FAILED tests/test_ptest_runner.py::test_ac3_compare_failures_unequal_names_the_difference[e-line]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_failures_unequal_names_the_difference[node-id]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_failures_unequal_names_the_difference[phase]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[equal]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[xfail-to-pass-unexpected]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[xfail-to-pass-expected]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[second-change]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[expected-change-absent]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[from-was-not-xfailed]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[same-node-other-phase-changed]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[expect-wrong-phase]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[node-missing-from-b]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[phase-missing-from-b]
+FAILED tests/test_ptest_runner.py::test_ac3_compare_outcomes_is_exact[node-id-with-a-colon]
+FAILED tests/test_ptest_runner.py::test_ac9_merge_gate_refuses_a_checkout_that_is_not_the_owning_one[no-refmatrix]
+FAILED tests/test_ptest_runner.py::test_ac9_merge_gate_refuses_a_checkout_that_is_not_the_owning_one[venv-resolves-outside]
+FAILED tests/test_ptest_runner.py::test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[teardown-error]
+FAILED tests/test_ptest_runner.py::test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[clean]
+FAILED tests/test_ptest_runner.py::test_ac9_merge_gate_runs_the_touched_tests_and_the_lint_gate[lint-gate-fails]
+FAILED tests/test_suite_tiers.py::test_tier_of_gives_every_test_file_exactly_one_known_tier
+FAILED tests/test_suite_tiers.py::test_tier_of_on_real_files[test_kwic.py-unit]
+FAILED tests/test_suite_tiers.py::test_tier_of_on_real_files[test_daemon_reaper.py-daemon]
+FAILED tests/test_suite_tiers.py::test_tier_of_on_real_files[test_plan2_remedy.py-timing]
+FAILED tests/test_suite_tiers.py::test_tier_of_on_real_files[test_repo_hooks_in_sync.py-devtree]
+FAILED tests/test_suite_tiers.py::test_tier_of_on_real_files[test_bug230_repo_scope_gate.py-devtree]
+FAILED tests/test_suite_tiers.py::test_named_lists_exist_and_carry_their_reasons
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_plain.py-unit]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_subproc.py-daemon]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_helper.py-daemon]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_deep.py-daemon]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_pinned.py-devtree]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_realhome.py-devtree]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_bound.py-timing]
+FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_bound_and_proc.py-timing]
+FAILED tests/test_suite_tiers.py::test_tier_of_raises_rather_than_defaulting[in-a-subdirectory]
+FAILED tests/test_suite_tiers.py::test_tier_of_raises_rather_than_defaulting[missing]
+FAILED tests/test_suite_tiers.py::test_tier_of_raises_rather_than_defaulting[unparseable]
+FAILED tests/test_suite_tiers.py::test_plain_collection_is_clean_and_every_item_carries_its_files_tier_marker
+FAILED tests/test_suite_tiers.py::test_dash_m_selects_one_tier_and_the_markers_are_registered
+FAILED tests/test_suite_tiers.py::test_no_fixture_file_matches_pytests_default_test_patterns
+FAILED tests/test_suite_tiers.py::test_norecursedirs_keeps_a_planted_test_file_out_of_the_plain_collection
+57 failed, 370 passed in 172.00s (0:02:52)
+exit 1
