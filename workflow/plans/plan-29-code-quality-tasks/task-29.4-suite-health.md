@@ -704,6 +704,13 @@ E line against the previous gate's `failures.jsonl`: a row that is still open is
 seen, and a new node id or a new E line fails the gate. After stage 5 the previous gate's file
 is empty, and so any failure fails it. {#r7-list}
 
+**Baseline, ruled strict (L207, 2026-11-24; bug-304):** the previous gate is the newest exact
+`merge-gate-<sha>` directory whose `gate.json` says it passed and whose merge head is an ancestor
+of HEAD; a failure is seen only if it is open there. Nothing seeds a gate from the bug registry,
+so before stage 5 too, any failure already open in the gate's set (tier (c), `ALWAYS_FILES`, the
+touched files) blocks every merge until it is fixed or marked `xfail(strict=True, reason="bug-NNN")`
+(CLAUDE.md test discipline rule 8). That is intended: a known failure is never left plain red. {#r7-baseline}
+
 ### R8: the docs say what is true {#r8}
 
 - `CLAUDE.md#development-commands` and `.claude/PROJECT_PROFILE.md#commands`: the run-tier
