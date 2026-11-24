@@ -296,6 +296,65 @@ def test_a_memorys_bm25_length_is_its_own_plus_its_blocks(id_titled):
     assert hits[0][1] > hits[1][1], hits
 
 
+def _tagged(doc_id: str, tags: str, sections) -> str:
+    """`_gmd` with the memory's own tags chosen: a tag is a `mentions` edge on the MEMORY
+    entity, not on a block -- the title/tag-only match the length rule must still apply to."""
+    return _gmd(doc_id, sections).replace("tags: [session]", f"tags: [{tags}]", 1)
+
+
+@pytest.fixture
+def tag_matched():
+    """Its own store (the `id_titled` pins hold that store's N / avgdl): two memories that match
+    `quokka` ONLY through their own tag, one with a long block body; a third whose body alone
+    holds `kettle`. Ingested long-first, so the long memory has the lower entity id."""
+    import rmx_sandbox
+    base = Path(rmx_sandbox.short_root("b300t-"))
+    mem_dir = base / "memory"
+    mem_dir.mkdir()
+    files = [
+        ("s0081_1", _tagged("s0081_1", "session, quokka", [
+            ("Log", "log", "Breakfast porridge, deck chairs, binoculars, seabirds, waterfalls, "
+                           "rain jackets, postcards, harbour shops, woollen gloves, hot cocoa, "
+                           "camera batteries, folding maps, wooden benches, quiet cabins, "
+                           "ferry tickets, lighthouse tours, rock pools, sea glass, driftwood, "
+                           "puffins, oyster catchers, kelp beds, tide pools, salt marsh.")])),
+        ("s0080_1", _tagged("s0080_1", "session, quokka", [("Note", "note", "Tiny.")])),
+        ("s0082_1", _tagged("s0082_1", "session", [
+            ("Kitchen", "kitchen", "The kettle is blue.")])),
+    ]
+    s = Store(base / ".refmatrix")
+    s.init()
+    try:
+        for name, text in files:
+            (mem_dir / f"{name}.md").write_text(text, encoding="utf8")
+        ingest_gmd_paths(s, [mem_dir / f"{n}.md" for n, _ in files], as_memory=True,
+                         memory_mtype_default="test/session")
+        ids = {n: s.get_entity("memory", n).id for n, _ in files}
+        assert ids["s0081_1"] < ids["s0080_1"], ids     # the tie-break favours the LONG one
+        yield s, ids
+    finally:
+        s.close()
+        rmx_sandbox.remove_tree(base)
+
+
+@pytest.mark.parametrize("terms", [["quokka"], ["quokka", "kettle"]])
+def test_the_length_rule_holds_when_a_memory_matches_only_on_its_own_postings(
+        tag_matched, terms):
+    """L199 ruling 3, ch-bsd b300 r1 b-1 (L209): a memory's length is its own postings plus all
+    its blocks' on EVERY credited query, not only when some block row matched a query term. Both
+    quokka memories match through their TAG alone; s0081_1 also has a long block, so the
+    shorter s0080_1 ranks first -- with or without `kettle`, a word neither contains. At
+    5d28d2a5 the length was applied only `if _block_rows:`: `["quokka"]` scored the long memory
+    as its own few postings, tied it with the short one, and the id tie-break put it first,
+    while `["quokka", "kettle"]` (kettle is on a block) put the short one first."""
+    s, ids = tag_matched
+    hits = s.content_rank(terms, kinds=["memory"], limit=10)
+    order = [eid for eid, _ in hits if eid in (ids["s0080_1"], ids["s0081_1"])]
+    assert order == [ids["s0080_1"], ids["s0081_1"]], _named(s, hits)
+    score = dict(hits)
+    assert score[ids["s0080_1"]] > score[ids["s0081_1"]], _named(s, hits)
+
+
 # ─── L199 ruling 1: callers that ask for `concept` (context) or no kinds (net) ────────
 #
 # Block postings are credited to a memory ONLY when `kinds` includes `memory` and excludes
