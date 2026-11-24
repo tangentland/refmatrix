@@ -14672,13 +14672,30 @@ def session_ingest_cmd(targets, all_projects, force, verbose, no_index):
 
     Default scope (no args): the ~/.claude/projects/ directory matching the
     current rmx project's cwd. Pass explicit paths (file or dir) to override.
-    `--all-projects` walks every project under ~/.claude/projects/."""
+    `--all-projects` walks every project under ~/.claude/projects/.
+
+    One run at a time across the user (L206, 2026-11-24): the launchd
+    indexers of six stores overlapped seven-wide under load. A run that finds
+    another indexer holding `session_ingest.indexer_lock` exits 0 with one
+    counted line naming it; the next tick catches up."""
+    from refmatrix.session_ingest import indexer_lock, indexer_lock_path
+
+    root = _root()
+    with indexer_lock(root) as holder:
+        if holder is not None:
+            click.echo(f"session ingest: skipped=1 — another indexer holds "
+                       f"{indexer_lock_path()} ({holder})")
+            return
+        _session_ingest_locked(root, targets, all_projects, force, verbose, no_index)
+
+
+def _session_ingest_locked(root, targets, all_projects, force, verbose, no_index):
+    """`rmx session ingest`'s body, run under the indexer lock."""
     from refmatrix import daemon as daemon_mod
     from refmatrix.ingest_gmd import collect_gmd_files, ingest_gmd_paths
     from refmatrix.session_ingest import (ingest_session, link_raw,
                                           parse_session_jsonl)
 
-    root = _root()
     cards_dir = root / "sessions"
     claude_projects = Path.home() / ".claude" / "projects"
 
@@ -15120,7 +15137,8 @@ def session_launchctl_grp():
 @session_launchctl_grp.command("install")
 @click.option("--interval", "interval_seconds", default=600, type=int,
               show_default=True,
-              help="Seconds between ingest runs.")
+              help="Seconds between ingest runs (60..3600; fired on clock minutes, the "
+                   "step rounded down to a divisor of the hour, offset per store).")
 @click.option("--all-projects", is_flag=True,
               help="Walk every project under ~/.claude/projects/ on each "
                    "tick (instead of the current project's matching dir).")
@@ -15160,12 +15178,15 @@ def session_launchctl_install(interval_seconds, all_projects, force, check_only,
             all_projects=all_projects, force=force,
             rmx=rmx, allow_dev=allow_dev,
         )
-    except (RuntimeError, FileNotFoundError) as e:
+    except (RuntimeError, FileNotFoundError, ValueError) as e:
         raise click.ClickException(str(e))
     console.print(f"[green]installed[/] {p}")
+    flags = sl.installed_flags(root)
+    step = flags["interval_seconds"] // 60
+    minutes = ",".join(str(m) for m in range(flags["offset_minutes"], 60, step))
     console.print(
         f"label: {sl.label_for_root(root)}  "
-        f"interval: {interval_seconds}s  "
+        f"every {step} min at minutes {minutes}  "
         f"all_projects: {all_projects}"
     )
 

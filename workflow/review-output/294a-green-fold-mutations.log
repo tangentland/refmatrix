@@ -1,0 +1,46 @@
+## MX1 the gate never reads the previous gate: KILLED (exit 1)
+   ['1 failed in 6.00s']
+   FAILED tests/test_ptest_runner.py::test_merge_gate_carries_a_failure_open_in_the_last_passed_merged_gate_and_names_it
+   E       AssertionError: the carried failure is not named as seen (MX1's shape):
+   E         # ptest merge gate merge-gate-9d61bff6fb89913ad2921b31cd087112411e7d16: sha 3b4e5918af2d53eb75b315c1a4c1536ded90ee3e; checkout /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2801/test_merge_gate_carries_a_fail0/co (owning); started 2026-11-23T22:43:08; lo
+## b-1a baseline need not have passed: SURVIVED (exit 0)
+   ['2 passed in 7.75s']
+   
+## b-1b old baseline rule (newest with a summary): KILLED (exit 1)
+   ['1 failed in 5.66s']
+   FAILED tests/test_ptest_runner.py::test_merge_gate_baseline_is_the_last_passed_merged_gate_never_a_moved_aside_copy
+   E           AssertionError: run 2: the baseline is '/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2811/test_merge_gate_baseline_is_th0/co/workflow/review-output/merge-gate-de162b8269bf3261507da570bb35b843d563a8c4.20261123-224323', not the passed, merged gate merge
+   E           assert (None)
+## b-1c moved-aside copy accepted (match, not fullmatch): SURVIVED (exit 0)
+   ['1 passed in 5.58s']
+   
+## b-1d ancestor check dropped: SURVIVED (exit 0)
+   ['2 passed in 9.44s']
+   
+## s-1 any key literal is a read: KILLED (exit 1)
+   ['2 failed in 3.42s']
+   FAILED tests/test_suite_tiers.py::test_tier_rule_on_synthetic_sources[test_names_the_key.py-unit]
+   FAILED tests/test_suite_tiers.py::test_devtree_tier_is_exactly_the_six_files_l192_names
+   E       AssertionError: assert 'devtree' == 'unit'
+   E         
+## m-1 silent when no snapshot: KILLED (exit 1)
+   ['1 failed in 3.84s']
+   FAILED tests/test_ptest_runner.py::test_a_single_threaded_hang_says_no_process_snapshot_was_taken
+   E           AssertionError: a timeout with no process snapshot is not said on the shard line:
+   E             unit-0 exit=1 root=/private/tmp/rmx-e47vu1xd collected=1 passed=0 failed=1 errors=0 skipped=0 xfailed=0 xpassed=0 wall=2.5s files=1 cmd: cd /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2828/test_a_single_threaded_hang_sa0/co && PYTHONPATH=/private/v
+## m-2 importable is enough: KILLED (exit 1)
+   ['1 failed in 1.78s']
+   FAILED tests/test_ptest_runner.py::test_the_runner_refuses_when_pytest_timeout_is_importable_but_not_loaded[autoload-off-refused]
+   E           AssertionError: exit 0, not 2:
+   E             started unit-0 (pid 89926): cd /private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2830/test_the_runner_refuses_when_p0/co && PYTHONPATH=/private/var/folders/js/71d0ymjj56b2mbf40rvwk84r0000gn/T/pytest-of-tholley/pytest-2830/test_the_runner_refuses_when_p0/
+## m-3 no help text: KILLED (exit 1)
+   ['1 failed in 0.20s']
+   FAILED tests/test_ptest_runner.py::test_help_says_shards_is_per_tier - Assert...
+   E       AssertionError: the --shards help does not say it is per tier: '--shards SHARDS shard processes: unit and daemon EACH get N, so --tier all runs up to 2N at once (timing and devtree run in one process each); default: default_shards(), half of os.cpu_count() split between the tiers that run at
+   E       assert None
+## m-4 old /tmp rule: KILLED (exit 1)
+   ['1 failed in 0.13s']
+   FAILED tests/test_ptest_runner.py::test_normalise_e_line_keeps_what_tells_errors_apart[named-tmp-fixture]
+   E       AssertionError: ('FileNotFoundError: /tmp/fixtu<RAND>', 'FileNotFoundError: /tmp/fixtu<RAND>')
+   E       assert 'FileNotFoundError: /tmp/fixtu<RAND>' != 'FileNotFoundError: /tmp/fixtu<RAND>'
+## after: git status scripts/ tests/: ''

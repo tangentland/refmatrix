@@ -35,6 +35,32 @@ def _assert_tested_code_is_this_checkout() -> None:
 
 _assert_tested_code_is_this_checkout()
 
+
+# ---- task 29.4 #r2: the runner's record files belong to ONE session ------------------------
+#
+# `scripts/ptest.py` sets `RMX_FAILURES_OUT` / `RMX_OUTCOMES_OUT` per shard. Every child of a
+# shard inherits its environment, and the suite runs inner pytest sessions in child processes on
+# purpose (the reaper's and the runner's own fixture suites fail, error and leak by design): left
+# alone, an inner session would append ITS records to the shard's files and the run would report
+# the fixtures' failures as the suite's. The first pytest process that sees the variables claims
+# them (`RMX_PTEST_OUT_OWNER` = its pid); a process that inherits a claim made by another pid
+# drops them, so only the shard's own session writes (29.4a, 2026-11-23).
+_OUT_VARS = ("RMX_FAILURES_OUT", "RMX_OUTCOMES_OUT")
+_OUT_OWNER = "RMX_PTEST_OUT_OWNER"
+
+
+def _claim_run_outputs() -> None:
+    owner = os.environ.get(_OUT_OWNER)
+    if owner is None:
+        if any(os.environ.get(k) for k in _OUT_VARS):
+            os.environ[_OUT_OWNER] = str(os.getpid())
+    elif owner != str(os.getpid()):
+        for k in _OUT_VARS:
+            os.environ.pop(k, None)
+
+
+_claim_run_outputs()
+
 # ---- task 23.0: the sandbox (R1-R4), BEFORE the first `refmatrix` import -----------------
 #
 # bug-088 (72 in-process connects to live sockets in one run) and bug-101 (143,108 facts.log
@@ -207,10 +233,14 @@ def _sweep_killed_runs(config) -> None:
 
 def pytest_report_header(config):
     """task 29.4 R4 item 3: the count of orphans this session's start swept, in the header
-    (format fixed by the RED, ruling L142 (6))."""
-    if _SWEPT["n"] is None or rmx_sandbox._STATE["session"] is not config:
-        return None
-    return f"rmx sandbox: {_SWEPT['n']} orphan process(es) swept from killed runs"
+    (format fixed by the RED, ruling L142 (6)).
+
+    task 29.4 #r2 (29.4a): the session's sandbox root, on a line of its own. The runner reads
+    it from each shard's log and fails a run in which two shards share a root."""
+    lines = [f"rmx sandbox root: {_SANDBOX['root']}"]
+    if _SWEPT["n"] is not None and rmx_sandbox._STATE["session"] is config:
+        lines.append(f"rmx sandbox: {_SWEPT['n']} orphan process(es) swept from killed runs")
+    return lines
 
 
 @pytest.fixture
@@ -414,9 +444,51 @@ def pytest_configure(config):
         "sandbox_probe: a DELIBERATE refusal probe (task 23.0). Its touches-log lines (and its "
         "children's) name it as their owner, so AC-4's proof and the child-touch check accept "
         "them; its in-process inner-session violations are expected. Nothing else is exempt.")
+    for t in _tiering.TIERS:
+        config.addinivalue_line(
+            "markers", f"tier_{t}: run tier {t!r}, set on every item by tests/tiering.py::tier_of "
+                       f"(task-29.4 #r1); `-m tier_{t}` selects the tier")
     if not config.pluginmanager.has_plugin("rmx_skip_gate"):
         config.pluginmanager.register(rmx_sandbox.SkipGate(ALLOWED_SKIPS), "rmx_skip_gate")
     rmx_sandbox.claim_session(config)
+
+
+def _load_tiering():
+    """`tests/tiering.py` beside this conftest, loaded by path: a throwaway checkout
+    (tests/suite_health_tree.py) tiers its files by its OWN copy, whatever `tests` resolves to
+    on `sys.path`."""
+    spec = importlib.util.spec_from_file_location(
+        "rmx_conftest_tiering", _REPO / "tests" / "tiering.py")
+    if spec is None or spec.loader is None:      # pragma: no cover - layout bug
+        raise RuntimeError("tests/tiering.py is missing")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_tiering = _load_tiering()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(session, config, items):
+    """task-29.4 #r1-also: every item under this `tests/` gets the marker `tier_<name>` of its
+    file, from `tier_of`, BEFORE `-m` deselects (tryfirst), so `-m tier_unit` selects a tier and
+    the plain command still runs every tier. A file `tier_of` cannot place (a test file in a
+    subdirectory, one that does not parse) stops the session: an error, not a default.
+    Items outside this `tests/` (an explicit path elsewhere) are not this suite's and are left
+    alone."""
+    tests_dir = (_REPO / "tests").resolve()
+    memo: dict = {}
+    for item in items:
+        p = Path(str(item.path)).resolve()
+        if tests_dir not in p.parents:
+            continue
+        if p not in memo:
+            try:
+                memo[p] = _tiering.tier_of(p)
+            except _tiering.TierError as exc:
+                raise pytest.UsageError(f"run tier: {exc}") from exc
+        item.add_marker(getattr(pytest.mark, f"tier_{memo[p]}"))
 
 
 _TOUCHES_AT = pytest.StashKey[int]()
@@ -482,6 +554,58 @@ def pytest_runtest_makereport(item, call):
     if why and not rep.failed:
         rep.outcome = "failed"
         rep.longrepr = "\n".join(why)
+    if rmx_sandbox._STATE["session"] is item.config:
+        _write_run_records(rep)
+
+
+# ---- task 29.4 #r2: failures.jsonl and outcomes.jsonl, written here, never parsed from text ----
+
+
+def outcome_of(rep) -> str:
+    """The recorded outcome of one phase report, by task-29.4 `#r2-outcomes`. Pytest's reports
+    have no xfailed / xpassed outcome; they are derived from `wasxfail` and nothing else. A
+    STRICT xfail that passed reaches here as `failed` (longrepr `[XPASS(strict)] …`, no
+    `wasxfail`) and stays `failed`: that failure is what keeps a strict xfail honest."""
+    xf = hasattr(rep, "wasxfail")
+    if rep.passed:
+        return "xpassed" if xf else "passed"
+    if rep.skipped:
+        return "xfailed" if xf else "skipped"
+    return "failed" if rep.when == "call" else "error"
+
+
+def e_line(rep) -> str:
+    """The first `E` line of a failed phase's report, else its first non-empty line (a string
+    longrepr: the sandbox's own verdicts, a strict XPASS)."""
+    text = getattr(rep, "longreprtext", "") or str(rep.longrepr or "")
+    lines = text.splitlines()
+    for ln in lines:
+        if ln.startswith("E "):
+            return ln.rstrip()[:2000]
+    for ln in lines:
+        if ln.strip():
+            return ln.strip()[:2000]
+    return f"<{rep.when} {rep.outcome} with no report text>"
+
+
+def _append_jsonl(path: str, rec: dict) -> None:
+    import json
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec) + "\n")
+
+
+def _write_run_records(rep) -> None:
+    """One `outcomes.jsonl` record per node and phase; one `failures.jsonl` record per failed
+    or errored phase (a teardown error is a failure here: "read every ERROR as well as every
+    FAILED"). Only for the session that claimed the outputs (`_claim_run_outputs`)."""
+    oc = outcome_of(rep)
+    out = os.environ.get("RMX_OUTCOMES_OUT")
+    if out:
+        _append_jsonl(out, {"nodeid": rep.nodeid, "phase": rep.when, "outcome": oc})
+    if rep.failed:
+        rmx_sandbox.failure_record(rep.nodeid, rep.when, e_line(rep))
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -500,5 +624,13 @@ def pytest_sessionfinish(session, exitstatus):
             + "; ".join(f"{k}: {', '.join(v)}" for k, v in sorted(stray.items())), red=True)
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     if rmx_sandbox._STATE["session"] is session.config:
+        for k, v in sorted(stray.items()):
+            rmx_sandbox.failure_record(k, "session", "SandboxViolation outside any reported "
+                                                     "test: " + ", ".join(v))
+        gate = session.config.pluginmanager.get_plugin("rmx_skip_gate")
+        if gate is not None:
+            # task-29.4 #r2: a SkipGate finding is a failures.jsonl record (phase `skipgate`).
+            for k, v in sorted(gate.unexpected().items()):
+                rmx_sandbox.failure_record(k, "skipgate", f"SKIPPED-UNPINNED {k}: {v}")
         if rmx_sandbox.reap_session(_REPO, _emitter(session.config)):
             session.exitstatus = pytest.ExitCode.TESTS_FAILED

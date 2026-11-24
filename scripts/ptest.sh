@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
-# Parallel test runner — shards tests/ across N workers (no pytest-xdist needed)
-# and aggregates pass/fail. Usage: scripts/ptest.sh [N] [extra pytest args...]
+# scripts/ptest.sh — the test runner's entry point: run tiers sharded, compare runs, gate a merge.
+# A thin wrapper (task-29.4 #r2, 29.4a, 2026-11-23): the logic is scripts/ptest.py, in Python so
+# it can be tested (the dev shell is bash 3.2). Its docstring lists the modes and exit codes:
+#
+#   scripts/ptest.sh --tier unit|daemon|devtree|timing|all [--shards N] [--name RUN]
+#   scripts/ptest.sh --files tests/test_x.py … [--shards N] [--name RUN]
+#   scripts/ptest.sh --compare [--outcomes] RUN_A RUN_B [--expect 'node:phase:from->to' …]
+#   scripts/ptest.sh --merge-gate
+#
+# The interpreter is $RMX_PYTEST_PY, else this checkout's .venv-eval/bin/python; the same one
+# runs the shards. Replaces the 24-line round-robin sharder that printed "ALL GREEN".
 set -u
-N="${1:-4}"; shift || true
-PY="${RMX_PYTEST_PY:-.venv-eval/bin/python}"
-TMP="$(mktemp -d)"
-files=$(ls tests/test_*.py)
-fail=0; pids=()
-for i in $(seq 0 $((N - 1))); do
-  shard=$(echo "$files" | awk "NR % $N == $i" | tr '\n' ' ')
-  [ -z "$shard" ] && continue
-  ( $PY -m pytest $shard -q -p no:cacheprovider "$@" > "$TMP/res$i" 2>&1
-    echo "rc=$?" >> "$TMP/res$i" ) &
-  pids+=($!)
-done
-for p in "${pids[@]}"; do wait "$p"; done
-for i in $(seq 0 $((N - 1))); do
-  [ -f "$TMP/res$i" ] || continue
-  echo "── shard $i ──"; grep -E "passed|failed|error|FAILED" "$TMP/res$i" | tail -4
-  grep -q "rc=0" "$TMP/res$i" || fail=1
-done
-rm -rf "$TMP"
-[ $fail -eq 0 ] && echo "ALL GREEN" || { echo "FAILURES"; exit 1; }
+HERE=$(cd "$(dirname "$0")" && pwd)
+PY="${RMX_PYTEST_PY:-$HERE/../.venv-eval/bin/python}"
+if [ ! -x "$PY" ]; then
+  echo "ptest.sh: no interpreter at $PY (set RMX_PYTEST_PY)" >&2
+  exit 2
+fi
+exec "$PY" "$HERE/ptest.py" "$@"

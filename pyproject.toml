@@ -35,12 +35,27 @@ dependencies = [
 
 [project.optional-dependencies]
 tldr = ["llm-tldr>=1.5"]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+# pytest-timeout is the suite's hang guard (task-29.4 #r2): scripts/ptest.py refuses to run
+# without it rather than run unguarded (ruling L192 (6), 2026-11-23).
+dev = ["pytest>=8.0", "httpx>=0.27", "pytest-timeout>=2.4"]
 ui = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 
 [project.scripts]
 refmatrix = "refmatrix.cli:cli_entry"
 rmx = "refmatrix.cli:cli_entry"
+
+[tool.pytest.ini_options]
+# task-29.4 #r1-fixtures / #r2 (29.4a, 2026-11-23). norecursedirs REPLACES pytest's default list,
+# so the defaults are repeated (".*" keeps .venv-eval/ and .refmatrix/ out) and two are added:
+# tests/fixtures/ holds fixture suites that fail, error and leak on purpose, and
+# tests/sandbox_site/ is the sandbox's sitecustomize, not a test package. bug-299: a fixture
+# named `*_test.py` (pytest's second default file pattern) broke the plain collection.
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv",
+                 "{arch}", "fixtures", "sandbox_site"]
+# The hang guard, not a speed check: `signal` raises inside the test, so teardown and the
+# session-finish reaper still run (feedback_mutation_must_fail_not_hang).
+timeout = 600
+timeout_method = "signal"
 
 [tool.setuptools]
 # rmxgrep is POSIX shell, not a console_script: alias grep=rmxgrep must not

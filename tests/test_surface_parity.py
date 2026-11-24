@@ -63,6 +63,27 @@ def test_single_token_query_survives_the_stoplist():
     assert content_terms("why is it") == ["why", "is", "it"]
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("How long is my daily commute to work?", ["long", "daily", "commute", "work"]),
+    ("is the grep (backstop) ok, really?", ["grep", "backstop", "ok", "really"]),
+    ('say "hi there"; [x] {yz}: finished!', ["say", "hi", "there", "yz", "finished"]),
+    # symbol-shaped tokens survive intact (bug-301)
+    ("fov_wedge", ["fov_wedge"]),
+    ("refmatrix.store", ["refmatrix.store"]),
+    ("src/refmatrix/terms.py", ["src/refmatrix/terms.py"]),
+    ("bug-301", ["bug-301"]),
+    ("--fuse", ["--fuse"]),
+    ("a.b_c", ["a.b_c"]),
+    ("see (refmatrix.store)?", ["see", "refmatrix.store"]),
+    ("a ?! ()", []),  # tokens that strip below the 2-char floor are dropped
+])
+def test_edge_punctuation_stripped_symbols_kept(text, expected):
+    """bug-301: leading/trailing `?!,;:()[]{}"'` is not part of a term."""
+    from refmatrix.terms import content_terms
+
+    assert content_terms(text) == expected
+
+
 def test_kind_prefix_stripped_only_for_context():
     from refmatrix.terms import content_terms
 
