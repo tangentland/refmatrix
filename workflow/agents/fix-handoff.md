@@ -19,7 +19,7 @@ Read `workflow/bug_registry.md` row **bug-318** first. {#role}
 
 ## Where {#where}
 
-Your clone is on branch `fix-bug318-handoff-size` at master `0dc1a605`. Work and commit there
+Your clone is on branch `fix-bug318-handoff-size` at master `cd95974d` (src identical to `0dc1a605`). Work and commit there
 only. You are read-only against every live store; test stores go under a short `mkdtemp()` root;
 never export `REFMATRIX_ROOT`; never `find /`. Follow CLAUDE.md `#test-discipline` (extend the
 existing test files for the handoff and STM capture; no new per-bug file; real states). {#where-rules}
