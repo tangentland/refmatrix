@@ -3,6 +3,9 @@ gmd: "0.1"
 id: refmatrix/adr-0007-instruction-architecture
 title: "ADR-0007: Every rule is delivered by the event that makes it actionable, from one generated source, with a recorded delivery"
 tags: [adr, instructions, hooks, rules, skills, agents, injection, telemetry, templates, plan-32]
+metadata:
+  status: Accepted
+  accepted: 2026-11-24
 ---
 
 # ADR-0007: Instruction architecture {#root}
@@ -261,12 +264,12 @@ which reaches every subagent. `rmx install-hooks --check` covers the git hooks t
   template does not have: listed, its fixtures run). A local file with a pack-shaped name is
   refused ([[#composition-rules]]). What a second project would use is promoted to the
   template, not copied. {#layers}
-- **How this reads L219.** L219 puts project specifics "only in `.local.md` overlays". That
-  settles agents. A project's own denies and procedures bind the lead too, so an agent overlay
-  cannot hold them; this ADR treats them as the same local layer for the other kinds. Read
-  more narrowly, they would move into the template behind a detection key and ship refmatrix's
-  development rules to every project (Q61, [[#user-calls]]). Q58 = b already depends on the
-  wider reading: a deny that applies to refmatrix only has to be a refmatrix file.
+- **The local layer, and L219** (decided: Q61 = a, L227). L219 puts project specifics "only in
+  `.local.md` overlays". That governs agent text. A project's own denies, checks, triggers
+  and procedure skills bind the lead too, so an agent overlay cannot hold them: they are the
+  local layer above, in the template's schema, fixture-checked by `--check`, never shipped.
+  refmatrix's R001, R003, R007, `release-deploy` and `lane-verify` are local units, and
+  Q58 = b holds by this: a deny that applies to refmatrix only is a refmatrix file.
   {#layers-l219}
 - **The binding lives in the unit's frontmatter:** the event, the tool, the pattern and the
   field it is matched on (`command`, `file_path`, `subagent_type`), who, where, the action
@@ -344,7 +347,7 @@ Rules of composition: {#composition-rules}
 1. **Inputs:** manifests at tracked paths, and a census of tracked files by extension from
    `git ls-files`. Never a directory walk; untracked, ignored and vendored files do not count.
 2. **A stack is detected** by its manifest, or by at least 5 tracked files of its extensions
-   (a proposed threshold; the smallest stack measured in the fleet has 31). A framework is
+   (decided, Q62 = a, L228; the smallest stack measured in the fleet has 31). A framework is
    detected only from a manifest's dependencies.
 3. **Each pack declares its own detection** (`detect:` in its rule's frontmatter: manifest
    names, extensions, dependency names). Adding a pack adds its detection; there is no second
@@ -360,8 +363,8 @@ Rules of composition: {#composition-rules}
 
 #### The first packs {#packs-first}
 
-From L219's fleet census; counts are tracked files. Ordered by repos served, then by risk.
-{#packs-first-lead}
+From L219's fleet census; counts are tracked files. Ordered by repos served, then by risk;
+the order is decided (Q62 = a, L228). {#packs-first-lead}
 
 | # | Pack | Detected by | Rule `paths:` | First role cells | Reach |
 |---|---|---|---|---|---|
@@ -625,18 +628,17 @@ sha) true without touching the settings. {#r007-q57}
 
 ### Decisions that are the user's {#user-calls}
 
-Decided by the user on 2026-11-24 (L221 to L226, [[plan-of-plans#rulings]]): {#user-calls-decided}
+All are decided, by the user on 2026-11-24 (L221 to L228, [[plan-of-plans#rulings]]; the
+questions are Q55 to Q63 in [[plan-of-plans#questions]]). None is open. {#user-calls-decided}
 
-1. **C4** (Q55 = a): `approved` means the plan approved and the next task specced.
-2. **C13** (Q56 = a): STM capture is a memory path.
-3. **C17 and `permissions.allow`** (Q57 = b): the user's settings stay as they are
+1. **C4** (Q55 = a, L221): `approved` means the plan approved and the next task specced.
+2. **C13** (Q56 = a, L221): STM capture is a memory path.
+3. **C17 and `permissions.allow`** (Q57 = b, L221): the user's settings stay as they are
    (`RMXGREP_MODE=plain` in the global settings; the `cp … ~/refmatrix/src/…` grants in
    `.claude/settings.local.json`). The rules are reworded to match them, not the other way
    round ([[#contradictions]] C17, [[#r007-q57]]). The first draft recommended the opposite.
-4. **The reach of R003's deny** (C5; Q58 = b): refmatrix only. This holds only with a local
-   unit layer: under Q61 = b the deny would ship in the template to every project, which
-   Q58 = b rules out.
-
+4. **The reach of R003's deny** (C5; Q58 = b, L221): refmatrix only, as a local unit
+   ([[#layers-l219]]).
 5. **The user's global files** (Q59 part 1 = c, L222): `~/.claude/MEMORY-RULES.md` moves to
    triggered delivery, an inject on a write under a `*/memory/` dir, after probe P7, leaving
    one always-on pointer line; `~/.claude/GMD.md` stays always-on. The file serves every
@@ -647,22 +649,17 @@ Decided by the user on 2026-11-24 (L221 to L226, [[plan-of-plans#rulings]]): {#u
    `~/.claude/settings.json` entries were removed and the plugin's own hooks stay. No build.
 7. **The PRIMER** (Q59 part 3, L224): never cut or dropped on a low reading; measured and
    improved ([[#primer]]).
-
-8. **The roster bands** (Q59 part 3, the other half; L225): they are inputs to a mandatory
-   periodic review and are put to the user strongly; nothing is removed automatically
-   ([[#roster-bands]], [[#context-review]]). Q59 is now fully decided.
-
-9. **The review's cadence and enforcement** (Q63 = a): [[#context-review-enforce]].
+8. **The roster bands** (Q59 part 3, L225): inputs to a mandatory periodic review, put to
+   the user strongly; nothing is removed automatically ([[#roster-bands]],
+   [[#context-review]]).
+9. **The review's cadence and enforcement** (Q63 = a, L225): [[#context-review-enforce]].
 10. **The re-triage and acceptance** (Q60 = a, L226): this ADR is Accepted and
     [[plan-32-retriage-2026-11-24]] is the queue. Row 16's plan-24 revision gets no ch-bsd
     round; I1 installs in two user-gated windows.
-
-Still open ([[plan-of-plans#questions]]): {#user-calls-open}
-
-11. **The local layer** (Q61; [[#layers-l219]]): may a project hold its own denies, checks and
-    procedure skills beside its overlays (recommended), or does L219 mean overlays only?
-12. **The detection threshold** of 5 tracked files ([[#stack-detection]]), and the order of
-    the first packs ([[#packs-first]]) (Q62).
+11. **The local layer** (Q61 = a, L227): a project may hold its own units under `.claude/`,
+    never shipped ([[#layers-l219]]).
+12. **Stack detection and the pack order** (Q62 = a, L228): as written in
+    [[#stack-detection]] and [[#packs-first]].
 
 ## Consequences {#consequences}
 
@@ -802,9 +799,12 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
 - Builds: the report and the record are a new task, I1.i; the release hold and the
   undecided-item check join I1.e.
 
-**2026-11-24, accepted** (L226; Q60 = a): {#amend-5}
+**2026-11-24, accepted** (L226 to L228; Q60 = a, Q61 = a, Q62 = a): {#amend-5}
 
-- Status is Accepted and the re-triage is the queue. Open after acceptance: Q61 (the local
-  layer) and Q62 (the detection threshold and pack order); probes P1 to P10 remain I1.b's
-  first step. The amendment of [[constitution#project-4]] named in
-  [[#installed-equals-generated]] is the lead's.
+- **Status is Accepted** (L226) and the re-triage is the queue.
+- The project-local unit layer stands as [[#layers-l219]] reads it (L227); stack detection
+  and the pack order stand as written (L228).
+- [[#user-calls]] has no open item. What remains before the builds is evidence, not a
+  decision: probes P1 to P10, I1.b's first step ([[#open]]).
+- Still owed, by the lead: the amendment of [[constitution#project-4]] named in
+  [[#installed-equals-generated]].
