@@ -3601,15 +3601,13 @@ INTERNAL_CLI: dict[tuple[str, ...], str] = {
     ("learn", "on"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
     ("learn", "off"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
     ("learn", "status"): f"the grep→graph learning switch — {_INTERNAL_DECISION}",
-    # task-compaction-as-handoff R3b (L202 fold, 2026-11-24): hook plumbing behind the pulled
-    # handoff, invoked only by the generated hooks (`hooks._handoff_cmd`), never by an agent.
-    ("handoff", "gate"): f"the PreToolUse read gate (hook plumbing) — {_INTERNAL_DECISION}",
-    ("handoff", "pulled"): f"the PostToolUse(Read) pull marker (hook plumbing) — "
-                           f"{_INTERNAL_DECISION}",
-    ("handoff", "remind"): f"the UserPromptSubmit reminder (hook plumbing) — "
-                           f"{_INTERNAL_DECISION}",
-    ("handoff", "precompact"): f"the PreCompact instruction with the checkpoint off (hook "
-                               f"plumbing) — {_INTERNAL_DECISION}",
+    # task-compaction-as-handoff R3b (L202 fold; classification ruled L204, 2026-11-24).
+    **{("handoff", sub): (f"hook plumbing, invoked only by the generated hooks "
+                          f"(task-compaction-as-handoff): the {what} — {_INTERNAL_DECISION}")
+       for sub, what in (("gate", "PreToolUse read gate"),
+                         ("pulled", "PostToolUse(Read) pull marker"),
+                         ("remind", "UserPromptSubmit reminder"),
+                         ("precompact", "PreCompact instruction with the checkpoint off"))},
 }
 
 # The six `_alias` copies: a HIDDEN command running the same callback as a

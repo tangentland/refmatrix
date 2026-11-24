@@ -1648,12 +1648,29 @@ def remind_line(root: Path, session: "str | None", *, agent: bool = False) -> st
                  f"{state.get('source')}).", hook_budget.resolve("handoff_remind", None) - 1)
 
 
+def record_precompact_save(root: Path, session: str, *, saved: bool,
+                           promote_error: "str | None", save_error: "str | None") -> None:
+    """One ledger row per PreCompact save (L204, 2026-11-24): whether the save-state file
+    landed and whether its STORE COMMIT (the promote) was deferred, and if so whether by the
+    `--timeout` bound. The count of commits deferred by the bound is L204's no-go signal
+    after release, so it is recorded, not inferred."""
+    err = promote_error or ""
+    by_bound = bool(err) and bool(re.search(r"did not answer within|timed out|timeout", err,
+                                            re.I))
+    _record_event(root, {"event": "precompact", "session": str(session), "saved": bool(saved),
+                         "commit_deferred": bool(err), "deferred_by_bound": by_bound,
+                         **({"cause": " ".join((err or save_error or "").split())[:300]}
+                            if (err or save_error) else {})})
+
+
 def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
     """`rmx telemetry --context`'s `handoff` view: every handoff written, pulled and stood
     down, from `<store>/handoffs/events.jsonl`. Compliance is `len(pulls) / len(written)`;
     `seconds` is from the write (the session's start) to the Read. Unreadable lines are
     counted, never skipped silently."""
     out: dict = {"written": [], "pulls": [], "stand_downs": [], "reaps": [],
+                 "precompact": {"saves": 0, "save_failures": 0, "commits_deferred": 0,
+                                "commits_deferred_by_bound": 0},
                  "unreadable_lines": 0}
     p = handoffs_dir(root) / HANDOFF_LEDGER
     if not p.is_file():
@@ -1675,10 +1692,16 @@ def handoff_events(root: Path, *, since: "str | None" = None) -> dict:
         except ValueError:
             out["unreadable_lines"] += 1
             continue
-        if not isinstance(row, dict) or row.get("event") not in keys:
+        if not isinstance(row, dict) or row.get("event") not in (*keys, "precompact"):
             out["unreadable_lines"] += 1
             continue
         if since and str(row.get("ts") or "") < since:
+            continue
+        if row["event"] == "precompact":
+            pc = out["precompact"]
+            pc["saves" if row.get("saved") else "save_failures"] += 1
+            pc["commits_deferred"] += int(bool(row.get("commit_deferred")))
+            pc["commits_deferred_by_bound"] += int(bool(row.get("deferred_by_bound")))
             continue
         bucket, fields = keys[row["event"]]
         out[bucket].append({"ts": row.get("ts"),

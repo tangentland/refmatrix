@@ -8018,9 +8018,13 @@ def telemetry(since, top_queried, zero_results, as_context, window, agent_usage,
         # task-compaction-as-handoff R3b: handoffs written / pulled / stood down.
         ho = data["handoff"]
         secs = [p_["seconds"] for p_ in ho["pulls"] if isinstance(p_.get("seconds"), (int, float))]
+        pc = ho["precompact"]
         click.echo(f"handoff: {len(ho['written'])} written, {len(ho['pulls'])} pulled"
                    + (f" (p50 {sorted(secs)[len(secs) // 2]:.1f} s to the Read)" if secs else "")
                    + f", {len(ho['stand_downs'])} stood down"
+                   + f"; PreCompact saves {pc['saves']} ({pc['save_failures']} failed), store "
+                     f"commits deferred {pc['commits_deferred']} "
+                     f"({pc['commits_deferred_by_bound']} by the bound)"
                    + (f", {ho['unreadable_lines']} unreadable line(s)"
                       if ho["unreadable_lines"] else "")
                    + (f"; {ho['error']}" if ho.get("error") else ""))
@@ -14411,6 +14415,10 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
                 failed, err = True, str(e)
             except Exception as e:  # noqa: BLE001 -- said on stderr; PreCompact exits 0
                 failed, err = True, f"{type(e).__name__}: {e}"
+            perr = ((saved or {}).get("promoted") or {}).get("error")
+            _handoff.record_precompact_save(root, session, saved=bool(saved),
+                                            promote_error=perr,
+                                            save_error=None if saved else err)
             if saved:
                 promo = saved.get("promoted") or {}
                 click.echo(f"{tag}: wrote {saved.get('target')} ({saved.get('events')} events, "

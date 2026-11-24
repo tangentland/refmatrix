@@ -50,14 +50,14 @@ CHANNEL_BUDGET_BYTES: "dict[str, int]" = {
     "focus_input": 256,
     "session_start": 9_000,
     "focus_context": 1_500,
-    # R11 (rev 6): `rmx recall-state --max-bytes N` on SessionStart compact|clear, own command.
-    "recall_state": 9_000,
     # task-compaction-as-handoff R3b (L202 fold, 2026-11-24): `rmx handoff remind`, ONE line
     # naming `<store>/handoffs/<session>.txt` while a handoff is unread. 512 B holds the line
     # with a UUID session under a deep store path (the line is ~200 B plus the path).
     # (`precompact`, 9,000 B, is retired: R2 removed the generated PreCompact recall, and
     # bsd-cah r1 #m-4 found the channel kept alive only by a hand-written test argv.)
     "handoff_remind": 512,
+    # R11 (rev 6): `rmx recall-state --max-bytes N` on SessionStart compact|clear, own command.
+    "recall_state": 9_000,
 }
 
 # Which channels write into ONE generated hook command (hooks._claude_hook_block). A command's
@@ -69,8 +69,8 @@ HOOK_COMMAND_CHANNELS: "dict[str, tuple[str, ...]]" = {
     "prompt_recall_cmd": ("prompt_recall",),
     "session_start_cmd": ("session_start",),
     "focus_context_cmd": ("focus_context",),
-    "recall_state_cmd": ("recall_state",),
     "handoff_remind_cmd": ("handoff_remind",),
+    "recall_state_cmd": ("recall_state",),
 }
 
 # The rmx producers on each event, with the share each would get under a PER-EVENT cap
