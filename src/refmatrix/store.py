@@ -6396,15 +6396,7 @@ class Store:
         post-reingest weights are authoritative); only edges the memory lacks
         are migrated. Self-loops (concept↔its own memory) are dropped.
 
-        Second step, orphan GMD blocks (bug-302, 2026-11-24): every block node
-        (`kind=concept`, `meta.gmd_node`) whose `meta.doc` names no memory and
-        no doc in this partition is purged -- the debt forgets left before
-        bug-302 made them take their blocks (3 on the live dev store). The
-        dry run lists them and purges nothing. A candidate whose meta does not
-        parse cannot be judged; it is counted, named, and kept.
-
-        Returns {folded, edges_migrated, dry_run, orphan_blocks,
-        orphan_block_names, orphan_blocks_unreadable}."""
+        Returns {folded, edges_migrated, dry_run}."""
         con = self._connect()
         pairs = con.execute(
             """
@@ -6479,16 +6471,37 @@ class Store:
         # One Lance delete for the fold, not one per concept (bug-085).
         failed0 = getattr(self, "vector_delete_failures", 0)
         self._drop_lance_for_purge_batch({"concept": folded_ids})
-        orphans, unreadable = self._orphan_gmd_block_rows()
-        if not dry_run and orphans:
-            self._bulk_purge_ids(orphans)
-        if not dry_run and (folded or orphans):
+        if not dry_run and folded:
             self.flush_fragments()
         return {"folded": folded, "edges_migrated": edges_migrated,
                 "dry_run": dry_run,
-                "orphan_blocks": len(orphans),
+                "vector_delete_failed":
+                    getattr(self, "vector_delete_failures", 0) - failed0}
+
+    def purge_orphan_gmd_blocks(self, *, dry_run: bool = True) -> dict:
+        """Purge the GMD block nodes whose memory or doc is gone, in the ACTIVE
+        partition (bug-302, 2026-11-24): the debt every forget left before
+        bug-302 made forgets take their blocks (3 on the live dev store, which
+        bug-300's by-name block join would credit to any memory re-added under
+        that name). `rmx memory dedup --orphan-blocks`; DRY RUN BY DEFAULT --
+        the dry run lists them and purges nothing.
+
+        Its own step, not folded into `fold_concept_dups`: on the live dev
+        store that fold would also merge 403 body-term concepts into their
+        same-named memories (a read-only copy, 2026-11-24), a graph change this
+        repair must not carry. A candidate whose meta does not parse cannot be
+        judged; it is named in `orphan_blocks_unreadable` and kept.
+
+        Returns {orphan_blocks, orphan_block_names, orphan_blocks_unreadable,
+        dry_run, vector_delete_failed}."""
+        orphans, unreadable = self._orphan_gmd_block_rows()
+        failed0 = getattr(self, "vector_delete_failures", 0)
+        if not dry_run and orphans:
+            self._bulk_purge_ids(orphans)
+            self.flush_fragments()
+        return {"orphan_blocks": len(orphans),
                 "orphan_block_names": [n for _i, _k, n in orphans],
-                "orphan_blocks_unreadable": unreadable,
+                "orphan_blocks_unreadable": unreadable, "dry_run": dry_run,
                 "vector_delete_failed":
                     getattr(self, "vector_delete_failures", 0) - failed0}
 

@@ -2132,7 +2132,10 @@ def _memory_payload(action: str, a: dict) -> dict:
                 p[k] = a[k]
         return p
     if action == "dedup":
-        return {"dry_run": bool(a.get("dry_run", False))}
+        p = {"dry_run": bool(a.get("dry_run", False))}
+        if a.get("orphan_blocks"):
+            p["orphan_blocks"] = True
+        return p
     if action == "brief":
         # The COMPILE scope (memory | pattern) whose corpus the detectors read
         # (26.6 r1 remedy #rm-one-corpus) arrives as `compile_scope` and goes
@@ -2180,6 +2183,9 @@ _MEMORY_DESCRIPTIONS = {
                "`classes_not_run`. Costs the clustering pass. Refused together with `plan`",
     "plan": "brief only — an already-built `memory compile` plan (its scope must equal "
             "`compile_scope`). Refused together with `compile`",
+    "orphan_blocks": "dedup only — instead of the concept↔memory fold, purge the GMD "
+                     "block nodes (`<doc>#<anchor>`) whose memory or doc is gone "
+                     "(bug-302); with `dry_run` lists them and purges nothing",
 }
 
 
@@ -2211,7 +2217,7 @@ def memory(root: Path, action: typing.Literal[
            classes: list[str] | None = None, save: bool = False,
            plan: dict | None = None,
            compile_scope: typing.Literal["memory", "pattern"] | None = None,
-           compile: bool = False,
+           compile: bool = False, orphan_blocks: bool | None = None,
            timeout: float | None = None) -> dict:
     """One dispatcher over the CLI `rmx memory` group. recall/add reuse the
     dedicated verbs (recall forwards every recall knob it accepts); promote

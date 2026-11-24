@@ -5454,9 +5454,14 @@ def _op_memory_reclassify(d: Daemon, args: dict) -> dict:
 
 
 def _op_memory_dedup(d: Daemon, args: dict) -> dict:
-    """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt)."""
+    """Fold concept↔memory duplicate nodes in a partition (pre-0.7.6 debt), or,
+    with `orphan_blocks`, ONLY purge the GMD block nodes whose memory/doc is
+    gone (bug-302; `Store.purge_orphan_gmd_blocks`)."""
     with d._store_lock, d._st().with_partition(_memory_partition(d, args)):
-        result = d._st().fold_concept_dups(dry_run=bool(args.get("dry_run")))
+        if args.get("orphan_blocks"):
+            result = d._st().purge_orphan_gmd_blocks(dry_run=bool(args.get("dry_run")))
+        else:
+            result = d._st().fold_concept_dups(dry_run=bool(args.get("dry_run")))
     if not args.get("dry_run"):
         d._request_snapshot()
     return result

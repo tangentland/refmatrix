@@ -13716,19 +13716,42 @@ def memory_forget(name_or_id):
 @memory_grp.command("dedup")
 @click.option("--dry-run", is_flag=True,
               help="Report the dup count without folding.")
-def memory_dedup(dry_run):
-    """Fold concept↔memory duplicate nodes into the memory (pre-0.7.6 debt),
-    and purge orphan GMD block nodes (bug-302).
+@click.option("--orphan-blocks", is_flag=True,
+              help="Instead of the fold, purge GMD block nodes whose memory or doc is "
+                   "gone (bug-302). Run with --dry-run first: it lists them.")
+def memory_dedup(dry_run, orphan_blocks):
+    """Fold concept↔memory duplicate nodes into the memory (pre-0.7.6 debt).
 
     The GMD `__root__` node used to mint a concept twinning each doc-level
     memory, splitting a subject's edges across two nodes. New ingests no
     longer create them (the ingest_gmd fix); this migrates any lingering
     concept's edges onto the same-named memory and drops the concept.
-    It also purges every `<doc>#<anchor>` block node whose memory or doc is
-    gone (a forget before bug-302 left them); `--dry-run` lists them.
-    Operates on the active partition. Routes through the daemon when one is up.
+
+    `--orphan-blocks` runs a different repair and no fold: it purges every
+    `<doc>#<anchor>` block node whose memory or doc is gone, which forgets left
+    behind before bug-302 (2026-11-24). Operates on the active partition.
+    Routes through the daemon when one is up.
     """
     _memory_intent("memory_dedup")
+    if orphan_blocks:
+        res = _memory_write(
+            "dedup", lambda: _store(write=True).purge_orphan_gmd_blocks(dry_run=dry_run),
+            dry_run=dry_run, orphan_blocks=True)
+        _say_vector_delete_failures(res, "memory dedup --orphan-blocks")
+        names = res.get("orphan_block_names") or []
+        verb = "would purge" if res.get("dry_run") else "purged"
+        console.print(f"[green]{verb}[/] {res.get('orphan_blocks', len(names))} "
+                      f"orphan GMD block node(s)")
+        for name in names[:50]:
+            console.print(f"  {name}")
+        if len(names) > 50:
+            console.print(f"  … +{len(names) - 50} more")
+        bad = res.get("orphan_blocks_unreadable") or []
+        if bad:
+            click.echo(f"rmx memory dedup: {len(bad)} block node(s) with unreadable meta "
+                       f"kept, not judged: {', '.join(bad[:5])}"
+                       f"{' …' if len(bad) > 5 else ''}", err=True)
+        return
     res = _memory_write("dedup", lambda: _store(write=True).fold_concept_dups(dry_run=dry_run),
                         dry_run=dry_run)
     _say_vector_delete_failures(res, "memory dedup")
@@ -13737,20 +13760,6 @@ def memory_dedup(dry_run):
         f"[green]{verb}[/] {res.get('folded', 0)} concept↔memory dup(s), "
         f"{res.get('edges_migrated', 0)} edge(s) migrated"
     )
-    # bug-302: GMD block nodes whose memory/doc is gone, listed and counted
-    orphans = res.get("orphan_block_names") or []
-    verb = "would purge" if res.get("dry_run") else "purged"
-    console.print(f"[green]{verb}[/] {res.get('orphan_blocks', len(orphans))} "
-                  f"orphan GMD block node(s)")
-    for name in orphans[:50]:
-        console.print(f"  {name}")
-    if len(orphans) > 50:
-        console.print(f"  … +{len(orphans) - 50} more")
-    bad = res.get("orphan_blocks_unreadable") or []
-    if bad:
-        click.echo(f"rmx memory dedup: {len(bad)} block node(s) with unreadable meta "
-                   f"kept, not judged: {', '.join(bad[:5])}"
-                   f"{' …' if len(bad) > 5 else ''}", err=True)
 
 
 @memory_grp.command("compile")
