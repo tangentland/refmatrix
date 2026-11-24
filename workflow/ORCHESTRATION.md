@@ -116,5 +116,8 @@ failing; never red; the lane). {#task-tests}
 ## 6. Persisting a review report {#reports}
 
 Copy a ch-bsd report to `workflow/bullshit/<UTC-stamp>-<subject>-r<n>-<sha>.md`, add its
-`INDEX.md` row and `last_run.log` line, and copy any new IMPRESSIONS bullet whole. Lint
+`INDEX.md` row and `last_run.log` line, and copy any new IMPRESSIONS bullet whole. Update
+`workflow/bullshit/OPEN.md` in the same commit: add a row for every new BULLSHIT, GATE and
+handed-off SKETCHY; move a row to `CLOSED.md` only with its evidence (a fix sha reachable from
+`master`, or an L-row) and its F5 outcome (upheld / overruled) (L216). Lint
 (`./scripts/lint-gmd.sh`, 0 errors) before the commit.

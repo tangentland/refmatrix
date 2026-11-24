@@ -77,6 +77,14 @@ with commit hash, verdict, and finding count. Note patterns:
 If the directory or file does not exist yet, create `workflow/bullshit/` and start a
 fresh `INDEX.md` with a header row.
 
+### 0a-bis. Re-check the open findings {#0a-open-findings}
+
+Read `workflow/bullshit/OPEN.md`: every BULLSHIT, GATE and handed-off SKETCHY not yet closed
+with evidence. For each row whose code your range touches, re-run its probe and report it
+closed (with the evidence: a fix sha reachable from `master`, or the L-row that ruled it) or
+still open. Every row you do not close is listed in your report's **Carried over** section, so
+no unaddressed finding is lost between runs (L216, 2026-11-24).
+
 ### 0b. Read impressions {#0b-read-impressions}
 
 Read `workflow/bullshit/IMPRESSIONS.md`. These are your accumulated hunches — short bullets
@@ -575,6 +583,11 @@ task: <task-id>
 
 ### MEH: {title}
 ...
+
+## Carried over {#carried-over}
+
+One line per still-open row of `workflow/bullshit/OPEN.md` (id, level, why it is still open);
+closed rows with their evidence.
 
 ## Verdict {#verdict}
 

@@ -11,6 +11,8 @@ metadata:
 
 @.claude/PROJECT_PROFILE.md
 
+@workflow/bullshit/OPEN.md
+
 <!-- refmatrix: top reference-dense symbols, regenerated on SessionStart by the rmx SessionStart hook. Without this include the primer is generated every session and never read. -->
 @.refmatrix/PRIMER.md
 
@@ -213,8 +215,9 @@ rel: implements -> [[task-compaction-as-handoff#rr-claude-md]]
 
 1. `rmx recall-state` (or `/recall-state`) and read `handoff.md`.
 2. Read `workflow/plan-of-plans.md` for what to implement next.
-3. Read the last lines of `workflow/bullshit/last_run.log` (an append log; the last line is the
-   latest run); any unaddressed BULLSHIT or GATE finding is first priority.
+3. Every open ch-bsd finding is in `workflow/bullshit/OPEN.md` (imported above, so it is already
+   in context): an open BULLSHIT or GATE row is first priority. `last_run.log` is the run history
+   (an append log; the last line is the latest run).
 4. Verify git state matches the handoff; check `rmx daemon status` + `rmx hub status`.
 5. If implementing: read the active plan (`metadata.status: in-progress`) and its task specs.
 
