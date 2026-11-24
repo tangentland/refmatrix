@@ -1,0 +1,74 @@
+# local-lane slot=rmxtest1 sha=f76db480ac6ee71b7816db7e2b21f3229408d42c start=2026-11-24 14:08:00 load={ 10.24 9.12 6.61 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/hwq-green-verify-s2.8bvs/src/refmatrix as checked-hash (bug-037)
+.......F................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 25%]
+........................................................................ [ 31%]
+........................................................................ [ 36%]
+........................................................................ [ 41%]
+........................................................................ [ 46%]
+........................................................................ [ 51%]
+........................................................................ [ 57%]
+........................................................................ [ 62%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+........................................................................ [ 77%]
+........................................................................ [ 82%]
+........................................................................ [ 88%]
+........................................................................ [ 93%]
+........................................................................ [ 98%]
+....................                                                     [100%]rmx sandbox: pid=16038 exempt, not reaped: the stdlib multiprocessing resource tracker, a direct child of this session (spawned in tests/test_modelsrv.py::test_shared_and_private_embedders_agree); it ends with its parent by construction (ruling L154)
+rmx sandbox: 0 leaks; 1 exempt process(es) (the stdlib multiprocessing resource tracker, which ends with this session by construction; ruling L154)
+
+=================================== FAILURES ===================================
+______________ test_ac1b_legacy_refresh_survives_rebuild_from_log ______________
+
+inproc = (PosixPath('/tmp/rmx262-295ad4ht'), PosixPath('/tmp/rmx262-295ad4ht/proj/.refmatrix'))
+
+    def test_ac1b_legacy_refresh_survives_rebuild_from_log(inproc):
+        """r6-lite n1: the legacy row's refresh is a logged `memory_content` event carrying
+        `updated_at`, so replaying facts.log into a FRESH store reproduces the new path."""
+        base, root = inproc
+        memdir, old, new, _ = _ac1b_fixture(base, root, marker=True)
+        _bridge(memdir)
+        assert _mem(root, "legacy-x")["source_path"] == new
+        events = [json.loads(ln) for ln in (root / "facts.log").read_text().splitlines() if ln]
+        legacy_ev = [e for e in events if e.get("op") == "memory_content"
+                     and e.get("name") == "legacy-x"]
+        assert legacy_ev and (legacy_ev[-1].get("metadata") or {}).get("source_path") == new, \
+            f"no memory_content event logs legacy-x at {new!r}: {legacy_ev[-1:]}"
+        assert "updated_at" in legacy_ev[-1], \
+            f"the legacy refresh event carries no updated_at (r6 cross-plan note): {legacy_ev[-1]}"
+        fresh = base / "fresh" / ".refmatrix"
+        fresh.mkdir(parents=True)
+        shutil.copy2(root / "facts.log", fresh / "facts.log")
+        s = Store(fresh)
+        try:
+            s.rebuild_index_from_log()
+            got = s.find_memory_any_partition("legacy-x")
+        finally:
+            s.close()
+        assert got is not None, "replay lost legacy-x entirely"
+>       assert got["metadata"].get("source_path") == new, \
+            f"replay restored legacy-x at {got['metadata'].get('source_path')!r}, not {new!r}"
+E       AssertionError: replay restored legacy-x at '/private/tmp/rmx262-295ad4ht/memory/a/x.md', not '/private/tmp/rmx262-295ad4ht/memory/b/x.md'
+E       assert '/private/tmp...memory/a/x.md' == '/private/tmp...memory/b/x.md'
+E         
+E         - /private/tmp/rmx262-295ad4ht/memory/b/x.md
+E         ?                                     ^
+E         + /private/tmp/rmx262-295ad4ht/memory/a/x.md
+E         ?                                     ^
+
+tests/test_bridge_move_safety.py:386: AssertionError
+=============================== warnings summary ===============================
+tests/test_graph_landing.py:9
+  /Users/rmxtest1/lane/runs/hwq-green-verify-s2.8bvs/tests/test_graph_landing.py:9: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient  # noqa: E402
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_bridge_move_safety.py::test_ac1b_legacy_refresh_survives_rebuild_from_log
+1 failed, 1387 passed, 1 warning in 1194.38s (0:19:54)
+exit 1
