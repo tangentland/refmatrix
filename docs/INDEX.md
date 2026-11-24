@@ -34,6 +34,7 @@ rel: catalogs -> [[adr-0002-subject-memory-container]]
 rel: catalogs -> [[adr-0003-canonical-partition-layout]]
 rel: catalogs -> [[adr-0004-unified-location-space-index]]
 rel: catalogs -> [[refmatrix/adr-0005-memory-dir-layout]]
+rel: catalogs -> [[refmatrix/adr-0007-instruction-architecture]]
 
 | Doc | Hook |
 |-----|------|
@@ -43,6 +44,7 @@ rel: catalogs -> [[refmatrix/adr-0005-memory-dir-layout]]
 | [[adr-0003-canonical-partition-layout]] | Canonical partition layout: two per project store, one for global, benchmarks mirror production (Proposed) |
 | [[adr-0004-unified-location-space-index]] | One location space for every search mechanism; sentence co-location measured +4–14% MRR (Proposed) |
 | [[refmatrix/adr-0005-memory-dir-layout]] | Memory dir by type/lifecycle folders (`savestates/`, `impressions/`); topic = derived subject; `.memory-layout` marker gates new on-disk behaviour (Proposed) |
+| [[refmatrix/adr-0007-instruction-architecture]] | Instruction architecture: each rule delivered by its trigger event (deny, path rule, skill, check, agent start) from one generated unit, injected once, with a ledger row; always-on ≤ 10,000 B (Proposed) |
 
 ## Authoring guides {#guides}
 
