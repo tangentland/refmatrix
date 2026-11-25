@@ -5,7 +5,7 @@ title: "Compaction and /clear as a handoff: PreCompact saves state and shrinks t
 tags: [task, hooks, compaction, handoff, save-state, recall-state]
 metadata:
   node_type: task
-  status: approved
+  status: completed
   created: 2026-11-14
 ---
 

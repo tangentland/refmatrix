@@ -389,3 +389,146 @@ Plan-6 closed with T0.4 (merged `21728dac`, follow-up `c073a9e3`): bsd-t04 r1 DI
 
 | M1 | **T0.6:** plan-7's dense and fused re-run | M | — | none | approved; **running** 2026-11-23 (t06-run, `/Volumes/littlebig/refmatrix-t06`, branch `task-t0.6-plan7-dense-rerun` at `33825985`; deployed 0.84.0 on the backed-up eval store): store opened (DuckDB), embed past 0.69.1's failure point (batch 62 of ~78 at 2026-11-24 01:14, hub shared embed worker), run done 2026-11-24 01:43Z (embed 997.4 s; 120 questions, depth 50; no daemon; backup `/Volumes/littlebig/longmemeval-store-backup-2026-11-23/`, 9.5 GB); `context`/`scan` reproduce 0.69.1 exactly; dense first rows: recall union R@5 0.239, recall-rr 0.266, recall-fuse = recall (bug-300); write-up done (`371d0677`, `982c3d36`; artifact test RED then green, M6.1 killed, verify 376 passed); bsd-t06 r1 DIRTY 2B/0S/2M (L196: the `-rr` rows mostly unreranked, bug-303; the ‡ mechanism false); fold-t06: RED `7d15df07`, bug-303 fixed `cc6ea811` (skips read from stderr, `_meta.n_reranked`); r2 re-run at `--workers 1`: recall-rr 120/120 reranked, recall-fuse-rr 118/120 (2 probe timeouts, bug-306); new rows recall-rr restricted R@5 0.541 / MRR 0.637, union R@5 0.327 / MRR 0.348, `recall-rr` = `recall-fuse-rr` (bug-300); ruled (a) then (b); r3 fuse-rr 119/120 (1 skip, bug-306 seen 2), so (b): the row labelled `reranked 119/120`, a label-checking test with planted must-fails; fold done `9d574536` (artifact: recall-rr from r2, recall-fuse-rr from r3, 8 entries byte-identical; b-2/m-1/m-2 text fixed; lane 444 passed, lint 0 errors); bsd-t06 confirm-lite GO 0B/0S/2M ([[bsd-t06-confirm-9d574536]]; both MEHs folded by the lead, `7e2cd5bc`); **merged `c222c1c3`**; merged-master verify 444 passed (local lane, `t06-merged.log`, the 9 guards included); plan-7 closes on T0.7's deferral-owner edit) | [[task-t0-suite-trust-sweep#t0-6]] |
 | 3 | **29.4 stage 4:** the test tiers and the sharded runner, 8 shards | T | — (stage 2 merged, the reaper with it) | none | approved; **RED done `a5ff9293`** (red-294a: 57 new tests RED at base, 9 guards green; local lane, the mini down); L192 rulings; L192 follow-up RED `e6a1d394` (12 more: the sandbox self-test list, the pytest-timeout refusal, the cpu-derived shard default; 69 RED total, 9 guards green); **GREEN done `1bb14a5b`** (green-294a: `tests/tiering.py` (unit 213, daemon 145, devtree 6, timing 17), conftest markers and `failures.jsonl`/`outcomes.jsonl`, `scripts/ptest.py` (`--tier/--shards/--compare/--merge-gate`, refuses without pytest-timeout), `norecursedirs`, bug-299 fixed by the fixture rename; 69 RED green, verify 457 passed, 12 mutations killed; L194); bsd-294a r1 DIRTY 1B/2S/4M (L197: a failed merge gate passes on re-run, bug-304; s-2 → T1, bug-305); fold RED done `6cf74d6c` (L207); fold GREEN done `54747fce` (green-294a: 87 RED green, lane 475 passed, MX1 killed; 3 single-condition mutations of the bug-304 baseline rule survive: passed / exact dir / ancestor); red-294a-fold adds one test per condition; bsd-294a confirm-lite **CLEAN** ([[bsd-294a-confirm-54747fce]]; n-1 ruled intended, `#r7-baseline`); red-294a-fold r2 `5c14d2b3` (one test per baseline condition: 423 passed at the tip, 4 failed pre-fold, b-1a/b-1c/b-1d each killed); **merged `bfc34358`**; rides R0 (its full suite is the merged-master verify) | L121; the first AC is the live-touch proof ([[task-29.4-suite-health#ac-12]]) |
+
+### POP bookkeeping by L231, 2026-11-24 {#l231-bookkeeping-2026-11-24}
+
+L231 (3) ordered one POP commit: L226's queue rewrite, finished rows moved here, Q54-Q64
+archived, `approved` reworded to Q55 = a, `#freeze-specs` made current, "merged" said as
+"specs merged" where only specs merged, R1 trimmed to what has not shipped, row 4 with 29.4d,
+row 16 without ch-bsd rounds, and route rows for bug-317 and the MB1d GATE. Every merge sha
+named below was checked with `git merge-base --is-ancestor <sha> master` at `44897cfa`.
+Local POP links in the moved rows are written as `plan-of-plans#…` so they resolve here.
+{#l231-bookkeeping-lead}
+
+rel: derives-from -> [[admitted-audit-2026-11-24#contradictions]]
+rel: derives-from -> [[plan-32-retriage-2026-11-24#rows]]
+
+#### Queue row finished: C1 {#c1-finished-2026-11-24}
+
+Merged `641401c4`, released in 0.85.0 (`0a9896eb`), deployed 2026-11-24 (L201, L208); both
+shas reachable from master. Its live defect is bug-318, a queue row of its own (L231 (1)). The
+fleet `CLAUDE.md` line the row kept as a deferral is dropped by L226. Left open in the row at
+the move: the `/mcp` reconnect and the live `/goal` record shapes. The row as it stood:
+
+| # | work, in order | lane | waits on | user gate | state | evidence |
+|---|---|---|---|---|---|---|
+| C1 | **Compaction as a handoff** (L195, Q54 = b): PreCompact saves state then prints a one-line summary instruction; SessionStart `compact\|clear` writes the full recall-state to a per-session file and injects a pointer; the PreToolUse read-gate until that file is read, with telemetry; manual `/compact <text>` keeps the user's text; the active `/goal` text rides the handoff (R6, L198) | T | — | an install window at release (fleet `install-hooks --apply`), user-gated | approved 2026-11-24; RED done `f6c1ae68` (L200); final verify at `76b6cf5e` (merged with master) exit 0 on both batches; **merged `641401c4`** (summary `0c624cb0`); docs merged (README + SYSTEM.md, plus `3492b893`); bug-307/308 fixed; **released 0.85.0 `0a9896eb`, deployed 2026-11-24**: fleet of 8 daemons + hub on 0.85.0, `install-hooks --apply --force` on 7 repos all `in sync` (backups `~/.refmatrix/backups/settings-085-20261124-041626`), 6 indexer plists re-rendered (`release-085-*.log`); AC-3 live record [[c1-ac3-live-compaction-2026-11-24]] (summary 18 lines vs 169/238 pre-C1); open: `/mcp` reconnect, the live `/goal` record shapes, the fleet CLAUDE.md line (deferral row); GREEN `e671f36c` + `cbbe9e3f` (34/34 RED green on the local lane; verify batches and mutations queued); bsd-cah r1 DIRTY 3B/2S/4M (L202: subagent envelopes trapped by the lead's gate, bug-307; the gate can trap on an unwritable dir or a rollback rmx, bug-308); **release held**; red-cah's five post-GREEN mutations on `cbbe9e3f` all killed (gate removed 7 failed, gate holds 2, first goal 2, clear ignored 6, pointer dropped 3; control 34/34); fold done: RED `feeb18bf`/`54b34efe`/`3b08a897`, GREEN `8daaa0aa`..`4784cdd5`; bsd-cah confirm-lite **GO** 0B/1S/1M (L208); s-3 + m-5 small fold (green-cah), then merge, full suite, release R0 | [[task-compaction-as-handoff]]; L195 |
+{#c1-finished-2026-11-24-table}
+
+#### Standalone task finished: compaction as a handoff {#task-cah-finished-2026-11-24}
+
+The task shipped as C1 (above). Its file's `metadata.status` still reads `approved`: this
+bookkeeping commit edits no plan or spec file (L231 (3)). The row as it stood:
+
+| task | status | what it is | where | evidence |
+|---|---|---|---|---|
+| [[task-compaction-as-handoff]] | approved | Compaction as save-state, then a pulled recall-state (Q17 a) | **pulled in: queue row C1** (L195, Q54 = b) | L90-L93, L195 |
+{#task-cah-finished-2026-11-24-table}
+
+#### Bug fixes finished: bug-300, bug-301, bug-302 {#bugs-300-302-finished-2026-11-24}
+
+bug-301 merged `334da62f` and shipped in 0.85.0 (`0a9896eb`). bug-300 merged `09175133` and
+bug-302 merged `6c6aa048`, both shipped in 0.85.1 (`69e10ffd`, L210), whose deploy ran the
+3-orphan repair live, backed up first. All four shas are reachable from master. The text as it
+stood in queue row T1's state cell:
+
+> bug-301 (`content_terms` punctuation) **merged `334da62f`** (isolated agent b301: `2c337775` + registry `93783619`; 11 surface-parity cases + 1 context test, RED at base, 150 passed, mutation 6 failed; `--` kept literal; its report also found `content_rank` already tolerated a trailing `?`, the visible defect was the grep backstop); merged-master verify 499 passed (local lane, `b301-merged.log`: the two `terms` importers, every `test_context*`, `test_hybrid_recall`, the 9 guards); bug-300 (a) RED done `d14d6793` (red-b300: 15 RED, 556 passed on the local lane, 9 guards and the AC-3 / L199 pins green; L199), GREEN done (green-b300 `a5887fd8`, merged with master `5d28d2a5`; 15 RED green; mutations 11/11 killed incl. M5b; R4 worst term 120→201 ms warm, 189→518 ms cold; verify 4 batches at `5d28d2a5`: 1112 + 1166 + 956 + 1088 passed, 0 failed); bsd-b300 r1 DIRTY 1B/1S/2M (L209); b-1 fold: RED `5d968e6d`, GREEN `8cd15f00` + summary `9312ef1d` (MB1 killed, 12/12); bsd-b300 confirm-lite **GO** ([[bsd-b300-confirm-9312ef1d]]); bug-302 **merged `6c6aa048`** (fix-302 `26517eab`: every forget path purges the memory's GMD block nodes and reports `blocks_purged`; `rmx memory dedup --orphan-blocks`, dry run by default, repairs the 3 live orphans at the deploy that ships it; the lead's read-only-copy check: 17,402 block nodes, exactly 3 orphans by the rule); merged-master verify on the local lane 442 passed + `test_bridge_move_safety_r1` alone 14 passed, 0 leaks (`bug302-merged-A/B.log`); **bug-300 merged `09175133`** (merged-master verify on the local lane, 38 files incl. the 9 guards and every `recall` importer: 968 passed, 1 xfailed, 0 leaks, `b300-merged.log`); both ride the next release, whose deploy runs the 3-orphan repair (announced, backed up); not in R0 ([[task-bug300-memory-body-bm25]])
+
+{#bugs-300-302-finished-2026-11-24-text}
+
+#### Ruling finished: L206, the indexer stagger {#l206-finished-2026-11-24}
+
+Merged `2d7e41f6` with registry row `8806d897` (bug-311), both reachable from master; shipped in
+0.85.0 (`0a9896eb`, whose release notes name it); deployed with the six indexer plists
+re-rendered (`de8f625e`). The row as it stood:
+
+| L | date | source | ruling | applied to |
+|---|---|---|---|---|
+| L206 | 2026-11-24 | The user: "yes stagger the indexers" (after the 06:25Z overload: six launchd `rmx session ingest` jobs, `StartInterval` 600 each, overlapped 7-wide; bug-309 note) | **Small fix, one agent (L165), now; not held for bug-309's measurement.** The generated session-indexer plist (`session_launchctl.render_plist`) fires on a per-store offset inside the interval (`StartCalendarInterval` minutes, the offset a stable function of the store, spread so six stores do not share a minute), and `rmx session ingest` takes a user-level one-at-a-time lock: a run that finds another indexer running exits 0 with one counted line, never silently. `check()` reports an old `StartInterval` plist as drift; the fleet reinstall rides the next release (R0 if merged before its gate). Test through the CLI and the rendered plist. **Done, merged** (fix-stagger `2d7e41f6` + registry `8806d897`, bug-311: `sha256(label) % step` slot, moved forward past an installed store's minutes and kept once installed; `fcntl.flock` on `~/.refmatrix/session-indexer.lock`, a skipped run prints `skipped=1` with the holder; RED 13, lane 637 passed); rides release R0, whose full suite covers its `cli.py` importers; deploy re-renders the six indexer plists (`check()` reports the old `StartInterval` form as drift) | bug-309, bug-311; `src/refmatrix/session_launchctl.py` |
+{#l206-finished-2026-11-24-table}
+
+#### Pending-status row applied: plan-31 {#pending-plan31-applied-2026-11-24}
+
+`plan-31-pre-mod-loose-ends.md` reads `status: approved`, set by `59915414` and merged with the
+specs at `662abfa8`. The row as it stood:
+
+| file | edit | why it is still here | evidence |
+|---|---|---|---|
+| `plan-31-pre-mod-loose-ends.md` | `status: drafting` → `approved` | **stays:** set in the commit that merges its specs after a ch-bsd MEH-only GO | L125 |
+{#pending-plan31-applied-2026-11-24-table}
+
+#### Questions answered and applied (Q54-Q64) {#q54-q64}
+
+| id | asked | question | options (lead's recommendation first) | status |
+|---|---|---|---|---|
+| Q54 | 2026-11-24 | The user: "where are the compact hooks at in the schedule? I'd like to pull them in so we can leverage them across compaction windows, which would allow me to set a goal for the bulk of the scheduled work." [[task-compaction-as-handoff]] is `drafting` and post-mod (Q28 = a, L127/L129); 25.1 (0.83.0) already runs promote + save-state on PreCompact and an inline budgeted recall-state on SessionStart `compact\|clear` | **(a, rec)** pull it in now in two steps: step 1 = R1, R2, R3, R4, R5 (PreCompact saves state then prints a one-line summary instruction; SessionStart `compact\|clear` writes the full recall-state to a per-session file and injects a pointer; a manual `/compact <text>` keeps the user's text); step 2 = R3b (the PreToolUse read-gate and its telemetry) after step 1 has run across a few real compactions. Spec finished to one page, then RED/GREEN/one bsd; a user-gated install window at its release. Reverses Q28 for this task only. **(b)** steps 1 and 2 together. **(c)** keep it post-mod | **(b)** (the user, 2026-11-24: "do the precompact changes in one go (option b) … if we need to preempt anything to squeeze these in its okay as better context management will repay quickly"); applied by L195 |
+| Q55 | 2026-11-24 | C4 (ADR 0007): does a plan's `approved` mean every task is specced, or the plan approved and the next task specced? | **(a, rec)** plan approved + next task specced (L165 just-in-time specs); (b) every task specced first (CLAUDE.md `#plans-pre-written` as written) | **answered (a)** 2026-11-24 (L221) |
+| Q56 | 2026-11-24 | C13: is STM capture a memory path (no-silent-failures applies)? | **(a, rec)** yes: the four masked `focus hook` entries become counted failures surfaced at SessionStart; (b) no, they stay best-effort | **answered (a)** 2026-11-24 (L221) |
+| Q57 | 2026-11-24 | C17's settings edit: your global settings set `RMXGREP_MODE=plain` (an escape removed 2026-09-15), and `settings.local.json` has standing `cp … ~/refmatrix/src/…` grants that allow what R007 forbids (editing the deploy tree) | **(a, rec)** remove both (I1.a); (b) keep, and the rules are reworded to match | **answered (b)** 2026-11-24 (L221) |
+| Q58 | 2026-11-24 | C5's reach: R003's deny (subagents read-only on live stores) also changes gmd-curator in the nine fleet consumers | **(a, rec)** apply fleet-wide (the curator writes through the lead); (b) refmatrix only | **answered (b)** 2026-11-24 (L221) |
+| Q59 | 2026-11-24 | Always-on scope outside the 19: move `~/.claude/GMD.md` + `MEMORY-RULES.md` (6,901 B) to triggered delivery (path rule on GMD/memory writes; the PostToolUse lint already backstops); caveman's per-prompt tracker becomes one SessionStart line; PRIMER and roster bands as the ADR states | **(a, rec)** all three as the ADR recommends; (b) leave your global files always-on, do the rest | part 1 **answered (c)** 2026-11-24 (L222); part 2 **answered (a)** 2026-11-24 (L223); part 3 PRIMER half **ruled by the user** (L224); roster half **ruled by the user** (L225); **answered** |
+| Q60 | 2026-11-24 | Re-triage and I1 shape: accept the ADR's re-triage table row by row as recommended (no row moves post-mod; 10.3 into I1.b; 21.4 R4 onto I1.h; 31.5 recall-channel cut after I1.h; A1 (c) post-mod), row 16's plan-24 revision with no ch-bsd round (L165), two I1 install windows; ADR 0007 Proposed → Accepted | **(a, rec)** accept as recommended; (b) name the rows to change | **answered (a)** 2026-11-24 (L226) |
+| Q61 | 2026-11-24 | L219's "project specifics only in `.local.md` overlays": refmatrix's own denies and procedures (R001, R007, release-deploy, lane-verify) bind the lead, so an agent overlay cannot hold them. ADR 0007 `#layers-l219` reads them as the same local layer (a project unit layer beside the overlays) | **(a, rec)** a project-local unit layer (`.claude/` units in the repo, same schema, never shipped); (b) ship them in the template to every project | **answered (a)** 2026-11-24 (L227) |
+| Q62 | 2026-11-24 | Stack detection (ADR 0007 `#stack-detection`, `#packs-first`): a stack is detected by its manifest or by at least 5 tracked files (frameworks only from manifest deps); first packs in order python (pytest folded in), shell, postgres, node + node-express, then docker (extracted, installed nowhere until T0.9 (b)) | **(a, rec)** as written; (b) another threshold or order | **answered (a)** 2026-11-24 (L228) |
+| Q63 | 2026-11-24 | L225's mandatory context-effectiveness review: cadence and how it is enforced | **(a, rec)** every 30 days, or before a major release if sooner; overdue → SessionStart opens with a "review due" block (once per session, names the command) AND a major release holds until a review row newer than the last major release exists (release step 1b, like an open GATE); fleet: each repo's own review, the hub's nightly tick lists overdue repos; (b) per major release only (gate, no calendar); (c) calendar only (SessionStart nag, no gate) | **answered (a)** 2026-11-24 (L225 amended) |
+| Q64 | 2026-11-24 | The user: "the TDD stance is a core position of refmatrix. is there a way to make it always on, but modular so it could be replaced or amended if someone wanted to". Proposal: a **practice pack** `practice/tdd` in `src/refmatrix/templates/` (a third pack kind beside stack packs and overlays, ADR 0007 `#composition`) that owns the whole stance: a ≤ 600 B always-on stance block rendered into CLAUDE.md's principles block (T8) and into every agent core's preamble, plus its triggered units (R047/R048 denies, the `tests/**` rule R049-R056 with its guard-test backstop, `dispatch-red-green` / `mutation-loop` skills and role preloads, R058 + seen-failing checks). Selection in `.claude/rmx-hooks.json` `practices: [tdd]`, on by default. **Replace:** select another practice pack with the same slots. **Amend:** a project-local unit (L227) with `rel: amends -> [[practice-tdd#R049]]` or `supersedes`, rendered and fixture-checked. **Never silent:** `--check` prints the active practice and every amended/superseded unit; the context review (L225) lists them; turning the stance off is an explicit `practices: []` that SessionStart names | **(a, rec)** practice pack, default on, replaceable by selection, amendable by local units with typed edges; a project may also hold a LOCAL practice pack (unlike stack packs, which are template-only), because a practice is a policy choice; (b) same, but practice packs template-only (a replacement must be contributed to refmatrix); (c) keep TDD as scattered units (ADR as written) | **answered (a)** 2026-11-24 (L229) |
+{#q54-q64-table}
+
+#### Queue and release rows replaced by the L226 rewrite, as they stood {#queue-replaced-l226}
+
+Rows I1, H1, 12, 14 and 16 were rewritten to the accepted re-triage (L226); rows A1, 4, 5 and 9
+had text replaced (A1's user gate; row 4's title; rows 5 and 9 "merged" → "specs merged").
+The other rows gained a note and L226 in place; nothing in them was removed. Before:
+
+| # | work, in order | lane | waits on | user gate | state | evidence |
+|---|---|---|---|---|---|---|
+| I1 | **Plan-32 instruction architecture** (L214): census of every rule → type T1-T10 and target mechanism; ADR on Fable with the pre-mod queue re-triage (rows 12, 14, 15, plan-19); then builds in value order (T1 enforcement, T3 skills + trigger injection, T4 checks, T2 path rules, usage telemetry, shrink always-on) | P, then T | B1 for the agent-file edits | the re-triage decisions are the user's, row by row | approved; **census merged** `c5051951` (205 rules: 28 delivered automatically, 85 recall-only, 105 stated twice+, 19 contradictions, always-on 62 KB); **ADR 0007 (Proposed) + re-triage merged** `6ca154f6` (arch-instr `354a9583`): enforce > inject at trigger > one always-on line, recall never a rule's only delivery; one generated dispatcher per event, no `allow` from a hook (a `gate` mode instead), inject-once on 10.3's marker, always-on 62 KB → ≤ 10 KB; builds I1.a-I1.h (contradiction edits, substrate + probes P1-P10, T1 denies, T3 skills, T4 checks, T7 agent-start, T2 rules, shrink last). Q55-Q58 answered (L221); ADR amended for L219 (composition, H1.a-H1.g, doc-checked facts: no hook `allow`, P1/P6 gate inject and path-keyed skills, plugins cannot carry rules); **ADR 0007 Accepted** (L226); every user call decided (L221-L228); next: I1.a (contradiction edits, docs) and I1.b spec (substrate + probes P1-P10 + 10.3) | L214, L220, L221 |
+| H1 | **cat-herder into `src/refmatrix/templates/`** (L214, merge ruled): reconcile the 9 doubly-shipped files, grow templates + parity gate, `rmx template diff\|upgrade`, roll out to the 9 consumers, archive cat-herder; F6, F2 folded; distribution re-checked against the plugin in I1's ADR | P, then T | B1; I1's ADR | — | admitted | L214; [[refmatrix/cat-herder-merge-2026-11-24]] |
+| A1 | **Agent messaging** (L179): (a) diagnose bug-275 (the hub-bus channel push on Claude Code 2.1.325); (b) the agent→lead post for isolated agents (unix-socket HTTP, group `rmxagents`, per-agent token, `agent:<label>` only), replacing the `REPORT.md` poll; (c) the lead→agent subscribe only if (a) revives the push | lead (a); T (b, c) | — | (c) waits on (a) | admitted (L179); **(a) diagnosed 2026-11-18 (docs, not yet re-probed):** the 2026-11-15 probe passed BOTH `--channels server:refmatrix` and `--dangerously-load-development-channels server:refmatrix`; the docs: the bypass is per-entry, a bare `server:` entry is accepted only by the dev flag, so the `--channels` entry was refused (the startup panel's 'server: entries need --dangerously-load-development-channels'); and `-p` ignores the dev flag, so the headless half could never register. The v2 runtime's refusal of servers negotiating MCP revision 2026-07-28 does not apply (`mcp.py` answers `2024-11-05`). **Re-probed 2026-11-18: the push works on 2.1.327** with the dev flag alone, interactive, the project MCP server approved (its prompt defaults to 'Continue without'); bug-275 fixed by procedure. So (c) is live again: isolated agents can be pushed to once their MCP server can reach the hub bus (`rmxtestN` cannot open `hub.sock`, 0600), which is what (b)'s restricted socket would give; bug-288 (the bridge echoes a session's own publications) goes with it | Q50; L179; bug-275 |
+| 4 | **29.4 stage 5: T0.7** — the clean run on the runner. It is 29.5's baseline and it closes plans 6, 7, 8 and 15. One release point follows | T | 2, 3, M1 | none of its own; a hook-drift stop is cleared only by an install window | approved | [[task-t0-suite-trust-sweep#r7-4]]; [[task-29.4-suite-health#r10]] |
+| 5 | **Plan-31, the items that do not wait for plan-29:** 31.5 step 0 first (the full-payload capture runs to 400 prompts, plan-31 D2), then 31.3, 31.4, 31.1 (bug-244, bug-255, bug-258) and then 31.6 (bug-251, bug-257; after 31.1, both edit `ingest_gmd.py`) | T, beside 1-4 | its specs approved (L125) | 31.4 changes the upstream GMD linter and one MEMORY-RULES line (plan-31 D10, decided). Any fleet re-derive or reingest 31.6 needs goes to the user (L125) | **31.5 / 31.3 / 31.4 approved and merged** (bsd r1 DIRTY → L133, r2 MEH-only GO → L140; D1-D10 decided; D7 applied); 31.1 / 31.6 approved and merged (bsd r1 → L139, r2 → L147, r3 MEH-only GO → L149); **31.5 release A merged `655fad9f` + `ba74fe5f`** (bsd-315 r1 DIRTY 0B/4S/6M, [[bsd-315-r1-51bbdfb]] → L178 fold; 11/11 mutations killed; merged-master verify on the mini, 182 files: 3143 passed, 5 failed = bug-281/282 mini-only ×3 + bug-284's stale README hooks table ×2, fixed `10dff1fa`); for R1, not deployed | L125, L132, L133, L140; [[plan-of-plans#decisions]]; [[plan-31-pre-mod-loose-ends#order]] |
+| 9 | **31.2** purge, vacuum and replay agree about learned evidence (bug-107, bug-247, bug-259, bug-260), with 22.6 R4 | T | 7 | the store write for the existing orphaned rows (plan-31 D14) is the lead's, announced and backed up | **approved and merged** (L149; D14's reading conditional on Q38) | L132; [[plan-of-plans#decisions]]; [[plan-of-plans#flags]] F5 |
+| 12 | **Hook-side items kept before the mod:** 10.3 (the compaction marker); 25.3's STM half (no dependency); 25.2 (built only if its R0 replay passes L34's bands, else not built, L43) → 25.3's helix half (after 25.2 and 10.3) | T | 8; 25.2's R0 waits on M3 | 10.3's new PreCompact entry reaches live stores only through an install window of its own (25.1b's window is post-mod) | approved | L16, L19, L30, L34, L41, L43, L54; [[task-25.2-thin-prompt-gate#r0]] |
+| 14 | **T3, after 31.5:** 31.5 steps 1-3 (measure each block's use, then cut and tighten) → 21.2 → 21.4 | T | 5's capture; 12 | an install window for 21.4 R4 (the windows its spec names, 10.4's and 16.3's, are post-mod); the user approves 21.4's drafted question set | approved | Q27 = b; L51; [[plan-31-pre-mod-loose-ends#t5]] |
+| 16 | **The plan-24 freshness revision, to approval** — the last pre-mod step. Its evidence is 31.5, 21.5 phase M and 30.6. It records D1 as superseded (D-Q5), moves the tool-event builder into 24.6, adds the 24.8 R5 rows, and re-probes on the current Claude Code | P, then ch-bsd spec rounds | 10, 14, 15; and the tree is final (8, 10) | the user's decisions on what the rounds leave open | not started; plan-24 is `drafting` | L128, L129; [[plan-of-plans#flags]]; [[plan-24-mod-transport]] |
+{#queue-replaced-l226-table}
+
+| release | holds | fixed by |
+|---|---|---|
+| R1 | 29.4 stages 2-5 (T0.2 to T0.8), with plan-31's early items: 31.5 step 0, 31.3, 31.4, 31.1, 31.6; **the Stop-hook promote bound 5 s → 8 s** (`e2c26ee`, already on master; the user: "the timeout change can ship with r1"), which changes a hook command, so the deploy re-installs hooks across the fleet (`rmx install-hooks --apply` per repo, then `--check`); **the storage caps** in `pyproject.toml` (L172) | 29.4 has one release point, after stage 5 ([[task-29.4-suite-health#r10]]). 31.5's capture count starts at this deploy |
+| R6 | plan-30 release C (30.4), with 10.3, 25.2, 25.3 and 26.9 | one install window for 10.3's PreCompact entry; bug-182's overruns are re-counted after C (L128) |
+| R8 | bug-218 R1-R7, with 31.5's cut, 21.2 and 21.4 | bug-218 needs bug-185 merged; one install window for 21.4 R4; bug-218's re-orientation has its own go |
+{#releases-replaced-l226-table}
+
+| task | status | what it is | where | evidence |
+|---|---|---|---|---|
+| [[task-agent-start-context]] | drafting | A generated agent-start hook (Q15) | post-mod ([[plan-of-plans#post-mod]]) | L85 |
+{#standalone-replaced-l226-table}
+
+#### Wording replaced by L231 (3) {#wording-replaced-l231}
+
+`#status-lifecycle`, before:
+
+- **approved** — every task has a written spec under `workflow/plans/<plan>-tasks/`; ready to build.
+
+`#notes`, before:
+
+- A plan is **approved** only when every task in it has a written spec under
+  `workflow/plans/<plan>-tasks/`.
+
+`#freeze-specs`, the sentence replaced: Every freeze item except 30.6 and plan-31 now has an approved spec on master.
+
+`#queue-notes`, the install-window bullet before:
+
+- **Install windows are user-gated and batched** where they fall together: 10.3's PreCompact
+  entry and 21.4 R4.
+
+`#post-mod`, the bullet removed (the work moved into I1, L226) and the L106 bullet's head
+before:
+
+- **Injection presentation work beyond plan-31 31.5** — the mod changes how context is delivered;
+  tool-keyed rules are its design input ([[design-note-tool-keyed-context-2026-11-15]]).
+- **From the L106 queue (Q28 = a):** compaction-as-handoff, agent-start context, 25.1b (new hook
+  features; the mod replaces the hook surface); …
+
+{#wording-replaced-l231-body}
