@@ -572,3 +572,127 @@ proximity); bytes of what the prior would really render (one item line is assume
 session-clustered intervals (4 held-out sessions). The time placebo and the fixed list tie the
 windowed prior, so what the prior captures is which files are touched across sessions, not what
 changed in the last days; the hub files behind it were not broken out. {#m5-not-measured}
+
+## M6: retrieval pressure {#m6}
+
+Brief [[agent-brief-m6-retrieval-pressure]] (Q91 = a, L257). Should an item retrieval keeps
+returning, turn after turn, carry a running per-session score, for prediction, for the order of
+10.2's held line, or for a tier upgrade? Measured before it shapes
+[[task-10.2-plan-10-injection-dedup]].
+
+rel: implements -> [[agent-brief-m6-retrieval-pressure]]
+rel: related-to -> [[task-10.2-plan-10-injection-dedup]]
+
+### Pre-registration {#m6-prereg}
+
+Written before any M6 result was computed; committed alone. Known before writing: M4 and M5's
+results, the record shapes, and that `recall-events.jsonl` logs no tier: `body_bytes` is null, and
+a delivered row's `bytes` is bimodal on `prompt_recall` (< 125 B, the hook line, against 125-1,000
+B with a body) but not on `scan_prompt` (every row 0-150 B). {#m6-prereg-note}
+
+- **Data.** Fresh `cp -c` copies of `recall-events.jsonl`, the STM rings, the transcripts with
+  `subagents/`, the memory dir; deleted after the run.
+- **Joins and split.** M4's `m4_common.py` and `build_units` unchanged; T* fixed at M4's C1 value
+  (2026-11-15 03:13:18 UTC), as in M5. Touch, window (10 calls, ending at the next prompt) and
+  new-touch gold as [[#defs]]; a touch also counts `rmx memory get <name>` as a touch of
+  `memory/<name>` (the pointer tier's fetch form).
+- **Pressure.** Per session and file key, at query q: `p(q) = Σ_r w_r · d^(turn(q) − turn(r))`
+  over every hook-channel (`scan_prompt`, `prompt_recall`, `session_start`, `precompact`)
+  retrieval row r of the key with turn(r) < turn(q) (earlier prompts only; the current call is
+  baseline iii). d ∈ {0.70, 0.85, 0.95}. Variants: *count* (w = 1, one per query), *rank*
+  (w = 1/rank), *channel-split* (count over `scan_prompt` rows only, and over `prompt_recall` rows
+  only). Primary: count, d = 0.85 (`RMX_STM_DECAY`'s default).
+- **STM node score.** Each session's ring copy is replayed in order through `stm.Stm._apply_turn`
+  (the live `record` path: `new_turn` on `input`, refs as recorded), and the item's score at the
+  query time is `stm._node_score` over `stm._graph_degree`, as `focus_view` computes it (imported
+  from the clone's `src/refmatrix/stm.py`, not re-implemented). A key's score is the max over the
+  nodes whose name resolves to that key; 0 when none does. Ring times are local
+  (America/Los_Angeles). Pins are not in the ring, so `W_PIN` contributes 0.
+- **Popularity.** M5's prior: the key's new-touch count in the 7 days before q.
+
+{#m6-prereg-defs}
+
+#### Q1: prediction {#m6-q1}
+
+Candidates: every keyed item retrieved by a held-out hook query unit; label = the key is a
+new-touch gold of the unit's window. Scores: (i) STM node score, (ii) popularity, (iii) −rank in
+the current call, (iv) pressure. Combinations are logistic regressions (scikit-learn, standardised
+features, default L2) fitted on train candidates. Metric: held-out AUC; Δ_b = AUC(b + pressure) −
+AUC(b) for each baseline b, and Δ_all = AUC(i + ii + iii + pressure) − AUC(i + ii + iii);
+bootstrap over query units (2,000, seed `m6`). Bands on the primary variant: fewer than 30
+held-out positives → measure more; Δ_all ≥ 0.03 with lower bound > 0 and each Δ_b ≥ 0.02 with
+lower bound > 0 → **build** (pressure as its own feature); Δ_all < 0.01 or its upper bound < 0.02
+→ **drop**; else measure more. Other variants are reported, not banded. {#m6-q1-bands}
+
+#### Q2: held-line ordering {#m6-q2}
+
+Units: held-out hook query units with at least one held item (delivered by a hook query on an
+earlier prompt of the session, after the session's last `precompact` row) touched in the window
+(any touch: a held item is by definition already seen; the new-touch stratum is reported).
+Orders over the unit's held items: 10.2's default (current rank, h16 / 10.6 p2) vs descending
+pressure (ties by rank); STM-score order reported as a reference. Metric: reciprocal position of
+the first held item touched in the window; Δ MRR = pressure − default, paired bootstrap over units.
+Bands: fewer than 30 units → measure more; Δ MRR ≥ 0.05 with lower bound > 0 → **build** (order
+the held line by pressure); Δ MRR < 0.01 or upper bound < 0.02 → **drop**; else measure more. {#m6-q2-bands}
+
+#### Q3: tier upgrade {#m6-q3}
+
+Tier is inferred from bytes on the channels where it is bimodal: a `prompt_recall` or
+`session_start` delivered row of < 125 B is a pointer, 125-499 B an excerpt, ≥ 500 B full.
+`scan_prompt` rows carry no inferable tier and are excluded. Items: keys first delivered in a
+session as pointer or excerpt. An item *crosses* band b at its first query with primary pressure
+≥ b, b ∈ {1.5, 2.5, 4.0}. Outcome: a touch of the key in the same session, any thread, within the
+next 5 user turns after the crossing (for the base rate: after the first delivery). Precision(b) =
+crossers with the outcome / crossers; base = the outcome rate after first delivery over all such
+items. Cost: crossings per session × (median ≥ 500 B row − median < 125 B row). Held-out items
+only (first delivery at or after T*). Bands per b: fewer than 30 crossers → measure more;
+precision ≥ 2 × base with Wilson lower bound > base and ≤ 20 upgrades per session → **build**
+the upgrade at the lowest such b; precision < 1.25 × base or Wilson interval includes base →
+**drop** that b; else measure more. {#m6-q3-bands}
+
+#### Q4: self-reinforcement {#m6-q4}
+
+On the Q1 held-out candidates: Spearman ρ of primary pressure with the STM node score, and with
+prompt-term overlap (the share of the item name's tokens, split on non-alphanumerics, that appear
+in the current prompt's terms under `scan._PROMPT_STOPWORDS`), bootstrap intervals over query
+units. Bands: ρ(STM) ≥ 0.9 → pressure **restates STM**, and Q1-Q3's actions become drop; 0.7-0.9
+→ largely redundant, said beside Q1; < 0.7 → distinct. {#m6-q4-bands}
+
+Volume: candidates, held units and crossers a week over 2026-11-11 → 11-25. {#m6-volume}
+
+### Results {#m6-results}
+
+Script `m6_retrieval_pressure.py`, run 2026-11-25 on fresh copies (deleted after); output in
+`run-output-m6-2026-11-25.txt`. Pre-registration `2049188d`. 1,647 hook query units carry
+pressure. Held-out candidates come from 667 units in 4 sessions; no session-cluster interval.
+{#m6-results-note}
+
+| Q | metric (held-out) | result, 95% interval | band | action |
+|---|---|---|---|---|
+| 1 | AUC gain from adding pressure (count, d 0.85) to each baseline; 12,900 candidates, **23 positives** | single AUC: pressure 0.440, STM 0.542, popularity 0.662, rank 0.811. Δ_STM −0.019 [−0.118, +0.073]; Δ_pop −0.200 [−0.342, −0.063]; Δ_rank −0.382 [−0.491, −0.264]; **Δ_all −0.191 [−0.293, −0.084]** | measure more (underpowered: 23 < 30 positives) | do not add pressure as a feature; every interval that excludes 0 is a loss |
+| 2 | mean reciprocal position of the first held item touched, n = 40 units | default (rank) 0.435, pressure 0.553: **Δ +0.118 [−0.038, +0.276]**; STM-score order (reference) 0.828 | measure more | keep 10.2's rank order; STM order is the one to pre-register next |
+| 3 | precision of a later touch within 5 turns after crossing band b; 570 held-out items first delivered as pointer/excerpt (5 pointers) | base 5/570 = 0.009; b 1.5: 2/166 = 0.012 [0.003, 0.043]; b 2.5: 0/69 [0, 0.053]; b 4.0: 0/23 [0, 0.143] | drop (1.5, 2.5); measure more (4.0: 23 crossers) | no tier upgrade |
+| 4 | Spearman ρ of pressure with STM node score and with prompt-term overlap | ρ(STM) **0.094 [0.070, 0.121]**; ρ(overlap) 0.063 [0.013, 0.106] | distinct (< 0.7) | pressure is not STM restated; it just does not predict the touch |
+
+{#m6-table}
+
+- **Variants (Q1, not banded).** No variant reaches the build bar. Δ_all ranges from −0.325
+  (rank-weighted, d 0.70) to +0.018 (`prompt_recall`-only, d 0.95), and single-score AUCs sit at
+  0.354-0.529. Strata: `scan_prompt` 15 positives, AUC(pressure) 0.489; `prompt_recall` 8
+  positives, 0.387.
+- **Why Q1 is not "drop".** The pre-registered order puts underpowered first. With 23 held-out
+  positives every Δ interval excludes a gain, and the bands would otherwise read drop.
+- **Q2 new-touch stratum.** n 13, Δ −0.343.
+- **Q3 cost.** A pointer row is a median 46 B, a full row 639 B, so one upgrade costs 593 B.
+  Upgrades per session: 41.5 at b 1.5, 17.2 at 2.5, 5.8 at 4.0. 81% of held-out candidates
+  already carry pressure > 0.
+- **STM replay.** 612 of 12,900 held-out candidates have a node score above 0.
+- **Volume.** 9,384 candidates a week.
+
+{#m6-results-list}
+
+**Not measured:** use (golds are touches, proximity); the true tier (not logged; byte-inferred,
+and `scan_prompt` excluded); pointer-first items (5 held-out); subject-partitioned STM rings (4
+files; the bare session ring was replayed); pins (not in the ring); session-clustered intervals
+(4 held-out sessions). The STM-order result in Q2 was a reference, not a candidate, so it carries
+no band. {#m6-not-measured}
