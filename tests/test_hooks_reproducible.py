@@ -255,3 +255,162 @@ def test_ingest_gmd_detach_without_daemon_fails_loud(tmp_path, monkeypatch):
     r = CliRunner().invoke(cli_mod.main, ["ingest-gmd", "--as-memory", "--detach", str(memdir)])
     assert r.exit_code != 0
     assert "no daemon" in r.output.lower()
+
+
+# ---- task-I1.b1: --check over every instruction artifact (ADR-0007 #installed-equals-generated)
+#
+# Through the dev `rmx` in the sandbox project (tests/instruction_units_support.py). AC-4: a
+# file is generated (equal to its render), drift (a template name whose content differs: a
+# failure for rules, skills and git hooks, printed only for agents and commands until H1.c,
+# #agents-leg) or local (listed; its fixtures run); a compiled file that differs from a fresh
+# compile fails and names `--apply`. AC-5: every `.git/hooks/<name>` carrying the refmatrix
+# marker is compared (bug-209).
+
+import shutil as _shutil  # noqa: E402
+import subprocess as _subprocess  # noqa: E402
+import sys as _sys  # noqa: E402
+from importlib import resources as _resources  # noqa: E402
+
+from tests import instruction_units_support as _iu  # noqa: E402
+
+_LOCAL_TOKENS = ("sample-deny.md", "sample-gate.md", "sample-context.md", "sample-check.md",
+                 "sample-rule.md", "sample-skill")
+_PACKAGED_RULE = Path(".claude") / "rules" / "sample-packaged-rule.md"
+_AGENT = Path(".claude") / "agents" / "gmd-curator.md"
+
+
+@pytest.fixture(scope="module")
+def _overlay(tmp_path_factory):
+    """A refmatrix that ships one packaged rule (see `build_overlay_site`): the child PYTHONPATH."""
+    site = _iu.build_overlay_site(tmp_path_factory.mktemp("site"))
+    return _iu.overlay_pythonpath(site)
+
+
+def _held_writer(root: Path):
+    """The sandbox store opened read-write in THIS process: its catalog's writer lock is held
+    until `close()`. Proven held: a second process cannot open the catalog file."""
+    from refmatrix.store import Store
+    s = Store(root)
+    s.init()          # opens the connection (Store connects lazily) and keeps it open
+    probe = _subprocess.run([_sys.executable, "-c",
+                             "import duckdb, sys; duckdb.connect(sys.argv[1])", str(s.db_path)],
+                            capture_output=True, text=True, timeout=30)
+    assert probe.returncode != 0, "the writer lock is not held; the case would prove nothing"
+    return s
+
+
+_CLASS_CASES = ["clean", "clean-beside-held-writer", "rule-drift", "local-edited",
+                "fire-broken", "agent-drift"]
+
+
+@pytest.mark.parametrize("case", _CLASS_CASES)
+def test_check_classes(case, _overlay):
+    """AC-4 (task-I1.b1 #d5 #d6). After `--apply`, `--check` exits 0 and lists the local
+    files; then one change per case: a generated rule edited is `drift` with its diff, exit 1;
+    a local unit edited leaves the compiled file out of sync, exit 1, the line names
+    `--apply`; a local unit's `fire` envelope broken (and re-applied) fails naming the unit
+    and the envelope; a packaged agent edited is printed as drift, exit 0. No daemon is up;
+    one clean run is made beside a held writer lock to show `--check` does not wait on it."""
+    root, proj = _iu.sandbox()
+    pp = dict(PYTHONPATH=_overlay)
+    _iu.install_local(proj)
+    agent = proj / _AGENT
+    agent.parent.mkdir(parents=True, exist_ok=True)
+    agent.write_text(_resources.files("refmatrix.templates.agents")
+                     .joinpath("gmd-curator.md").read_text(encoding="utf-8"), encoding="utf-8")
+    r = _iu.apply(root, **pp)
+    assert r.returncode == 0, _iu.out_of(r)
+    rule = proj / _PACKAGED_RULE
+
+    if case.startswith("clean"):
+        held = _held_writer(root) if case == "clean-beside-held-writer" else None
+        try:
+            r = _iu.check(root, timeout=30, **pp)
+        finally:
+            if held is not None:
+                held.close()
+        out = _iu.out_of(r)
+        assert r.returncode == 0, out
+        for tok in _LOCAL_TOKENS:
+            assert _iu.lines_with(out, "local", tok), f"{tok} is not listed as local:\n{out}"
+        assert not [ln for ln in out.splitlines() if "drift" in ln.lower()
+                    and "hooks drift" not in ln], f"a freshly applied project shows drift:\n{out}"
+        return
+
+    if case == "rule-drift":
+        assert rule.exists(), f"--apply did not install the packaged rule at {rule}"
+        r = _iu.check(root, **pp)
+        assert r.returncode == 0, _iu.out_of(r)
+        rule.write_text(rule.read_text() + "\nHAND-EDIT-7c1: a local exception.\n")
+        r = _iu.check(root, **pp)
+        out = _iu.out_of(r)
+        assert r.returncode == 1, f"an edited generated rule did not fail --check:\n{out}"
+        assert _iu.lines_with(out, "drift", "sample-packaged-rule.md"), out
+        assert not _iu.lines_with(out, "local", "sample-packaged-rule.md"), (
+            f"a template-named rule was classed local:\n{out}")
+        assert "HAND-EDIT-7c1" in out, f"the drift's diff is not shown:\n{out}"
+    elif case == "local-edited":
+        f = proj / ".claude" / "triggers" / "sample-deny.md"
+        f.write_text(f.read_text().replace("SAMPLE-DENY-TEXT:", "SAMPLE-DENY-TEXT (edited):"))
+        r = _iu.check(root, **pp)
+        out = _iu.out_of(r)
+        assert r.returncode == 1, f"a stale compiled file read as in sync:\n{out}"
+        assert _iu.lines_with(out, "rmx-instructions.json", "--apply"), (
+            f"no line names the compiled file and --apply:\n{out}")
+    elif case == "fire-broken":
+        f = proj / ".claude" / "triggers" / "sample-deny.md"
+        text = f.read_text()
+        broken = text.replace('{command: "rmfoo --all build/"}', '{command: "echo nothing"}', 1)
+        assert broken != text
+        f.write_text(broken)
+        r = _iu.apply(root, **pp)
+        assert r.returncode == 0, _iu.out_of(r)
+        r = _iu.check(root, **pp)
+        out = _iu.out_of(r)
+        assert r.returncode == 1, f"a failing fire fixture did not fail --check:\n{out}"
+        assert _iu.lines_with(out, "sample-deny", "fire"), (
+            f"no line names the unit and its envelope:\n{out}")
+    elif case == "agent-drift":
+        agent.write_text(agent.read_text() + "\nHAND-EDIT-a9: a project-local line.\n")
+        r = _iu.check(root, **pp)
+        out = _iu.out_of(r)
+        assert r.returncode == 0, f"agent drift failed --check before H1.c (#agents-leg):\n{out}"
+        assert _iu.lines_with(out, "drift", "gmd-curator.md"), (
+            f"the edited packaged agent is not printed as drift:\n{out}")
+    else:
+        raise AssertionError(case)
+
+
+_GIT_CASES = ["marked-body-rewritten", "unmarked-hook-listed"]
+
+
+@pytest.mark.parametrize("case", _GIT_CASES)
+def test_check_covers_git_hooks(case):
+    """AC-5 (bug-209). Installed git hooks compare clean; a hook that keeps the refmatrix marker
+    but runs another body (the pre-26.2 silent one) fails `--check`, named; a hook without the
+    marker is listed, not failed."""
+    root, proj = _iu.sandbox()
+    _subprocess.run(["git", "init", "-q", str(proj)], check=True, capture_output=True,
+                    timeout=10)
+    r = _iu.apply(root, git=True)
+    assert r.returncode == 0, _iu.out_of(r)
+    hooks_dir = proj / ".git" / "hooks"
+    hook = hooks_dir / "post-merge"
+    assert hook.exists() and "# refmatrix" in hook.read_text(), hook
+    r = _iu.check(root)
+    assert r.returncode == 0, _iu.out_of(r)
+    if case == "marked-body-rewritten":
+        hook.write_text("#!/usr/bin/env bash\n# refmatrix: refresh after merge\n"
+                        'rmx sync --since ORIG_HEAD >/dev/null 2>&1 || true\n')
+        r = _iu.check(root)
+        out = _iu.out_of(r)
+        assert r.returncode == 1, f"a rewritten refmatrix git hook read as in sync:\n{out}"
+        assert _iu.lines_with(out, "post-merge"), f"the drifted hook is not named:\n{out}"
+    else:
+        mine = hooks_dir / "pre-push"
+        mine.write_text("#!/bin/sh\necho mine\n")
+        mine.chmod(0o755)
+        r = _iu.check(root)
+        out = _iu.out_of(r)
+        assert r.returncode == 0, f"a hook without the marker failed --check:\n{out}"
+        assert _iu.lines_with(out, "pre-push"), f"the unmarked hook is not listed:\n{out}"

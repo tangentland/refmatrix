@@ -154,3 +154,26 @@ def test_bug170_the_comparison_restores_the_sandbox_and_writes_nothing(tmp_path,
     assert sorted(hooks_dir.iterdir()) == files[2:], "the comparison wrote into the hooks dir"
     for p, (data, mtime) in before.items():
         assert (p.read_bytes(), p.stat().st_mtime_ns) == (data, mtime), f"{p} was written"
+
+
+# ---- task-I1.b1 AC-6: this checkout's instruction artifacts equal their render -------------
+#
+# Rules, skills, the compiled `.claude/rmx-instructions.json` (tracked in git, so every clone
+# carries the table) and the refmatrix-marked git hooks fail on drift; agents and commands are
+# classed and printed, never failed, until H1.c adds backup-before-replace (task-I1.b1
+# #agents-leg: this repo's gmd-curator.md differs from its template). Unlike the settings
+# comparison above, none of these carries an absolute path, so the test runs in every checkout.
+
+def test_repo_instruction_artifacts_match_their_render():
+    compiled = REPO / ".claude" / "rmx-instructions.json"
+    assert compiled.exists(), (
+        f"{compiled} is not in this checkout: `rmx install-hooks --apply` writes it and it is "
+        "tracked (task-I1.b1 #d5)")
+    ok, report = hooks_mod.check_artifacts(REPO)
+    print(report)
+    assert ok, "instruction artifacts drift — run `rmx install-hooks --apply`:\n" + report
+    curator = [ln for ln in report.splitlines() if "gmd-curator.md" in ln]
+    assert curator and any(c in curator[0] for c in ("generated", "drift")), (
+        f"the packaged agent gmd-curator.md is not classed in the report:\n{report}")
+    assert [ln for ln in report.splitlines() if "bug-registry.md" in ln and "local" in ln], (
+        f"this repo's own rule .claude/rules/bug-registry.md is not listed as local:\n{report}")
