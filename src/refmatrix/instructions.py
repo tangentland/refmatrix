@@ -99,6 +99,17 @@ PRECEDENCE = {"deny": 0, "ask": 1, "gate": 2, "context": 3, "post": 4, "check": 
 
 # Every git call a stateful fixture or a `when:` state makes is bounded (task-I1.b1 #risks 4).
 GIT_TIMEOUT_S = 2.0
+# A fixture repo's `commits` is capped at parse: `--check` builds every local unit's fixture
+# repos, one bounded git call per commit (bsd-i1b1 r1 #s-4, lead ruling).
+FIXTURE_MAX_COMMITS = 10
+# Characters a prefilter may not hold: each spans JSON structure, so the fixture runner's
+# `json.dumps` and the dispatcher's raw stdin bytes (I1.b3 D2) could disagree on a match
+# (bsd-i1b1 r1 #s-2, lead ruling).
+PREFILTER_FORBIDDEN = ('"', "\\", ":")
+# What the STM ring keeps of a tool call (`cli._tool_event_fields`): a Bash call's `command`;
+# every other tool's input minus these bulk keys. A bind on a key the ring drops can never be
+# hit by replay (bsd-i1b1 r1 #b-1).
+RING_DROPPED_KEYS = frozenset({"content", "new_string", "old_string", "edits"})
 COMPILED_REL = ".claude/rmx-instructions.json"
 COMPILED_SCHEMA = 1
 TEMPLATE_PKG = "refmatrix.templates"
@@ -268,9 +279,13 @@ def _yaml_loader():
 
 
 def _parse(data: bytes, where: str, rel: str, layer: str, *,
-           require_unit: bool) -> "Unit | None":
+           require_unit: bool, layer_dir: "str | None" = None) -> "Unit | None":
     """Parse one file. Returns None for a native file (no `unit:` map) when `require_unit` is
-    false; raises UnitError for anything that is not a valid unit."""
+    false; raises UnitError for anything that is not a valid unit. `layer_dir` (`triggers`,
+    `checks`, `rules`, `skills`) is the directory the file sits in; a unit whose kind belongs in
+    another one is refused (`KIND_DIR`, bsd-i1b1 r1 #b-2: a deny under `rules/` would be both a
+    compiled deny and an always-on native rule, and a packaged one would be copied into every
+    project's `.claude/rules/`)."""
     text = _decode(data, where)
     head, body = _split_frontmatter(text, where)
     if head is None or not _UNIT_LINE_RE.search(head):
@@ -291,6 +306,10 @@ def _parse(data: bytes, where: str, rel: str, layer: str, *,
         raise UnitError(where, "no id", "the frontmatter needs a GMD `id:`")
     spec = fm["unit"]
     _validate_spec(spec, where)
+    if layer_dir is not None and KIND_DIR[spec["kind"]] != layer_dir:
+        raise UnitError(where, "kind in the wrong directory",
+                        f"a {spec['kind']} unit belongs in {KIND_DIR[spec['kind']]}/, not "
+                        f"{layer_dir}/ (ADR-0007 #units)")
     try:
         json.dumps(spec, allow_nan=False)
     except (TypeError, ValueError) as e:
@@ -381,6 +400,13 @@ def _validate_bind(b, kind: str, where: str, i: int) -> None:
         _regex(where, b["unless"], f"{what}.unless")
     if "prefilter" in b and (not isinstance(b["prefilter"], str) or not b["prefilter"]):
         raise UnitError(where, "bad binding", f"{what}.prefilter must be a non-empty literal")
+    for ch in PREFILTER_FORBIDDEN:
+        if ch in b.get("prefilter", ""):
+            raise UnitError(where, "bad prefilter",
+                            f"{what}.prefilter {b['prefilter']!r} contains {ch!r}: a prefilter is "
+                            "a literal inside one JSON string value; a quote, a backslash or a "
+                            "colon spans JSON structure, which the fixture runner and the "
+                            "dispatcher's raw-byte test would read differently")
     who = b.get("who", "any")
     if not isinstance(who, str) or not _WHO_RE.match(who):
         raise UnitError(where, "bad binding",
@@ -444,6 +470,13 @@ def _validate_fixtures(fx, where: str) -> None:
                 if not isinstance(repo, dict):
                     raise UnitError(where, "bad fixture", f"{what}.repo must be a map")
                 _unknown(where, repo, REPO_KEYS, f"{what}.repo")
+                commits = repo.get("commits", 0)
+                if (not isinstance(commits, int) or isinstance(commits, bool)
+                        or not 0 <= commits <= FIXTURE_MAX_COMMITS):
+                    raise UnitError(where, "fixture repo too large",
+                                    f"{what}.repo.commits is {commits!r}; a fixture repo has 0 "
+                                    f"to {FIXTURE_MAX_COMMITS} commits (each is a bounded git "
+                                    "call that `--check` makes for every local unit)")
 
 
 # ---- the two layers --------------------------------------------------------------------------
@@ -517,8 +550,11 @@ def _local_candidates(project_root: Path) -> "list[tuple[str, str, Path]]":
 
 def load_layers(project_root: "Path | str") -> Layers:
     """Both layers of `project_root`. Never raises for a bad unit: each problem is an entry of
-    `.errors` (the compile refuses on them; `--check` prints them). A local file whose
-    `.claude/` path is a packaged file's is that file's installed copy, not a local unit."""
+    `.errors` (the compile refuses on them; `--check` prints them). A local file at an
+    installed packaged file's `.claude/` path (a rule or a skill) is that file's copy, compared
+    by `--check`. A local file at a packaged trigger's or check's path is refused: those are
+    never installed, so it can only be a local unit the loader would otherwise drop
+    (bsd-i1b1 r1 #s-3)."""
     project_root = Path(project_root)
     layers = Layers(packaged=packaged_files())
     for pf in layers.packaged:
@@ -528,20 +564,26 @@ def load_layers(project_root: "Path | str") -> Layers:
             continue
         where = f"refmatrix/templates/{pf.rel}"
         try:
-            unit = _parse(pf.data, where, pf.rel, "packaged", require_unit=d in UNIT_ONLY_DIRS)
+            unit = _parse(pf.data, where, pf.rel, "packaged", require_unit=d in UNIT_ONLY_DIRS,
+                          layer_dir=d)
         except UnitError as e:
             layers.errors.append(e)
             continue
         if unit is not None:
             layers.units.append(unit)
-    installed = {pf.installed for pf in layers.packaged}
+    packaged_at = {pf.installed: pf for pf in layers.packaged}
     for d, inner, path in _local_candidates(project_root):
         rel = f".claude/{d}/{inner}"
-        if rel in installed:
+        pf = packaged_at.get(rel)
+        if pf is not None and pf.installs:
             continue
         try:
+            if pf is not None:
+                raise UnitError(rel, "duplicate path with a packaged unit",
+                                f"refmatrix/templates/{pf.rel} compiles from the package and is "
+                                "never installed here; give the local unit its own file name")
             unit = _parse(_read_bytes(path, rel), rel, f"{d}/{inner}", "local",
-                          require_unit=d in UNIT_ONLY_DIRS)
+                          require_unit=d in UNIT_ONLY_DIRS, layer_dir=d)
         except UnitError as e:
             layers.errors.append(e)
             layers.local.append(LocalFile(where=rel, rel=f"{d}/{inner}", unit=None,
@@ -682,11 +724,6 @@ def compile_layers(layers: Layers) -> bytes:
            "generated_by": "rmx install-hooks --apply (task-I1.b1; do not edit)",
            "units": entries, "prefilter": prefilter_table(entries)}
     return (json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
-
-
-def compile_project(project_root: "Path | str") -> bytes:
-    """`compile_layers(load_layers(project_root))`."""
-    return compile_layers(load_layers(project_root))
 
 
 # ---- decide ----------------------------------------------------------------------------------
@@ -975,6 +1012,7 @@ class ReplayReport:
     unreadable: int = 0
     hits: "list[ReplayHit]" = field(default_factory=list)
     tool_binds: int = 0
+    unmeasurable: "list[str]" = field(default_factory=list)
 
 
 def find_unit(project_root: "Path | str", uid: str) -> Unit:
@@ -1011,6 +1049,26 @@ def _ring_call(ev: dict) -> "tuple[str, dict] | None":
     return tool, (ti if isinstance(ti, dict) else {"command": detail})
 
 
+# Claude Code tools other than Bash, to tell a Bash-only `tool` pattern from a wider one.
+_NON_BASH_TOOLS = ("Write", "Edit", "MultiEdit", "Read", "Grep", "Glob", "Agent", "Task",
+                   "WebFetch", "WebSearch", "NotebookEdit")
+
+
+def ring_unmeasurable_keys(b: dict) -> "list[str]":
+    """The `match` keys of bind `b` the STM ring never stores (`cli._tool_event_fields`): the
+    bulk keys it drops for every tool, and for a bind that can only match Bash, every key but
+    `command`. Replay leaves such a bind out of its hit count and names it (bsd-i1b1 r1 #b-1:
+    a Write unit bound to `content` read "hits 0", a false all-clear before a deny ships)."""
+    tool = b.get("tool")
+    bash_only = bool(tool) and bool(re.fullmatch(tool, "Bash")) and not any(
+        re.fullmatch(tool, t) for t in _NON_BASH_TOOLS)
+    out = []
+    for key in (b.get("match") or {}):
+        if key in RING_DROPPED_KEYS or (bash_only and key != "command"):
+            out.append(key)
+    return out
+
+
 def replay(store_root: "Path | str", unit: Unit, *, days: int = 30,
            now: "float | None" = None) -> ReplayReport:
     """Read-only over `<store>/stm/*.jsonl` as files (task-I1.b1 #d7): every tool event of the
@@ -1019,8 +1077,15 @@ def replay(store_root: "Path | str", unit: Unit, *, days: int = 30,
     state. No daemon, no store open."""
     ring = Path(store_root) / "stm"
     rep = ReplayReport(unit=unit, ring_dir=ring, days=days)
-    binds = [b for b in unit.bind if b.get("event") in TOOL_EVENTS]
-    rep.tool_binds = len(binds)
+    binds = []
+    for i, b in enumerate(unit.bind):
+        if b.get("event") not in TOOL_EVENTS:
+            continue
+        rep.tool_binds += 1
+        lost = ring_unmeasurable_keys(b)
+        rep.unmeasurable += [f"bind[{i}].match.{k}" for k in lost]
+        if not lost:
+            binds.append(b)
     cutoff = (now if now is not None else time.time()) - days * 86400
     if not ring.is_dir():
         return rep
@@ -1082,6 +1147,9 @@ def format_replay(rep: ReplayReport, *, show: bool) -> "list[str]":
            f"{rep.ring_dir}"]
     if not rep.ring_dir.is_dir():
         out.append(f"no STM ring directory at {rep.ring_dir}")
+    for name in rep.unmeasurable:
+        out.append(f"unmeasurable: {name} is not stored in the ring; this bind is left out of "
+                   "the hit count")
     if rep.tool_binds == 0:
         out.append("the unit binds no tool event (PreToolUse / PostToolUse): nothing in the "
                    "ring can match it")

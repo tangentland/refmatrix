@@ -40,6 +40,7 @@ import os
 import re
 import stat
 from pathlib import Path
+from typing import NamedTuple
 
 from refmatrix.store import WRITER_CATALOG_FILES
 
@@ -892,7 +893,9 @@ def _install_artifacts(project_root: Path, artifacts: "dict[str, bytes]", *, app
                        force: bool) -> list[str]:
     """Write the rendered artifacts. The compiled file is wholly generated, so it is always
     rewritten when its bytes differ; a packaged rule or skill that exists with other content is
-    replaced only under `--force`, like every other installed file."""
+    replaced only under `--force`, like every other installed file. A project whose layers hold
+    no unit gets no compiled file (bsd-i1b1 r1 #s-1, lead ruling (a): no new file in a consumer
+    repo that has no units); one it already holds is kept current."""
     from refmatrix import instructions
     out: list[str] = []
     for rel, data in sorted(artifacts.items()):
@@ -900,6 +903,10 @@ def _install_artifacts(project_root: Path, artifacts: "dict[str, bytes]", *, app
         current = target.read_bytes() if target.exists() else None
         if current == data:
             out.append(f"[green]ok[/] {target} (current)")
+            continue
+        if (rel == instructions.COMPILED_REL and current is None
+                and not json.loads(data)["units"]):
+            out.append(f"[dim]none[/] {target} (no instruction units; nothing to compile)")
             continue
         if current is not None and rel != instructions.COMPILED_REL and not force:
             out.append(f"[yellow]skip[/] {target} (differs from the packaged copy; pass "
@@ -1042,7 +1049,12 @@ def check_artifacts(project_root: Path) -> "tuple[bool, str]":
     crel = instructions.COMPILED_REL
     cpath = project_root / crel
     if compiled is not None:
-        if not cpath.exists():
+        n_units = len(json.loads(compiled)["units"])
+        if not cpath.exists() and n_units == 0:
+            # bsd-i1b1 r1 #s-1, lead ruling (a): a project with no units needs no table, so
+            # its absence is the render (spec risk 3: the consumers stay clean).
+            lines.append(f"  generated {crel} (0 units: not written, none needed)")
+        elif not cpath.exists():
             ok = False
             lines.append(f"  missing   {crel}: run `rmx install-hooks --apply` to write it")
         else:
@@ -1052,21 +1064,22 @@ def check_artifacts(project_root: Path) -> "tuple[bool, str]":
                 ok = False
                 lines.append(f"  unreadable {crel}: {e}")
             else:
-                n = len(json.loads(compiled)["units"])
                 if have == compiled:
-                    lines.append(f"  generated {crel} ({n} unit(s))")
+                    lines.append(f"  generated {crel} ({n_units} unit(s))")
                 else:
                     ok = False
                     lines.append(f"  drift     {crel} is out of sync with its units: run "
                                  "`rmx install-hooks --apply`")
-    # packaged rules and skills, and any installed copy of a packaged trigger or check
+    # packaged rules and skills (a local file at a packaged trigger's or check's path is a
+    # refused unit, reported by the compile above: bsd-i1b1 r1 #s-3)
     for pf in layers.packaged:
+        if not pf.installs:
+            continue
         target = project_root / pf.installed
         if not target.exists():
-            if pf.installs:
-                ok = False
-                lines.append(f"  missing   {pf.installed}: a packaged file; run "
-                             "`rmx install-hooks --apply`")
+            ok = False
+            lines.append(f"  missing   {pf.installed}: a packaged file; run "
+                         "`rmx install-hooks --apply`")
             continue
         text, err = _read_text(target)
         if text is None:
@@ -1105,15 +1118,27 @@ def check_artifacts(project_root: Path) -> "tuple[bool, str]":
     return ok, "\n".join(lines)
 
 
-def check_all(project_root: Path) -> "tuple[bool, str]":
-    """Does every installed instruction artifact equal its render? (ok, report): `check` (the
-    settings hook block) and `check_artifacts` (rules, skills, agents, commands, the two
-    user-level commands, the compiled file, the refmatrix git hooks, the local units'
-    fixtures), ADR-0007 #installed-equals-generated, task-I1.b1 #d5. Both legs always run, so
-    one report names every drifted file. `rmx install-hooks --check` runs this."""
+class CheckReport(NamedTuple):
+    """`check_all`'s answer: each leg's verdict, so a failure names the leg that drifted
+    (bsd-i1b1 r1 #m-1: a git-hook-only drift was headed `hooks drift …/settings.json`)."""
+    settings_ok: bool
+    artifacts_ok: bool
+    text: str
+
+    @property
+    def ok(self) -> bool:
+        return self.settings_ok and self.artifacts_ok
+
+
+def check_all(project_root: Path) -> CheckReport:
+    """Does every installed instruction artifact equal its render? `check` (the settings hook
+    block) and `check_artifacts` (rules, skills, agents, commands, the two user-level
+    commands, the compiled file, the refmatrix git hooks, the local units' fixtures),
+    ADR-0007 #installed-equals-generated, task-I1.b1 #d5. Both legs always run, so one report
+    names every drifted file. `rmx install-hooks --check` runs this."""
     ok_s, text_s = check(project_root)
     ok_a, text_a = check_artifacts(project_root)
-    return ok_s and ok_a, "\n".join(t for t in (text_s, text_a) if t)
+    return CheckReport(ok_s, ok_a, "\n".join(t for t in (text_s, text_a) if t))
 
 
 def _install_git_hooks(project_root: Path, apply: bool, force: bool) -> list[str]:

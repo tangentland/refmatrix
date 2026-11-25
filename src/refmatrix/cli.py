@@ -10314,14 +10314,19 @@ def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
     if check_only:
         # The report is printed in both cases: a clean check still lists the local files
         # (task-I1.b1 #d5), and agent/command drift is printed without failing (#agents-leg).
-        ok, diff = hooks_mod.check_all(project_root)
-        if ok:
-            console.print(f"[green]hooks in sync[/] {project_root / '.claude' / 'settings.json'}")
-            if diff:
-                click.echo(diff)
+        rep = hooks_mod.check_all(project_root)
+        settings = project_root / '.claude' / 'settings.json'
+        if rep.ok:
+            console.print(f"[green]hooks in sync[/] {settings}")
+            if rep.text:
+                click.echo(rep.text)
             return
-        console.print(f"[red]hooks drift[/] {project_root / '.claude' / 'settings.json'}")
-        click.echo(diff)
+        # Name the leg that drifted (bsd-i1b1 r1 #m-1): settings.json only when it did.
+        if not rep.settings_ok:
+            console.print(f"[red]hooks drift[/] {settings}")
+        if not rep.artifacts_ok:
+            console.print("[red]instruction artifacts out of sync[/] (below)")
+        click.echo(rep.text)
         raise SystemExit(1)
     try:
         plan = hooks_mod.install(
