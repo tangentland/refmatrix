@@ -5,7 +5,7 @@ title: "Task I1.b1: units, the compiler and compiled file, the fixture runner, r
 tags: [task, plan-32, instructions, units, compiler, fixtures, install-hooks, parity, bug-209]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)

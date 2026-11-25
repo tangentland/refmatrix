@@ -5,7 +5,7 @@ title: "Task I1.b3: the dispatcher: one prefiltered entry per event, deny and ga
 tags: [task, plan-32, instructions, hooks, dispatcher, deny, gate, once, budget]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)

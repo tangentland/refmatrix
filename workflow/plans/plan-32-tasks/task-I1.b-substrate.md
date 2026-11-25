@@ -5,7 +5,7 @@ title: "Task I1.b: the instruction substrate, split into four specs (probes; uni
 tags: [task, plan-32, instructions, hooks, substrate, split]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)

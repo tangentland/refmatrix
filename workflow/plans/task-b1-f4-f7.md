@@ -5,7 +5,7 @@ title: "B1 residue: the findings ledger tallies by self-audit question (F4) and 
 tags: [task, ch-bsd, ledger, impressions, self-audit, b1]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   created: 2026-11-24
   author: ch-architect (Fable 5.2)
 ---

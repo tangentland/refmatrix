@@ -5,7 +5,7 @@ title: "Task I1.a: the contradiction edits (docs and overlays only), with the Q5
 tags: [task, plan-32, instructions, contradictions, docs, overlays]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)

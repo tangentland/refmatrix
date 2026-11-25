@@ -5,7 +5,7 @@ title: "Task I1.b0: probes P1 to P11 as committed evidence, and the cost baselin
 tags: [task, plan-32, instructions, probes, measurement, hooks]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)

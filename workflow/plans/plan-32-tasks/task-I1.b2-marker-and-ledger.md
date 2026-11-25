@@ -5,7 +5,7 @@ title: "Task I1.b2: the compaction marker (10.3 with five deltas), the instructi
 tags: [task, plan-32, instructions, hooks, stm, compaction, ledger, telemetry]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)
