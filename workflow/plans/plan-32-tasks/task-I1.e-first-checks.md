@@ -5,7 +5,7 @@ title: "Task I1.e: the check runner, its two triggers, and the first eleven T4 c
 tags: [task, plan-32, instructions, checks, git-hooks, commit, merge, release, practice-tdd]
 metadata:
   node_type: task
-  status: approved-pending
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-25
   author: ch-architect (Fable 5.2)
@@ -203,6 +203,8 @@ new file, `tests/test_instruction_checks.py`; hook-config cases extend the exist
    `fixed-is-reachable` is local. The review's two checks are [[#open]] 2.
 
 ## Open decisions {#open}
+
+**Answered:** Q80 = a, Q81 = a (the recommendations; L249, 2026-11-25). {#answered}
 
 1. **Where an open finding is refused (L216).** `OPEN.md` rows do not say which branch or
    files they are on, so a merge check could only make every merge name every open row.

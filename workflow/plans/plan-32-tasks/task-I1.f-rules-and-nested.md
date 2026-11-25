@@ -5,7 +5,7 @@ title: "Task I1.f: the first T2 path rules, three nested CLAUDE.md files, the me
 tags: [task, plan-32, instructions, rules, paths, nested-claude-md, memory-rules, practice-tdd]
 metadata:
   node_type: task
-  status: approved-pending
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-25
   author: ch-architect (Fable 5.2)
@@ -171,6 +171,8 @@ window commit: the removal of `.claude/hooks/adr-gate.sh`. {#files-list}
    files → 29.6's re-point list.
 
 ## Open decisions {#open}
+
+**Answered:** Q82 = a (the recommendations; L249, 2026-11-25). {#answered}
 
 1. **How the memory-file rules reach a project without the dispatcher.** The ADR puts the
    trigger at user level, and P7 shows a user-level rule cannot do it. Recommended: ship the
