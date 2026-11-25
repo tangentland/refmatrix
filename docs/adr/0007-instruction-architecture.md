@@ -202,12 +202,15 @@ follows as a PostToolUse unit; `enforce-rmx-grep.sh` stays until plan-16 decides
 - **Key:** (`session_id`, `agent_id` or `main`, unit id, unit sha). A changed unit is a new
   delivery. A subagent never inherits the lead's entries: its context does not hold what the
   lead was shown (the bug-307 lesson).
-- **Home:** `stm/<session>.emitted/instructions.json`, in 10.3's directory, written through
-  10.3's helper. No new marker.
-- **Reset:** an entry older than `stm.last_marker(root, session).ts` suppresses nothing; an
-  unreadable marker counts as "marker now". Compaction drops injected hook context, so it must
-  drop the entry. This is why 10.3 moves forward into I1.b
-  ([[plan-32-retriage-2026-11-24#r12]]).
+- **Home:** `stm/<session>.emitted/instructions/`, in 10.3's directory, through 10.3's
+  helper: one small file per key, so parallel hooks never read-modify-write one file
+  ([[#amend-7]]). No new marker.
+- **Reset:** an entry older than its own context's marker suppresses nothing; an unreadable
+  marker counts as "marker now". Compaction drops injected hook context, so it must drop the
+  entry. This is why 10.3 moves forward into I1.b ([[plan-32-retriage-2026-11-24#r12]]). A
+  subagent's compaction writes its own marker, never the session's, and where probe P5
+  cannot show that a subagent's compaction fires a hook, a subagent's entry also expires
+  after a fixed time ([[#amend-7]]).
 - **Direction of error:** when in doubt, deliver again. A repeat costs bytes; a miss costs the
   rule.
 - Native mechanisms (T2, T8, T10, skill preloads) keep their own once-per-context behaviour;
@@ -821,6 +824,8 @@ Each is one throwaway-session probe. Evidence is committed as field names and ha
 | P9 | the SubagentStart envelope: is the task prompt present? | [[task-agent-start-context#r0]] |
 | P10 | how are a plugin's agents and skills named, and may a project agent's `skills:` name a plugin skill? (a plugin cannot carry rules: documented) | [[#dist-agent-lists]] |
 
+| P11 | does an agent's `skills:` preload deliver a project skill's body to a spawned agent? (documented; not yet observed here; [[#amend-7]]) | the preloads of I1.d, or SubagentStart in their place |
+
 Not probes: whether the p20-0 auto-mode rules change behaviour at all (unmeasured since they
 shipped); what a Stop check costs in false blocks (read from the ledger after SubagentStop's
 self-audit check has run for a week). {#open-not-probes}
@@ -922,3 +927,31 @@ in time ([[orchestration#planning]]). Constraints the specs inherit from this AD
 - "Packs are template-only" now reads "stack packs are template-only" ([[#composition-rules]]).
 - Builds: the render, selection and amendment in H1.c; the pack's skills in I1.d and its
   checks in I1.e; its denies in I1.c and its test rule in I1.f.
+
+**2026-11-24, the spec window** (L232; the I1.b specs, [[task-I1.b-substrate#adr-amendments]]),
+for the lead's read: {#amend-7}
+
+- **The once-ledger is one file per key** under `stm/<session>.emitted/instructions/`, not
+  one JSON file. Claude Code runs the hooks of parallel tool calls at the same time, and a
+  shared file would be read, changed and rewritten by each; a lost update would gate the same
+  call twice ([[#once]]; [[task-10.3-plan-10-injection-dedup#decisions]] f2 asks the same of
+  the marker).
+- **The marker is per context.** A subagent's envelope carries the lead's `session_id` and
+  its own `agent_id` (bug-307), so its compaction writes `marker.<agent_id>.json`. If P5
+  cannot show that a subagent's compaction fires a hook, a subagent's entry stops suppressing
+  after 30 minutes: a repeat costs bytes, a miss costs the rule ([[#once]]).
+- **A gate denies only after its entry is written.** If the entry cannot be written the call
+  is allowed and the failure counted, so a gate can never deny the same call twice
+  ([[#dispatcher-failure]]).
+- **An install window is a recorded option.** `.claude/rmx-hooks.json` gains `instructions`,
+  the list of events whose instruction entries are rendered; a project without the key
+  renders as before. The two windows of L226 are two values of that list in the dev tree, and
+  a consumer's are H1.f's ([[task-I1.b-substrate#c-flag]]).
+- **Probe P11** joins [[#open]]: the `skills:` preload is documented and six units rest on
+  it, so it is observed once before they are built.
+- **Agent and command drift is printed, not failed, until H1.c** adds backup-before-replace:
+  this repo's `gmd-curator.md` already differs from the template, and `--force` overwrites
+  without a backup ([[task-I1.b1-units-and-check#agents-leg]]).
+- **`paths:` on `bug-registry.md` moves from I1.a to I1.e's commit,** by
+  [[#removal-order]]: the always-on file is R158's only delivery until its check is installed
+  ([[task-I1.a-contradiction-edits#c6-order]]).
