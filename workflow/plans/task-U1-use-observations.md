@@ -5,7 +5,7 @@ title: "Task U1: use observations, recorded only: the recall-event log gains the
 tags: [task, u1, used-signal, telemetry, recall-events, held-out, scan-prompt, prompt-recall]
 metadata:
   node_type: task
-  status: approved-pending
+  status: approved
   created: 2026-11-25
   author: ch-architect (Fable 5.2)
 ---
@@ -208,6 +208,8 @@ new feature, one new file, `tests/test_use_observations.py`. {#acceptance-lead}
    the events are kept.
 
 ## Open decisions {#open}
+
+**Answered:** Q85 = a (10%, dev store only, set after 31.5's 400 prompts), Q86 = a (keep everything; rotation at 1 GiB); L252, 2026-11-25. {#answered}
 
 1. **The held-out rate, and where it runs.** Measured on a copy of the dev store's log, the
    last 14 days: 519 prompts, 13,900 items delivered by the two channels, 3,998 of them
