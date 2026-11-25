@@ -9,6 +9,10 @@ tags: [bsd, impressions]
 Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids unchanged, into dated `impression_bsd_ledger_*` memories under `memory/impressions/`; every folded id stays addressable in [[#former-anchors]]. To compact again, fold the oldest dated group into a new ledger memory and append its ids below. Never delete an id: the reports citing `bsd-impressions#<id>` are records and are not edited.
 
 
+- 2026-11-25 (bug-318 confirm, ee36bb10): A CONFIRM REPLAYS THE r1 PROBE LIST VERBATIM BEFORE
+  WIDENING. The fold coded "content verb wins" as "beats push/checkout/switch", so the exact r1
+  probe (`git reset -q p && git commit`) still recorded `reset` with no rationale.
+  {#imp-confirm-replays-r1-probes}
 - 2026-11-25 (bug-318 r1, 9954e391): A CAPTURE RULE JUDGED ON THE HOOK ENVELOPE'S CWD MISSES THE
   ORCHESTRATED SESSION'S DOMINANT FORM. Subagent hooks land in the lead's ring with cwd = the dev
   tree while their commands run `cd /Volumes/littlebig/<clone> && git …` (360/551 live git
