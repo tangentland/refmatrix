@@ -1294,3 +1294,59 @@ def test_no_precompact_budget_channel_or_producer_remains(fx):
     assert "precompact" not in json.loads(r.stdout)["by_producer"]
     assert not [c for _e, _m, c in h.hook_entries(fx.root)
                 if "memory recall" in c and "--recent" in c]
+
+
+# ---- bug-318: the handoff file is bounded under the Read cap and its milestones are capped ----
+
+HANDOFF_MAX = 40_000          # bytes: ~20k tokens at the measured 2 B/token, under the 25k Read cap
+
+
+def _seed_milestones(fx: Fx, session: str, n: int = 200, dup: int = 10) -> int:
+    """`n` git milestones in the session ring (the shape the capture writes now), `dup` of them
+    repeating an earlier sha. Returns the distinct-sha count."""
+    from refmatrix import stm
+    s = stm.Stm(fx.root, session)
+    for i in range(n):
+        k = i if i < n - dup else i - (n - dup)
+        s.record("git", f"commit {k:07x} " + f"milestone {k} " + "reconcile quasar ledger " * 10,
+                 refs=[])
+    return n - dup
+
+
+def test_handoff_file_caps_milestones_and_states_the_cut(fx):
+    from refmatrix import stm
+    """200 milestones (10 repeating a sha): the file lists the newest 30 distinct ones, says how
+    many older were cut and where the full list is, and stays <= 40,000 B with its head kept.
+    HEAD: every milestone is listed and the file is over the cap."""
+    distinct = _seed_milestones(fx, SESSION)
+    p, _out = written_handoff(fx, "compact", SESSION)
+    body = p.read_text(encoding="utf-8")
+    n = len(body.encode("utf-8"))
+    assert n <= HANDOFF_MAX, f"bug-318: the handoff file is {n} B > {HANDOFF_MAX}"
+    ms = [ln for ln in body.splitlines() if re.match(r"- commit [0-9a-f]{7} milestone", ln)]
+    assert len(ms) == 30, f"bug-318: {len(ms)} milestone lines, want the newest 30"
+    assert len({ln.split()[2] for ln in ms}) == 30, "milestones are deduped by sha"
+    evs = [e for e in stm.Stm(fx.root, SESSION).all_events() if e["kind"] == "git"]
+    # the digest's key is the sha, or the whole terse for an event without one (the ring seed's)
+    total = len({e["terse"].split()[1] if e["terse"].startswith("commit ") else e["terse"]
+                 for e in evs})
+    assert total >= distinct
+    assert re.search(rf"{total - 30} older milestones? cut.*rmx focus (context|export)", body), \
+        body[-600:]
+    assert "savestate_fx01" in body and body.startswith(PRE_LINE)
+
+
+def test_handoff_file_is_cut_to_the_cap_in_reverse_priority_and_says_so(fx):
+    """Recent-memory titles so long that the report is over 40,000 B whatever the digest holds:
+    the cut is stated in the file; the session line, git state and handoff head stay."""
+    _seed_milestones(fx, SESSION)
+    for i in range(LONG_N):
+        f = fx.memdir / f"cah_long_{i}.md"
+        f.write_text(re.sub(r'(?m)^title: ".*"$', 'title: "' + "quasar ledger flux " * 400 + '"',
+                            f.read_text(encoding="utf-8")), encoding="utf-8")
+    p, _out = written_handoff(fx, "compact", SESSION)
+    body = p.read_text(encoding="utf-8")
+    n = len(body.encode("utf-8"))
+    assert n <= HANDOFF_MAX, f"bug-318: the handoff file is {n} B > {HANDOFF_MAX}"
+    assert re.search(r"omitted to fit 40000 B", body), body[-400:]
+    assert body.startswith(PRE_LINE) and "\ngit branch " in body and "savestate_fx01" in body

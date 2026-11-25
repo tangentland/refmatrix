@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import subprocess
 
+import pytest
 from click.testing import CliRunner
 
 from refmatrix.cli import main
@@ -133,3 +134,80 @@ def test_merge_body_is_not_harvested(tmp_path):
             "tool_response": {"stdout": "Fast-forward\n 1 file changed"},
         }))
     assert _events(tmp_path, "reason") == []
+
+
+# ---- bug-318: a `git` milestone is a real ref-moving event with its subject -----------------
+#
+# The PostToolUse capture used to file a `git` event for `git <verb>` anywhere in the command
+# text, with the first output line as its terse ("git commit: 0 errors", "git checkout: ??
+# .venv-eval"). Now: the command must RUN that verb, the ref state must have moved (read from
+# git before/after, PreToolUse snapshot), and the terse is `<verb> <short-sha> <subject>`.
+
+def _hook(tmp_path, event, repo, cmd, stdout="", sid="m1", tid="t9"):
+    env = {"REFMATRIX_ROOT": str(tmp_path / ".refmatrix")}
+    d = {"session_id": sid, "tool_use_id": tid, "tool_name": "Bash", "cwd": str(repo),
+         "tool_input": {"command": cmd}}
+    if event == "tool":
+        d["tool_response"] = {"stdout": stdout}
+    r = CliRunner().invoke(main, ["focus", "hook", "--event", event], env=env,
+                           input=json.dumps(d))
+    assert r.exit_code == 0, r.output
+    return r
+
+
+def _gits(tmp_path, sid="m1"):
+    p = tmp_path / ".refmatrix" / "stm" / f"{sid}.jsonl"
+    if not p.exists():
+        return []
+    rows = [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+    return [r for r in rows if r["kind"] == "git"]
+
+
+def _head(repo):
+    r = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%h %s"],
+                       check=True, capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+JUNK = [
+    # (command as Claude Code ran it, the output the old code filed as the milestone)
+    ("git commit -m x; echo '0 errors'", "nothing to commit, working tree clean\n0 errors"),
+    ("git commit -m x && echo done", "1"),
+    ("git checkout -- src/gate.py", "?? .venv-eval"),
+    ("git merge 9edfdbf1 master", "fatal: Not a valid object name 9edfdbf1"),
+    ("rmx focus note 'git init later'; ls", "Usage: rmx install-hooks [OPTIONS]"),
+    ("grep -rn 'git commit' src | head", "gmd lint: 1 files, 1 GMD docs, 0 errors, 8 warnings"),
+    ("echo \"git push origin master\"", "git push origin master"),
+    ("git pull", "Already up to date."),
+]
+
+
+@pytest.mark.parametrize("cmd,stdout", JUNK)
+def test_non_moving_or_quoted_git_is_not_a_milestone(tmp_path, cmd, stdout):
+    """The six junk lines of bug-318 (and a quoted/grep/echo mention) yield no `git` event:
+    the verb did not run, or it moved no ref."""
+    repo = _repo(tmp_path, BODY, SOURCE)
+    _hook(tmp_path, "tool-pre", repo, cmd)
+    _hook(tmp_path, "tool", repo, cmd, stdout)
+    assert _gits(tmp_path) == []
+
+
+@pytest.mark.parametrize("verb,run", [
+    ("commit", "git add -A && git commit -q -m 'feat: real subject'"),
+    ("tag", "git tag -a v1 -m rel"),
+])
+def test_a_ref_moving_git_verb_in_a_compound_command_records_its_subject(
+        tmp_path, verb, run):
+    """`cd repo && <verb>; echo 0 errors`: ONE event, `<verb> <short-sha> <subject>` read
+    from git, with none of the command's output in it."""
+    repo = _repo(tmp_path, BODY, SOURCE)
+    (repo / "src" / "gate.py").write_text(SOURCE + "# more\n")
+    cmd = f"cd {repo} && {run}; echo '0 errors'"
+    _hook(tmp_path, "tool-pre", repo, cmd)
+    subprocess.run(["bash", "-c", run], cwd=repo, check=True, capture_output=True)
+    _hook(tmp_path, "tool", repo, cmd, "0 errors\n[master abc1234] bogus\n 9 files changed")
+    rows = _gits(tmp_path)
+    assert len(rows) == 1, rows
+    assert rows[0]["terse"].startswith(f"{verb} "), rows[0]["terse"]
+    assert rows[0]["terse"] == f"{verb} {_head(repo)}", rows[0]["terse"]
+    assert "errors" not in rows[0]["terse"] and "bogus" not in rows[0]["terse"]
