@@ -463,3 +463,112 @@ Script `cand8_activity_mode.py`, run 2026-11-25 on fresh copies (deleted after);
 
 Could not measure: the 2026-11-13 pilot's labels (not on disk); the `agent` category (the STM
 ring records no `Agent`/`SendMessage` call); session clustering (4 held-out sessions). {#c8-not-measured}
+
+## M5: the popularity prior {#m5}
+
+Brief [[agent-brief-m5-popularity-prior]] (Q89 = a, L254). In M4 the popularity control beat
+every recall candidate ([[#popularity]]); M5 measures it as a pre-registered candidate.
+
+rel: implements -> [[agent-brief-m5-popularity-prior]]
+rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
+
+### Pre-registration {#m5-prereg}
+
+Written before any M5 result was computed; committed alone. Known before writing: M4's results,
+the record shapes, and that `scan_prompt` delivers a median 21.5 items a query (IQR 10-30),
+each with a `bytes` value. {#m5-prereg-note}
+
+- **Data.** Fresh `cp -c` copies of `recall-events.jsonl`, the STM rings, the transcripts with
+  `subagents/`, the memory dir; deleted after the run. One project (refmatrix): "per project" is
+  this store only; no second project is measured.
+- **Joins and split.** M4's `m4_common.py` and `build_units` unchanged (thread, file key, touch,
+  window, new-touch gold, [[#defs]]). T* is fixed at M4's C1 value, 2026-11-15 03:13:18 UTC;
+  held-out = units at or after it, through the copy time.
+- **Units.** `scan_prompt` query units. Q1 gold: new-touch golds the unit's own `scan_prompt`
+  query did not retrieve. Q2 gold: all new-touch golds in the window.
+- **The prior.** `P_W(t)` = keys ranked by the number of new touches (a key's first touch by a
+  thread within that thread's previous 200 calls; main loop and subagents) in the W days strictly
+  before t; W ∈ {3, 7, 14}. Ties by key. W* is chosen on train units (best reach@10, ties to the
+  smaller W) and reported on held-out with the other two W beside it. M4's fixed list (train
+  missed golds before T*) is reported as the reference.
+- **Controls.** *Chance*: k keys drawn uniformly from the keys newly touched in the W* days before
+  t (`random.Random("m5")`); *time placebo*: `P_W*` computed at the time of a random held-out unit
+  from another session (`random.Random("m5-time")`).
+
+{#m5-prereg-defs}
+
+#### Q1: reach of what scan-prompt missed {#m5-q1}
+
+Metric: reach@10 of missed golds (k ∈ {5, 10, 20} reported); lift = reach@10(P_W*) −
+reach@10(chance), paired bootstrap over units (2,000, seed `m5`). Recency value = reach@10(P_W*) −
+reach@10(time placebo). Bands: fewer than 30 held-out units → measure more; lift ≥ 10 pp with
+lower bound ≥ 5 pp → **pass** to Q2; lift < 3 pp or upper bound < 5 pp → **drop** (Q2 not
+banded); else measure more. Recency: value ≥ 3 pp with lower bound > 0 → a windowed prior; else a
+static list serves as well (the action says which). {#m5-q1-bands}
+
+#### Q2: blend beside scan-prompt {#m5-q2}
+
+Primary blend, at the query's own budget: with n = the items `scan_prompt` delivered, keep its
+top n − ⌈n/4⌉ by rank and add the prior's top ⌈n/4⌉ keys not already among them. Secondary: the
+8-slot form (its top 6 + the prior's top 2). Metric: Δ = reach(blend) − reach(scan-prompt's n
+items alone) on all new-touch golds, paired bootstrap over units. Cost: payload bytes (each prior
+item costs the median `bytes` of delivered code/doc item lines; dropped items give back their own
+`bytes`), and false reach (the share of the list's keyed items not touched in the window).
+Bands (only if Q1 passes): fewer than 30 held-out units → measure more; Δ ≥ 5 pp, lower bound ≥ 2
+pp, false reach no worse than scan-prompt alone + 5 pp, payload change ≤ +25% → **build** the
+blend; Δ < 2 pp or upper bound < 3 pp → **drop**; else measure more. {#m5-q2-bands}
+
+#### Q3: stability and already held {#m5-q3}
+
+Day-to-day: Jaccard of `P_W*` top-10 at each held-out day's 00:00 UTC with the previous day's.
+Already held: per held-out unit, the share of `P_W*`'s top ⌈n/4⌉ the session had already touched
+(any thread) before the query; also the share delivered earlier in the session by any channel.
+Bands on the mean already-held share (touched or delivered): ≥ 50% → the prior must be deduped
+against the session before delivery; 15-50% → dedupe re-deliveries only; < 15% → no dedupe. {#m5-q3-bands}
+
+#### Q4: who it serves {#m5-q4}
+
+Q1 lift and Q2 Δ split by M4's three activity modes (the ring window at the query; modes re-fitted
+by `cand8_activity_mode.py`'s exact procedure on the new copies, centroids reported to compare with
+M4's) and by the gold's kind (code, doc, ruling, bug row, memory). A stratum is **served** when its
+lift's lower bound > 0 and **not served** when its upper bound < 3 pp; else undetermined. If Q2
+builds and only some modes are served, the action gates the prior to those modes. {#m5-q4-bands}
+
+Volume: held-out-style units a week over 2026-11-11 → 11-25. {#m5-volume}
+
+### Results {#m5-results}
+
+Script `m5_popularity_prior.py`, run 2026-11-25 on fresh copies (deleted after); output in
+`run-output-m5-2026-11-25.txt`. Pre-registration `f96cebc5`. 809 `scan_prompt` units, 10,285
+new-touch events. One prior item costs 55 bytes (median train code/doc item line). The held-out
+units come from 4 sessions, so no session-cluster interval. {#m5-results-note}
+
+| Q | metric (held-out) | result, 95% interval | band | action |
+|---|---|---|---|---|
+| 1 | reach@10 of golds scan-prompt missed, n = 126 | `P_7` (W* = 7 on train) 0.135 [0.086, 0.205] vs chance 0.016: **lift +11.9 pp [+5.6, +18.3]**; recency value vs time placebo **+0.8 pp [−3.2, +4.8]**; vs M4's fixed list −0.8 pp [−7.9, +6.3] | pass | go to Q2; a static list serves as well as a windowed one |
+| 2 | reach of all new-touch golds, blend at 25% of scan-prompt's own budget vs scan-prompt alone, n = 130 | 0.138 vs 0.085: **Δ +5.4 pp [+1.5, +10.0]**; false reach 0.957 vs 0.974; payload −3.5% (median) | measure more (lower bound 1.5 < 2 pp) | do not build yet; re-measure on more held-out sessions |
+| 3 | mean share of the prior's added items the session already held | touched or delivered **0.926 [0.894, 0.955]** (touched 0.913, delivered earlier 0.497); top-10 day-to-day Jaccard 0.814 (min 0.429) | ≥ 50%: dedupe required | any build dedupes against the session |
+| 4 | Q1 lift and Q2 Δ by mode and gold kind | served: the non-tool-heavy mode (Q1 +15.7 pp [+4.3, +25.7], n 70; Q2 +11.1 pp [+4.2, +18.1], n 72) and code golds (Q1 +19.7 pp [+9.9, +31.0], n 71). Not served: doc golds (0 of 62) and memory golds (0 of 11); in Q2 the read/search mode (+0.0 [+0.0, +0.0]) and the bash-heavy mode (−3.1 [−9.4, +0.0]) | — | if built, gate to the non-tool-heavy mode and to code items |
+
+{#m5-table}
+
+- **Q1 by W** (held-out reach@10): 3 days 0.103, 7 days 0.135, 14 days 0.151; @20 0.175 / 0.230 /
+  0.222. False reach@10 0.938.
+- **Q2 8-slot form** (top 6 + prior 2 vs top 8): 0.077 vs 0.054, Δ +2.3 pp [+0.0, +5.4].
+- **Dedupe, post hoc** (not pre-registered; added once Q3 read ≥ 50%): the own-budget blend with
+  the prior's items deduped against the session also reaches 18 of 130; 4 units are lost and 4
+  gained, so the dedupe Q3 requires costs nothing in reach here.
+- **Modes** were re-fitted by candidate 8's procedure on the new copies: k = 3, silhouette 0.267,
+  the same three centroids as M4 within 0.02 per share, with the labels permuted (here mode 0
+  read/search, mode 1 bash-heavy, mode 2 non-tool-heavy). Q1 in the read/search (n 30) and
+  bash-heavy (n 26) modes: +6.7 and +7.7 pp, lower bounds 0.0: undetermined. Rulings and bug rows:
+  2 units each, not read.
+- **Volume:** 109.5 `scan_prompt` units with a missed new-touch gold a week.
+
+{#m5-results-list}
+
+**Not measured:** a second project ("per project" is refmatrix only); use (golds are touches,
+proximity); bytes of what the prior would really render (one item line is assumed per item);
+session-clustered intervals (4 held-out sessions). The time placebo and the fixed list tie the
+windowed prior, so what the prior captures is which files are touched across sessions, not what
+changed in the last days; the hub files behind it were not broken out. {#m5-not-measured}

@@ -1,0 +1,38 @@
+scan_prompt units 809; new-touch events 10285; units with a delivered list 809
+cost of one prior item (median bytes of train code/doc item lines) 55
+
+== Q1 train units 192, held-out 126; train reach@10 by W {3: 0.135, 7: 0.141, 14: 0.141} -> W*=7
+Q1 P3: @5 6/126=0.048[0.022,0.100] @10 13/126=0.103[0.061,0.169] @20 22/126=0.175[0.118,0.250]
+Q1 P7: @5 8/126=0.063[0.033,0.120] @10 17/126=0.135[0.086,0.205] @20 29/126=0.230[0.165,0.311]
+Q1 P14: @5 11/126=0.087[0.049,0.150] @10 19/126=0.151[0.099,0.224] @20 28/126=0.222[0.158,0.302]
+Q1 chance@10 2/126=0.016[0.004,0.056]; time placebo@10 16/126=0.127[0.080,0.196]; M4 fixed list@10 18/126=0.143[0.092,0.215]; FR@10 0.938
+Q1 LIFT vs chance +11.9pp [+5.6,+18.3]; recency value (vs time placebo) +0.8pp [-3.2,+4.8]; vs M4 fixed list -0.8pp [-7.9,+6.3]; sessions 4
+
+== Q2 held-out units with a list and a new-touch gold 130
+Q2 own: alone 11/130=0.085[0.048,0.145] blend 18/130=0.138[0.089,0.208] | Δ +5.4pp [+1.5,+10.0] | FR alone 0.974 blend 0.957 | payload change median -3.5% mean -3.2%
+Q2 8slot: alone 7/130=0.054[0.026,0.107] blend 10/130=0.077[0.042,0.136] | Δ +2.3pp [+0.0,+5.4] | FR alone 0.973 blend 0.954 | payload change median -3.6% mean -3.4%
+Q2 own, prior deduped against the session (post hoc): blend 18/130=0.138[0.089,0.208] | Δ +5.4pp [+1.5,+10.0]; of the units the undeduped blend newly reached, reached only by already-held items: 5/8
+
+== Q3 day-to-day Jaccard of top-10 over 7 held-out days: mean 0.814, min 0.429, max 1.000
+Q3 already held (touched): mean 0.913 [0.875,0.945] over 130 units
+Q3 already held (delivered earlier): mean 0.497 [0.461,0.532] over 130 units
+Q3 already held (either): mean 0.926 [0.894,0.955] over 130 units
+modes re-fitted: k=3 silhouette 0.267
+  mode 0: read=0.35 search=0.24 edit=0.05 bash=0.23 test=0.04 other=0.09
+  mode 1: read=0.15 search=0.09 edit=0.05 bash=0.55 test=0.05 other=0.12
+  mode 2: read=0.13 search=0.09 edit=0.05 bash=0.28 test=0.07 other=0.38
+
+== Q4 strata
+Q1 mode 0: n=30 reach 2/30=0.067[0.018,0.213] lift vs chance +6.7pp [+0.0,+16.7]
+Q1 mode 1: n=26 reach 2/26=0.077[0.021,0.241] lift vs chance +7.7pp [+0.0,+19.2]
+Q1 mode 2: n=70 reach 13/70=0.186[0.112,0.292] lift vs chance +15.7pp [+4.3,+25.7]
+Q2 mode 0: n=32 Δ -3.1pp [-9.4,+0.0]
+Q2 mode 1: n=26 Δ +0.0pp [+0.0,+0.0]
+Q2 mode 2: n=72 Δ +11.1pp [+4.2,+18.1]
+Q1 kind code: n=71 reach 15/71=0.211[0.132,0.320] lift vs chance +19.7pp [+9.9,+31.0]
+Q1 kind doc: n=62 reach 0/62=0.000[-0.000,0.058] lift vs chance +0.0pp [+0.0,+0.0]
+Q1 kind ruling: n=2
+Q1 kind bug row: n=2
+Q1 kind memory: n=11 reach 0/11=0.000[0.000,0.259] lift vs chance +0.0pp [+0.0,+0.0]
+
+volume: 109.5 scan_prompt units with a missed new-touch gold/week
