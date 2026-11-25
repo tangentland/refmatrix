@@ -177,3 +177,90 @@ def test_repo_instruction_artifacts_match_their_render():
         f"the packaged agent gmd-curator.md is not classed in the report:\n{report}")
     assert [ln for ln in report.splitlines() if "bug-registry.md" in ln and "local" in ln], (
         f"this repo's own rule .claude/rules/bug-registry.md is not listed as local:\n{report}")
+
+
+# ---- H1.a AC-2: this checkout's agents and commands are the packaged ones (bug-319) --------
+#
+# `rmx init` installs refmatrix/templates/{agents,commands}/*.md; this repo is one more project
+# that installed them, so each `.claude/` file with a packaged name equals what the installer
+# writes, byte for byte. At 8c4c9eb3 the template's gmd-curator.md lacked the GMD frontmatter,
+# the MCP tools, the overlay and the raw-`git` sections this repo's copy had, and cat-herder
+# shipped a third, pre-task-3.7 copy (bug-319, task-H1.a AC-2). The ONE allowed difference is the
+# frontmatter `id:` line: an installed GMD doc carries its project's id (`refmatrix/gmd-curator`).
+# The comparison needs no hooks and no home, so it runs in any checkout (a clone included).
+
+def _without_frontmatter_id(text: str) -> str:
+    """`text` with the `id:` line of its leading frontmatter block removed (nothing else)."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\n") != "---":
+        return text
+    for i in range(1, len(lines)):
+        if lines[i].rstrip("\n") == "---":
+            break
+        if lines[i].startswith("id: "):
+            return "".join(lines[:i] + lines[i + 1:])
+    return text
+
+
+def installed_template_drift(checkout: Path,
+                             tmp_path: Path) -> "tuple[list[str], list[str]]":
+    """(drift, written): one drift line per `<checkout>/.claude/{agents,commands}/<name>` that
+    differs from what `install_agents` + `install_commands` write for <name>, the frontmatter
+    `id:` line excepted.
+    `written` names every file the installer wrote (`agents/x.md`, `commands/y.md`). It writes
+    into a fresh tmp project and a tmp user dir; `checkout` is only read."""
+    from refmatrix.init_agents import install_agents, install_commands
+    proj = tmp_path / "fresh"
+    user = tmp_path / "user-commands"
+    install_agents(proj, force=True)
+    install_commands(proj, force=True, user_dir=user, backup_dir=tmp_path / "backups")
+    written = {f"agents/{p.name}": p for p in (proj / ".claude" / "agents").glob("*.md")}
+    written |= {f"commands/{p.name}": p for p in (proj / ".claude" / "commands").glob("*.md")}
+    written |= {f"commands/{p.name}": p for p in user.glob("*.md")}
+    drift = []
+    for rel, packaged in sorted(written.items()):
+        mine = checkout / ".claude" / rel
+        if not mine.is_file():
+            continue
+        want = _without_frontmatter_id(packaged.read_text(encoding="utf-8"))
+        have = _without_frontmatter_id(mine.read_text(encoding="utf-8"))
+        if have != want:
+            pairs = zip(have.splitlines() + [None], want.splitlines() + [None])
+            first = next((i for i, (a, b) in enumerate(pairs, 1) if a != b),
+                         "end (line endings)")
+            drift.append(f".claude/{rel} differs from the packaged copy (first at line {first})")
+    return drift, sorted(written)
+
+
+def test_installed_agents_and_commands_equal_the_packaged_templates(tmp_path):
+    drift, written = installed_template_drift(REPO, tmp_path)
+    # the installer really wrote the nine files H1.a reconciles; an empty install passes nothing
+    assert {"agents/gmd-curator.md", "commands/commit-state.md", "commands/save-state.md",
+            "commands/recall-state.md"} <= set(written), written
+    assert (REPO / ".claude" / "agents" / "gmd-curator.md").is_file()
+    assert not drift, ("installed copies drifted from src/refmatrix/templates/ — edit the "
+                       "template, then reinstall it here:\n" + "\n".join(drift))
+
+
+@pytest.mark.parametrize("rel", ["agents/gmd-curator.md", "commands/commit-state.md"])
+def test_installed_template_drift_fails_on_a_planted_one_line_edit(tmp_path, rel):
+    """AC-2's must-fail case: a checkout whose copy equals the package except ONE body line
+    is reported, and an `id:` line that differs is not (the one allowed difference)."""
+    from importlib import resources
+    kind, name = rel.split("/")
+    text = (resources.files(f"refmatrix.templates.{kind}") / name).read_text(encoding="utf-8")
+    checkout = tmp_path / "checkout"
+    (checkout / ".claude" / kind).mkdir(parents=True)
+    target = checkout / ".claude" / rel
+    lines = text.splitlines(keepends=True)
+    if lines[0] == "---\n" and not any(ln.startswith("id: ") for ln in lines[1:8]):
+        lines.insert(1, "id: some-project/x\n")      # a project's id never counts as drift
+    else:
+        lines = [("id: some-project/x\n" if ln.startswith("id: ") else ln) for ln in lines]
+    target.write_text("".join(lines), encoding="utf-8")
+    assert installed_template_drift(checkout, tmp_path / "a")[0] == [], "the id line counted"
+    body = len(lines) - 3
+    lines[body] = lines[body].rstrip("\n") + " (edited)\n"
+    target.write_text("".join(lines), encoding="utf-8")
+    drift = installed_template_drift(checkout, tmp_path / "b")[0]
+    assert len(drift) == 1 and drift[0].startswith(f".claude/{rel} differs"), drift

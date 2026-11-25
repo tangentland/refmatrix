@@ -1,6 +1,10 @@
 ---
 description: Recall state — orient on the prior session before doing anything
+argument-hint: "[optional focus hint]"
+model: inherit
 ---
+
+# Recall State
 
 "Recall state" is a resume directive: load the prior session's handoff and
 orient before taking any other action. The mirror of "save state." Do every
