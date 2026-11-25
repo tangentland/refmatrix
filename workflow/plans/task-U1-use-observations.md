@@ -49,6 +49,13 @@ happened. It changes no ranking and writes no weight. {#goal-body}
   retrieved the item (scan-prompt) or passed the prompt gate (prompt recall); `cue_n`, how
   many there were; `path`. No prompt text, term text or hash of a single term is stored; a
   term with no concept is counted in `cue_n` and dropped. {#d2}
+- **D2b The activity mode, as counts** (Q87 = a, L253). Each row also carries `mode`: the
+  counts of tool types over the session's last 20 ring events before the call, in fixed
+  buckets (`read`, `search` (Grep, Glob, `rmx context`/`grep`, MCP reads), `edit` (Edit,
+  Write, MultiEdit, NotebookEdit), `bash`, `test` (a Bash command the test-to-file hook
+  classes as a test), `agent` (Agent, SendMessage), `other`) and `mode_n`, the events read.
+  Read from the ring tail the hook already opens; no text, no path, no classification at
+  hook time: clustering is M4's and the report's. {#d2b}
 - **D3 A held-out arm, on the two prompt channels only.** A new stage, `held_out`: the item
   was retrieved, ranked and fitted into the budget, then left out of the payload. Nothing
   takes its place. Delivered and held-out rows of a hook-invoked `scan_prompt` or
@@ -120,6 +127,11 @@ new feature, one new file, `tests/test_use_observations.py`. {#acceptance-lead}
 - **AC-7 The cue is ids, capped, and holds no text.** A prompt with 40 gate terms, 5 of them
   unknown to the store: `cue` has at most 16 ids, `cue_n` is 40, and no term of the prompt
   appears anywhere in the event file. `…::test_cue_is_bounded_and_textless[channel]`. {#ac-7}
+- **AC-7b The mode is counts only.** A fixture session whose ring tail holds 5 Reads, 3
+  Edits, 2 test runs and 1 Agent call: the next delivered and held-out rows carry those
+  counts in their buckets and `mode_n` 11; with an empty ring, every bucket is 0 and
+  `mode_n` is 0; no path or command text appears in the event file.
+  `…::test_mode_is_textless_counts[channel]`. {#ac-7b}
 - **AC-8 The schema's readers do not move.** `v` is 1; `row_provenance` classes a `held_out`
   row `attributed`; `rmx telemetry --agent-usage` prints the same counts with and without
   `held_out` rows in the file. `tests/test_task21_1_emitters.py`,
@@ -156,6 +168,7 @@ new feature, one new file, `tests/test_use_observations.py`. {#acceptance-lead}
 | M2 | a `feedback` memory is eligible | AC-2 |
 | M3 | a term concept is eligible | AC-2 |
 | M4 | an item is withheld and its `held_out` row is not written | AC-2 |
+| M4b | `mode` counts the whole ring, not its last 20 events (or drops the `test` bucket) | AC-7b |
 | M5 | the hash is keyed on the call, not the session | AC-3 |
 | M6 | the next-ranked item fills the freed budget | AC-4 |
 | M7 | the arm runs with telemetry off | AC-5 |

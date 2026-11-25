@@ -36,6 +36,15 @@ user chose to measure seven candidates on the logs already on disk before buildi
 7. **Read depth** (cue → anchor): Read offset/limit on large docs: how concentrated are reads on
    a few anchors, and would anchor-level delivery cut payload bytes without losing the read?
 
+8. **Activity mode** (Q87 = a, L253): cluster tool-mix windows (counts of read / search / edit /
+   bash / test / agent / other over the last 20 ring events) from copies of the STM rings, with
+   subagent `agent_type` as free labels for what a pure mode looks like. The test is not that
+   clusters exist but that **the use rate of item kinds (code, doc, memory, ruling, bug row)
+   differs by mode**: on the 2026-11-13 labelled pilot and on `recall-events.jsonl` joined to
+   later touches. Report the interaction with its interval, and the lag (events after a mode
+   switch before the window reads it). Pre-register its bands like the others, in a second
+   pre-registration commit before reading any candidate-8 result.
+
 {#candidates-list}
 
 ## Method {#method}
