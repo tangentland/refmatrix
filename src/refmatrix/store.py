@@ -2302,6 +2302,7 @@ class Store:
         tags: list[str] | None = None,
         metadata: dict | None = None,
         protected: bool = False,
+        updated_at: "float | None" = None,
     ) -> int:
         """Upsert a memory entity + its memory_content sidecar in one shot.
 
@@ -2313,9 +2314,63 @@ class Store:
         When content/mtype/tags actually change, entities.updated_at is
         ratcheted too so `pending_embeddings` re-queues the row. A re-upsert
         that only rewrites metadata is a no-op for the embedding clock.
+
+        `updated_at` is the content's AUTHORING time (23.1 R11.3 item 1, built by
+        task-hook-writes-queue, L212, 2026-11-24). `None` -- every caller before it: the
+        bridge, `memory add`, MCP, `upsert_subject` -- is the old behaviour exactly. Given,
+        the write is skipped (nothing written, no event, the existing id returned) when the
+        stored `memory_content.updated_at` is at least as new; otherwise the row is stored
+        with it (`created_at` too on an INSERT). Why: since bug-309 the Stop hook's digest
+        can reach the store twice -- its timed-out dial lands when the writer frees AND its
+        queued entry is drained -- and a queued entry can be applied after a newer
+        synchronous promote. Ordering every writer by authoring time, in this one place,
+        makes either order end in the newest content and ONE `memory_content` event.
+        `add_memory_checked` is the same write reporting whether it happened.
         """
+        return self.add_memory_checked(
+            name=name, content=content, mtype=mtype, tags=tags, metadata=metadata,
+            protected=protected, updated_at=updated_at)[0]
+
+    def add_memory_checked(
+        self,
+        name: str,
+        content: str,
+        mtype: str = "observation",
+        tags: list[str] | None = None,
+        metadata: dict | None = None,
+        protected: bool = False,
+        updated_at: "float | None" = None,
+    ) -> "tuple[int, bool]":
+        """`add_memory`, returning `(entity id, written)`. `written` is False only when the
+        authoring-time guard skipped the write (`updated_at` given and the stored row is at
+        least as new). The hook-writes drain needs the outcome to count `superseded`
+        (task-hook-writes-queue D2, 2026-11-24); the guard itself lives only here, so the
+        drain and the daemon's `memory_add` op obey the same rule."""
+        if updated_at is not None:
+            authored = float(updated_at)
+            con = self._connect()
+            held = con.execute(
+                "SELECT e.id, mc.updated_at FROM entities e "
+                "JOIN memory_content mc ON mc.entity_id = e.id "
+                "WHERE e.partition_id=? AND e.kind='memory' AND e.name=?",
+                (self.partition_id, name),
+            ).fetchone()
+            # Live writes skip a TIE: the timed-out dial and its queued entry carry one
+            # authoring time, and the second to land must be a no-op (one row, one event).
+            # Replay applies a tie in log order: a log only holds writes that happened (a
+            # skipped live write logs nothing), so an equal-time later event is a later state
+            # -- 26.2's path-refresh event keeps the row's `updated_at` and must still apply.
+            # The same rule as `newest_by_ts` and the rebuild's winner: a tie goes to the
+            # later line.
+            if held is not None and held[1] is not None and (
+                    float(held[1]) > authored if self._replay_mode
+                    else float(held[1]) >= authored):
+                return int(held[0]), False
         eid = self.upsert_entity(kind="memory", name=name, protected=protected)
+        # `entities.updated_at` (the embedding clock below) keeps the wall time; only the
+        # sidecar carries the authoring time.
         now = time.time()
+        stamp = now if updated_at is None else float(updated_at)
         tags_json = json.dumps(tags) if tags else None
         meta_json = json.dumps(metadata) if metadata else None
         con = self._connect()
@@ -2347,7 +2402,7 @@ class Store:
                 metadata   = excluded.metadata,
                 updated_at = excluded.updated_at
             """,
-            (eid, content, mtype, tags_json, meta_json, now, now),
+            (eid, content, mtype, tags_json, meta_json, stamp, stamp),
         )
         if embed_changed:
             con.execute(
@@ -2363,11 +2418,15 @@ class Store:
         # sidecar content was previously unlogged — so log-replay / catch-up /
         # `rebuild --from-log` reconstructed memory entities WITHOUT bodies.
         # Replayed by `_apply_one_event` + `rebuild_index_from_log`.
+        # `updated_at` rides in the event (R11.3 (a)): replay restores the authoring time,
+        # not the replay's wall time, so an entry queued before a `rebuild --from-log`
+        # still compares newer than the rebuilt row.
         self._log_event(
             "memory_content", kind="memory", name=name,
             content=content, mtype=mtype, tags=tags, metadata=metadata,
+            updated_at=stamp,
         )
-        return eid
+        return eid, True
 
     def refresh_memory_source_path(self, eids: "list[int]", source_path: str) -> int:
         """Point `memory_content.metadata.source_path` of each row in `eids` at
@@ -2918,6 +2977,7 @@ class Store:
                     "memory_content", kind="memory", name=name,
                     content=m["content"] or "", mtype=to_mtype,
                     tags=m["tags"] or None, metadata=m["metadata"] or None,
+                    updated_at=now,
                 )
         return {"matched": len(matched), "changed": len(matched),
                 "names": [n for _, n in matched], "dry_run": False}
@@ -2954,7 +3014,7 @@ class Store:
         self._log_event(
             "memory_content", kind="memory", name=m["name"],
             content=m["content"] or "", mtype=m["mtype"] or "observation",
-            tags=new, metadata=m["metadata"] or None,
+            tags=new, metadata=m["metadata"] or None, updated_at=now,
         )
         return new
 
@@ -8278,6 +8338,9 @@ class Store:
                         "mtype": row["mtype"] or "observation",
                         "tags": json.loads(row["tags"]) if row["tags"] else None,
                         "metadata": json.loads(row["metadata"]) if row["metadata"] else None,
+                        # The authoring time, as the docstring promises (R11.3 (a)): a
+                        # compacted log must restore it on replay, not the replay's clock.
+                        "updated_at": row["ts"],
                     })
                     counts["memory_content"] += 1
 
@@ -8539,12 +8602,16 @@ class Store:
             if op == "memory_content":
                 # add_memory upserts the entity (idempotent — the prior
                 # `entity` event already created it) and (re)writes the body.
+                # `updated_at` (R11.3 (b)): the event's authoring time, so the guard in
+                # `add_memory` orders an older event appended later (a held dial that
+                # landed late) below the newer content. A legacy event passes None.
                 self.add_memory(
                     name=ev["name"],
                     content=ev.get("content", ""),
                     mtype=ev.get("mtype", "observation"),
                     tags=ev.get("tags"),
                     metadata=ev.get("metadata"),
+                    updated_at=ev.get("updated_at"),
                 )
                 return True
             if op == "track":
@@ -8634,7 +8701,7 @@ class Store:
         # bug-216 R13: pending rows by identity, folded in log order.
         pending_state: dict[tuple, dict] = {}
         # Memory bodies, LWW by (partition, entity name).
-        memory_content_lww: dict[tuple[str, str], tuple[float, dict]] = {}
+        memory_content_lww: dict[tuple[str, str], tuple[tuple, dict]] = {}
         # Linkage types referenced anywhere in the log (partition-independent).
         # Pre-2.0 logs don't carry `linkage_type` events, so we also derive the
         # set from link/unlink/evidence events and register the missing ones
@@ -8726,10 +8793,18 @@ class Store:
                 if prev is None or ts > prev[0]:
                     track_state[key] = (ts, "untrack", None)
             elif op == "memory_content":
+                # Ordered by the AUTHORING time when the event carries it (R11.3 (c),
+                # task-hook-writes-queue, 2026-11-24): a later-appended event with an older
+                # `updated_at` must not win. Legacy events keep the append `ts` ordering.
                 key = (part, ev["name"])
+                # A tie on the authoring time goes to the later append (`ts`): 26.2's
+                # path-refresh event keeps the row's `updated_at` and must win over the write
+                # it refreshes.
+                order = ev.get("updated_at")
+                order = (ts if order is None else float(order), ts)
                 prev = memory_content_lww.get(key)
-                if prev is None or ts > prev[0]:
-                    memory_content_lww[key] = (ts, ev)
+                if prev is None or order > prev[0]:
+                    memory_content_lww[key] = (order, ev)
 
         # Pass 2b (bug-117): a legacy edge event names its concept end by NAME only. Resolve it
         # with the one legacy rule (`edge_records.resolve_legacy_kind`) over every kind that name
@@ -8893,6 +8968,7 @@ class Store:
                             mtype=ev.get("mtype", "observation"),
                             tags=ev.get("tags"),
                             metadata=ev.get("metadata"),
+                            updated_at=ev.get("updated_at"),
                         )
                         counts["memory_content"] += 1
         finally:

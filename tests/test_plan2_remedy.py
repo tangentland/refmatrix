@@ -91,46 +91,146 @@ def test_check_covers_the_search_scripts(tmp_path, monkeypatch):
     assert not ok and search_hooks.GUARD_NAME in diff
 
 
-def test_focus_summarize_promote_refuses_without_daemon(tmp_path, monkeypatch):
-    """Stop runs `focus summarize --promote` every turn; with the daemon down
-    it must refuse loudly, not open the active slot from a CLI process."""
-    from refmatrix import cli as cli_mod
-    from refmatrix import daemon as daemon_mod
+def _hwq_session(root: Path, prefix: str, *, subject: "str | None" = None):
+    """An STM session with one input event (and an active subject) on `root`; returns
+    (session, digest name) as `focus summarize --promote` derives the name."""
+    import re as _re
+    import uuid as _uuid
     from refmatrix import stm as stm_mod
-    root = tmp_path / ".refmatrix"; root.mkdir()
-    monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    monkeypatch.setenv("RMX_SESSION", "s1")
-    stm_mod.Stm(root, "s1").record("input", "hi")
-    monkeypatch.setattr(daemon_mod, "ping", lambda r, **kw: False)
-    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote"])
-    assert r.exit_code != 0
-    assert "daemon" in r.output.lower()
+    sess = f"{prefix}{_uuid.uuid4().hex[:6]}"
+    s = stm_mod.Stm(root, sess)
+    s.record("input", "turn-end promote under a held writer")
+    if subject:
+        s.set_subject(subject)
+    return sess, "focus_summary_" + (_re.sub(r"[^A-Za-z0-9]+", "", sess)[:12] or "default")
+
+
+def _stop_promote_cmd(root: Path, seconds: float) -> str:
+    """The GENERATED Stop-hook promote with a test-sized budget (`tests.timing.with_budget`
+    raises unless the command carries exactly one `--timeout`: the bound stays pinned)."""
+    from tests.task21_1_support import generated_cmd
+    from tests.timing import with_budget
+    return with_budget(generated_cmd(root, "Stop", "focus summarize --promote"), seconds)
+
+
+def test_focus_summarize_promote_refuses_without_daemon():
+    """Stop runs `focus summarize --promote` every turn; with the daemon down
+    it must refuse loudly, not open the active slot from a CLI process.
+
+    task-hook-writes-queue AC-5 (L212, 2026-11-24): graduated from a patched `daemon.ping` to
+    NO daemon at all, through the generated Stop command. An absent daemon will not drain a
+    queue and constitution VII forbids the hook's Store open, so `_write_or_local(local=None)`
+    raises absent: today's refusal, exit 1, and NO spool entry. A GUARD: it passes at the base
+    by design. Mutation: an entry appended before the absent check (or `local=None` falling
+    back to a Store) fails it."""
+    from tests.held_writer import flat, spool_dir
+    from tests.task21_1_support import run_hook
+    root = Path(_os.environ["REFMATRIX_ROOT"])
+    sess, _name = _hwq_session(root, "hwqac5")
+    r = run_hook(_stop_promote_cmd(root, 3), root=root,
+                 envelope={"session_id": sess, "hook_event_name": "Stop"}, RMX_SESSION=sess)
+    out = flat(r.stdout + r.stderr)
+    assert r.returncode == 1, out
+    assert "daemon not running for" in out and "rmx daemon start" in out, out
+    assert "queued" not in out, out
+    sp = spool_dir(root)
+    assert not sp.exists() or not any(sp.iterdir()), list(sp.rglob("*"))
 
 
 # ---- round 2 (bsd-plan2-r2) ----
 
-def test_stop_promote_is_bounded_and_fails_loud_when_busy(tmp_path, monkeypatch):
-    """Live: the Stop hook's `focus summarize --promote` took 55 s / 15 s / 6 s
-    while the daemon was busy with a bridge + sync (Q4 assumed 0.13 s). The
-    hook path is bounded; a timeout is a loud skip, not a wait."""
-    from refmatrix import cli as cli_mod
-    from refmatrix import daemon as daemon_mod
-    from refmatrix import stm as stm_mod
-    root = tmp_path / ".refmatrix"; root.mkdir()
-    monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    monkeypatch.setenv("RMX_SESSION", "s1")
-    stm_mod.Stm(root, "s1").record("input", "hi")
-    monkeypatch.setattr(daemon_mod, "ping", lambda r, **kw: True)
-    def slow_call(root, op, args=None, timeout=60.0, **kw):
-        raise TimeoutError(f"no answer in {timeout}s")
-    monkeypatch.setattr(daemon_mod, "call", slow_call)
-    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
-    assert r.exit_code != 0
-    assert "busy" in r.output.lower() and "not confirmed" in r.output.lower()
-    # the generator passes the bound on the Stop hook
-    block = _claude_hook_block(tmp_path / ".refmatrix")
-    stop = [c for _, _, c in _cmds(block, "Stop") if "focus summarize --promote" in c][0]
-    assert "--timeout" in stop
+# `test_stop_promote_is_bounded_and_fails_loud_when_busy` (patched `daemon.call` raising
+# TimeoutError) and `test_promote_timeout_message_says_not_confirmed` were RETIRED by
+# task-hook-writes-queue (L212, 2026-11-24): a busy daemon no longer fails the Stop hook, it
+# queues the digest and exits 0 (D6). Their replacement runs on a REAL daemon whose writer is
+# REALLY held (`test_stop_promote_queues_and_exits_0_while_the_writer_is_held`); the "not
+# confirmed / may still complete" wording itself stays pinned on the classifier
+# (`test_task3_6_r9_remedy.py::test_a_write_timeout_is_not_confirmed_and_may_still_complete`).
+
+
+def test_stop_promote_queues_and_exits_0_while_the_writer_is_held():
+    """task-hook-writes-queue AC-1 (bug-309: 72 of 136 turn-end promotes timed out at 8.04 s
+    on a held writer, each a hook error). With the daemon's REAL `_store_lock` held, the
+    generated Stop command exits 0 WHILE THE WRITER IS STILL HELD (an ordering check, no
+    clock), prints `queued: focus_summary_<slug>` and `QUEUED_WRITE_MSG`, and leaves ONE spool
+    entry: the R11.2 shape, `args.updated_at == ts`, the session's active subject riding in
+    the entry, `origin` "stop-hook" (decided: the Stop hook is this command's only generated
+    caller since PreCompact promotes inside save-state). After the release the daemon's flush
+    tick drains it: the spool is empty, `rmx memory get` shows the digest, it is filed under
+    the subject, and facts.log holds ONE `memory_content` event for it (the timed-out dial
+    lands too; the authoring-time guard skips the second write, AC-4).
+    Mutations: the hook dials with no `queue=` (times out, exit 1); the drain never deletes
+    (spool not empty)."""
+    import json as _json
+    from refmatrix import discovery, verbs
+    from tests.held_writer import HeldWriterDaemon, facts_events, flat, spool_files
+    from tests.task21_1_support import run_hook, run_rmx
+    from tests.timing import wait_for
+    root = Path(_os.environ["REFMATRIX_ROOT"])
+    label = "hwq subject"
+    sess, name = _hwq_session(root, "hwqac1", subject=label)
+    cmd = _stop_promote_cmd(root, 3)
+    with HeldWriterDaemon(root, flush_s=1.0) as hd:
+        hd.hold()
+        r = run_hook(cmd, root=root, envelope={"session_id": sess, "hook_event_name": "Stop"},
+                     RMX_SESSION=sess)
+        out = flat(r.stdout + r.stderr)
+        assert r.returncode == 0, (
+            f"the Stop promote must enqueue and exit 0 on a held writer; rc={r.returncode}: "
+            f"{out}")
+        assert hd.is_held(), "the hook returned only after the writer was released"
+        assert f"queued: {name}" in out, out
+        assert flat(verbs.QUEUED_WRITE_MSG.format(name=name)) in out, out
+        files = spool_files(root)
+        assert len(files) == 1, files
+        e = _json.loads(files[0].read_text(encoding="utf-8"))
+        assert (e["op"], e["name"], e["partition"]) == (
+            "memory_add", name, discovery.resolve_partition(root, cwd=root.parent)), e
+        assert e["subject"] == label and e["origin"] == "stop-hook", e
+        assert e["args"]["name"] == name and e["args"]["updated_at"] == e["ts"], e
+        assert e["args"]["mtype"] == "session/digest", e
+
+        hd.release()
+        wait_for(lambda: not spool_files(root), timeout=30.0,
+                 what="the daemon's flush tick to drain the spool")
+        wait_for(lambda: (lambda p: p.returncode == 0
+                          and f"Session summary — {sess}" in p.stdout)(
+            run_rmx(["memory", "get", name], root=root)), timeout=30.0,
+            what=f"`rmx memory get {name}` to show the digest")
+        wait_for(lambda: (lambda p: p.returncode == 0 and name in p.stdout)(
+            run_rmx(["memory", "recall", "--subject", label, "--json"], root=root)),
+            timeout=30.0, what=f"the digest to be filed under {label!r}")
+        assert hd.proc.poll() is None, hd.stderr_tail()
+    evs = facts_events(root, op="memory_content", name=name)
+    assert len(evs) == 1, f"one authoring time, {len(evs)} memory_content events: {evs}"
+
+
+def test_stop_promote_fails_loud_when_the_enqueue_fails():
+    """task-hook-writes-queue AC-6 / D6: a queue that cannot take the entry is not a queued
+    promote. With the writer held and the spool directory unwritable, the Stop command exits 1
+    naming the cause (the OS error on the spool), prints no `queued:` line and leaves no
+    entry. Nothing on a memory path fails silently."""
+    from tests.held_writer import HeldWriterDaemon, flat, spool_dir, spool_files
+    from tests.task21_1_support import run_hook
+    root = Path(_os.environ["REFMATRIX_ROOT"])
+    sess, _name = _hwq_session(root, "hwqac6")
+    sp = spool_dir(root)
+    sp.mkdir()
+    _os.chmod(sp, 0o500)
+    try:
+        with HeldWriterDaemon(root, flush_s=3600) as hd:
+            hd.hold()
+            r = run_hook(_stop_promote_cmd(root, 3), root=root,
+                         envelope={"session_id": sess, "hook_event_name": "Stop"},
+                         RMX_SESSION=sess)
+    finally:
+        _os.chmod(sp, 0o700)
+    out = flat(r.stdout + r.stderr)
+    assert r.returncode == 1, out
+    assert "Permission denied" in out and "hook_writes.spool" in out, (
+        f"the failed enqueue's cause is not named: {out}")
+    assert "queued:" not in out, out
+    assert not spool_files(root), spool_files(root)
 
 
 def test_promote_refusal_names_a_real_flag(tmp_path, monkeypatch):
@@ -284,51 +384,51 @@ def test_stop_promote_bounds_subject_filing_and_is_loud(tmp_path, monkeypatch):
         raise TimeoutError(f"no answer in {timeout}s")
     monkeypatch.setattr(daemon_mod, "call", call)
     t0 = _time.monotonic()
-    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    # --timeout 2, not 0.5 (task-hook-writes-queue, L212): under R11.4 a budget whose dial
+    # would get less than MIN_DIAL_S after ENQUEUE_RESERVE_S enqueues without dialing, and the
+    # subject filing rides in the entry, so 0.5 would no longer reach the filing leg this
+    # test is about. 2 s leaves the dial ~1 s and the filing what is left.
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "2"])
     assert _time.monotonic() - t0 < 3.0
     assert r.exit_code != 0, r.output
     assert "subject" in r.output.lower() and "not confirmed" in r.output.lower()
     # every call carries the bound (the second gets what is LEFT of it — r4 #m-3)
-    assert seen and all(0 < t <= 0.5 and rt == 0 for _, t, rt in seen), seen
+    assert seen and all(0 < t <= 2.0 and rt == 0 for _, t, rt in seen), seen
     assert [op for op, _, _ in seen] == ["memory_add", "subject_upsert"]
 
 
 def test_stop_promote_says_busy_not_absent_on_a_silent_daemon(silent, monkeypatch):
     """#s-2: a daemon that is alive but not answering is BUSY; the hook must
-    not tell the operator to start one. Real pid + real silent socket."""
+    not tell the operator to start one. Real pid + real silent socket.
+
+    task-hook-writes-queue (L212, 2026-11-24; R11.4 / D6): busy now QUEUES. The probe that
+    answers `busy` enqueues WITHOUT a dial and the command exits 0 with `queued:`; still never
+    "not running" / "daemon start". ONE probe: `focus_summarize` drops its own
+    `discovery.daemon_status` call and `_write_or_local` -> `require_daemon(retries=0)` is the
+    only one (a pass-through spy counts it; mutation: the command keeps its own probe -> 2)."""
     from refmatrix import cli as cli_mod
+    from refmatrix import discovery
     from refmatrix import stm as stm_mod
+    from tests.held_writer import flat, spool_files
     monkeypatch.setattr(cli_mod, "_root", lambda: silent.root)
     monkeypatch.setenv("RMX_SESSION", "s1")
     stm_mod.Stm(silent.root, "s1").record("input", "hi")
+    probes: list = []
+    real_status = discovery.daemon_status
+
+    def _spy(root, **kw):
+        probes.append(kw)
+        return real_status(root, **kw)
+    monkeypatch.setattr(discovery, "daemon_status", _spy)
     t0 = _time.monotonic()
     r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
     elapsed = _time.monotonic() - t0
-    assert r.exit_code != 0
-    assert f"busy pid={silent.pid}" in r.output
+    assert r.exit_code == 0, r.output
+    assert "queued: focus_summary_s1" in flat(r.output), r.output
     assert "not running" not in r.output and "daemon start" not in r.output
-    assert "not confirmed" in r.output
+    assert len(spool_files(silent.root)) == 1, list(silent.root.iterdir())
+    assert len(probes) == 1, f"one probe classifies the daemon; saw {len(probes)}: {probes}"
     assert elapsed < 2.5, elapsed
-
-
-def test_promote_timeout_message_says_not_confirmed(tmp_path, monkeypatch):
-    """#m-6: the daemon may still complete the write; say so."""
-    from refmatrix import cli as cli_mod
-    from refmatrix import daemon as daemon_mod
-    from refmatrix import stm as stm_mod
-    root = tmp_path / ".refmatrix"; root.mkdir()
-    monkeypatch.setattr(cli_mod, "_root", lambda: root)
-    monkeypatch.setenv("RMX_SESSION", "s1")
-    stm_mod.Stm(root, "s1").record("input", "hi")
-    monkeypatch.setattr("refmatrix.discovery.daemon_status",
-                        lambda root, **kw: {"up": True, "busy": False, "pid": 1})
-    def slow(root, op, args=None, timeout=60.0, **kw):
-        raise TimeoutError("x")
-    monkeypatch.setattr(daemon_mod, "call", slow)
-    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
-    assert r.exit_code != 0
-    assert "not confirmed within 0.5s" in r.output and "may still complete" in r.output
-    assert "skipped" not in r.output
 
 
 def test_detach_on_a_silent_daemon_costs_one_probe_plus_the_budget(silent, monkeypatch):
@@ -525,17 +625,28 @@ def test_stop_promote_never_exceeds_its_timeout_across_calls(tmp_path, monkeypat
 
     def call(r, op, args=None, timeout=60.0, retries=2, **kw):
         seen.append((op, timeout))
-        _time.sleep(min(0.4, timeout))
+        _time.sleep(min(0.2, timeout))
         if op == "memory_add":
             return {"ok": True, "result": {"id": 42}}
         return {"ok": True, "result": {"id": 7}}
     monkeypatch.setattr(daemon_mod, "call", call)
     t0 = _time.monotonic()
-    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    # task-hook-writes-queue (L212, R11.4): --timeout 2 (0.5 now enqueues without a dial). The
+    # dial gets `deadline - now - ENQUEUE_RESERVE_S` (1.0), never the whole --timeout, so a
+    # timed-out dial still leaves the reserve to enqueue inside the budget; the filing gets
+    # what is left. Mutation: the dial given the whole --timeout (seen[0] == 2.0).
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "2"])
     elapsed = _time.monotonic() - t0
     assert elapsed < 1.2, elapsed
+    assert r.exit_code == 0, r.output
+    assert seen[0][0] == "memory_add" and 0 < seen[0][1] <= 2.0 - 1.0 + 1e-6, (
+        f"the dial must get deadline - now - ENQUEUE_RESERVE_S (1.0 s), not the whole "
+        f"--timeout: {seen}")
+    from refmatrix import verbs as _verbs
+    assert (getattr(_verbs, "ENQUEUE_RESERVE_S", None),
+            getattr(_verbs, "MIN_DIAL_S", None)) == (1.0, 0.5)
     # the second call got only what was left of the budget
-    assert seen[0][1] == 0.5 and seen[1][1] < 0.5, seen
+    assert seen[1][1] < 2.0 - 0.2, seen
 
 
 def test_subject_filing_refusal_is_not_reported_as_a_timeout(tmp_path, monkeypatch):
@@ -555,7 +666,8 @@ def test_subject_filing_refusal_is_not_reported_as_a_timeout(tmp_path, monkeypat
             return {"ok": True, "result": {"id": 42}}
         return {"ok": False, "error": "boom"}
     monkeypatch.setattr(daemon_mod, "call", call)
-    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "0.5"])
+    # --timeout 2 (task-hook-writes-queue, R11.4): 0.5 now enqueues without a dial.
+    r = CliRunner().invoke(cli_mod.main, ["focus", "summarize", "--promote", "--timeout", "2"])
     assert r.exit_code != 0
     assert "refused" in r.output and "boom" in r.output
     assert "still complete" not in r.output

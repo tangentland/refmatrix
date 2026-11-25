@@ -121,6 +121,31 @@ file is a template bug — promote it into `hooks.py` or delete it (constitution
 
 The full generated list is the README hooks table (`scripts/gen-cli-tree.py`).
 
+### Hook writes enqueue and return {#hook-writes-queue}
+
+The Stop hook's `rmx focus summarize --promote --timeout 8` and the save-state promote never
+wait out a busy writer (task-hook-writes-queue, L212, bug-309: 72 of 136 Stop promotes timed out
+on a held writer). One probe classifies the daemon:
+
+- **up**: one `memory_add` dial, bounded by what is left of the budget minus 1 s;
+- **busy**, or the dial times out: the digest, with the session's active subject, is written to
+  `<store>/hook_writes.spool/` as one durable file. The hook prints `queued: <name>` and
+  `daemon busy: queued <name> for the next drain; it is applied when the writer frees`, and
+  exits 0. `rmx save-state` prints the same note in place of `promoted … (id=…)`. PreCompact
+  prints the note on stderr and does not count it as a deferred commit (L215): the write is
+  durable. Only an enqueue that FAILS is a deferred commit there;
+- **absent**: the Stop hook refuses (exit 1, nothing queued); save-state writes in-process as
+  before. A spool that cannot take the entry exits 1 naming the path and the OS error.
+
+The daemon drains the spool on its flush tick (`RMX_DAEMON_FLUSH_S`, 30 s) and once at boot.
+Entries for one memory coalesce by authoring time, and `Store.add_memory(updated_at=)` skips
+a write older than the stored row, so a timed-out dial that lands later and its queued entry
+write once. An unreadable entry moves to `hook_writes.spool/bad/`. `rmx daemon status` prints a
+`hook_writes:` line when entries are pending or bad; the health surface carries
+`hook_writes_pending` and `hook_writes_bad`.
+
+rel: implements -> [[task-hook-writes-queue]]
+
 ### Compaction and /clear as a handoff {#compaction-handoff}
 
 Compaction behaves like save-state → `/clear` → recall-state (task-compaction-as-handoff, L195;

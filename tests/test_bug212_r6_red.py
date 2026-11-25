@@ -62,33 +62,61 @@ from tests.test_memory_bridge import GMD, _big_dir, live  # noqa: F401 -- `live`
 # =============================================================================================
 
 @pytest.mark.timeout(300)
-def test_mcp_save_state_error_reply_carries_the_result(busy_store):
-    """m-1 (L98): a busy daemon makes the promote fail. MCP `rmx_save_state` replies `isError`,
+@pytest.mark.parametrize("spool", ["unwritable", "writable"])
+def test_mcp_save_state_error_reply_carries_the_result(busy_store, spool):
+    """m-1 (L98): a save-state whose promote FAILS: MCP `rmx_save_state` replies `isError`,
     and its body is the RESULT with the error added -- `target` (the handoff file, which
     exists), `remove_failed`, `lint`, `promoted`, and `error` naming the failure -- not the bare
-    message. At c854bad the body is `{"error": "<message>"}` only."""
+    message. At c854bad the body is `{"error": "<message>"}` only.
+
+    task-hook-writes-queue (L212, 2026-11-24): a busy daemon no longer fails the promote, it
+    QUEUES it (R11.4-R11.5). So the failure this test needs is now made a different, real way:
+    the busy daemon's spool directory is unwritable, the enqueue fails, and the reply must name
+    THAT cause beside "save-state wrote" (`unwritable`). `writable` pins the new outcome on the
+    same busy daemon: a SUCCESS reply (no `isError`) whose `promoted` is the queued result
+    with the `QUEUED_WRITE_MSG` note, and the handoff written."""
+    import os
     from refmatrix import stm
+    from tests.held_writer import spool_dir
     repo = busy_store
     session = "bug212-r6-mcp"
     stm.Stm(repo.store, session).record("note", "a focus event for the bug-212 r6 MCP probe")
     memdir = repo.base / "memdir"
     memdir.mkdir()
-    replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
-        "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
-        "message": "bug-212 r6 MCP probe"})])
+    sp = spool_dir(repo.store)
+    if spool == "unwritable":
+        sp.mkdir()
+        os.chmod(sp, 0o500)
+    try:
+        replies, text = _mcp(repo, repo.proj, [("rmx_save_state", {
+            "session": session, "memory_dir": str(memdir), "sync": False, "lint": False,
+            "message": "bug-212 r6 MCP probe"})])
+    finally:
+        if sp.exists():
+            os.chmod(sp, 0o700)
     assert 2 in replies and 99 in replies, f"the MCP server stopped answering\n{text}"
     res = replies[2].get("result") or {}
     raw = " ".join(c.get("text", "") for c in res.get("content", []))
-    assert res.get("isError") is True, f"not an isError reply: {raw[:600]!r}"
     try:
         body = json.loads(raw)
     except json.JSONDecodeError:
-        pytest.fail(f"the isError reply body is not the JSON result: {raw[:600]!r}")
+        pytest.fail(f"the reply body is not the JSON result: {raw[:600]!r}")
+    if spool == "writable":
+        assert res.get("isError") is not True, f"a queued promote is not an error: {raw[:600]!r}"
+        name = "focus_summary_" + "".join(ch for ch in session if ch.isalnum())[:12]
+        promoted = body.get("promoted") or {}
+        assert not promoted.get("error") and promoted.get("queued") == name, raw[:600]
+        assert promoted.get("note") == verbs.QUEUED_WRITE_MSG.format(name=name), raw[:600]
+        assert Path(body["target"]).is_file(), body.get("target")
+        return
+    assert res.get("isError") is True, f"not an isError reply: {raw[:600]!r}"
     missing = sorted(k for k in ("target", "remove_failed", "lint", "promoted", "error")
                      if k not in body)
     assert not missing, f"the isError reply dropped {missing} of the result: {raw[:600]!r}"
     assert Path(body["target"]).is_file(), f"the reply's target does not exist: {body['target']}"
-    assert "busy" in body["error"] and "save-state wrote" in body["error"], body["error"]
+    assert "save-state wrote" in body["error"], body["error"]
+    assert "Permission denied" in body["error"] and "hook_writes.spool" in body["error"], (
+        f"the error does not name the failed enqueue: {body['error']}")
 
 
 # =============================================================================================

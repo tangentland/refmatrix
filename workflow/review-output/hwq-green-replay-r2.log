@@ -1,0 +1,7 @@
+# local-lane slot=rmxtest1 sha=b1b8df4d1299258c8274bb43a098ce369b158fd0 start=2026-11-24 14:02:44 load={ 5.94 5.81 4.75 }
+pyc-guard: recompiled 26 timestamp pyc(s) under /Users/rmxtest1/lane/runs/hwq-green-replay-r2.52dp/src/refmatrix as checked-hash (bug-037)
+........................................................................ [ 37%]
+........................................................................ [ 75%]
+...............................................                          [100%]
+191 passed in 303.51s (0:05:03)
+exit 0

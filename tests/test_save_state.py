@@ -264,3 +264,54 @@ def test_save_state_templates_never_install_the_dev_tree_into_deploy():
         assert "pip install -e /Users" not in text
         assert "claude_tools/refmatrix" not in text.replace("~/claude_tools", "")
     assert "rmx version -v" in Path("src/refmatrix/templates/commands/save-state.md").read_text()
+
+
+def test_save_state_on_a_held_writer_queues_the_promote_and_exits_0():
+    """task-hook-writes-queue AC-8 (L212, 2026-11-24; R11.4-R11.5). `rmx save-state` with the
+    daemon's REAL writer held: the handoff file is written first (L203), then the promote
+    queues instead of failing. The command exits 0 while the writer is still held, prints the
+    queued note (`QUEUED_WRITE_MSG`) in place of `promoted … (id=…)`, and leaves one spool entry
+    (`origin` "save-state", the digest's authoring time in `args.updated_at`). After the
+    release the daemon's flush tick drains it and `rmx memory get` shows the digest. At the base
+    the held writer fails the promote and the command exits 1 (`promote FAILED`).
+    `--timeout 3` is the test-sized budget (the command's own knob)."""
+    import json
+    import os
+    import re
+    import uuid
+    from pathlib import Path
+
+    from refmatrix import stm as stm_mod
+    from refmatrix import verbs
+    from tests.held_writer import HeldWriterDaemon, flat, spool_files
+    from tests.task21_1_support import run_rmx
+    from tests.timing import wait_for
+
+    root = Path(os.environ["REFMATRIX_ROOT"])
+    sess = f"hwqac8{uuid.uuid4().hex[:6]}"
+    name = "focus_summary_" + re.sub(r"[^A-Za-z0-9]+", "", sess)[:12]
+    stm_mod.Stm(root, sess).record("input", "save the session with the writer held")
+    memdir = root.parent / "mem"
+    memdir.mkdir()
+    with HeldWriterDaemon(root, flush_s=1.0) as hd:
+        hd.hold()
+        r = run_rmx(["save-state", "-s", sess, "--memory-dir", str(memdir), "--no-sync",
+                     "--no-lint", "--timeout", "3"], root=root, RMX_SESSION=sess)
+        out = flat(r.stdout + r.stderr)
+        assert r.returncode == 0, f"save-state must queue the promote and exit 0: {out}"
+        assert hd.is_held(), "save-state returned only after the writer was released"
+        assert flat(verbs.QUEUED_WRITE_MSG.format(name=name)) in out, out
+        assert "promote FAILED" not in out and not re.search(r"promoted \S+ \(id=", out), out
+        assert list(memdir.rglob("savestate_*.md")), "the handoff file was not written"
+        files = spool_files(root)
+        assert len(files) == 1, files
+        e = json.loads(files[0].read_text(encoding="utf-8"))
+        assert (e["op"], e["name"], e["origin"]) == ("memory_add", name, "save-state"), e
+        assert e["args"]["updated_at"] == e["ts"], e
+        hd.release()
+        wait_for(lambda: not spool_files(root), timeout=30.0,
+                 what="the daemon's flush tick to drain the save-state promote")
+        wait_for(lambda: (lambda p: p.returncode == 0
+                          and f"Session summary — {sess}" in p.stdout)(
+            run_rmx(["memory", "get", name], root=root)), timeout=30.0,
+            what=f"`rmx memory get {name}` to show the digest")

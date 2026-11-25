@@ -36,30 +36,36 @@ def pingonly():
 
 # ---- #b-1 promote never opens the slot under a busy daemon ---------------------
 
-def test_promote_digest_reports_busy_and_never_opens_the_store(silent):
-    """#b-1: under a busy daemon the promote reports busy and never opens the writer slot.
+def test_promote_digest_queues_on_a_busy_daemon_and_never_opens_the_store(silent):
+    """#b-1: under a busy daemon the promote never opens the writer slot, and the handoff is
+    written.
 
-    `handoff._promote_digest` keeps its contract (best-effort: it RETURNS `{"error"}`). The
-    verb's half changed: this test first pinned that `verbs.save_state` RETURNED the result
-    with `promoted.error`. bug-212 r5, ruling L95 (2026-11-14), reversed that returned-error
-    contract -- a save-state that wrote its handoff but whose promote (or memory bridge)
-    failed RAISES `verbs.SaveStateIncompleteError`, carrying the full `result`, so the CLI
-    exits 1 and MCP replies `isError` on the same outcome (ch-bsd r4 m-3: MCP had replied
-    SUCCESS while the CLI exited 1). So the busy word is read from the raised error and its
-    attached result; the handoff is still written; the slot is still never opened."""
+    Was `test_promote_digest_reports_busy_and_never_opens_the_store`. task-hook-writes-queue
+    (L212, 2026-11-24; R11.4-R11.5, AC-8) reversed its busy half: the save-state promote is
+    best-effort, its handoff file is already on disk and the subject filing rides in the
+    entry, so a busy daemon QUEUES the digest (the busy probe enqueues without a dial).
+    `_promote_digest` returns `{"queued": <name>, "name": <name>, "note": QUEUED_WRITE_MSG}`
+    with no `error`, and `verbs.save_state` RETURNS (no `SaveStateIncompleteError`: bug-212 r5 /
+    L95's raise is for a promote that FAILED, and a queued one did not). The two protections
+    this test exists for stand: the writer slot is never opened (no `catalog*.duckdb`
+    appears) and the handoff file is written. Each call leaves its own spool entry."""
     from refmatrix import handoff, stm as stm_mod
+    from tests.held_writer import spool_files
+    name = "focus_summary_s1"
+    note = verbs.QUEUED_WRITE_MSG.format(name=name) if hasattr(verbs, "QUEUED_WRITE_MSG") \
+        else None
     s = stm_mod.Stm(silent.root, "s1"); s.record("input", "hi")
     out = handoff._promote_digest(silent.root, s)
-    assert "busy" in (out.get("error") or ""), out
+    assert not out.get("error"), f"a busy daemon must queue the promote, not fail it: {out}"
+    assert (out.get("queued"), out.get("name"), out.get("note")) == (name, name, note), out
     assert not list(silent.root.glob("catalog*.duckdb")), "opened the writer slot under a busy daemon"
-    with pytest.raises(verbs.SaveStateIncompleteError) as ei:
-        verbs.save_state(silent.root, session="s1", memory_dir=str(silent.base / "mem"),
-                         lint=False, sync=False)
-    res = ei.value.result
-    assert "busy" in ((res.get("promoted") or {}).get("error") or ""), res
-    assert "busy" in str(ei.value), str(ei.value)
+    res = verbs.save_state(silent.root, session="s1", memory_dir=str(silent.base / "mem"),
+                           lint=False, sync=False)
+    promoted = res.get("promoted") or {}
+    assert not promoted.get("error") and promoted.get("queued") == name, res
     assert Path(res["target"]).is_file(), f"the handoff was not written: {res.get('target')}"
     assert not list(silent.root.glob("catalog*.duckdb"))
+    assert len(spool_files(silent.root)) == 2, spool_files(silent.root)
 
 
 # ---- #b-2 skipped stores reach the operator ------------------------------------
