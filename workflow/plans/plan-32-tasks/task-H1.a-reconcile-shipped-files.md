@@ -5,7 +5,7 @@ title: "Task H1.a: the nine files both installers ship, reconciled to one projec
 tags: [task, plan-32, h1, templates, cat-herder, install, parity]
 metadata:
   node_type: task
-  status: drafting
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   author: ch-architect (Fable 5.2)
