@@ -5,14 +5,15 @@ title: "Exploration: seven candidate meta-level associations, measured on existi
 tags: [exploration, measurement, m-lane, retrieval, associations, recall]
 metadata:
   node_type: exploration
-  status: in-progress
+  status: provisional
   created: 2026-11-25
 ---
 
 # Exploration: candidate meta-level associations, measured first {#root}
 
 **Date:** 2026-11-25
-**Status:** Pre-registration (this section is committed alone before any result is computed).
+**Status:** Measured, provisional until reviewed. The pre-registration ([[#prereg]]) was committed
+alone at `82fb7997` before any result was computed; results, deviations and limits follow it.
 **Motivation:** The weights carry ingest structure only, and the measured ceiling is recall, not
 ranking. The user chose to measure seven candidate associations on the logs already on disk before
 building any (Q84 = a, L252). Brief: [[agent-brief-meta-assoc-measure]].
@@ -170,3 +171,170 @@ negatives (`project_retrieval_negatives_2026_09`, `project_structural_signal_lea
 MemAware Layer A replay corpora without the transcripts' touch timelines, so the recall
 candidates are measured on the logged product path (the queries the hooks and the agent really
 ran) instead; the results say where that differs from the harness. {#known-negatives-note}
+
+## Results {#results}
+
+Scripts: `workflow/measurements/meta-associations-2026-11-25/` (`m4_common.py` loads; one script
+per candidate). Run 2026-11-25 on the copies named in [[#data-sources]]; the copies were deleted
+after the run. Counts and rates only. {#results-scripts}
+
+### The join, before any candidate {#join}
+
+1,852 query units in `recall-events.jsonl` carry at least one row; 1,807 join a transcript (43 are
+in two sessions with no transcript, 2 agent queries have no matching Bash call). By group: push
+(hook) main loop 1,642, pull (agent) main loop 149, pull in a subagent 16. Hook queries never
+reach subagents. 734 units have a new-touch gold in their window; of the 1,572 new-touch golds,
+the query itself had retrieved **43 (2.7%)**. The missed set is therefore almost every new touch;
+read [[measurement-task-21.5-r12-pilot-2026-11-13#verdict]] before taking a touch as use. {#join-counts}
+
+T* per candidate (UTC): C1 2026-11-15 03:13, C2 11-15 03:21, C3 errors 11-14 08:50, C3 bug rows
+11-10 19:50, C4 11-14 20:59, C5 2026-09-16 (memory dates), C6 11-15 10:30, C7 11-15 01:58. The
+held-out query units of C1, C2 and C6 come from 4 sessions, so the session-cluster bootstrap was
+not run for them ([[#defs]]: it needs ≥ 5). {#split-dates}
+
+### One line per candidate {#verdicts}
+
+| # | candidate | metric (held-out) | result, 95% interval | band | action |
+|---|---|---|---|---|---|
+| 1 | search-resolution bridge | reach@10 of missed new-touch golds, n = 289 units | 0.055 [0.034, 0.088]; popularity 0.173, placebo 0.062; **lift −11.8 pp [−17.3, −6.2]** | drop | drop |
+| 2 | co-change, cue = retrieved | same units, repo-file golds, n = 274 | 0.022 [0.010, 0.047]; popularity 0.120, placebo 0.015; **lift −9.9 pp [−13.9, −5.8]** | drop | drop as a recall bridge |
+| 3 | error → fix (transcript errors) | reach@10 of the fix file, n = 93 | 0.043 [0.017, 0.105]; popularity 0.086, placebo 0.011; **lift −4.3 pp [−8.6, −1.1]** | drop | drop |
+| 3b | error → fix (bug rows) | matched-row files reach the new row's files, n = 114 | 0 of 114 rows match a train row at Jaccard ≥ 0.5; popularity 0.447; **lift −44.7 pp [−54.4, −35.1]** | drop | drop |
+| 4 | decision provenance | reach@10 of a re-cited id, n = 99 commits | 0.172 [0.110, 0.258]; popularity 0.152, placebo 0.051; **lift +2.0 pp [−5.1, +10.1]** | drop | drop; L-row stratum below |
+| 5 | staleness | AUC of 7-day churn → superseded/amended 7-35 days later | **0.337 [0.174, 0.523]** on 2 positives of 45 | measure more (underpowered) | wait for follow-up; see [[#c5]] |
+| 6 | corrections (demote-only) | RR = touch(flagged) / touch(unflagged), held-out deliveries | pooled **0.20 [0.00, 0.56]** (n flagged 1,134); stratified to memories, S2 **1.96 [0.18, 20.9]** | build as pre-registered; overturned by stratification | drop the use-based signal; see [[#c6]] |
+| 7 | read depth | held-out partial reads of large `.md` inside the file's train top-3 anchors, n = 120 | **0.300 [0.225, 0.387]** vs size control 0.285 (1.05×); coverage ≥ 0.9: 0.300 | drop | drop |
+
+{#verdicts-table}
+
+Volume (evidence a week, 2026-11-11 → 11-25): C1 252 missed-pair units (about half that in
+distinct prompts: two hook channels per prompt); C2 644 commits of ≤ 30 files, 238 evaluation
+units; C3 80 error → fix episodes, 62 new bug rows; C4 493 citing commits, 50 re-citing units; C5
+27.5 new memories, 13.5 `supersedes`/`amends` edges; C6 5,716 keyed deliveries, 3.0
+correction-followed units; C7 391 partial reads of large `.md` files (1,908 of all files). Volume is
+not what failed any candidate except 5 and the S1 leg of 6. {#volume}
+
+### Candidate 1: search-resolution bridge {#c1}
+
+Fitted on 432 train units with a missed new-touch gold (1,797 usable terms); 217 of the 289
+held-out units carry at least one usable term. In sample the scorer reaches 0.72 of its own train
+golds (a check that it works, not a result); held out it reaches 0.055, below the placebo. 61% of
+held-out missed golds were never a train gold at all, which caps any term → file memory. Strata,
+reach@10 and lift: push 0.059, −10.2 pp [−15.7, −4.7] (n 255); pull 0.029, −23.5 pp (n 34);
+subagent 0 of 14; re-touch golds 0.127 vs popularity 0.493, −36.6 pp. Sensitivity (not
+pre-registered): one unit per prompt window, n 134, −10.4 pp [−17.9, −3.0]; removing the
+retrieved keys from every ranking changes nothing. False-reach@10: 0.967 (popularity 0.937). {#c1-detail}
+
+### Candidate 2: co-change {#c2}
+
+1,949 train commits of ≤ 30 files (of 2,855 on master). Only 125 of 274 held-out units have a
+retrieved cue with any co-change history. The secondary cue (the thread's last 3 touched files)
+reaches 0.055, lift −6.6 pp [−10.9, −1.8]. Co-change itself generalises: in held-out commits, one
+file's top-10 co-change list holds another file of the same commit 0.605 [0.570, 0.640] of the time
+(750 cues over 346 commits). It predicts what changes together, not what the agent opens after a
+retrieval miss. {#c2-detail}
+
+### Candidate 3: error → fix {#c3}
+
+642 tool errors in the transcripts (540 in subagents), 235 followed within 20 calls by a repo-file
+edit; 232 of those fixes were missed by every query in the window (subagents receive no hook
+queries). 0.688 [0.588, 0.773] of held-out errors repeat a train signature, but most repeats are
+harness errors (unread-file edits, hook and permission denials): with those removed (n 39) the
+association reaches 0 of 39, popularity 3. Bug rows: symptoms are long prose and no held-out row
+reaches Jaccard 0.5 with a train row; post hoc, Jaccard ≥ 0.15 matches 21 rows and reaches 6 of 114,
+and the nearest train row at any similarity reaches 26 of 114, against popularity's 51. {#c3-detail}
+
+### Candidate 4: decision provenance {#c4}
+
+1,407 of 2,855 commits cite an L, Q or bug id. Only 0.145 [0.125, 0.167] of held-out citations
+re-cite an id cited before T*: most citations name a ruling made that day. On the 99 re-citing
+commits the association ties popularity. Post-hoc strata, each underpowered: re-cited L-rows 4 of
+11 (popularity 1), re-cited Q ids 3 of 11 (popularity 1), bug ids 15 of 84 (popularity 15). The
+L/Q stratum is the only positive point estimate in this run: 22 units in the 10.5 held-out days
+(about 2 a day), so it could reach 30 held-out units within weeks if it were pre-registered as its
+own candidate. {#c4-detail}
+
+### Candidate 5: staleness {#c5}
+
+430 memory files, 155 naming a repo file, 162 `supersedes`/`amends` edges onto 117 targets. The
+35-day follow-up admits only memories dated before 2026-10-21, and most edges are from November, so
+the split holds 50 train memories (3 positives) and 45 held-out (2 positives). Held-out AUC 0.337
+[0.174, 0.523]; placebo churn 0.442; outcome rate naming no file 4 of 78, naming files 2 of 45. Six
+memories superseded within 7 days were counted negative (the literal reading). November's
+memories, which carry most of the 13.5 edges a week, enter only once they have 35 days of
+follow-up, from late December 2026. {#c5-detail}
+
+### Candidate 6: corrections {#c6}
+
+18,183 keyed deliveries over 1,747 query units; held-out 7,284. Flags fitted before T*: S1 36
+items (from only 8 correction-followed units in the whole log), S2 117 memories, S3 none (master
+has no `Revert` commit). Held-out touch: S1-flagged 0 of 214, unflagged 55 of 7,070 (RR 0; Wilson
+bounds on the ratio [0.00, 2.95], so the interval includes 1: drop); S2-flagged 2 of 938 vs 53 of
+6,346, RR 0.26 [0.00, 0.70] (query-cluster bootstrap; Wilson bounds [0.05, 1.21]); pooled 0.20
+[0.00, 0.56]. As pre-registered, S2 and pooled read "build". The review rule says stratify: S2
+flags only memories, and held-out memory deliveries are touched 5 of 3,692 against 50 of 3,592 for
+repo files. Within memories, S2's RR is 1.96 [0.18, 20.9]. The effect is the item kind, not the
+flag. A memory's body is delivered inline, so a later file touch cannot see whether it was used:
+the product-path metric is blind exactly where S1 and S2 flag. {#c6-detail}
+
+Prevalence, reported as asked: of 8,016 memory deliveries in the logged queries, 374 (4.7%) were
+already the target of a `supersedes` edge when delivered and 1,628 (20.3%) of an `amends` edge
+only; 304 of 1,567 query units that delivered a memory (19.4%) delivered at least one superseded
+memory. Superseded-at-delivery is a deterministic fact the store holds, not an association to
+learn; whether to filter it is a separate question for the lead. {#c6-prevalence}
+
+### Candidate 7: read depth {#c7}
+
+6,983 partial reads with a file key (6,519 of them `sed -n`), 522 in the main loop; 1,727 on
+markdown or memory files, 927 of those on files of ≥ 300 lines (112 files). Held-out reads of files
+with ≥ 5 train reads: 120 over 18 files, 46 of them on one file. Top-3 anchors by train frequency
+hold 0.300 of held-out reads; the size control is 0.285. Train concentration is low too: a
+file's top 3 sections take a median 0.448 of its section hits. Reads are narrow (median 2
+sections), and the sections a read actually overlaps are a median 0.116 of the file's bytes, an
+oracle cut of 0.884; per-file popularity does not find those sections, so the cut needs a cue that
+predicts the section, which this candidate did not have. {#c7-detail}
+
+### The strongest baseline was not a candidate {#popularity}
+
+The popularity control, one fixed list of the files most often newly touched before T*, reaches
+0.173 of C1's held-out units (any missed gold in its top 10). For comparison on a different
+denominator, the queries themselves had retrieved 2.7% of all new-touch golds. It beat every recall
+candidate. It was a control, not a candidate, so no
+band applies; whether a pre-registered "hot files" candidate is worth measuring is for the lead.
+How much of it is a few hub files touched every session (the train top 10 hold 0.198 of train
+golds) was not measured further. {#popularity-note}
+
+## Deviations from the pre-registration {#deviations}
+
+1. **C3 signature normaliser.** The first run picked `Exit code N`, the first line of every failed
+   Bash result, as the signature, collapsing 288 of 642 errors into one; the normaliser now skips
+   that line (237 distinct signatures). The lift was −4.3 pp in both runs.
+2. **C7 scope.** GMD sections exist only in markdown; the first run also counted `.py` files (their
+   `# comment` lines parsed as headings). Primary is now `.md` and memory files. The all-files run:
+   0.438 inside top-3 vs control 0.479 (0.91×), the same band.
+3. **C6 intervals and stratum.** The query-cluster bootstrap degenerates to [0, 0] when a flagged
+   arm has no touch, so Wilson-bound ratios are reported beside it; the kind stratum was added under
+   the review rule (stratify) and decides the action.
+4. **C4.** No file cap on commits (the pre-registration set none); T* is the 60th percentile of
+   citing commits, since re-citing units exist only once T* is fixed.
+5. **Not pre-registered, reported as sensitivity only:** C1/C2 one unit per prompt window and
+   retrieved-keys-excluded rankings; C3 code-errors-only stratum and the bug-row Jaccard sweep; C4
+   id-kind strata; C5 the feedback/project/reference stratum (n 18, AUC 0.484).
+
+{#deviations-list}
+
+## What could not be measured, and why {#not-measured}
+
+- **Use.** Every recall gold is a touch, which is proximity ([[#join-counts]]). No pairs were
+  labelled in this run.
+- **Tool outputs in the STM ring.** The ring stores no tool output; C3 used the transcripts (13
+  sessions, 2026-11-03 → 11-25) instead. Recall events before 2026-11-09 have no transcript.
+- **Symbol ↔ symbol co-change.** Out of scope as pre-registered.
+- **S3 reverts.** Master has no `Revert` commit.
+- **Use of delivered memories.** Inline delivery leaves no touch to observe (C6).
+- **C5 at power.** 2 held-out positives; the 35-day follow-up excludes the month with most edges.
+- **Session clustering for C1, C2, C6.** The held-out units come from 4 sessions.
+- **`eval/production` and MemAware Layer A.** They replay queries without the transcripts' touch
+  timelines, so they cannot score a post-miss touch; the logged product path was used instead.
+
+{#not-measured-list}
