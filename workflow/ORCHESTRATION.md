@@ -41,8 +41,12 @@ rel: depends-on -> [[plan-of-plans#ledgers]]
 ## 2. Planning path {#planning}
 
 1. **Spec just in time:** a task is specced when it is next in the queue, not earlier.
-2. **One page.** ch-architect writes the goal, the acceptance criteria (each with the test that
+2. **One page, scaled.** ch-architect writes the goal, the acceptance criteria (each with the test that
    proves it), the files, and the risks. The risks answer [[self-audit]] for this change. No fold tables, no revision history in the spec.
+   The page is the prose (goal, files, risks): one page for up to 10 criteria, plus about a third of a page
+   per further 10, plus what other essential content needs (an interface, a format or a contract the tests
+   pin). The criteria table and the `src/` mutation table are not counted; on a rewrite they carry over
+   word for word, checked by a script (L244, Q77). {#one-page-scaled}
 3. **One architect read**, no ch-bsd round on a spec. Open decisions go to the user with a
    recommendation.
 4. **Merge** and set `status: approved` in the POP row.
