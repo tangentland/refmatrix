@@ -2122,40 +2122,55 @@ def _shell_segments(cmd: str) -> "list[list[str]]":
     return segs
 
 
-def _git_milestone_verbs(cmd: str) -> "list[str]":
-    """The ref-moving git verbs `cmd` runs as commands, in order."""
+def _git_milestone_calls(cmd: str) -> "list[tuple[str, str | None]]":
+    """(verb, the last `-C <path>` before it or None) for each ref-moving git verb `cmd` runs
+    as a command, in order."""
     out = []
     for w in _shell_segments(cmd):
         while w and _re_mod.match(r"^[A-Za-z_]\w*=", w[0]):
             w = w[1:]
         if not w or w[0].rsplit("/", 1)[-1] != "git":
             continue
-        k = 1
+        k, cdir = 1, None
         while k < len(w) and w[k].startswith("-"):
+            if w[k] == "-C" and k + 1 < len(w):
+                cdir = w[k + 1]
             k += 2 if w[k] in _GIT_OPT_WITH_ARG else 1
         if k < len(w) and w[k] in _GIT_MILESTONE_VERBS:
-            out.append(w[k])
+            out.append((w[k], cdir))
     return out
 
 
 def _git_milestone_subcmd(cmd: str) -> str | None:
-    v = _git_milestone_verbs(cmd)
-    return v[0] if v else None
+    c = _git_milestone_calls(cmd)
+    return c[0][0] if c else None
+
+
+def _git_call_repo(cmd: str, cwd: str) -> "tuple[str | None, str]":
+    """(first ref-moving verb, the repo it runs in): its `-C <path>` (~ expanded, relative to
+    `cwd`), else `cwd`. `cd X && git ...` is not followed."""
+    c = _git_milestone_calls(cmd)
+    if not c:
+        return None, cwd
+    verb, cdir = c[0]
+    if cdir:
+        cdir = os.path.join(cwd, os.path.expanduser(cdir))
+    return verb, cdir or cwd
 
 
 def _git_ref_sig(repo: str) -> str:
     """HEAD plus every ref, as one string: it changes iff a commit, merge, reset, checkout,
-    tag, pull or push moved something. "" outside a repo."""
+    tag, pull or push moved something. RAISES when the state cannot be read (git missing, a
+    timeout, not a repo): the caller records that, it never means "nothing moved"."""
     import hashlib
     import subprocess
-    try:
-        head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True,
-                              text=True, timeout=5).stdout.strip()
-        refs = subprocess.run(["git", "-C", repo, "for-each-ref"], capture_output=True,
-                              text=True, timeout=5).stdout
-    except Exception:
-        return ""
-    return f"{head}:{hashlib.sha1(refs.encode()).hexdigest()[:12]}" if head else ""
+    h = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True,
+                       text=True, timeout=5)
+    refs = subprocess.run(["git", "-C", repo, "for-each-ref"], capture_output=True,
+                          text=True, timeout=5)
+    if h.returncode or refs.returncode or not h.stdout.strip():
+        raise RuntimeError(f"git exit {h.returncode}/{refs.returncode} in {repo}")
+    return f"{h.stdout.strip()}:{hashlib.sha1(refs.stdout.encode()).hexdigest()[:12]}"
 
 
 def _git_head_line(repo: str) -> str:
@@ -2400,8 +2415,14 @@ def focus_hook(event):
         cmd = (d.get("tool_input") or {}).get("command")
         # bug-318: the ref state BEFORE a command that runs a ref-moving git verb, so the
         # post hook can tell a milestone (something moved) from a failed or no-op verb.
-        sig = (_git_ref_sig(d.get("cwd") or str(_root().parent))
-               if isinstance(cmd, str) and _git_milestone_subcmd(cmd) else None)
+        sig = None
+        if isinstance(cmd, str):
+            verb, prepo = _git_call_repo(cmd, d.get("cwd") or str(_root().parent))
+            if verb:
+                try:
+                    sig = _git_ref_sig(prepo)
+                except Exception:  # noqa: BLE001 -- post records an unreadable state visibly
+                    sig = None
         s.inflight_begin(_tool_call_key(d), terse=terse, refs=refs,
                          detail=detail, sig=sig)
         return
@@ -2445,17 +2466,26 @@ def focus_hook(event):
         cmd = ti.get("command")
         # Git milestones (bug-318): a ref-moving git verb the command ran AND that moved a ref,
         # recorded as `<verb> <short-sha> <subject>` read from git, never from the output.
-        sub = _git_milestone_subcmd(cmd) if isinstance(cmd, str) else None
+        sub, repo = (_git_call_repo(cmd, d.get("cwd") or str(_root().parent))
+                     if isinstance(cmd, str) else (None, ""))
+        unreadable = None
+        after = None
         if sub:
-            repo = d.get("cwd") or str(_root().parent)
-            after = _git_ref_sig(repo)
+            try:
+                after = _git_ref_sig(repo)
+            except Exception as e:  # noqa: BLE001 -- memory path: said, never dropped (L221)
+                unreadable = type(e).__name__
             before = parked.get("sig")
             if before is None:      # no PreToolUse snapshot: the last milestone's state
                 prior = [e.get("sig") for e in s.all_events()
                          if e.get("kind") == "git" and e.get("sig")]
                 before = prior[-1] if prior else None
-            if not after or after == before:
+            if unreadable is None and after == before:
                 sub = None
+        if sub and unreadable:
+            s.record("git", f"{sub} (ref state unreadable: {unreadable})"[:300], refs=[],
+                     detail=detail)
+            return
         if sub:
             terse = f"{sub} {_git_head_line(repo)}".strip()
             diff_refs: list[str] = []
@@ -2468,7 +2498,6 @@ def focus_hook(event):
             # agent must remember to call is, empirically, not called). A merge
             # is skipped: its body is generated, not authored.
             if sub in ("commit", "cherry-pick", "revert"):
-                repo = d.get("cwd") or str(_root().parent)
                 body = _git_commit_rationale(repo)
                 if body:
                     head = body.splitlines()[0].strip()

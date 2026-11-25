@@ -211,3 +211,31 @@ def test_a_ref_moving_git_verb_in_a_compound_command_records_its_subject(
     assert rows[0]["terse"].startswith(f"{verb} "), rows[0]["terse"]
     assert rows[0]["terse"] == f"{verb} {_head(repo)}", rows[0]["terse"]
     assert "errors" not in rows[0]["terse"] and "bogus" not in rows[0]["terse"]
+
+
+def test_git_dash_C_runs_in_that_repo_not_cwd(tmp_path):
+    """`git -C <clone> commit` from another cwd: the pre and post hooks read the CLONE's refs
+    (~ and relative paths expanded), and the event carries the clone's commit."""
+    repo = _repo(tmp_path, BODY, SOURCE)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    (repo / "src" / "gate.py").write_text(SOURCE + "# more\n")
+    cmd = f"git -C {repo} add -A && git -C ../repo commit -q -m 'feat: via dash C'"
+    _hook(tmp_path, "tool-pre", other, cmd)
+    subprocess.run(["bash", "-c", "git add -A && git commit -q -m 'feat: via dash C'"],
+                   cwd=repo, check=True, capture_output=True)
+    _hook(tmp_path, "tool", other, cmd, "")
+    rows = _gits(tmp_path)
+    assert [r["terse"] for r in rows] == [f"commit {_head(repo)}"], rows
+
+
+def test_unreadable_ref_state_is_recorded_not_dropped(tmp_path):
+    """A `git commit` whose repo cannot be read (not a repo) is a visible event, never a
+    silent drop (STM capture is a memory path)."""
+    notrepo = tmp_path / "plain"
+    notrepo.mkdir()
+    cmd = "git commit -m x"
+    _hook(tmp_path, "tool-pre", notrepo, cmd)
+    _hook(tmp_path, "tool", notrepo, cmd, "fatal: not a git repository")
+    rows = _gits(tmp_path)
+    assert [r["terse"] for r in rows] == ["commit (ref state unreadable: RuntimeError)"], rows
