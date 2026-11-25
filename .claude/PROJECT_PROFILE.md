@@ -40,7 +40,8 @@ task; they never hardcode these facts. Per-role detail lives in `.claude/agents/
   writer), `store.py`, `hub.py`, `verbs.py` (agent-facing capability layer), `mcp.py` (MCP server),
   `hooks.py` + `search_hooks.py` (hook generators), `handoff.py` (save/recall-state engine),
   `ingest*.py`, `context.py`, `stm.py`, `templates/` (commands + agents shipped to projects).
-- **Tests:** `tests/` (pytest, ~1380 tests, ~13 min full run).
+- **Tests:** `tests/` (pytest; the suite size is the collect command in `CLAUDE.md`
+  `#development-commands`).
 - **Evals:** `eval/` (CSN + MemAware harnesses; `eval/datasets/` is not committed).
 - **Docs:** `docs/` — `SYSTEM.md`, `ARCHITECTURE.md`, `INTEGRATION.md`, `PERFORMANCE.md`,
   `INDEX.md` (curated catalog); **ADRs at `docs/adr/`** (not `docs/architecture/adr/`);
@@ -63,9 +64,9 @@ captured to a log (the `enforce-test-to-file` hook blocks inline runs).
 - **Lint / type gates:** none wired (no ruff/mypy config in the repo). Match surrounding style;
   100-col soft limit.
 - **Deploy:** commit on `master` → `git -C ~/refmatrix pull --ff-only origin master` →
-  `rmx daemon restart --relaunch` (verifies the new pid + version) → hub self-restarts on version
-  mismatch. Never run a dev-venv `rmx` with a bumped version against the live store: it trips the
-  hub version handshake and restarts the fleet.
+  `rmx daemon restart --relaunch` (verifies the new pid + version) → the hub and fleet steps of
+  `workflow/ORCHESTRATION.md` `#release` step 3. Never run a dev-venv `rmx` with a bumped version
+  against the live store: it trips the hub version handshake and restarts the fleet.
 - **Live store health:** `rmx daemon status`, `rmx hub status`, `tail .refmatrix/daemon.stderr.log`
   (DuckDB `FatalException` lines are the crash-loop signature; status alone cannot see it).
 

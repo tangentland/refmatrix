@@ -18,13 +18,13 @@ All plans live permanently in `workflow/plans/`. A plan never moves between dire
 stage is recorded ONLY by the `metadata.status` field in its GMD frontmatter:
 
 1. **`drafting`** — design in flux, no task specs yet.
-2. **`approved`** — every task has a written spec under `plans/<plan>-tasks/`
-   (deliverables, key functions/classes, acceptance criteria, test plan).
+2. **`approved`** — the plan is approved and its next task has an approved one-page spec. No
+   production code for a task before that task's spec is approved. The five queue items after the
+   one in flight always hold such a spec (L232). The definition is [[plan-of-plans#status-lifecycle]].
 3. **`in-progress`** — implementation underway.
 4. **`completed`** — all tasks shipped and verified (the file stays in `plans/`).
 
-**Complete-Plan Gate:** Do not write production code for a plan until every task in it is
-fully specified (i.e. `status: approved`). If specs are missing, writing them is the first task.
+rel: depends-on -> [[plan-of-plans#status-lifecycle]]
 
 ## Staleness {#staleness}
 

@@ -210,8 +210,7 @@ but a negation is violated the instant the forbidden construct appears.
 
 ## Output Format {#output}
 
-Write the full report to `workflow/review-output/<plan>-<phase>-ch-alignment.md`, then return a
-pointer + headline counts in chat.
+Return the full report as text; the lead persists it ([[orchestration#reports]]).
 
 ```markdown
 ## Alignment Report: {subject}

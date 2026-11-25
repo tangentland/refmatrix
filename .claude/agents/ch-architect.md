@@ -172,8 +172,7 @@ When you find that **docs are correct but code violates them**, that is your nor
 
 ## Review Output Format {#review-output-format}
 
-Write the full report to `workflow/review-output/<plan>-<phase>-ch-architect.md`, then return a
-pointer + headline counts in chat.
+Return the full report as text; the lead persists it ([[orchestration#reports]]).
 
 ```markdown
 # Architecture Review: [Component/Feature Name]

@@ -99,10 +99,7 @@ in the exploration document before creating the proposed plan.
 ## Default planning path (2026-11-15) {#default-planning-path}
 
 Plans, task specs and spec revisions follow [[orchestration#planning]] by default (the user, Q26 =
-a): ch-architect on Fable drafts the plan and every task spec in a littlebig clone → ch-bsd spec
-review r1 → lead ruling `L<n>` → revision on Fable → confirm-lite to MEH-only GO → only then the
-plan's `Dk` decisions go to the user → merge `--no-ff`, wikilinks, `status: approved`. The SDD chain
-(`/ch-specify` → `/ch-implement`) stays available when the user asks for it.
+a; L165). The SDD chain (`/ch-specify` → `/ch-implement`) stays available when the user asks for it.
 
 rel: depends-on -> [[orchestration]]
 
@@ -144,19 +141,23 @@ After **each individual answer** from the user:
 1. Update the plan file's discussion status to `Accepted` (or `Revised` if approach changed)
 2. Update `handoff.md` reference from "Active" to "Completed"
 3. Update `workflow/plan-of-plans.md` with the plan's status
-4. **Immediately create ALL task spec files** in `workflow/plans/<plan>-tasks/` (see Plan
-   Approval Gate below)
+4. **Spec the plan's next task** (one page) in `workflow/plans/<plan>-tasks/` (see
+   [[#plan-approval-gate]])
 5. Set the plan's frontmatter `status: approved` (the file stays at `workflow/plans/<plan-name>.md`)
 6. Then proceed to implementation
 
 ## Plan Approval Gate (CRITICAL) {#plan-approval-gate}
 
-**After a plan is approved, ALL task spec files MUST be created BEFORE any implementation
-begins.**
+`approved`: the plan is approved and its next task has an approved one-page spec. No
+production code for a task before that task's spec is approved. The five queue items after the
+one in flight always hold such a spec (L232). The definition is [[plan-of-plans#status-lifecycle]].
+
+rel: depends-on -> [[plan-of-plans#status-lifecycle]]
 
 ### Workflow: Plan Approved → Tasks Created → Implementation {#workflow-plan-approved-tasks-created-implementation}
 
-1. **Create ALL task spec files** for the plan immediately after approval:
+1. **Create the next task's spec file** (one page; later tasks are specced just in time,
+   [[orchestration#planning]]):
    - Location: `workflow/plans/<plan>-tasks/task-N.M-description.md`
    - Use the task spec template (see `workflow/templates/task-spec.md`)
    - Reference specific decisions from the proposed plan discussion
@@ -166,13 +167,12 @@ begins.**
    (the file stays at `workflow/plans/<plan-name>.md` — it does NOT move):
    - Plan file: `workflow/plans/<plan-name>.md`
    - Task specs: `workflow/plans/<plan>-tasks/`
-   - Verify task count matches
 
 3. **Update tracking files**:
    - `workflow/plan-of-plans.md` — set the plan's Status to `approved`
-   - `handoff.md` — note that task specs are ready for implementation
+   - `handoff.md` — note that the next task's spec is ready for implementation
 
-4. **Gate**: Do NOT start implementing Task N.1 until all task specs exist on disk
+4. **Gate**: no production code for a task before that task's spec is approved
 
 ### Why This Matters {#why-this-matters}
 

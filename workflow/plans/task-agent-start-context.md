@@ -51,10 +51,10 @@ the graph, the primer and memory recall never reach the agents that do most of t
    read from files; (b) a memory recall for the agent's prompt text (dense + rerank, `scope=both`,
    k from a pre-registered band); (c) the top of `.refmatrix/PRIMER.md`. Each block is labelled by
    kind, the most important first, per `feedback_injection_presentation_rules`.
-4. **R3 Budget and failure.** {#r3} The output stays under the measured hook cap (the 9,000-unit
-   working budget of `reference_hook_output_cap_measured`). A skipped or degraded recall says so in
-   one line inside the payload (25.1b R18's skip-line shape); the hook never exits non-zero into the
-   spawn, and never prints nothing silently.
+4. **R3 Budget and failure.** {#r3} The output stays under the measured hook cap: its channel in
+   `hook_budget.CHANNEL_BUDGET_BYTES` (`src/refmatrix/hook_budget.py`). A skipped or degraded
+   recall says so in one line inside the payload (25.1b R18's skip-line shape); the hook never
+   exits non-zero into the spawn, and never prints nothing silently.
 5. **R4 Telemetry.** {#r4} One telemetry row per firing (channel `agent_start`), with
    `payload_bytes`, the recall's ids and the cause of any skip, so a later measurement can ask
    whether agents used what they were given.

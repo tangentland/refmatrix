@@ -18,14 +18,13 @@ below.
 
 ## When invoked for implementation work {#root}
 
-- Tests run **in the Docker dev container only** — never on the host. Use the container venv
-  Python path, e.g. `.venv-eval/bin/python -m pytest <targets>`.
+- Tests run as the project profile's `#commands` says (`.claude/PROJECT_PROFILE.md`).
 - **No mocks, stubs, or placeholder logic in `src/`** — production code is fully concrete or it
   does not exist yet. Mocks belong only in `tests/` (see `workflow/test_mock_registry.md`).
 - **No silent errors** — every `except` either logs and re-raises or surfaces a structured error.
-- **Reviews persist to disk** — if the task is a review (architect, test-engineer, code-reviewer,
-  gap-master, etc.), write the full report to `workflow/review-output/<plan>-<phase>-<reviewer>.md`
-  BEFORE returning a chat summary. Chat is a pointer + headline counts only.
+- **Reviews are returned as text** — if the task is a review (architect, test-engineer,
+  code-reviewer, gap-master, etc.), return the full report as text; the lead persists it
+  ([[orchestration#reports]]).
 
 ## When invoked for research / exploration {#research-exploration}
 

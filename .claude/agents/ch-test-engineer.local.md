@@ -2,10 +2,12 @@
 
 ## Environment
 
-- Runner: `.venv-eval/bin/python -m pytest` (Python 3.14, no Docker). Output MUST be captured:
+- Runner: `.venv-eval/bin/python -m pytest`, the host venv (Python 3.14). No container: the
+  neutral definition's execution section defers to this line. Output MUST be captured:
   `2>&1 | tee workflow/review-output/<name>.log`.
-- Full suite ~60 min / ~5,000 tests; never run it on a branch. Verify with the task's tests plus every
-  importer of a changed module, through `/usr/bin/lockf /private/tmp/claude-501/rmx-test-lane.lock`.
+- Never run the full suite on a branch. Verify with the task's tests plus every importer of a
+  changed module, run as `CLAUDE.md` `#test-discipline` rule 9 says (an isolated lane slot on a
+  committed sha).
 - A fold adds to the feature's existing test file; no new per-round `*_r<n>` / `*remedy*` file
   (`workflow/ORCHESTRATION.md#task-tests`).
 - Daemon tests: use a SHORT `tempfile.mkdtemp()` root (unix socket `sun_path` limit); never point
@@ -20,8 +22,8 @@
 - Monkeypatching the function under test is forbidden (`workflow/bullshit/IMPRESSIONS.md`
   imp-mock-the-sut). Mocks of external services only; register them in
   `workflow/test_mock_registry.md`.
-- Mutation check before calling a test done: break the code path it claims to cover and confirm
-  the test fails.
+- Mutations come after GREEN, on the `src/` change only; RED runs them (L200); none on the small
+  path (`workflow/ORCHESTRATION.md` `#task`).
 
 ## Known pre-existing failure
 

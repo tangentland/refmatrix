@@ -92,9 +92,10 @@ Investigate top-down. Stop at the layer where you find the bottleneck.
 
 ---
 
-## Profiling Commands (Docker Only) {#profiling-commands}
+## Profiling Commands {#profiling-commands}
 
-All profiling runs in Docker. Never profile on the host OS — results are not representative.
+Profile where the tests run, as the project profile's `#commands` says
+(`.claude/PROJECT_PROFILE.md`); results from any other environment are not representative.
 
 ```bash
 # Python profiling (cProfile)
@@ -144,7 +145,7 @@ print(f\Elapsed: {elapsed:.3f}s\")
 
 ## Performance Report Format {#performance-report-format}
 
-Save reports to `workflow/review-output/<phase-or-milestone>-performance.md`.
+Return the full report as text; the lead persists it ([[orchestration#reports]]).
 
 ```markdown
 # Performance Analysis: [Component / Hot Path]

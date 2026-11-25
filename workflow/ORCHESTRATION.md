@@ -112,9 +112,9 @@ failing; never red; the lane). {#task-tests}
 - **The POP is the source of truth** for order, scope and status: a merge, release, admission
   or scope change updates [[plan-of-plans]] in the same commit. Finished items move to
   [[pop-finished]]. {#pop-truth}
-- **Ledgers, minimal.** A `Q<n>` for every question to the user (open ids listed at the end of
-  the reply); an `L<n>` only for a decision that changes scope, order or what is built. No rows
-  for relays, bookkeeping or "the agent did what was ruled". {#ledgers}
+- **Ledgers, minimal.** A `Q<n>`, or the plan's own D label, for every question to the user (open
+  ids listed at the end of the reply); an `L<n>` only for a decision that changes scope, order or
+  what is built. No rows for relays, bookkeeping or "the agent did what was ruled". {#ledgers}
 - **Proportionate process.** Before running a band, a round or a table, say what it buys in
   this case; propose the lighter path first. {#proportionate}
 - **Measure before deciding**, read-only, on a copy of `catalog.read.duckdb`. {#measure}
