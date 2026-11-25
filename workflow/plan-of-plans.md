@@ -392,7 +392,7 @@ drafting → approved → in-progress → completed
 - **approved** — the plan is approved and its next task has a written spec under
   `workflow/plans/<plan>-tasks/` (Q55 = a, L221; specs one page, L165). **The spec window
   (L232):** the five queue items after the one in flight always have an approved spec for their
-  next task; when the head moves, the sixth is specced. **Now (2026-11-24, head = C2 + bug-318 in flight):** B1's F4/F7 residue, I1.a, I1.b, I1.c, I1.d — being specced by arch-window (Fable, `/Volumes/littlebig/refmatrix-spec-window`).
+  next task; when the head moves, the sixth is specced. **Now (2026-11-24, head = C2 + bug-318 in flight; a window item is a queue row, L233):** B1 (F4/F7), I1 (I1.a, I1.b), H1 (H1.a), P1 ((b)), T0.9 ((a), approved) — being specced by arch-window (Fable, `/Volumes/littlebig/refmatrix-spec-window`).
 - **in-progress** — at least one task has shipped and at least one remains.
 - **completed** — done. The plan's row is appended to [[pop-finished]] and deleted here; the
   plan file stays in place with `status: completed`.
@@ -522,6 +522,7 @@ the row here ([[orchestration#pop-truth]]). A row that is resolved and applied i
 | L230 | 2026-11-24 | arch-instr's L229 fold (`cdffa9ec`) made three choices beyond the ruling | **Accepted by the lead:** (1) `amends` may only narrow a deny or check (add an exception or a condition); a full replacement of a pack unit is `supersedes`, which `--check` prints, so nothing is replaced quietly; (2) on the small path (no summary file) the seen-failing check reads the merge commit body for each new test's RED E line; (3) practice units name stack parameters (`test-runner`, `test-paths`, `test-id`) that each stack pack supplies, so stack facts stay in stack packs; a detected stack that supplies none is printed. Stance block counts inside CLAUDE.md's 4,000 B (identity ≤ 400, stance ≤ 600, principles ≤ 2,000, pointers ≤ 1,000) | [[0007-instruction-architecture#practice-select]] |
 | L231 | 2026-11-24 | admitted-audit (`3e9dd576`): 34 items, 6 ready; 10 POP contradictions | **Lead rulings on the audit:** (1) **bug-318 is admitted** under the freeze rule (it breaks something live: the compaction handoff file is over the Read cap, so the gate is satisfied by a partial read); fix in review (bsd-318). (2) **Q41's ch-bsd confirm-lite before a frozen track's RED is superseded by L165** (no ch-bsd round on a spec); the held T2 revision `3a4d430` and bug-218 revision `b2e2451` are merged on the lead's read, not a bsd round. (3) The POP bookkeeping the audit names (L226's queue-row rewrite; finished rows to `pop-finished`; answered Q54-Q64 archived; `#status-lifecycle` / `#notes` to Q55 = a; `#freeze-specs`; "merged" meaning specs-only in rows 5 and 9; `#queue-releases` R1 items shipped in 0.85.0; row 4 gains 29.4d; row 16 loses "ch-bsd rounds"; routes for bug-317 and the MB1d GATE) is done in one POP commit. Spec coverage beyond the next task is Q65 | [[admitted-audit-2026-11-24]] |
 | L232 | 2026-11-24 | The user, Q65: "we should spec and approve 5 items before the head" | **A rolling spec window of five.** At all times the five queue items after the one in flight have an approved one-page spec for their next task (approval as ORCHESTRATION `#planning`: one architect read on Fable, open decisions to the user, then `approved` in the row). When the head moves, the sixth item is specced so the window stays five. Amends Q55 = a / L165's "next task only": a plan's next task is still the unit specced, but five items deep, not one. Items further back are specced when they enter the window; the admitted-audit re-runs at each release to keep the window honest. `#status-lifecycle` states the window | [[admitted-audit-2026-11-24]] |
+| L233 | 2026-11-24 | The user: "q66 - a" | **A window item is a queue row**, each with its next task specced: the window now is B1 (F4/F7), I1 (I1.a; I1's own tasks are specced one ahead of its build, so I1.b too), H1 (H1.a), P1 ((b), the proportionality review), T0.9 ((a), approved L171). Row 4 (T0.7 + 29.4d) stays at its queue position; its spec is approved and its staleness is absorbed at RED | [[plan-of-plans#status-lifecycle]] |
 {#rulings-table}
 
 ### Plan decisions {#decisions}
@@ -568,11 +569,10 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q67**. Open: Q66. Each reply that asks anything ends with the ids still open.
+Next id: **Q67**. None open. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
-| Q66 | 2026-11-24 | L232's window of five: is an "item" a queue row (B1, I1, H1, P1, T0.9 — each with its next task specced: B1 F4/F7, I1.a, H1.a, P1 (b), T0.9 (a) already approved) or a task row (B1, I1.a, I1.b, I1.c, I1.d — all of I1 first)? Also row 4 (T0.7 + 29.4d, approved, 29.5's baseline) sits at queue position 15 | **(a, rec)** queue rows: the window spans five different lines of work, so H1 and P1 are ready when I1's first tasks land, and I1's own tasks are specced one ahead of its build; (b) task rows (the current dispatch: I1.a-I1.d) | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
