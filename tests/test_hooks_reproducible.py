@@ -449,10 +449,11 @@ def test_check_covers_git_hooks(case):
 
 @pytest.mark.parametrize("units", ["zero-units", "one-unit"])
 def test_check_compiled_file_absent(units):
-    """s-1 (bsd-i1b1 r1, lead ruling (a)). A git project whose layers compile to zero units
-    and that holds no `.claude/rmx-instructions.json` is in sync: the compiled file is
-    `generated`, so release step 3 drops no new file into a consumer with no units (spec
-    risk 3). With one local unit and no compiled file, `--check` exits 1 naming it `missing`."""
+    """s-1 (bsd-i1b1 r1, lead ruling (a)). In a git project whose layers compile to zero units,
+    `--apply` writes no `.claude/rmx-instructions.json`, and the project is in sync without
+    it: the absent file is `generated`, so release step 3 drops no new file into a consumer
+    with no units (spec risk 3). With one local unit and no compiled file, `--check` exits 1
+    naming it `missing`."""
     root, proj = _iu.sandbox()
     _subprocess.run(["git", "init", "-q", str(proj)], check=True, capture_output=True,
                     timeout=10)
@@ -460,7 +461,14 @@ def test_check_compiled_file_absent(units):
         _iu.install_local(proj, ids=("sample-deny",))
     r = _iu.apply(root, git=True)
     assert r.returncode == 0, _iu.out_of(r)
-    (proj / _iu.COMPILED).unlink(missing_ok=True)
+    if units == "zero-units":
+        # F11 (the fold's GREEN mutation): `--apply` itself writes no table where there is no
+        # unit, so no new file lands in a consumer repo (ruling (a)); only then is the absence
+        # the state `--check` has to read as in sync.
+        assert not (proj / _iu.COMPILED).exists(), (
+            f"--apply wrote {_iu.COMPILED} in a project with no units:\n{_iu.out_of(r)}")
+    else:
+        (proj / _iu.COMPILED).unlink()
     r = _iu.check(root)
     out = _iu.out_of(r)
     if units == "zero-units":
