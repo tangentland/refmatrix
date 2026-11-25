@@ -142,19 +142,21 @@ def compiled_bytes(proj: Path) -> "bytes | None":
 # child's PYTHONPATH. The child runs that copy (asserted below), the way a consumer runs a
 # release that ships a rule. Nothing in `src/` is patched or redirected.
 
-def build_overlay_site(dest: Path) -> Path:
-    """`dest/refmatrix`: a copy of this checkout's package plus
-    `templates/rules/sample-packaged-rule.md`. Returns `dest` (the PYTHONPATH entry)."""
+def build_overlay_site(dest: Path,
+                       ships: "tuple[str, ...]" = ("rules/sample-packaged-rule.md",)) -> Path:
+    """`dest/refmatrix`: a copy of this checkout's package whose `templates/` also ships each
+    file of `ships` (paths under `tests/fixtures/instruction_units/packaged/`; default the one
+    packaged rule). Returns `dest` (the PYTHONPATH entry)."""
     pkg = Path(dest) / "refmatrix"
     shutil.copytree(SRC / "refmatrix", pkg,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    rules = pkg / "templates" / "rules"
-    rules.mkdir(parents=True, exist_ok=True)
-    init = rules / "__init__.py"
-    if not init.exists():
-        init.write_text("")
-    shutil.copyfile(PACKAGED_SAMPLE / "rules" / "sample-packaged-rule.md",
-                    rules / "sample-packaged-rule.md")
+    for rel in ships:
+        target = pkg / "templates" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        init = target.parent / "__init__.py"
+        if not init.exists():
+            init.write_text("")
+        shutil.copyfile(PACKAGED_SAMPLE / rel, target)
     pp = overlay_pythonpath(dest)
     r = subprocess.run([sys.executable, "-c", "import refmatrix; print(refmatrix.__file__)"],
                        env=h.clean_env(PYTHONPATH=pp), capture_output=True, text=True,

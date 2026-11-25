@@ -300,7 +300,7 @@ def _held_writer(root: Path):
 
 
 _CLASS_CASES = ["clean", "clean-beside-held-writer", "rule-drift", "local-edited",
-                "fire-broken", "agent-drift"]
+                "fire-broken", "agent-drift", "rule-edited-apply-without-force"]
 
 
 @pytest.mark.parametrize("case", _CLASS_CASES)
@@ -377,11 +377,26 @@ def test_check_classes(case, _overlay):
         assert r.returncode == 0, f"agent drift failed --check before H1.c (#agents-leg):\n{out}"
         assert _iu.lines_with(out, "drift", "gmd-curator.md"), (
             f"the edited packaged agent is not printed as drift:\n{out}")
+    elif case == "rule-edited-apply-without-force":
+        # g-3 (bsd-i1b1 r1, mutant X1): every other case applies with --force, so the guard that
+        # keeps a hand-edited installed rule from a plain `--apply` was unpinned.
+        assert rule.exists(), f"--apply did not install the packaged rule at {rule}"
+        edited = rule.read_bytes() + b"\nHAND-EDIT-g3: kept until --force.\n"
+        rule.write_bytes(edited)
+        args = [a for a in _iu.APPLY_ARGS if a != "--force"]
+        args.insert(1, "--no-git")
+        r = _iu.rmx(root, *args, **pp)
+        out = _iu.out_of(r)
+        assert "--force" not in r.args, r.args
+        assert rule.read_bytes() == edited, (
+            f"a plain --apply (no --force) overwrote a hand-edited installed rule:\n{out}")
+        assert _iu.lines_with(out, "skip", "sample-packaged-rule.md"), (
+            f"no `skip` line names the rule --apply left alone:\n{out}")
     else:
         raise AssertionError(case)
 
 
-_GIT_CASES = ["marked-body-rewritten", "unmarked-hook-listed"]
+_GIT_CASES = ["marked-body-rewritten", "unmarked-hook-listed", "marked-hook-unknown-name"]
 
 
 @pytest.mark.parametrize("case", _GIT_CASES)
@@ -406,6 +421,20 @@ def test_check_covers_git_hooks(case):
         out = _iu.out_of(r)
         assert r.returncode == 1, f"a rewritten refmatrix git hook read as in sync:\n{out}"
         assert _iu.lines_with(out, "post-merge"), f"the drifted hook is not named:\n{out}"
+        # m-1 (bsd-i1b1 r1): settings.json is in sync here; the failure line must not blame it.
+        assert not _iu.lines_with(out, "hooks drift", "settings.json"), (
+            f"a git-hook-only drift is reported as settings.json drift:\n{out}")
+    elif case == "marked-hook-unknown-name":
+        # g-4 (bsd-i1b1 r1, mutant X3): a refmatrix-marked hook this version does not render
+        # (one an older version installed) is drift: bug-209's own class.
+        stale = hooks_dir / "pre-push"
+        stale.write_text("#!/usr/bin/env bash\n# refmatrix: an older version's hook\n"
+                         "rmx sync >/dev/null 2>&1 || true\n")
+        stale.chmod(0o755)
+        r = _iu.check(root)
+        out = _iu.out_of(r)
+        assert r.returncode == 1, f"a marked hook with no generated counterpart passed:\n{out}"
+        assert _iu.lines_with(out, "pre-push"), f"the stale marked hook is not named:\n{out}"
     else:
         mine = hooks_dir / "pre-push"
         mine.write_text("#!/bin/sh\necho mine\n")
@@ -414,3 +443,67 @@ def test_check_covers_git_hooks(case):
         out = _iu.out_of(r)
         assert r.returncode == 0, f"a hook without the marker failed --check:\n{out}"
         assert _iu.lines_with(out, "pre-push"), f"the unmarked hook is not listed:\n{out}"
+
+
+# ---- the fold of bsd-i1b1 r1: s-1 (no compiled file) and s-3 (a local unit at a packaged path)
+
+@pytest.mark.parametrize("units", ["zero-units", "one-unit"])
+def test_check_compiled_file_absent(units):
+    """s-1 (bsd-i1b1 r1, lead ruling (a)). A git project whose layers compile to zero units
+    and that holds no `.claude/rmx-instructions.json` is in sync: the compiled file is
+    `generated`, so release step 3 drops no new file into a consumer with no units (spec
+    risk 3). With one local unit and no compiled file, `--check` exits 1 naming it `missing`."""
+    root, proj = _iu.sandbox()
+    _subprocess.run(["git", "init", "-q", str(proj)], check=True, capture_output=True,
+                    timeout=10)
+    if units == "one-unit":
+        _iu.install_local(proj, ids=("sample-deny",))
+    r = _iu.apply(root, git=True)
+    assert r.returncode == 0, _iu.out_of(r)
+    (proj / _iu.COMPILED).unlink(missing_ok=True)
+    r = _iu.check(root)
+    out = _iu.out_of(r)
+    if units == "zero-units":
+        assert r.returncode == 0, f"a unit-less project without a compiled file fails:\n{out}"
+        assert _iu.lines_with(out, "generated", "rmx-instructions.json"), (
+            f"the absent zero-unit compiled file is not classed generated:\n{out}")
+    else:
+        assert r.returncode == 1, f"a missing compiled file with a unit read as in sync:\n{out}"
+        assert _iu.lines_with(out, "missing", "rmx-instructions.json"), out
+
+
+@pytest.fixture(scope="module")
+def _overlay_with_triggers(tmp_path_factory):
+    """A refmatrix that ships a packaged deny and a packaged check (never installed: they
+    compile from the package) beside the packaged rule."""
+    site = _iu.build_overlay_site(tmp_path_factory.mktemp("site-s3"),
+                                  ships=("rules/sample-packaged-rule.md",
+                                         "triggers/sample-packaged-deny.md",
+                                         "checks/sample-packaged-check.md"))
+    return _iu.overlay_pythonpath(site)
+
+
+@pytest.mark.parametrize("layer", ["triggers/sample-packaged-deny.md",
+                                   "checks/sample-packaged-check.md"])
+def test_apply_refuses_a_local_unit_at_a_packaged_path(layer, _overlay_with_triggers):
+    """s-3 (bsd-i1b1 r1). Packaged triggers and checks are never installed, so a local file at
+    a packaged trigger's or check's `.claude/` path is not an installed copy: it is a local
+    unit the loader used to drop silently (`--apply` exit 0, `--check` then asked for
+    `--apply --force`, which installs no trigger). It is refused, named."""
+    root, proj = _iu.sandbox()
+    pp = dict(PYTHONPATH=_overlay_with_triggers)
+    r = _iu.apply(root, **pp)
+    assert r.returncode == 0, _iu.out_of(r)
+    before = _iu.compiled_bytes(proj)
+    kind = "deny" if layer.startswith("triggers/") else "check"
+    sample = _iu.sample_path("sample-deny" if kind == "deny" else "sample-check")
+    local = proj / ".claude" / layer
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(sample.read_text().replace(f"id: sample-{kind}\n", "id: local-shadow\n", 1))
+    r = _iu.apply(root, **pp)
+    err = r.stderr or ""
+    assert r.returncode != 0, (
+        f"a local unit at a packaged path was accepted (dropped):\n{_iu.out_of(r)}")
+    assert "duplicate path with a packaged unit" in err, err
+    assert layer in err, f"stderr does not name {layer}:\n{err}"
+    assert _iu.compiled_bytes(proj) == before, "a refused --apply changed the compiled file"

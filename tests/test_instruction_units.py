@@ -157,6 +157,13 @@ def _write(path: Path, data) -> Path:
     return path
 
 
+def _commits_unit(n: int) -> dict:
+    """A deny whose fire fixture builds a repo of `n` commits."""
+    un = _unit("deny")
+    un["fixtures"]["fire"][0]["repo"] = {"files": {"a.txt": "a\n"}, "commits": n}
+    return un
+
+
 def _bad(case: str, proj_dir: Path) -> "tuple[list[Path], list[tuple[str, ...]]]":
     """Write the refused unit for `case`; return (the file(s) it may be named by, the token
     groups stderr must carry: every group matched, any token of a group)."""
@@ -199,6 +206,41 @@ def _bad(case: str, proj_dir: Path) -> "tuple[list[Path], list[tuple[str, ...]]]
     if case == "non-utf8":
         raw = _md("refused-case", _unit("deny"), ok_text).encode() + b"\xff\xfe broken\n"
         return [_write(_place(proj_dir, "deny", "refused-case"), raw)], [("utf",)]
+    if case.startswith("kind-dir-"):
+        # b-2 (bsd-i1b1 r1): a unit whose kind belongs in another layer directory. A deny in
+        # `.claude/rules/` is a compiled deny AND an always-on native rule.
+        kind, there = {"kind-dir-deny-in-rules": ("deny", "rules"),
+                       "kind-dir-check-in-triggers": ("check", "triggers")}[case]
+        right = "triggers" if kind == "deny" else "checks"
+        f = _write(proj_dir / ".claude" / there / "refused-case.md",
+                   _md("refused-case", _unit(kind), ok_text))
+        return [f], [(right,)]
+    if case in ("not-a-unit-trigger", "not-a-unit-check", "units-misspelt"):
+        # g-2 (bsd-i1b1 r1, mutant X2): `triggers/` and `checks/` hold units only; a file
+        # there with no `unit:` map is a mistyped unit, never a silently skipped native file.
+        d = "checks" if case == "not-a-unit-check" else "triggers"
+        if case == "units-misspelt":
+            text = _md("refused-case", _unit("deny"), ok_text).replace("\nunit:\n", "\nunits:\n", 1)
+            assert "\nunits:\n" in text
+        else:
+            text = ('---\ngmd: "0.1"\nid: refused-case\ntitle: "plain"\ntags: [x]\n---\n\n'
+                    "# Plain {#root}\n\nA plain note, no unit map.\n")
+        return [_write(proj_dir / ".claude" / d / "refused-case.md", text)], [("not a unit",)]
+    if case.startswith("prefilter-"):
+        # s-2 (bsd-i1b1 r1, lead ruling): the dispatcher (I1.b3) tests raw stdin bytes, the
+        # fixture runner a json.dumps; a prefilter spanning JSON structure (`"`, `\`, `:`)
+        # cannot be checked the same way in both, so it is refused at compile.
+        lit = {"prefilter-quote": 'zap"me', "prefilter-backslash": "zap\\me",
+               "prefilter-colon": "zap: me"}[case]
+        un = _unit("deny")
+        un["bind"][0]["prefilter"] = lit
+        return [_write(_place(proj_dir, "deny", "refused-case"),
+                       _md("refused-case", un, ok_text))], [("prefilter",)]
+    if case == "fixture-commits-over-cap":
+        # s-4 (bsd-i1b1 r1, lead ruling): `commits` is capped at 10 at parse; each commit is a
+        # bounded `git` call and `--check` runs every local unit's fixtures.
+        return [_write(_place(proj_dir, "deny", "refused-case"),
+                       _md("refused-case", _commits_unit(11), ok_text))], [("commits",), ("10",)]
     if case == "unreadable":
         f = _write(_place(proj_dir, "deny", "refused-case"),
                    _md("refused-case", _unit("deny"), ok_text))
@@ -209,7 +251,12 @@ def _bad(case: str, proj_dir: Path) -> "tuple[list[Path], list[tuple[str, ...]]]
 
 _REFUSALS = ["unknown-key", "unknown-bind-key", "no-fire-fixture", "no-pass-fixture",
              *(f"size-{k}" for k in _SIZE), "deny-without-instead", "duplicate-id",
-             "ask-unverified", "context-without-fallback", "non-utf8", "unreadable"]
+             "ask-unverified", "context-without-fallback", "non-utf8", "unreadable",
+             # the fold of bsd-i1b1 r1 (b-2, g-2, s-2, s-4)
+             "kind-dir-deny-in-rules", "kind-dir-check-in-triggers",
+             "not-a-unit-trigger", "not-a-unit-check", "units-misspelt",
+             "prefilter-quote", "prefilter-backslash", "prefilter-colon",
+             "fixture-commits-over-cap"]
 
 
 @pytest.mark.parametrize("case", _REFUSALS)
@@ -259,6 +306,15 @@ def test_apply_accepts_text_at_its_size_limit(kind, proj):
     assert r.returncode == 0, u.out_of(r)
     ids = [x["id"] for x in _compiled(p)["units"]]
     assert "at-limit" in ids, ids
+
+
+def test_apply_accepts_fixture_commits_at_the_cap(proj):
+    """s-4's other edge (bsd-i1b1 r1): `commits: 10` is the cap, accepted."""
+    root, p = proj
+    _write(_place(p, "deny", "at-cap"), _md("at-cap", _commits_unit(10), _text(200)))
+    r = u.apply(root)
+    assert r.returncode == 0, u.out_of(r)
+    assert "at-cap" in [x["id"] for x in _compiled(p)["units"]]
 
 
 # ---- AC-3: every unit proves it can fire ----------------------------------------------------
@@ -340,7 +396,17 @@ def test_planted_unit_fixture_fails(name, side, index, why):
 # ---- AC-7: replay ----------------------------------------------------------------------------
 
 _SECRET = "SECRET-7f3a"
-_COMMANDS = ("echo alpha-one", "ls beta-two", f"rmfoo --all {_SECRET}/")
+# The 4th command is a near miss through `unless` (g-1, bsd-i1b1 r1: a replay that dropped
+# `unless` survived with three commands).
+_COMMANDS = ("echo alpha-one", "ls beta-two", f"rmfoo --all {_SECRET}/",
+             "rmfoo --all x/ --dry-run")
+
+
+def _count(word: str, out: str) -> int:
+    """The one number printed right after `word` (`scanned 4`, `hits 1`)."""
+    found = re.findall(rf"\b{word} (\d+)\b", out)
+    assert len(found) == 1, f"expected one `{word} <n>` in the output, found {found}:\n{out}"
+    return int(found[0])
 
 
 def _ring_by_the_generated_focus_entries(root: Path, session: str) -> "list[dict]":
@@ -365,8 +431,8 @@ def _ring_by_the_generated_focus_entries(root: Path, session: str) -> "list[dict
 
 @pytest.mark.parametrize("case", ["hashes-only", "show"])
 def test_replay(case, proj):
-    """AC-7: over a ring the generated focus entries wrote (three Bash events, one matching
-    sample-deny): scanned 3, hits 1, the hit's time and sha256 and no command text; `--show`
+    """AC-7: over a ring the generated focus entries wrote (four Bash events, one matching
+    sample-deny, one cancelled by its `unless`): scanned 4, hits 1, the hit's time and sha256 and no command text; `--show`
     adds the text; the limits line names DETAIL_MAX, the `who` upper bound and the unevaluated
     `when`."""
     from refmatrix import stm
@@ -379,8 +445,11 @@ def test_replay(case, proj):
     r = u.rmx(root, *args)
     assert r.returncode == 0, f"rmx {' '.join(args)}: exit {r.returncode}\n{u.out_of(r)}"
     out = u.out_of(r)
-    assert re.search(r"scanned\D{0,20}\b3\b|\b3\b\D{0,20}scanned", out), out
-    assert re.search(r"hits?\D{0,20}\b1\b|\b1\b\D{0,20}hits?\b", out), out
+    # s-5 (bsd-i1b1 r1): the counts are read, not matched loosely; a loose regex let a replay
+    # that counted every event as a hit pass (M27a).
+    assert _count("scanned", out) == 4, out
+    assert _count("hits", out) == 1, out
+    assert "unmeasurable" not in out, f"a `command` bind is measurable from the ring:\n{out}"
     hit = tools[2]
     full = hashlib.sha256(hit["detail"].encode()).hexdigest()
     span = hashlib.sha256(re.search(r"rmfoo +--all", hit["detail"]).group(0).encode()).hexdigest()
@@ -394,3 +463,56 @@ def test_replay(case, proj):
     assert str(stm.DETAIL_MAX) in out, f"the limits line does not name DETAIL_MAX:\n{out}"
     assert "upper bound" in low, f"the limits line does not say `who` is an upper bound:\n{out}"
     assert re.search(r"\bwhen\b", low), f"the limits line does not say `when` is unread:\n{out}"
+
+
+# ---- b-1 (bsd-i1b1 r1): replay names the binds the ring cannot measure ---------------------
+#
+# The ring writer (`cli._tool_event_fields`) keeps a Bash call's `command` and every other
+# tool's input minus `content`, `new_string`, `old_string` and `edits`. A unit bound to one of
+# those keys can never be hit by replay; a bare "hits 0" read as "safe to ship" before a deny
+# went live. The ring here is written by the GENERATED focus entries from a real envelope.
+
+_UNMEASURABLE = {
+    "write-content": ("Write", "content",
+                      {"file_path": "/w/app/a.py", "content": "x = 'rmfoo --all build/'\n"}),
+    "edit-new_string": ("Edit", "new_string",
+                        {"file_path": "/w/app/a.py", "old_string": "a",
+                         "new_string": "rmfoo --all build/"}),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_UNMEASURABLE))
+def test_replay_names_unmeasurable_binds(case, proj):
+    root, p = proj
+    tool, key, tool_input = _UNMEASURABLE[case]
+    fire = {"envelope": {"hook_event_name": "PreToolUse", "session_id": "fixture-session",
+                         "tool_name": tool, "tool_input": tool_input}}
+    calm = {"envelope": {"hook_event_name": "PreToolUse", "session_id": "fixture-session",
+                         "tool_name": tool, "tool_input": dict(tool_input, **{key: "ls"})}}
+    unit = {"kind": "deny", "priority": 5,
+            "bind": [{"event": "PreToolUse", "tool": tool, "match": {key: "rmfoo +--all"},
+                      "prefilter": "rmfoo"}],
+            "fixtures": {"fire": [fire], "pass": [calm]}}
+    _write(_place(p, "deny", "replay-unmeasurable"),
+           _md("replay-unmeasurable", unit, _text(200)))
+    session = f"replay-{uuid.uuid4().hex[:12]}"
+    h.mark_token(session)
+    pre = h.generated_cmd(root, "PreToolUse", "focus hook --event tool-pre")
+    post = h.generated_cmd(root, "PostToolUse", "focus hook --event tool")
+    env = {"session_id": session, "tool_name": tool, "tool_input": tool_input,
+           "tool_use_id": "toolu_unmeasurable", "cwd": str(p)}
+    for event, c in (("PreToolUse", pre), ("PostToolUse", post)):
+        e = dict(env, hook_event_name=event)
+        if event == "PostToolUse":
+            e["tool_response"] = {"success": True}
+        r = h.run_hook(c, root=root, envelope=e, timeout=60)
+        assert r.returncode == 0, (event, r.stderr)
+    tools = [ev for ev in h.jsonl(root / "stm" / f"{session}.jsonl") if ev.get("kind") == "tool"]
+    assert len(tools) == 1 and "rmfoo" not in str(tools[0].get("detail")), (
+        f"precondition: the ring writer drops `{key}` from a {tool} event: {tools}")
+    r = u.rmx(root, "rules", "replay", "replay-unmeasurable")
+    out = u.out_of(r)
+    assert r.returncode == 0, out
+    assert f"unmeasurable: bind[0].match.{key} is not stored in the ring" in out, (
+        f"replay does not name the bind it cannot measure:\n{out}")
+    assert _count("hits", out) == 0, out
