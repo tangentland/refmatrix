@@ -35,7 +35,7 @@ bug-318, L239) and **the curator fleet rollout** (after H1.a releases, L240). {#
 | build-i1a | I1.a contradiction edits | `/Volumes/littlebig/refmatrix-i1a` | merge; apply `workflow/review-output/i1a-memory-edits.md` (memory edits are the lead's) |
 | ~~p1b-review~~ | P1 (b) proportionality review — **merged `ecc5596c`** | `/Volumes/littlebig/refmatrix-p1b` | done; ruling + cuts with the user as Q72-Q77 |
 | green-i1b1 | I1.b1 GREEN (ch-implementer), RED `a07a7b83` + notes `e55961b4` | `/Volumes/littlebig/refmatrix-i1b1-green` @ `39e743a8` (brief `workflow/agents/green-i1b1.md`) | read report; mutations table; one ch-bsd pass in its own clone; merge |
-| t09a-probe | T0.9 (a) Docker probe | `/Volumes/littlebig/refmatrix-t09a` | read the band; (b) per its action |
+| ~~t09a-probe~~ | T0.9 (a) Docker probe — **merged `e5ee1fe2`, band go** | `/Volumes/littlebig/refmatrix-t09a` | done; next (b) with 3 containers; bug-321 logged from it |
 
 ## This session {#did}
 
