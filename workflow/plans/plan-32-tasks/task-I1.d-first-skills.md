@@ -13,7 +13,9 @@ metadata:
 
 # Task I1.d: the first skills {#root}
 
-> Status: drafted for the spec window (L232); the lead approves. Queue row I1.d.
+> Status: **a draft, not in the current spec window** (L233: a window item is a queue row, and
+> I1's next tasks are I1.a and I1.b). Kept as written on 2026-11-24; not approved, and to be
+> re-read against b0's verdicts and b1 to b3 as built when I1.d enters the window. Queue row I1.d.
 > Size: **small each after the first** (a skill, its bindings and fixtures); one `src/`
 > string (C12). One isolated agent per batch; the lead reads the diff. Waits on
 > [[task-I1.b3-dispatcher]] and on P11 ([[task-I1.b0-probes#verdicts]]). This spec is the
