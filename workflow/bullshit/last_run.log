@@ -146,3 +146,4 @@
 2026-11-24T10:00:00Z commit=5d28d2a5 verdict=DIRTY findings=4 (1B/1S/2M) report=2026-11-24-1000-b300-r1-5d28d2a5.md
 2026-11-24T10:30:00Z commit=9312ef1d verdict=GO findings=0 report=2026-11-24-1030-b300-confirm-9312ef1d.md
 2026-11-24T14:03:11-0800 commit=c7550ad5 verdict=DIRTY findings=1 (0B/0G/1S/0M) report=2026-11-24-1403-reprobe-c7550ad5.md
+2026-11-25T07:17:00Z commit=9954e391 verdict=DIRTY findings=10 (3B/2G/1S/4M) report=2026-11-25-0717-bug318-r1-9954e391.md

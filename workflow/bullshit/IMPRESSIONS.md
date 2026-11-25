@@ -9,6 +9,14 @@ tags: [bsd, impressions]
 Window: the newest run bullets. Older bullets are folded VERBATIM, anchor ids unchanged, into dated `impression_bsd_ledger_*` memories under `memory/impressions/`; every folded id stays addressable in [[#former-anchors]]. To compact again, fold the oldest dated group into a new ledger memory and append its ids below. Never delete an id: the reports citing `bsd-impressions#<id>` are records and are not edited.
 
 
+- 2026-11-25 (bug-318 r1, 9954e391): A CAPTURE RULE JUDGED ON THE HOOK ENVELOPE'S CWD MISSES THE
+  ORCHESTRATED SESSION'S DOMINANT FORM. Subagent hooks land in the lead's ring with cwd = the dev
+  tree while their commands run `cd /Volumes/littlebig/<clone> && git …` (360/551 live git
+  events). Any STM capture keyed on cwd needs a test where envelope cwd differs from the target
+  repo. {#imp-capture-cwd-is-not-the-repo}
+- 2026-11-25 (bug-318 r1): A GAP DISCLOSED IN A DOCSTRING WITHOUT A COUNT IS THE CHEAP FIX AGAIN.
+  "`cd X && git ...` is not followed" was the majority case. Ask for the real-data count before
+  accepting a disclosed limitation. {#imp-disclosed-gap-needs-a-count}
 - 2026-11-14 (bug-216 r2, 25ceacd): A REMEDY RED THAT REBUILDS THE REPRO IN A MORE CONVENIENT
   PLACE TESTS A DIFFERENT BUG. r1's memdir sat outside the project. The RED put it under
   `<proj>/.claude/`, the fix handled only "inside the project", and the original repro is still red.

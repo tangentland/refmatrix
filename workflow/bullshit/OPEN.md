@@ -28,6 +28,12 @@ rel: depends-on -> [[bsd-closed-findings]]
 | t02-r1-S4 | [[bsd-reprobe-c7550ad5]] (from 2026-11-15-2009-t02-r1-1121b4e) | SKETCHY (handed off) | `register_spawn` has no adopter; per-test leak attribution missing | no leak unseen (ledger + reaper fail the session); attribution only | T0.9 `#c-kit` (`tests/daemons.py`, `recorded_daemon`) | 2026-11-15 |
 | 294a-r1-s-2 | [[bsd-294a-r1-1bb14a5b]] | SKETCHY (handed off) | 56 of 213 `tier_unit` files spawn a process or connect to a unix socket at runtime; `tier_of` reads source only (bug-305) | no unsafe run (AC-12's live-touch guard fails the run); the unit tier is mis-classified, so it is not the fast, daemon-free tier it claims | T1 tier layout, bug-305 `open` (L197) | 2026-11-24 |
 | t05-c2-MB1d | 2026-11-19-1320-t05-confirm-lite2-521f32b6 | GATE (rated by the lead under P1, L218) | mutation MB1d (`62da64a6`: the memory_brief op's `exclude_mtypes=brief_mod.EXCLUDE_MTYPES` dropped) survives the verify set (53 passed) | the exclusion is unpinned; a later change can drop it silently | bug-295 (open): a killing test or an L-row ruling | 2026-11-19 |
+| b318-r1-B1 | [[bsd-bug318-r1-9954e391]] | BULLSHIT | milestone capture judges `cd <repo> && git` against the hook cwd | most agent commits silently lost; false milestones with another commit's WHY | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
+| b318-r1-B2 | [[bsd-bug318-r1-9954e391]] | BULLSHIT | only the first ref-moving git call in a command counts | commit WHY and diff refs lost; second repo dropped | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
+| b318-r1-B3 | [[bsd-bug318-r1-9954e391]] | BULLSHIT | failed pre-read swallowed; missing pre record falls back to the last milestone's sig | silent failure on a memory path; false milestone recorded | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
+| b318-r1-G1 | [[bsd-bug318-r1-9954e391]] | GATE | mutant M4 (no reverse-priority cut order) survives | the handoff cut order is unpinned | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
+| b318-r1-G2 | [[bsd-bug318-r1-9954e391]] | GATE | mutant M7 (dedup by terse, not sha) survives | the sha dedup is unpinned | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
+| b318-r1-S1 | [[bsd-bug318-r1-9954e391]] | SKETCHY (handed off) | part 3 (`## Agents in flight`) not built; handed to the lead | the handoff still lacks in-flight agents; bug-318 cannot close | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
 
 {#open-table}
 
