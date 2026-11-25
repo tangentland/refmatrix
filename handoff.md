@@ -30,7 +30,7 @@ bug-318, L239) and **the curator fleet rollout** (after H1.a releases, L240). {#
 | agent | work | where | next for the lead |
 |---|---|---|---|
 | bsd-c2 | one ch-bsd pass on C2 `04c25731..9afff800` | `/Volumes/littlebig/refmatrix-bsd-c2` (its probe test failed: a finding) | persist report, OPEN rows; fold or merge; full suite on merged master; release + deploy (L239) |
-| build-h1a | H1.a template reconcile (bug-319) | `/Volumes/littlebig/refmatrix-h1a` (verify log `workflow/review-output/h1a-verify.log`) | read the diff, merge; ships in the C2 release; then the curator fleet rollout, Q70, Q71 |
+| ~~build-h1a~~ | H1.a template reconcile (bug-319) — **merged `ec537111`** | `/Volumes/littlebig/refmatrix-h1a` | done; ships in the C2 release; then the curator fleet rollout, Q70, Q71 |
 | build-b1 | B1 F4/F7 | isolated `rmxtest3` (`scripts/agent-peek.sh 3 build-b1`) | merge; write the F7 memory fold from `workflow/review-output/b1-f7-fold.txt` + bridge |
 | build-i1a | I1.a contradiction edits | `/Volumes/littlebig/refmatrix-i1a` | merge; apply `workflow/review-output/i1a-memory-edits.md` (memory edits are the lead's) |
 | p1b-review | P1 (b) proportionality review (Fable) | `/Volumes/littlebig/refmatrix-p1b` | merge the review; its cuts go to the user as Q ids |
