@@ -327,3 +327,54 @@ def test_an_unreadable_or_missing_before_state_is_said_never_guessed(tmp_path):
     _hook(tmp_path, "tool", tmp_path, cmd, "", sid="m4")
     assert [r["terse"] for r in _gits(tmp_path, "m4")] == [
         "commit (ref state before unreadable: RuntimeError)"]
+
+
+@pytest.mark.parametrize("pre", ["git reset -q p", "git tag t", "git pull --ff-only ."])
+def test_a_content_verb_beats_every_other_ref_moving_verb(tmp_path, pre):
+    """B2 residual: `<non-content verb> && git commit` records the commit with its reason."""
+    repo = _repo(tmp_path, BODY, SOURCE)
+    cmd = f"cd {repo} && {pre} && git commit -q -m 'feat: s'"
+    _hook(tmp_path, "tool-pre", tmp_path, cmd)
+    _commit_in(repo, "feat: s")
+    _hook(tmp_path, "tool", tmp_path, cmd, "")
+    assert [r["terse"] for r in _gits(tmp_path)] == [f"commit {_head(repo)}"]
+    p = tmp_path / ".refmatrix" / "stm" / "m1.jsonl"
+    assert any(json.loads(x)["kind"] == "reason" for x in p.read_text().splitlines())
+
+
+def test_a_sig_parked_by_the_old_build_is_before_unknown_not_a_crash(tmp_path):
+    """N-1: an in-flight record with a STRING sig (the old build) must not raise in post."""
+    repo = _repo(tmp_path, BODY, SOURCE)
+    cmd = f"git -C {repo} commit -q -m x"
+    _hook(tmp_path, "tool-pre", tmp_path, cmd)
+    inf = tmp_path / ".refmatrix" / "stm"
+    f = next(inf.glob("*inflight*"))
+    d = json.loads(f.read_text())
+    for rec in d.values():
+        rec["sig"] = "abc:def"
+    f.write_text(json.dumps(d))
+    r = _hook(tmp_path, "tool", tmp_path, cmd, "")
+    assert [x["terse"] for x in _gits(tmp_path)] == [
+        "commit (ref state before unknown: no PreToolUse record)"], r.output
+
+
+@pytest.mark.parametrize("shape", [
+    "for i in 1 2; do git -C {r} commit -q -m 'feat: s'; done",
+    "while true; do git -C {r} commit -q -m 'feat: s'; break; done",
+    "if git -C {r} commit -q -m 'feat: s'; then echo ok; fi",
+])
+def test_git_inside_loop_and_if_bodies_is_detected(tmp_path, shape):
+    repo = _repo(tmp_path, BODY, SOURCE)
+    cmd = shape.format(r=repo)
+    _hook(tmp_path, "tool-pre", tmp_path, cmd)
+    _commit_in(repo, "feat: s")
+    _hook(tmp_path, "tool", tmp_path, cmd, "")
+    assert [r["terse"] for r in _gits(tmp_path)] == [f"commit {_head(repo)}"]
+
+
+def test_cd_to_a_variable_is_said_not_judged_in_the_old_cwd(tmp_path):
+    repo = _repo(tmp_path, BODY, SOURCE)
+    cmd = "cd $CLONE && git commit -q -m x"
+    _hook(tmp_path, "tool-pre", repo, cmd)
+    _hook(tmp_path, "tool", repo, cmd, "")
+    assert [r["terse"] for r in _gits(tmp_path)] == ["commit (repo unknown: cd $CLONE)"]

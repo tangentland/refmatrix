@@ -2062,7 +2062,9 @@ _GIT_MILESTONE_VERBS = ("commit", "push", "merge", "rebase", "checkout", "switch
 _GIT_OPT_WITH_ARG = ("-C", "-c", "--git-dir", "--work-tree", "--namespace")
 _GIT_SEGMENT_SPLIT_RE = _re_mod.compile(r"&&|\|\||[;|&\n`]")
 _OPEN, _CLOSE = ["\0("], ["\0)"]       # subshell markers between the simple commands
-_WRAPPERS = ("time", "command", "nohup", "exec", "{", "!", "builtin")
+_WRAPPERS = ("time", "command", "nohup", "exec", "{", "!", "builtin",
+             "do", "then", "else", "elif", "if", "while", "until")   # loop / if bodies
+_CONTENT_VERBS = ("commit", "merge", "cherry-pick", "revert")
 
 
 def _shell_segments(cmd: str) -> "list[list[str]]":
@@ -2159,6 +2161,8 @@ def _strip_prefix(w: "list[str]") -> "list[str]":
 
 
 def _resolve_dir(base: str, path: str) -> str:
+    if base.startswith("?"):       # a cd whose target is not known stays unknown
+        return base
     return os.path.normpath(os.path.join(base, os.path.expanduser(path)))
 
 
@@ -2180,7 +2184,9 @@ def _git_milestone_calls(cmd: str, cwd: str = "") -> "list[tuple[str, str]]":
             continue
         if w[0] in ("cd", "pushd"):
             args = [a for a in w[1:] if not a.startswith("-")]
-            if args and "$" not in args[0]:
+            if args and "$" in args[0]:
+                here = f"?cd {args[0]}"      # not followed: said at the call, not guessed
+            elif args:
                 here = _resolve_dir(here, args[0])
             continue
         if w[0].rsplit("/", 1)[-1] != "git":
@@ -2461,6 +2467,8 @@ def focus_hook(event):
         if isinstance(cmd, str):
             sig = {}
             for _verb, prepo in _git_milestone_calls(cmd, d.get("cwd") or str(_root().parent)):
+                if prepo.startswith("?"):
+                    continue
                 try:
                     sig[prepo] = _git_ref_sig(prepo)
                 except Exception as e:  # noqa: BLE001 -- the post hook records it, visibly
@@ -2512,16 +2520,22 @@ def focus_hook(event):
         # from the output. Nothing is guessed (L221: STM capture is a memory path): a state that
         # cannot be read, before or after, is recorded as such; only a read that shows no
         # movement drops the event.
-        weak = ("push", "checkout", "switch")
         calls = (_git_milestone_calls(cmd, d.get("cwd") or str(_root().parent))
                  if isinstance(cmd, str) else [])
         per_repo: "dict[str, str]" = {}
         for verb, repo in calls:       # one event per repo: the verb that carries content
-            if repo not in per_repo or (per_repo[repo] in weak and verb not in weak):
+            if repo not in per_repo or (per_repo[repo] not in _CONTENT_VERBS
+                                        and verb in _CONTENT_VERBS):
                 per_repo[repo] = verb
-        parked_sig = parked.get("sig") or {}
+        parked_sig = parked.get("sig")
+        if not isinstance(parked_sig, dict):   # parked by an older build: a str
+            parked_sig = {}
         recorded = False
         for repo, sub in per_repo.items():
+            if repo.startswith("?"):
+                s.record("git", f"{sub} (repo unknown: {repo[1:]})"[:300], refs=[], detail=detail)
+                recorded = True
+                continue
             before = parked_sig.get(repo)
             try:
                 after = _git_ref_sig(repo)
