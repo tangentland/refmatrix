@@ -442,6 +442,11 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
               f"{type(exc).__name__}: {exc}", file=_sys.stderr)
 
 
+_WEAK_VERBS = ("push", "checkout", "switch")
+MILESTONES_MAX = 30          # the digest keeps the newest 30 (bug-318)
+HANDOFF_MAX_BYTES = 40_000   # the handoff file: ~20k tokens at 2 B/token, under the 25k Read cap
+
+
 def _focus_digest(s) -> str:
     """Condense a session's STM — topics, milestones, intent arc, touched
     files — into a compact markdown digest."""
@@ -475,8 +480,28 @@ def _focus_digest(s) -> str:
             L.append(f"- **{members[0]}** — {', '.join(members[:6])}")
         L.append("")
     if gits:
+        # bug-318: the newest MILESTONES_MAX, one per sha (a re-run command repeats one), and
+        # a line saying what was cut: an uncapped list was ~330 lines of a 9-day session.
+        seen: set = set()
+        keep: list = []
+        for e in reversed(gits):
+            m = re.match(r"^([\w-]+) ([0-9a-f]{7,40}) ", e["terse"])
+            key = m.group(2) if m else e["terse"]
+            if key not in seen:
+                seen.add(key)
+                keep.append(e)
+            elif m and m.group(1) not in _WEAK_VERBS:
+                # one line per sha, and the verb that carries content (commit, merge, ...)
+                # beats a later push / checkout of the same commit
+                j = next(j for j, k in enumerate(keep)
+                         if (re.match(r"^[\w-]+ ([0-9a-f]{7,40}) ", k["terse"]) or [0, k["terse"]])[1] == key)
+                if re.match(rf"^({'|'.join(_WEAK_VERBS)}) ", keep[j]["terse"]):
+                    keep[j] = e
         L.append("## Milestones")
-        for e in gits:
+        if len(keep) > MILESTONES_MAX:
+            L.append(f"- … {len(keep) - MILESTONES_MAX} older milestones cut; all of them: "
+                     f"`rmx focus context` / `rmx focus export`")
+        for e in reversed(keep[:MILESTONES_MAX]):
             L.append(f"- {e['terse']}")
         L.append("")
     if files:
@@ -966,7 +991,13 @@ def recall_state_blocks(rep: dict, *, handoff_lines: int = 24,
         blocks.append("recent memories\n" + "".join(
             f"  {mid} — {title}\n" for mid, title in recents[:recent_limit]))
     if rep.get("stm_digest"):
-        blocks.append("STM digest (live session)\n" + str(rep["stm_digest"]).rstrip("\n") + "\n")
+        # bug-318: the digest as one block per `## ` section, the sections a byte budget cuts
+        # FIRST last (touched files, then milestones), so a cut drops them and not the whole digest.
+        parts = re.split(r"(?m)^(?=## )", "STM digest (live session)\n" + str(rep["stm_digest"]))
+        parts = [p if p.endswith("\n") else p + "\n" for p in parts if p.strip()]
+        late = ("## Touched", "## Milestones")
+        blocks.extend([p for p in parts if not p.startswith(late)]
+                      + [p for k in late for p in parts if p.startswith(k)])
     return blocks
 
 

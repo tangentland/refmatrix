@@ -2053,17 +2053,183 @@ def _last_assistant_text(transcript_path: str) -> str:
 
 
 import re as _re_mod
-# Mutating git ops are work milestones (commit/push/merge/...); read-only ones
-# (status/log/diff/show) are noise and stay out.
-_GIT_MILESTONE_RE = _re_mod.compile(
-    r"(?:^|&&|\|\||;|\||\(|\n)\s*git\s+(?:-C\s+\S+\s+)?"
-    r"(commit|push|merge|rebase|checkout|switch|tag|reset|revert|"
-    r"cherry-pick|stash|pull|clone|init)\b")
+# A git MILESTONE (bug-318) is a ref-moving git verb that the command RAN as a command (not a
+# `git ...` inside a quoted string, an echo, a grep pattern, a `rmx focus note`) and that moved
+# HEAD or a ref (`_git_ref_sig` differs from before the call). Read-only and non-moving verbs
+# are not milestones.
+_GIT_MILESTONE_VERBS = ("commit", "push", "merge", "rebase", "checkout", "switch", "tag",
+                        "reset", "revert", "cherry-pick", "pull")
+_GIT_OPT_WITH_ARG = ("-C", "-c", "--git-dir", "--work-tree", "--namespace")
+_GIT_SEGMENT_SPLIT_RE = _re_mod.compile(r"&&|\|\||[;|&\n`]")
+_OPEN, _CLOSE = ["\0("], ["\0)"]       # subshell markers between the simple commands
+_WRAPPERS = ("time", "command", "nohup", "exec", "{", "!", "builtin",
+             "do", "then", "else", "elif", "if", "while", "until")   # loop / if bodies
+_CONTENT_VERBS = ("commit", "merge", "cherry-pick", "revert")
+
+
+def _shell_segments(cmd: str) -> "list[list[str]]":
+    """The simple commands of a shell line as word lists, with `(`/`)` as marker segments:
+    split on unquoted `&&`, `||`, `;`, `|`, `&`, newlines and backticks; quotes group a word and
+    hide operators; heredoc bodies are skipped; a `$(...)` inside double quotes is parsed as its
+    own commands. Not a full shell: enough to tell a command from text."""
+    segs: "list[list[str]]" = []
+    words: "list[str]" = []
+    cur: "list[str]" = []
+    have = False
+    heredocs: "list[str]" = []
+    i, n = 0, len(cmd)
+
+    def end_word():
+        nonlocal cur, have
+        if have:
+            words.append("".join(cur))
+        cur, have = [], False
+
+    def end_seg():
+        nonlocal words
+        end_word()
+        if words:
+            segs.append(words)
+        words = []
+
+    while i < n:
+        c = cmd[i]
+        if c == "\\" and i + 1 < n:
+            cur.append(cmd[i + 1]); have = True; i += 2; continue
+        if c in "'\"":
+            j = i + 1
+            while j < n and cmd[j] != c:
+                j += 2 if (c == '"' and cmd[j] == "\\") else 1
+            body = cmd[i + 1:j]
+            if c == '"':
+                k = body.find("$(")
+                while k >= 0:           # command substitutions inside double quotes
+                    depth, m = 1, k + 2
+                    while m < len(body) and depth:
+                        depth += {"(": 1, ")": -1}.get(body[m], 0)
+                        m += 1
+                    end_seg()
+                    segs.append(_OPEN)
+                    segs.extend(_shell_segments(body[k + 2:m - 1]))
+                    segs.append(_CLOSE)
+                    k = body.find("$(", m)
+            cur.append(body); have = True; i = j + 1; continue
+        if cmd.startswith("<<", i) and not cmd.startswith("<<<", i):
+            m = _re_mod.match(r"<<-?\s*(['\"]?)([A-Za-z_][\w]*)\1", cmd[i:])
+            if m:
+                heredocs.append(m.group(2)); i += m.end(); continue
+        if c == "\n" and heredocs:
+            end_seg()
+            i += 1
+            for tag in heredocs:
+                while i < n:
+                    e = cmd.find("\n", i)
+                    line = cmd[i:n if e < 0 else e]
+                    i = n if e < 0 else e + 1
+                    if line.strip() == tag:
+                        break
+            heredocs = []
+            continue
+        if c in "()":
+            end_seg(); segs.append(_OPEN if c == "(" else _CLOSE); i += 1; continue
+        m = _GIT_SEGMENT_SPLIT_RE.match(cmd, i)
+        if m:
+            end_seg(); i = m.end(); continue
+        if c.isspace():
+            end_word(); i += 1; continue
+        cur.append(c); have = True; i += 1
+    end_seg()
+    return segs
+
+
+def _strip_prefix(w: "list[str]") -> "list[str]":
+    """The command words after env assignments and wrappers (env, sudo, time, command, `{`)."""
+    while w:
+        if _re_mod.match(r"^[A-Za-z_]\w*=", w[0]) or w[0] in _WRAPPERS:
+            w = w[1:]
+        elif w[0] == "env":
+            w = w[1:]
+            while w and (w[0].startswith("-") or "=" in w[0]):
+                w = w[1:]
+        elif w[0] == "sudo":
+            w = w[1:]
+            while w and w[0].startswith("-"):
+                w = w[2:] if w[0] in ("-u", "-g") else w[1:]
+        else:
+            break
+    return w
+
+
+def _resolve_dir(base: str, path: str) -> str:
+    if base.startswith("?"):       # a cd whose target is not known stays unknown
+        return base
+    return os.path.normpath(os.path.join(base, os.path.expanduser(path)))
+
+
+def _git_milestone_calls(cmd: str, cwd: str = "") -> "list[tuple[str, str]]":
+    """(verb, repo dir) for EVERY ref-moving git verb `cmd` runs as a command, in order. The
+    repo is where that call runs: `cwd`, moved by the `cd`/`pushd` before it in the same chain
+    or subshell (a `( ... )` restores it), then by each `-C <path>` of the call (`~` expanded,
+    relative to the directory so far)."""
+    out: "list[tuple[str, str]]" = []
+    here, stack = cwd, []
+    for w in _shell_segments(cmd):
+        if w == _OPEN:
+            stack.append(here); continue
+        if w == _CLOSE:
+            here = stack.pop() if stack else here
+            continue
+        w = _strip_prefix(w)
+        if not w:
+            continue
+        if w[0] in ("cd", "pushd"):
+            args = [a for a in w[1:] if not a.startswith("-")]
+            if args and "$" in args[0]:
+                here = f"?cd {args[0]}"      # not followed: said at the call, not guessed
+            elif args:
+                here = _resolve_dir(here, args[0])
+            continue
+        if w[0].rsplit("/", 1)[-1] != "git":
+            continue
+        k, repo = 1, here
+        while k < len(w) and w[k].startswith("-"):
+            if w[k] == "-C" and k + 1 < len(w):
+                repo = _resolve_dir(repo, w[k + 1])
+            k += 2 if w[k] in _GIT_OPT_WITH_ARG else 1
+        if k < len(w) and w[k] in _GIT_MILESTONE_VERBS:
+            out.append((w[k], repo))
+    return out
 
 
 def _git_milestone_subcmd(cmd: str) -> str | None:
-    m = _GIT_MILESTONE_RE.search(cmd)
-    return m.group(1) if m else None
+    c = _git_milestone_calls(cmd)
+    return c[0][0] if c else None
+
+
+def _git_ref_sig(repo: str) -> str:
+    """HEAD plus every ref, as one string: it changes iff a commit, merge, reset, checkout,
+    tag, pull or push moved something. RAISES when the state cannot be read (git missing, a
+    timeout, not a repo): the caller records that, it never means "nothing moved"."""
+    import hashlib
+    import subprocess
+    h = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True,
+                       text=True, timeout=5)
+    refs = subprocess.run(["git", "-C", repo, "for-each-ref"], capture_output=True,
+                          text=True, timeout=5)
+    if h.returncode or refs.returncode or not h.stdout.strip():
+        raise RuntimeError(f"git exit {h.returncode}/{refs.returncode} in {repo}")
+    return f"{h.stdout.strip()}:{hashlib.sha1(refs.stdout.encode()).hexdigest()[:12]}"
+
+
+def _git_head_line(repo: str) -> str:
+    """`<short-sha> <subject>` of HEAD, read from git, never from a command's output.
+    RAISES when it cannot be read."""
+    import subprocess
+    r = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h %s", "HEAD"],
+                       capture_output=True, text=True, timeout=5)
+    if r.returncode or not r.stdout.strip():
+        raise RuntimeError(f"git log exit {r.returncode} in {repo}")
+    return r.stdout.strip()
 
 
 def _tool_output_text(resp) -> str:
@@ -2294,8 +2460,22 @@ def focus_hook(event):
     s = stm_mod.Stm(root, session)
     if event == "tool-pre":
         terse, refs, detail = _tool_event_fields(d)
+        cmd = (d.get("tool_input") or {}).get("command")
+        # bug-318: the ref state BEFORE a command that runs a ref-moving git verb, so the
+        # post hook can tell a milestone (something moved) from a failed or no-op verb.
+        sig = None
+        if isinstance(cmd, str):
+            sig = {}
+            for _verb, prepo in _git_milestone_calls(cmd, d.get("cwd") or str(_root().parent)):
+                if prepo.startswith("?"):
+                    continue
+                try:
+                    sig[prepo] = _git_ref_sig(prepo)
+                except Exception as e:  # noqa: BLE001 -- the post hook records it, visibly
+                    sig[prepo] = f"!{type(e).__name__}"
+            sig = sig or None
         s.inflight_begin(_tool_call_key(d), terse=terse, refs=refs,
-                         detail=detail)
+                         detail=detail, sig=sig)
         return
     if event == "input":
         # Task 21.1 R9, in THIS order: (1) bug-109's pointer write, (2) the pre-prompt
@@ -2330,35 +2510,66 @@ def focus_hook(event):
         if text:
             s.record("say", text[:300], refs=[])
     else:
-        s.inflight_end(_tool_call_key(d))
+        parked = s.inflight_end(_tool_call_key(d)) or {}
         terse, refs, detail = _tool_event_fields(d)
         tool = d.get("tool_name") or "tool"
         ti = d.get("tool_input") or {}
         cmd = ti.get("command")
-        # Git milestones: capture the op + its output line as a `git` event —
-        # the work narrative's anchors (committed X, pushed Y, merged Z).
-        sub = _git_milestone_subcmd(cmd) if isinstance(cmd, str) else None
-        if sub:
-            out = _tool_output_text(d.get("tool_response"))
-            first = next((ln for ln in out.splitlines() if ln.strip()), "")
-            terse = f"git {sub}: {first}".strip()
+        # Git milestones (bug-318): EVERY ref-moving git call the command ran, each judged in
+        # the repo it ran in; recorded as `<verb> <short-sha> <subject>` read from git, never
+        # from the output. Nothing is guessed (L221: STM capture is a memory path): a state that
+        # cannot be read, before or after, is recorded as such; only a read that shows no
+        # movement drops the event.
+        calls = (_git_milestone_calls(cmd, d.get("cwd") or str(_root().parent))
+                 if isinstance(cmd, str) else [])
+        per_repo: "dict[str, str]" = {}
+        for verb, repo in calls:       # one event per repo: the verb that carries content
+            if repo not in per_repo or (per_repo[repo] not in _CONTENT_VERBS
+                                        and verb in _CONTENT_VERBS):
+                per_repo[repo] = verb
+        parked_sig = parked.get("sig")
+        if not isinstance(parked_sig, dict):   # parked by an older build: a str
+            parked_sig = {}
+        recorded = False
+        for repo, sub in per_repo.items():
+            if repo.startswith("?"):
+                s.record("git", f"{sub} (repo unknown: {repo[1:]})"[:300], refs=[], detail=detail)
+                recorded = True
+                continue
+            before = parked_sig.get(repo)
+            try:
+                after = _git_ref_sig(repo)
+            except Exception as e:  # noqa: BLE001
+                s.record("git", f"{sub} (ref state unreadable: {type(e).__name__})"[:300],
+                         refs=[], detail=detail)
+                recorded = True
+                continue
+            if before is None:
+                s.record("git", f"{sub} (ref state before unknown: no PreToolUse record)"[:300],
+                         refs=[], detail=detail)
+                recorded = True
+                continue
+            if before.startswith("!"):
+                s.record("git", f"{sub} (ref state before unreadable: {before[1:]})"[:300],
+                         refs=[], detail=detail)
+                recorded = True
+                continue
+            if after == before:
+                continue
+            try:
+                terse = f"{sub} {_git_head_line(repo)}"
+            except Exception as e:  # noqa: BLE001
+                terse = f"{sub} (head unreadable: {type(e).__name__})"
             diff_refs: list[str] = []
-            # Capture the diffstat right after a content-changing milestone so
-            # the event records WHAT changed; the changed files become refs.
             if sub in ("commit", "merge", "cherry-pick", "revert"):
-                repo = d.get("cwd") or str(_root().parent)
-                stat, diff_refs = _git_diff_summary(repo)
-                if stat:
-                    terse = f"{terse}  [{stat}]"
-            # detail carries the verbatim git invocation — `terse` holds only
-            # the subcommand + its first output line.
+                diff_refs = _git_diff_summary(repo)[1]
             s.record("git", terse[:300], refs=diff_refs, detail=detail)
+            recorded = True
             # Harvest the WHY from the two channels that are already mandatory,
             # rather than asking the agent to volunteer it (a `focus note` the
             # agent must remember to call is, empirically, not called). A merge
             # is skipped: its body is generated, not authored.
             if sub in ("commit", "cherry-pick", "revert"):
-                repo = d.get("cwd") or str(_root().parent)
                 body = _git_commit_rationale(repo)
                 if body:
                     head = body.splitlines()[0].strip()
@@ -2373,6 +2584,7 @@ def focus_hook(event):
                         refs=cfiles or diff_refs,
                         detail="\n".join(comments),
                     )
+        if recorded:
             return
         s.record("tool", terse, refs=refs, detail=detail)
 
@@ -14480,8 +14692,9 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
 def _recall_state_handoff(root: Path, memory_dir: "Path | None",
                           max_bytes: "int | None") -> None:
     """`rmx recall-state --handoff`, the SessionStart(compact|clear) entry
-    (task-compaction-as-handoff R3/R3b/R6, L195, 2026-11-24): write the FULL report, byte for
-    byte what `rmx recall-state --session <s>` prints, to `<store>/handoffs/<session>.txt`,
+    (task-compaction-as-handoff R3/R3b/R6, L195, 2026-11-24): write the report, byte for
+    byte what `rmx recall-state --session <s>` prints (over `handoff.HANDOFF_MAX_BYTES`,
+    40,000 B, the fitted report with the cut stated: bug-318), to `<store>/handoffs/<session>.txt`,
     arm the session's read gate, and print only the pointer (path, bytes, "before any other
     action", "authoritative", the active goal). A full handoff measured 45,870 B on
     2026-11-14, over the hook cap and the Bash tool's output cap; a Read carries neither.
@@ -14504,7 +14717,8 @@ def _recall_state_handoff(root: Path, memory_dir: "Path | None",
         rep = _verbs.recall_state(root, session=session,
                                   memory_dir=str(memory_dir) if memory_dir else None,
                                   max_bytes=max_bytes)
-        full = _handoff.fit_recall_state(rep, None)[0]
+        # bug-318: the file stays under the Read cap; the cut is stated in it.
+        full = _handoff.fit_recall_state(rep, _handoff.HANDOFF_MAX_BYTES)[0]
         fitted = rep.get("text")
         if fitted is None:
             fitted = _handoff.fit_recall_state(
@@ -14542,7 +14756,7 @@ def _recall_state_handoff(root: Path, memory_dir: "Path | None",
                    "naming `rmx recall-state` when anything was cut. The SessionStart "
                    "compact|clear hook passes hook_budget's recall_state entry.")
 @click.option("--handoff", "handoff_file", is_flag=True,
-              help="The SessionStart compact|clear hook form: write the FULL report to "
+              help="The SessionStart compact|clear hook form: write the report (over 40,000 B the fitted one, cut stated) to "
                    "<store>/handoffs/<session>.txt (session from the hook envelope on "
                    "stdin), gate the session's tools until that file is Read, and print "
                    "only a pointer to it. If the file cannot be written, the --max-bytes "
