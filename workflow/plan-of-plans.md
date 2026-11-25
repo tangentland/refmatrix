@@ -576,7 +576,7 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q78**. Open: Q67-Q69 (not blocking: I1.c/I1.d are outside the window); Q72-Q77 (P1 (b) proportionality review, merged `ecc5596c`; they gate only the entry rewrites, not the current window). Each reply that asks anything ends with the ids still open.
+Next id: **Q79**. Open: Q67-Q69 (not blocking: I1.c/I1.d are outside the window); Q78 (per-file versions on instructions); Q72-Q77 (P1 (b) proportionality review, merged `ecc5596c`; they gate only the entry rewrites, not the current window). Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -589,6 +589,7 @@ Next id: **Q78**. Open: Q67-Q69 (not blocking: I1.c/I1.d are outside the window)
 | Q75 | 2026-11-25 | P1b-Q3: review of a measurement with no `src/` change (21.5 phase M, G30) ([[proportionality-review-2026-11-25#q3]]) | **(a, rec)** 21.5 phase M gets one ch-bsd pass, no repeat; G30's report gets the lead's read; (b) both one pass; (c) neither | open |
 | Q76 | 2026-11-25 | P1b-Q4: trimming history sections (4,463 lines, 13%; 183 of 397 history anchors are linked from live text) ([[proportionality-review-2026-11-25#q4]]) | **(a, rec)** no separate pass; history leaves only at an entry rewrite; (b) trim the five clean files (69 lines); (c) trim all and re-point 183 links | open |
 | Q77 | 2026-11-25 | P1b-Q5: what "one page" means for a spec with 20+ ACs (e.g. 23.1: 21 ACs, 53 mutation rows) at its entry rewrite ([[proportionality-review-2026-11-25#q5]]) | **(a, rec)** the page is goal, files and risks; the AC and `src/` mutation tables carry over word for word, script-checked; (b) the architect may merge or drop ACs, each drop put to the user | open |
+| Q78 | 2026-11-25 | The user: "we add a semver to the agent definitions and other instructions" — per-file versions on packaged agents, commands, skills, rules and units. ADR 0007 `#dist-version` says today "template version = rmx version" (no per-file version), so (a) amends an Accepted ADR. Evidence: bug-319 (fleet curator copies pre-task-3.7, undetectable as stale) and F6 (ten checksums for `ch-bsd.md`, old vs locally edited indistinguishable) | **(a, rec)** per-file semver in frontmatter `metadata.version` (major = a contract the text tells the agent to use changed shape, e.g. `curator drain --token`; minor = new section or capability; patch = wording), plus an install stamp (`metadata.installed_from`: rmx version + template sha) written by the installer; a lock file `templates/VERSIONS.json` keeps every released (version, sha) per file and a guard test fails when a template's sha changes without a bump; `--check` classes an installed copy as current / stale (equals an older released version: replace safely) / local edit (equals none: backup first), and names a pending major. Built in H1.c (backup-before-replace and the three classes already land there); ADR 0007 `#dist-version` amended; (b) the install stamp only (rmx version + sha, nothing hand-bumped; keeps `#dist-version`; cannot say "breaking"); (c) no change | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
