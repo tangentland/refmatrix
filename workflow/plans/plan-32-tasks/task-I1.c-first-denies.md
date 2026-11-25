@@ -13,7 +13,9 @@ metadata:
 
 # Task I1.c: the first denies {#root}
 
-> Status: drafted for the spec window (L232); the lead approves. Queue row I1.c.
+> Status: **a draft, not in the current spec window** (L233: a window item is a queue row, and
+> I1's next tasks are I1.a and I1.b). Kept as written on 2026-11-24; not approved, and to be
+> re-read against b0's verdicts and b1 to b3 as built when I1.c enters the window. Queue row I1.c.
 > Size: **small each** (a unit file and its fixtures; package data and `.claude/`, no code).
 > One isolated agent writes the units; the lead runs the replays (they read the live STM
 > rings) and reads the diff. Waits on [[task-I1.b3-dispatcher]]. The units are inert until
