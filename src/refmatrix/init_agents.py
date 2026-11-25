@@ -88,6 +88,43 @@ def install_commands(project_root: Path, force: bool = False, *,
     return out
 
 
+def without_frontmatter_id(text: str) -> str:
+    """`text` with the `id:` line of its leading frontmatter block removed (nothing else).
+
+    The ONE allowed difference between an installed agent or command and its template: an
+    installed GMD doc carries its project's id (`refmatrix/gmd-curator`), so a copy that
+    differs only there is the template (task-H1.a AC-2, bug-319). `install-hooks --check`
+    classes agents and commands through this (task-I1.b1 #agents-leg), so a project whose copy
+    names its own id prints no false drift line."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\n") != "---":
+        return text
+    for i in range(1, len(lines)):
+        if lines[i].rstrip("\n") == "---":
+            break
+        if lines[i].startswith("id: "):
+            return "".join(lines[:i] + lines[i + 1:])
+    return text
+
+
+def template_copy_class(installed: str, template: str) -> str:
+    """`generated` when an installed agent or command equals its template, the frontmatter
+    `id:` line excepted (`without_frontmatter_id`); else `drift`."""
+    if installed == template:
+        return "generated"
+    if without_frontmatter_id(installed) == without_frontmatter_id(template):
+        return "generated"
+    return "drift"
+
+
+def packaged_md(kind: str) -> "dict[str, str]":
+    """{name: text} of every packaged `.md` of `kind` (`agents` or `commands`)."""
+    pkg = resources.files(TEMPLATE_PKG if kind == "agents" else COMMANDS_PKG)
+    return {p.name: p.read_text(encoding="utf-8")
+            for p in sorted(pkg.iterdir(), key=lambda c: c.name)
+            if p.is_file() and p.name.endswith(".md")}
+
+
 def _install_user_level(target: Path, text: str, *, force: bool, backup_dir: Path) -> str:
     if target.exists():
         current = target.read_text(encoding="utf-8")

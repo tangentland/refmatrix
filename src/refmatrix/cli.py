@@ -1067,12 +1067,18 @@ def init(path: Path | None, hooks: bool, memory_hooks: bool, agents: bool,
         console.print(f"[green]initialized[/] {store_root} (partition={out['partition']})")
 
     if hooks:
+        from refmatrix import instructions
         from refmatrix.hooks import install
-        for line in install(
-            project_root=project_root, refmatrix_root=store_root,
-            git=True, claude=True, briefing=True, scope="project",
-            apply=True, force=force, memory_hooks=memory_hooks,
-        ):
+        try:
+            plan = install(
+                project_root=project_root, refmatrix_root=store_root,
+                git=True, claude=True, briefing=True, scope="project",
+                apply=True, force=force, memory_hooks=memory_hooks,
+            )
+        except instructions.CompileRefused as exc:
+            # task-I1.b1 #d3: a refused instruction unit stops the hook install, loudly.
+            raise click.ClickException(str(exc)) from exc
+        for line in plan:
             console.print(line)
 
     if agents:
@@ -10301,25 +10307,35 @@ def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
     writes it (and records the flags), `--check` proves the installed file
     still equals it. Hand-edited hooks are drift, and drift is a failed check."""
     from refmatrix import hooks as hooks_mod
+    from refmatrix import instructions
 
     root = _root()
     project_root = root.parent
     if check_only:
+        # The report is printed in both cases: a clean check still lists the local files
+        # (task-I1.b1 #d5), and agent/command drift is printed without failing (#agents-leg).
         ok, diff = hooks_mod.check(project_root)
         if ok:
             console.print(f"[green]hooks in sync[/] {project_root / '.claude' / 'settings.json'}")
+            if diff:
+                click.echo(diff)
             return
         console.print(f"[red]hooks drift[/] {project_root / '.claude' / 'settings.json'}")
         click.echo(diff)
         raise SystemExit(1)
-    plan = hooks_mod.install(
-        project_root=project_root, refmatrix_root=root,
-        git=git, claude=claude, briefing=briefing, scope=scope,
-        apply=apply, force=force, agent_env=agent_env, search=search,
-        memory_hooks=memory_hooks, primer=primer, scan_prompt=scan_prompt,
-        composite_every=composite_every or None,
-        precompact_checkpoint=precompact_checkpoint, stop_promote=stop_promote,
-        resume_focus=resume_focus or None, enforce=enforce)
+    try:
+        plan = hooks_mod.install(
+            project_root=project_root, refmatrix_root=root,
+            git=git, claude=claude, briefing=briefing, scope=scope,
+            apply=apply, force=force, agent_env=agent_env, search=search,
+            memory_hooks=memory_hooks, primer=primer, scan_prompt=scan_prompt,
+            composite_every=composite_every or None,
+            precompact_checkpoint=precompact_checkpoint, stop_promote=stop_promote,
+            resume_focus=resume_focus or None, enforce=enforce)
+    except instructions.CompileRefused as exc:
+        # task-I1.b1 #d3: a refused unit is loud (stderr names each file and rule, exit 1) and
+        # nothing was written.
+        raise click.ClickException(str(exc)) from exc
     for line in plan:
         console.print(line)
 
@@ -14816,6 +14832,42 @@ def recall_state(session, memory_dir, as_json, max_bytes, handoff_file):
         raise click.ClickException(
             " ".join(f"recall-state: {type(e).__name__}: {e}".split())) from e
     click.echo(out, nl=nl)
+
+
+@main.group("rules")
+def rules_grp():
+    """Instruction units: the one source file of each rule (task-I1.b1, plan-32, ADR-0007).
+
+    `rmx install-hooks --apply` compiles the units of `.claude/{triggers,checks,rules,skills}/`
+    and the packaged ones into `.claude/rmx-instructions.json`; `--check` proves every installed
+    artifact equals its render and runs each local unit's fixtures."""
+
+
+@rules_grp.command("replay")
+@click.argument("unit_id")
+@click.option("--days", type=int, default=30, show_default=True,
+              help="How many days of STM tool events to read.")
+@click.option("--show", is_flag=True,
+              help="Print each hit's matched text (to the terminal only). Without it, hits are "
+                   "the session hash, the time and the sha256 of the text.")
+def rules_replay(unit_id, days, show):
+    """Replay a unit's pattern over the STM ring, read-only (task-I1.b1 #d7).
+
+    Reads `<store>/stm/*.jsonl` as files (no daemon, no store open): the tool events of the
+    last DAYS days, the hits of the unit's tool binds (tool, `match`, `unless`). A deny is
+    replayed before it ships: the unit is found in the layers by id, compiled or not. The
+    limits line says what the ring cannot show."""
+    from refmatrix import instructions
+    root = _root()
+    if days < 1:
+        raise click.ClickException("--days must be at least 1")
+    try:
+        unit = instructions.find_unit(root.parent, unit_id)
+    except LookupError as exc:
+        raise click.ClickException(str(exc)) from exc
+    rep = instructions.replay(root, unit, days=days)
+    for line in instructions.format_replay(rep, show=show):
+        click.echo(line)
 
 
 @main.group("handoff")
