@@ -392,7 +392,7 @@ drafting → approved → in-progress → completed
 - **approved** — the plan is approved and its next task has a written spec under
   `workflow/plans/<plan>-tasks/` (Q55 = a, L221; specs one page, L165). **The spec window
   (L232):** the five queue items after the one in flight always have an approved spec for their
-  next task; when the head moves, the sixth is specced.
+  next task; when the head moves, the sixth is specced. **Now (2026-11-24, head = C2 + bug-318 in flight):** B1's F4/F7 residue, I1.a, I1.b, I1.c, I1.d — being specced by arch-window (Fable, `/Volumes/littlebig/refmatrix-spec-window`).
 - **in-progress** — at least one task has shipped and at least one remains.
 - **completed** — done. The plan's row is appended to [[pop-finished]] and deleted here; the
   plan file stays in place with `status: completed`.
