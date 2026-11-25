@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from refmatrix.hooks import _claude_hook_block, install
 
 
@@ -147,3 +149,59 @@ def test_install_commands_writes_stash_slash_commands(tmp_path):
     # the stash command pairs git + focus
     body = (cmds_dir / "stash.md").read_text()
     assert "git stash push" in body and "rmx task push" in body
+
+
+# ---- H1.a AC-1: the packaged agents and commands are project-neutral (bug-319) ------------
+#
+# `rmx init` ships these files into every project and, for /save-state and /recall-state, into
+# ~/.claude/commands/ for every project at once. A path or a name from this one workstation in
+# them is an instruction that is wrong everywhere else: at 8c4c9eb3 commit-state.md and
+# save-state.md told any project to fast-forward `~/refmatrix`, and gmd-curator.md linted with
+# `~/claude_tools/gmd/lint.py` (task-H1.a-reconcile-shipped-files, AC-1).
+
+# One workstation's paths and names. `/Users/` and `/Volumes/` catch any absolute home or volume
+# path; the rest are the forms this repo's own text uses.
+_PROJECT_SPECIFIC = ("~/claude_tools", "~/refmatrix", ".venv-eval", "/Users/", "/Volumes/",
+                     "tholley", "Todd Holley")
+
+
+def _packaged_markdown() -> "list[tuple[str, str]]":
+    """(package-relative name, text) for every agent and command `rmx init` installs."""
+    from importlib import resources
+    from refmatrix.init_agents import COMMANDS_PKG, TEMPLATE_PKG
+    out = []
+    for pkg in (TEMPLATE_PKG, COMMANDS_PKG):
+        for p in sorted(resources.files(pkg).iterdir(), key=lambda q: q.name):
+            if p.is_file() and p.name.endswith(".md"):
+                out.append((f"{pkg.rsplit('.', 1)[1]}/{p.name}", p.read_text(encoding="utf-8")))
+    return out
+
+
+def project_specifics(name: str, text: str) -> "list[str]":
+    """`name:line: pattern` for every line of `text` that carries a project-specific form."""
+    return [f"{name}:{i}: {pat}" for i, line in enumerate(text.splitlines(), 1)
+            for pat in _PROJECT_SPECIFIC if pat in line]
+
+
+def test_packaged_templates_hold_no_project_specifics():
+    files = _packaged_markdown()
+    names = {n for n, _ in files}
+    # the nine files both installers ship (H1.a); an empty package would pass vacuously
+    assert {"agents/gmd-curator.md", "commands/save-state.md", "commands/recall-state.md",
+            "commands/commit-state.md", "commands/detour.md", "commands/return.md",
+            "commands/stash.md", "commands/stash-list.md", "commands/stash-pop.md"} <= names
+    hits = [h for n, t in files for h in project_specifics(n, t)]
+    assert not hits, ("packaged agent/command text names one workstation; write it neutrally "
+                      "or move it to the project's overlay:\n" + "\n".join(hits))
+
+
+@pytest.mark.parametrize("pattern", _PROJECT_SPECIFIC)
+def test_project_specifics_guard_fails_on_a_planted_line(pattern):
+    """AC-1's must-fail case: one planted line in a packaged file's real text is reported, for
+    every form the guard claims to check."""
+    name, text = _packaged_markdown()[0]
+    planted = text + f"\nDeploy: see {pattern}/somewhere.\n"
+    n = len(planted.splitlines())
+    on_planted_line = [h for h in project_specifics(name, planted)
+                       if h.startswith(f"{name}:{n}: ")]
+    assert on_planted_line == [f"{name}:{n}: {pattern}"]
