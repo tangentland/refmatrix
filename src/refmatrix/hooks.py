@@ -795,23 +795,14 @@ def installed_root(project_root: Path) -> "Path | None":
 
 
 def check(project_root: Path) -> "tuple[bool, str]":
-    """Does every installed instruction artifact equal its render? Returns (ok, report).
-
-    Two legs (ADR-0007 #installed-equals-generated, task-I1.b1 #d5): the settings hook block
-    (`_check_settings`: `- event/matcher: cmd` for installed-only and `+ …` for generated-only
-    entries) and `check_artifacts` (rules, skills, agents, commands, the two user-level
-    commands, the compiled file, the refmatrix git hooks, the local units' fixtures). Both
-    always run, so one report names every drifted file."""
-    ok_s, text_s = _check_settings(project_root)
-    ok_a, text_a = check_artifacts(project_root)
-    return ok_s and ok_a, "\n".join(t for t in (text_s, text_a) if t)
-
-
-def _check_settings(project_root: Path) -> "tuple[bool, str]":
     """Does `.claude/settings.json` carry exactly the rmx-managed hooks this
     version generates under the recorded flags? Returns (ok, diff). The
     diff lists `- event/matcher: cmd` for installed-only and `+ …` for
-    generated-only entries."""
+    generated-only entries.
+
+    The settings leg only: its text is pinned line for line (bug-170's comparison in
+    `tests/test_repo_hooks_in_sync.py` reads every non-`?` line as drift). `check_all` adds the
+    instruction-artifact legs and is what `rmx install-hooks --check` runs (task-I1.b1)."""
     project_root = Path(project_root)
     fp = project_root / FLAGS_FILE
     if not fp.exists():
@@ -1088,8 +1079,8 @@ def check_artifacts(project_root: Path) -> "tuple[bool, str]":
         else:
             ok = False
             lines.append(f"  drift     {pf.installed} differs from the packaged copy "
-                         "(`rmx install-hooks --apply --force`; a local change belongs in a "
-                         "local unit):")
+                         "(`rmx install-hooks --apply --force`; a project's own change goes "
+                         "in a unit of its own):")
             lines += _diff_lines(pf.installed, want, text)
     # the local layer: listed; each unit's fixtures run
     for lf in sorted(layers.local, key=lambda f: f.where):
@@ -1112,6 +1103,17 @@ def check_artifacts(project_root: Path) -> "tuple[bool, str]":
     ok = ok and ok_git
     lines += git_lines
     return ok, "\n".join(lines)
+
+
+def check_all(project_root: Path) -> "tuple[bool, str]":
+    """Does every installed instruction artifact equal its render? (ok, report): `check` (the
+    settings hook block) and `check_artifacts` (rules, skills, agents, commands, the two
+    user-level commands, the compiled file, the refmatrix git hooks, the local units'
+    fixtures), ADR-0007 #installed-equals-generated, task-I1.b1 #d5. Both legs always run, so
+    one report names every drifted file. `rmx install-hooks --check` runs this."""
+    ok_s, text_s = check(project_root)
+    ok_a, text_a = check_artifacts(project_root)
+    return ok_s and ok_a, "\n".join(t for t in (text_s, text_a) if t)
 
 
 def _install_git_hooks(project_root: Path, apply: bool, force: bool) -> list[str]:

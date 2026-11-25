@@ -10314,7 +10314,7 @@ def install_hooks(git, claude, briefing, agent_env, search, apply, force, scope,
     if check_only:
         # The report is printed in both cases: a clean check still lists the local files
         # (task-I1.b1 #d5), and agent/command drift is printed without failing (#agents-leg).
-        ok, diff = hooks_mod.check(project_root)
+        ok, diff = hooks_mod.check_all(project_root)
         if ok:
             console.print(f"[green]hooks in sync[/] {project_root / '.claude' / 'settings.json'}")
             if diff:
