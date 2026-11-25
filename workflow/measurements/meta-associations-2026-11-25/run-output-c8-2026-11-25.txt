@@ -1,0 +1,39 @@
+ring sessions 71, ring events 63544
+deliveries 18258; T*=1794738775
+k=3 silhouette 0.274 sizes [7848, 7420, 4732]
+k=4 silhouette 0.215 sizes [6576, 4810, 4550, 4064]
+k=5 silhouette 0.223 sizes [5683, 5150, 4492, 4312, 363]
+k=6 silhouette 0.234 sizes [5102, 4933, 4293, 4096, 1215, 361]
+chosen k=3; centroids (shares of ['read', 'search', 'edit', 'bash', 'test', 'other']):
+  mode 0: read=0.15 search=0.08 edit=0.06 bash=0.54 test=0.05 other=0.13 (train windows 7420)
+  mode 1: read=0.35 search=0.24 edit=0.05 bash=0.23 test=0.04 other=0.09 (train windows 7848)
+  mode 2: read=0.12 search=0.09 edit=0.05 bash=0.27 test=0.07 other=0.40 (train windows 4732)
+labelled subagent threads 331 over 173 agentTypes
+  ch-bsd: windows 2116, modal mode 1 share 0.69
+  ch-architect: windows 1148, modal mode 1 share 0.71
+  ch-implementer: windows 1135, modal mode 1 share 0.68
+  fork: windows 972, modal mode 1 share 0.73
+  ch-test-engineer: windows 942, modal mode 1 share 0.81
+  green-216: windows 667, modal mode 0 share 0.57
+  red-216: windows 552, modal mode 1 share 0.73
+  bsd-216: windows 432, modal mode 0 share 0.64
+  green-t03: windows 364, modal mode 1 share 0.56
+  spec-t3c: windows 336, modal mode 0 share 0.75
+  green-i1b1: windows 301, modal mode 0 share 0.73
+  red-t03: windows 292, modal mode 0 share 0.61
+NMI(agentType, mode) 0.077
+lag: pairs 500 (of 25050 eligible), median 6.0, IQR [1.0, 12.0], censored at 40: 16
+with a ring window: train 10889, held-out 7281; primary (non-memory) held-out 3595, touched 46
+held-out deliveries per mode {1: 1724, 2: 4011, 0: 1546}
+held-out mode by session (sessions per mode) {0: 4, 1: 4, 2: 4}
+held-out AUC M0 0.660 M1 0.750 P0 0.797 P1 0.796
+C8 Δ1 (mode vs no mode) +0.089 [+0.014,+0.166]; Δ2 (mode vs popularity) -0.001 [-0.073,+0.061]
+heterogeneity χ² 15.3, permutation p 0.0589
+use rate by kind × mode (held-out, all kinds):
+  code: m0 3/51, m1 1/74, m2 3/86 | max/min (modes with >=50) m0/m1 = 4.35 Wilson-bound [0.28, 66.65]
+  doc: m0 2/654, m1 10/751, m2 5/1794 | max/min (modes with >=50) m1/m2 = 4.78 Wilson-bound [1.11, 20.43]
+  ruling: m0 1/11, m1 4/27, m2 8/44
+  bug row: m0 2/24, m1 1/23, m2 6/56
+  memory: m0 0/806, m1 0/849, m2 5/2031 | max/min (modes with >=50) m2/m0 = inf Wilson-bound [0.22, -13259331120670318.00]
+explicit used rows by (kind, mode): {('no-key', 1): 89, ('no-key', 2): 12, ('no-key', 0): 11, ('doc', 1): 1, ('memory', 0): 1, ('memory', 1): 6, ('memory', 2): 5}
+C8 volume: 5720 deliveries/week with a mode, 12196 ring events/week

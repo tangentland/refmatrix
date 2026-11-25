@@ -1,0 +1,83 @@
+units 1807 unjoined {'no-transcript': 43, 'agent-call-not-found': 2}
+units by group/thread Counter({('push', 'main'): 1642, ('pull', 'main'): 149, ('pull', 'sub'): 16})
+units with any new gold 734 with missed new gold 721 with hit new gold 40
+new-touch golds 1572, retrieved by the query 43 (0.027)
+
+== C1 T*=1794712398 train units 1106 (missed-pair units 432), held-out eval units 289
+C1 usable terms 1797 of 1826
+C1 held-out units with >=1 usable term 217/289
+C1 all: n=289 | cand@5 12/289=0.042[0.024,0.071] | cand@10 16/289=0.055[0.034,0.088] | cand@20 19/289=0.066[0.042,0.100] | pop@10 50/289=0.173[0.134,0.221] | plac@10 18/289=0.062[0.040,0.096] | cand_nonempty 217/289 | FR@10 cand 0.967 pop 0.937 plac 0.980 | LIFT -11.8pp [-17.3,-6.2] | sessions=4
+C1 push: n=255 | cand@5 11/255=0.043[0.024,0.076] | cand@10 15/255=0.059[0.036,0.095] | cand@20 18/255=0.071[0.045,0.109] | pop@10 41/255=0.161[0.121,0.211] | plac@10 9/255=0.035[0.019,0.066] | cand_nonempty 195/255 | FR@10 cand 0.965 pop 0.935 plac 0.985 | LIFT -10.2pp [-15.7,-4.7] | sessions=4
+C1 pull: n=34 | cand@5 1/34=0.029[0.005,0.149] | cand@10 1/34=0.029[0.005,0.149] | cand@20 1/34=0.029[0.005,0.149] | pop@10 9/34=0.265[0.146,0.431] | plac@10 0/34=0.000[0.000,0.102] | cand_nonempty 22/34 | FR@10 cand 0.986 pop 0.956 plac 1.000 | LIFT -23.5pp [-38.2,-11.8] | sessions=3
+C1 main: n=275 | cand@5 12/275=0.044[0.025,0.075] | cand@10 16/275=0.058[0.036,0.092] | cand@20 19/275=0.069[0.045,0.105] | pop@10 50/275=0.182[0.141,0.232] | plac@10 19/275=0.069[0.045,0.105] | cand_nonempty 205/275 | FR@10 cand 0.965 pop 0.935 plac 0.977 | LIFT -12.4pp [-17.8,-6.9] | sessions=4
+C1 sub: n=14 | cand@5 0/14=0.000[0.000,0.215] | cand@10 0/14=0.000[0.000,0.215] | cand@20 0/14=0.000[0.000,0.215] | pop@10 0/14=0.000[0.000,0.215] | plac@10 1/14=0.071[0.013,0.315] | cand_nonempty 12/14 | FR@10 cand 1.000 pop 0.986 plac 0.988 | LIFT -7.1pp [-21.4,+0.0] | sessions=2
+C1 one unit per prompt window (sens): n=134 | cand@5 6/134=0.045[0.021,0.094] | cand@10 8/134=0.060[0.031,0.113] | cand@20 10/134=0.075[0.041,0.132] | pop@10 22/134=0.164[0.111,0.236] | plac@10 8/134=0.060[0.031,0.113] | cand_nonempty 96/134 | FR@10 cand 0.962 pop 0.932 plac 0.983 | LIFT -10.4pp [-17.9,-3.0] | sessions=4
+C1 excl-retrieved (sens): n=289 | cand@5 12/289=0.042[0.024,0.071] | cand@10 16/289=0.055[0.034,0.088] | cand@20 19/289=0.066[0.042,0.100] | pop@10 50/289=0.173[0.134,0.221] | plac@10 18/289=0.062[0.040,0.096] | cand_nonempty 217/289 | FR@10 cand 0.967 pop 0.943 plac 0.980 | LIFT -11.8pp [-17.3,-6.2] | sessions=4
+C1 re-touch gold stratum: n=276 | cand@5 27/276=0.098[0.068,0.139] | cand@10 35/276=0.127[0.093,0.171] | cand@20 61/276=0.221[0.176,0.274] | pop@10 136/276=0.493[0.434,0.551] | plac@10 36/276=0.130[0.096,0.175] | cand_nonempty 224/276 | FR@10 cand 0.969 pop 0.928 plac 0.975 | LIFT -36.6pp [-43.5,-29.7] | sessions=4
+C1 volume: 252.0 missed-pair units/week (last 14 days)
+
+== C2 T*=1794712902 commits <=30 files before T* 1949 (of 2855 on master), held-out eval units 274
+C2 held-out units whose retrieved cue has co-change data 125/274
+C2 cue=retrieved: n=274 | cand@5 4/274=0.015[0.006,0.037] | cand@10 6/274=0.022[0.010,0.047] | cand@20 9/274=0.033[0.017,0.061] | pop@10 33/274=0.120[0.087,0.164] | plac@10 4/274=0.015[0.006,0.037] | cand_nonempty 125/274 | FR@10 cand 0.981 pop 0.943 plac 0.993 | LIFT -9.9pp [-13.9,-5.8] | sessions=4
+C2 cue=retrieved push: n=240 | cand@5 4/240=0.017[0.006,0.042] | cand@10 6/240=0.025[0.012,0.053] | cand@20 8/240=0.033[0.017,0.064] | pop@10 32/240=0.133[0.096,0.182] | plac@10 3/240=0.013[0.004,0.036] | cand_nonempty 112/240 | FR@10 cand 0.979 pop 0.938 plac 0.993 | LIFT -10.8pp [-15.4,-6.2] | sessions=4
+C2 cue=retrieved excl-retrieved (sens): n=274 | cand@5 4/274=0.015[0.006,0.037] | cand@10 7/274=0.026[0.012,0.052] | cand@20 9/274=0.033[0.017,0.061] | pop@10 35/274=0.128[0.093,0.172] | plac@10 4/274=0.015[0.006,0.037] | cand_nonempty 125/274 | FR@10 cand 0.987 pop 0.949 plac 0.993 | LIFT -10.2pp [-14.2,-6.2] | sessions=4
+C2 cue=last3 (secondary): n=274 | cand@5 8/274=0.029[0.015,0.057] | cand@10 15/274=0.055[0.033,0.088] | cand@20 25/274=0.091[0.063,0.131] | pop@10 33/274=0.120[0.087,0.164] | plac@10 22/274=0.080[0.054,0.119] | cand_nonempty 241/274 | FR@10 cand 0.973 pop 0.943 plac 0.975 | LIFT -6.6pp [-10.9,-1.8] | sessions=4
+C2 cue=last3 (secondary) push: n=240 | cand@5 8/240=0.033[0.017,0.064] | cand@10 14/240=0.058[0.035,0.096] | cand@20 24/240=0.100[0.068,0.144] | pop@10 32/240=0.133[0.096,0.182] | plac@10 15/240=0.062[0.038,0.101] | cand_nonempty 208/240 | FR@10 cand 0.970 pop 0.938 plac 0.972 | LIFT -7.5pp [-12.5,-2.5] | sessions=4
+C2 cue=last3 (secondary) excl-retrieved (sens): n=274 | cand@5 8/274=0.029[0.015,0.057] | cand@10 15/274=0.055[0.033,0.088] | cand@20 25/274=0.091[0.063,0.131] | pop@10 35/274=0.128[0.093,0.172] | plac@10 22/274=0.080[0.054,0.119] | cand_nonempty 241/274 | FR@10 cand 0.978 pop 0.949 plac 0.977 | LIFT -7.3pp [-11.7,-2.6] | sessions=4
+C2 cue=retrieved one unit per prompt window (sens): n=270 | cand@5 4/270=0.015[0.006,0.037] | cand@10 6/270=0.022[0.010,0.048] | cand@20 9/270=0.033[0.018,0.062] | pop@10 33/270=0.122[0.088,0.167] | plac@10 5/270=0.019[0.008,0.043] | cand_nonempty 123/270 | FR@10 cand 0.980 pop 0.943 plac 0.986 | LIFT -10.0pp [-14.1,-5.9] | sessions=4
+C2 volume: 643.5 commits/week (<=30 files), 237.5 eval units/week
+C2 intrinsic (held-out commits, one file -> another in top-10): 454/750=0.605 [0.570,0.640] over 346 commits
+A: errors 642, with a repo-file edit within 20 calls 235, distinct signatures 237
+A: by thread Counter({'sub': 540, 'main': 102}) fix-followed by thread Counter({'sub': 203, 'main': 32})
+A: fix gold missed by every query in the error->fix window 232/235
+A: T*=1794646209 train errors 370, held-out eval units 93; held-out signature seen in train 64/93=0.688 [0.588,0.773], seen with a train fix 59
+C3-A error->fix: n=93 | cand@5 4/93=0.043[0.017,0.105] | cand@10 4/93=0.043[0.017,0.105] | cand@20 8/93=0.086[0.044,0.161] | pop@10 8/93=0.086[0.044,0.161] | plac@10 1/93=0.011[0.002,0.058] | cand_nonempty 59/93 | FR@10 cand 0.990 pop 0.961 plac 0.971 | LIFT -4.3pp [-8.6,-1.1] | cluster[-6.8,+0.0] sessions=5
+C3-A code errors only (harness errors excluded): n=39 | cand@5 0/39=0.000[0.000,0.090] | cand@10 0/39=0.000[0.000,0.090] | cand@20 0/39=0.000[0.000,0.090] | pop@10 3/39=0.077[0.027,0.203] | plac@10 0/39=0.000[0.000,0.090] | cand_nonempty 9/39 | FR@10 cand 1.000 pop 0.938 plac 0.954 | LIFT -7.7pp [-17.9,+0.0] | cluster[-14.6,+0.0] sessions=5
+C3-A main: n=14 | cand@5 0/14=0.000[0.000,0.215] | cand@10 0/14=0.000[0.000,0.215] | cand@20 0/14=0.000[0.000,0.215] | pop@10 0/14=0.000[0.000,0.215] | plac@10 0/14=0.000[0.000,0.215] | cand_nonempty 2/14 | FR@10 cand 1.000 pop 0.957 plac 0.970 | LIFT +0.0pp [+0.0,+0.0] | cluster[+0.0,+0.0] sessions=5
+C3-A sub: n=79 | cand@5 4/79=0.051[0.020,0.123] | cand@10 4/79=0.051[0.020,0.123] | cand@20 8/79=0.101[0.052,0.187] | pop@10 8/79=0.101[0.052,0.187] | plac@10 1/79=0.013[0.002,0.068] | cand_nonempty 57/79 | FR@10 cand 0.989 pop 0.962 plac 0.971 | LIFT -5.1pp [-11.4,-1.3] | cluster[-8.6,+0.0] sessions=5
+A volume: 80.0 error->fix episodes/week; transcripts cover 13 sessions
+
+B: bug rows dated 319, with repo files 284; T*=1794340206 train 170, held-out 114
+B: held-out rows with a train row at Jaccard>=0.5: 0/114=0.000 [0.000,0.033]
+C3-B bug-row recurrence -> files (cand@k = matched rows' files, k n/a): n=114 | cand@5 0/114=0.000[0.000,0.033] | cand@10 0/114=0.000[0.000,0.033] | cand@20 0/114=0.000[0.000,0.033] | pop@10 51/114=0.447[0.359,0.539] | plac@10 0/114=0.000[0.000,0.033] | cand_nonempty 0/114 | FR@10 cand 0.000 pop 0.000 plac 0.000 | LIFT -44.7pp [-54.4,-35.1] | cluster[-54.4,-35.1] sessions=114
+B volume: 62.0 new bug rows/week
+commits 2855, citing an id 1407 (0.493)
+T*=1794689956: train citing commits 844, held-out citing 563, held-out citations re-citing a pre-T* id 155/1071=0.145 [0.125,0.167]; eval units 99
+C4 file->ruling: n=99 | cand@5 15/99=0.152[0.094,0.235] | cand@10 17/99=0.172[0.110,0.258] | cand@20 21/99=0.212[0.143,0.303] | pop@10 15/99=0.152[0.094,0.235] | plac@10 5/99=0.051[0.022,0.113] | cand_nonempty 70/99 | FR@10 cand 0.958 pop 0.982 plac 0.992 | LIFT +2.0pp [-5.1,+10.1] | cluster[-5.1,+9.1] sessions=99
+C4 units re-citing L-rows: n=11 | cand@5 4/11=0.364[0.152,0.646] | cand@10 4/11=0.364[0.152,0.646] | cand@20 4/11=0.364[0.152,0.646] | pop@10 1/11=0.091[0.016,0.377] | plac@10 1/11=0.091[0.016,0.377] | cand_nonempty 11/11 | FR@10 cand 0.932 pop 0.973 plac 0.984 | LIFT +27.3pp [-9.1,+54.5] | cluster[-9.1,+54.5] sessions=11
+C4 units re-citing Q ids: n=11 | cand@5 3/11=0.273[0.097,0.566] | cand@10 3/11=0.273[0.097,0.566] | cand@20 5/11=0.455[0.213,0.720] | pop@10 1/11=0.091[0.016,0.377] | plac@10 1/11=0.091[0.016,0.377] | cand_nonempty 8/11 | FR@10 cand 0.963 pop 0.982 plac 0.983 | LIFT +18.2pp [-18.2,+45.5] | cluster[-18.2,+36.4] sessions=11
+C4 units re-citing bug ids: n=84 | cand@5 13/84=0.155[0.093,0.247] | cand@10 15/84=0.179[0.111,0.274] | cand@20 17/84=0.202[0.130,0.300] | pop@10 15/84=0.179[0.111,0.274] | plac@10 4/84=0.048[0.019,0.116] | cand_nonempty 57/84 | FR@10 cand 0.952 pop 0.979 plac 0.992 | LIFT +0.0pp [-8.3,+8.3] | cluster[-8.3,+8.3] sessions=84
+C4 volume: 492.5 citing commits/week, 49.5 re-citing eval units/week
+memories 430, dated 403, naming repo files 155, supersedes/amends edges 162 onto 117 targets (117 resolve to a present memory)
+eligible (35 d follow-up) 326: naming files 95, naming none 231
+T*=2026-09-16 train 50 (positives 3), held-out 45 (positives 2); superseded within 7 d (counted negative) 6
+train threshold (median churn of train positives) 3
+C5 held-out AUC(churn) 0.337 [0.174,0.523] (pos 2, neg 43)
+  outcome rate churn>=thr: 1/28 (0.00633235649754188, 0.17712576118498663)
+  outcome rate churn<thr: 1/17 (0.01046013064516424, 0.269825452035628)
+control: outcome rate, held-out memories naming no file 4/78 (0.020120686846503345, 0.1245685665405272); naming files 2/45 (0.012273869040444335, 0.14827779183880616)
+placebo churn (same count of random repo files) held-out AUC 0.442
+stratum feedback/project/reference only: n 18, positives 2, AUC 0.484
+C5 volume: 27.5 new memories/week, 13.5 supersedes/amends edges/week
+deliveries with a key and a joined window 18183 over 1747 query units; next prompt is a correction for 8 units
+T*=1794738628: train deliveries 10899, held-out 7284; flagged keys S1 36, S2 117, S3 0; revert commits touching files 0
+C6 S1 user-correction: flagged n=214 touch 0/214=0.000 [0.000,0.018] | unflagged n=7070 touch 55/7070=0.008 [0.006,0.010] | RR 0.00 [0.00,0.00] (query-cluster bootstrap) Wilson-bound [0.00,2.95] | precision-as-negative 1.000 vs 0.992
+C6 S2 superseded/amended memory: flagged n=938 touch 2/938=0.002 [0.001,0.008] | unflagged n=6346 touch 53/6346=0.008 [0.006,0.011] | RR 0.26 [0.00,0.70] (query-cluster bootstrap) Wilson-bound [0.05,1.21] | precision-as-negative 0.998 vs 0.992
+C6 S3 reverted file: flagged held-out deliveries 0
+C6 pooled: flagged n=1134 touch 2/1134=0.002 [0.000,0.006] | unflagged n=6150 touch 53/6150=0.009 [0.007,0.011] | RR 0.20 [0.00,0.56] (query-cluster bootstrap) Wilson-bound [0.04,0.97] | precision-as-negative 0.998 vs 0.991
+C6 S2 stratified: memory deliveries only (review rule: stratify): flagged n=938 touch 2/938=0.002 [0.001,0.008] | unflagged n=2754 touch 3/2754=0.001 [0.000,0.003] | RR 1.96 [0.00,11.02] (query-cluster bootstrap) Wilson-bound [0.18,20.89] | precision-as-negative 0.998 vs 0.999
+C6 S1 stratified: memory deliveries only: flagged n=127 touch 0/127=0.000 [0.000,0.029] | unflagged n=3565 touch 5/3565=0.001 [0.001,0.003] | RR 0.00 [0.00,0.00] (query-cluster bootstrap) Wilson-bound [0.00,49.00] | precision-as-negative 1.000 vs 0.999
+held-out touch rate by kind: memory 5/3692, repo 50/3592
+S2 prevalence: memory deliveries already superseded/amended at delivery 1968/7847 [0.241,0.261]
+C6 volume: 5716 keyed deliveries/week; 3.0 correction-followed units/week
+partial reads with a file key 6983 (Read 464, sed 6519; main loop 522)
+  of which markdown/memory 1727
+partial reads on files >= 300 lines (content resolved at read time) 927 over 112 files
+T*=1794707919: train reads 556, held-out 371, held-out on files with >= 5 train reads 120 over 18 files
+C7 held-out reads inside the train top-3 anchors 36/120=0.300 [0.225,0.387]; control (top-3 size share) mean 0.285; ratio 1.05x
+C7 coverage>=0.9 by top-3 36/120=0.300 [0.225,0.387]; mean coverage 0.354; median payload cut by top-3 delivery 0.814; oracle (sections the read overlaps) median cut 0.884; sections per read median 2.0
+  stratum main: 2/9 inside, control 0.258
+  stratum sub: 34/111 inside, control 0.287
+  held-out reads per file (hashed): [('b600f06ebb', 46), ('10aa7d511e', 11), ('e062114f25', 9), ('eacd99dbb5', 8), ('d3fb20c703', 7), ('5c564bb989', 6), ('05e0d6bf86', 6), ('ad3b719031', 6)]
+train concentration: files 35, median share of section-hits on top-3 0.448
+C7 volume: 391.0 partial reads of large files/week
