@@ -393,7 +393,7 @@ Plan-6 closed with T0.4 (merged `21728dac`, follow-up `c073a9e3`): bsd-t04 r1 DI
 ### POP bookkeeping by L231, 2026-11-24 {#l231-bookkeeping-2026-11-24}
 
 L231 (3) ordered one POP commit: L226's queue rewrite, finished rows moved here, Q54-Q64
-archived, `approved` reworded to Q55 = a, `#freeze-specs` made current, "merged" said as
+(and Q65, answered by L232) archived, `approved` reworded to Q55 = a, `#freeze-specs` made current, "merged" said as
 "specs merged" where only specs merged, R1 trimmed to what has not shipped, row 4 with 29.4d,
 row 16 without ch-bsd rounds, and route rows for bug-317 and the MB1d GATE. Every merge sha
 named below was checked with `git merge-base --is-ancestor <sha> master` at `44897cfa`.
@@ -457,7 +457,7 @@ specs at `662abfa8`. The row as it stood:
 | `plan-31-pre-mod-loose-ends.md` | `status: drafting` → `approved` | **stays:** set in the commit that merges its specs after a ch-bsd MEH-only GO | L125 |
 {#pending-plan31-applied-2026-11-24-table}
 
-#### Questions answered and applied (Q54-Q64) {#q54-q64}
+#### Questions answered and applied (Q54-Q65) {#q54-q65}
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -472,7 +472,8 @@ specs at `662abfa8`. The row as it stood:
 | Q62 | 2026-11-24 | Stack detection (ADR 0007 `#stack-detection`, `#packs-first`): a stack is detected by its manifest or by at least 5 tracked files (frameworks only from manifest deps); first packs in order python (pytest folded in), shell, postgres, node + node-express, then docker (extracted, installed nowhere until T0.9 (b)) | **(a, rec)** as written; (b) another threshold or order | **answered (a)** 2026-11-24 (L228) |
 | Q63 | 2026-11-24 | L225's mandatory context-effectiveness review: cadence and how it is enforced | **(a, rec)** every 30 days, or before a major release if sooner; overdue → SessionStart opens with a "review due" block (once per session, names the command) AND a major release holds until a review row newer than the last major release exists (release step 1b, like an open GATE); fleet: each repo's own review, the hub's nightly tick lists overdue repos; (b) per major release only (gate, no calendar); (c) calendar only (SessionStart nag, no gate) | **answered (a)** 2026-11-24 (L225 amended) |
 | Q64 | 2026-11-24 | The user: "the TDD stance is a core position of refmatrix. is there a way to make it always on, but modular so it could be replaced or amended if someone wanted to". Proposal: a **practice pack** `practice/tdd` in `src/refmatrix/templates/` (a third pack kind beside stack packs and overlays, ADR 0007 `#composition`) that owns the whole stance: a ≤ 600 B always-on stance block rendered into CLAUDE.md's principles block (T8) and into every agent core's preamble, plus its triggered units (R047/R048 denies, the `tests/**` rule R049-R056 with its guard-test backstop, `dispatch-red-green` / `mutation-loop` skills and role preloads, R058 + seen-failing checks). Selection in `.claude/rmx-hooks.json` `practices: [tdd]`, on by default. **Replace:** select another practice pack with the same slots. **Amend:** a project-local unit (L227) with `rel: amends -> [[practice-tdd#R049]]` or `supersedes`, rendered and fixture-checked. **Never silent:** `--check` prints the active practice and every amended/superseded unit; the context review (L225) lists them; turning the stance off is an explicit `practices: []` that SessionStart names | **(a, rec)** practice pack, default on, replaceable by selection, amendable by local units with typed edges; a project may also hold a LOCAL practice pack (unlike stack packs, which are template-only), because a practice is a policy choice; (b) same, but practice packs template-only (a replacement must be contributed to refmatrix); (c) keep TDD as scattered units (ADR as written) | **answered (a)** 2026-11-24 (L229) |
-{#q54-q64-table}
+| Q65 | 2026-11-24 | The user asked that every admitted item have specs and approvals; the audit (`3e9dd576`) finds 6 ready, 8 stale, 6 needs-spec, 1 needs-plan (W1), 2 needs-approval (row 16 plan-24 revision, row 17 24.0/24.1). Under Q55 = a only each item's NEXT task must be specced | **(a, rec)** queue order: revise/spec now only what is next or nearly next (I1.a, I1.b, H1.a, row 4's 29.4d, row 5's 31.3, the held T2/bug-218 revisions merged, bug-309's fix route), each one page on Fable; the rest are specced when they reach the head, and the audit is re-run at each release; (b) revise/spec every non-ready item now (≈18 Fable spec jobs, the queue's code work waits behind them) | **answered** 2026-11-24 (L232): a 5-item spec window |
+{#q54-q65-table}
 
 #### Queue and release rows replaced by the L226 rewrite, as they stood {#queue-replaced-l226}
 
