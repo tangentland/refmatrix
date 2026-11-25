@@ -1085,8 +1085,11 @@ def format_replay(rep: ReplayReport, *, show: bool) -> "list[str]":
     if rep.tool_binds == 0:
         out.append("the unit binds no tool event (PreToolUse / PostToolUse): nothing in the "
                    "ring can match it")
-    out.append(f"scanned {rep.scanned} tool events in {rep.files} ring file(s); "
-               f"hits {len(rep.hits)}")
+    # The counts stand alone on their line: "in 1 ring file(s); hits 3" read as "1 … hits" to a
+    # loose reader, which let a replay that counted every event as a hit look like one hit
+    # (mutation M27a survived RED's regex, 2026-11-25).
+    out.append(f"ring files read: {rep.files}")
+    out.append(f"scanned {rep.scanned} tool events; hits {len(rep.hits)}")
     if rep.unreadable:
         out.append(f"unreadable: {rep.unreadable} ring line(s) or file(s) could not be parsed "
                    "and were not scanned")
