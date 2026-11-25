@@ -13,8 +13,9 @@ were. The hook now enqueues a durable entry and exits 0; the daemon applies it w
 frees, newest AUTHORING time winning (`Store.add_memory(updated_at=)`).
 
 What lives here: the module (`newest_by_ts`, the spool write), the drain's ordering and
-exactly-once rules on an in-process daemon (AC-3, AC-4), unreadable entries (AC-6), and the
-daemon-death case on real daemon processes (AC-2). The Stop-hook entry point is in
+exactly-once rules on an in-process daemon (AC-3, AC-4), unreadable entries (AC-6) including a
+wrong value type and an entry `add_memory` rejects (bsd-c2 r1 s-1), the daemon-death case on
+real daemon processes (AC-2), and the boot `.tmp` sweep's age rule (bsd-c2 r1 g-1). The Stop-hook entry point is in
 `tests/test_plan2_remedy.py` (AC-1, AC-5, AC-6's failing enqueue), save-state in
 `tests/test_save_state.py` (AC-8), the replay of the authoring time in
 `tests/test_memory_content_log.py` (AC-7).
@@ -354,6 +355,120 @@ def test_an_unreadable_spool_entry_is_counted_logged_and_moved_to_bad(body):
         d.store.close()
 
 
+# ---- s-1 (bsd-c2 r1) a wrong value type, and an entry add_memory rejects ----------------------
+
+@pytest.mark.parametrize("key, value", [
+    ("updated_at", "not-a-number"),
+    ("tags", "session:hwq"),
+    ("tags", ["session:hwq", 7]),
+    ("metadata", "Session summary hwq"),
+    ("mtype", 7),
+    ("protected", "yes"),
+], ids=["updated_at-str", "tags-str", "tags-non-str-item", "metadata-str", "mtype-int",
+        "protected-str"])
+def test_an_entry_with_a_wrong_value_type_is_refused_counted_bad_and_moved(key, value):
+    """bsd-c2 r1 s-1 (a). `validate` checked key NAMES, not value types, so an entry whose
+    `args` carry a wrong type was read as good and handed to `add_memory`: a non-numeric
+    `updated_at` raised inside the partition's transaction on every drain (the good entry beside
+    it rolled back with it), and the other wrong types were stored as-is. The types
+    `add_memory` takes: `updated_at` a number, `tags` a list of str or null, `metadata` an
+    object or null, `mtype` a str, `protected` a bool. A spool file carrying any other type is
+    unreadable (D3): counted `bad`, named with its reason in `rmxd.log`, MOVED to `bad/` byte
+    for byte, and the readable entry beside it is applied. The file is written straight into
+    the spool (an older or foreign producer): `enqueue` itself refuses the entry and writes
+    nothing. Mutation: drop any one type check (its case keeps `bad` at 0)."""
+    hw = _hw()
+    root = _root()
+    d = _daemon_with_store(root)
+    try:
+        good = "focus_summary_hwqs1a"
+        hw.enqueue(root, _entry(root, good, "readable", time.time() - 10.0))
+        poison = _entry(root, "focus_summary_hwqs1apoison", "poison", time.time() - 5.0)
+        poison["args"][key] = value
+        bad_name = f"{time.time_ns():020d}-{uuid.uuid4()}.json"
+        body = json.dumps(poison, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        (spool_dir(root) / bad_name).write_bytes(body)
+
+        r = d._drain_hook_writes()
+
+        assert (r["bad"], r["applied"], r["failed"]) == (1, 1, 0), (key, value, r)
+        moved = spool_dir(root) / "bad" / bad_name
+        assert moved.exists() and moved.read_bytes() == body, list(spool_dir(root).rglob("*"))
+        assert not spool_files(root), spool_files(root)
+        logs = d.__dict__.get("_logs", [])
+        assert any(bad_name in ln and key in ln for ln in logs), (
+            f"rmxd.log does not name the file and the key {key!r}: {logs}")
+        assert _memory(d, root, good)["content"] == "readable"
+        assert _memory(d, root, poison["name"]) is None, "the refused entry was stored"
+
+        with pytest.raises(hw.UnreadableEntry, match=key):
+            hw.validate(poison)
+        before = sorted(p.name for p in spool_dir(root).iterdir())
+        with pytest.raises(hw.UnreadableEntry, match=key):
+            hw.enqueue(root, poison)
+        assert sorted(p.name for p in spool_dir(root).iterdir()) == before, (
+            "a refused enqueue wrote into the spool")
+    finally:
+        d.store.close()
+
+
+@pytest.mark.parametrize("poison_first", [False, True], ids=["good-first", "poison-first"])
+def test_an_entry_add_memory_rejects_goes_to_bad_and_does_not_block_its_partition(
+        poison_first):
+    """bsd-c2 r1 s-1 (b). An entry that passes `validate` but raises inside `add_memory`
+    blocked its whole partition: the partition's transaction rolled back, BOTH entries stayed
+    pending, and every drain logged another `memory_content` event for the good entry
+    (bug-248: the event is written before the rollback), so facts.log diverged from a catalog
+    that never committed it. Now the good entry is applied, the rejected one is retried on its
+    own, and its repeat failure is MOVED to `bad/` byte for byte and counted `bad`; over three
+    drains facts.log holds exactly ONE `memory_content` event for the good entry and none for
+    the rejected one, and the spool is empty after the first.
+
+    The rejected value: `args.updated_at` = 10**400, a JSON integer (a number, so a type check
+    passes it) that `float()` inside `add_memory_checked` cannot convert (OverflowError). Both
+    enqueue orders run: with the good entry first the batch applies it before the rejected one
+    raises, so a batch-then-retry that keeps the first attempt's event logs two.
+    Mutations: no per-entry retry (both stay pending); a repeat failure left pending instead of
+    moved to `bad/`."""
+    hw = _hw()
+    root = _root()
+    d = _daemon_with_store(root)
+    try:
+        good = "focus_summary_hwqs1b"
+        poison = _entry(root, "focus_summary_hwqs1bpoison", "poison", time.time() - 5.0)
+        poison["args"]["updated_at"] = 10 ** 400
+        hw.validate(poison)  # a well-formed entry by every rule validate states
+        good_entry = _entry(root, good, "the good digest", time.time() - 10.0)
+        if poison_first:
+            pp = hw.enqueue(root, poison)
+            hw.enqueue(root, good_entry)
+        else:
+            hw.enqueue(root, good_entry)
+            pp = hw.enqueue(root, poison)
+        poison_body = pp.read_bytes()
+
+        runs = [d._drain_hook_writes() for _ in range(3)]
+
+        m = _memory(d, root, good)
+        assert m is not None and m["content"] == "the good digest", (m, runs)
+        assert (runs[0]["applied"], runs[0]["bad"]) == (1, 1), runs
+        assert all(r["applied"] == 0 and r["bad"] == 0 and r["failed"] == 0
+                   for r in runs[1:]), runs
+        moved = spool_dir(root) / "bad" / pp.name
+        assert moved.exists() and moved.read_bytes() == poison_body, (
+            list(spool_dir(root).rglob("*")), runs)
+        assert not spool_files(root), (spool_files(root), runs)
+        logs = d.__dict__.get("_logs", [])
+        assert any(pp.name in ln for ln in logs), f"rmxd.log does not name {pp.name}: {logs}"
+        assert _memory(d, root, poison["name"]) is None
+        evs = facts_events(root, op="memory_content", name=good)
+        assert len(evs) == 1, f"{len(evs)} memory_content events over 3 drains: {evs}"
+        assert facts_events(root, op="memory_content", name=poison["name"]) == []
+        assert hw.counts(root) == {"pending": 0, "bad": 1}, hw.counts(root)
+    finally:
+        d.store.close()
+
+
 def test_daemon_status_and_health_name_a_bad_entry_after_the_boot_drain():
     """AC-6 / D4 through the entry points: a malformed entry present at boot is moved to `bad/`
     by the BOOT drain of a real `rmx daemon start`, the `stats` op's health carries
@@ -417,3 +532,42 @@ def test_an_entry_queued_before_a_daemon_death_is_applied_by_the_boot_drain():
     bad = spool_dir(root) / "bad"
     assert not (bad.is_dir() and any(bad.iterdir())), list(bad.iterdir())
     assert len(facts_events(root, op="memory_content", name=name)) == 1
+
+
+def test_the_boot_sweep_keeps_a_young_tmp_and_removes_an_old_one():
+    """D1 / bsd-c2 r1 g-1. The boot sweep removes `*.tmp` crash leftovers, but a producer
+    enqueues exactly when the daemon is busy, and a booting daemon is busy: a `.tmp` whose name
+    says it was created less than `TMP_SWEEP_MIN_AGE_S` (60 s) ago may be an enqueue in flight,
+    and removing it would fail that producer's rename (exit 1). So a young `.tmp` is LEFT, byte
+    for byte, and counted `kept`; one older than the limit, or one whose name carries no time,
+    is removed. Run at the real default limit, through `sweep_stale_tmp` and the daemon's boot
+    step `_sweep_stale_hook_writes_tmp`. Mutation (ch-bsd `c819b066`): sweep every `.tmp`
+    whatever its age (`kept` 0, the young files gone)."""
+    hw = _hw()
+    root = _root()
+    sp = spool_dir(root)
+    sp.mkdir(parents=True)
+    now = time.time_ns()
+
+    def tmp(age_s: float) -> Path:
+        return sp / f"{now - int(age_s * 1e9):020d}-{uuid.uuid4()}.json.tmp"
+
+    young = [tmp(0.0), tmp(30.0)]
+    old = [tmp(61.0), tmp(3600.0), sp / f"leftover-{uuid.uuid4()}.json.tmp"]
+    for i, f in enumerate(young + old):
+        f.write_text(f'{{"half {i}": ')
+
+    r = hw.sweep_stale_tmp(root)
+
+    assert r == {"removed": 3, "kept": 2}, r
+    for i, f in enumerate(young):
+        assert f.exists() and f.read_text() == f'{{"half {i}": ', (
+            f"the sweep took a .tmp younger than {hw.TMP_SWEEP_MIN_AGE_S}s: {f.name}")
+    assert not any(f.exists() for f in old), [f.name for f in old if f.exists()]
+
+    d = dm.Daemon(root)
+    logs: list = []
+    d._log = logs.append
+    d._sweep_stale_hook_writes_tmp()
+    assert all(f.exists() for f in young), "the daemon's boot sweep took a young .tmp"
+    assert any("kept 2" in ln for ln in logs), logs
