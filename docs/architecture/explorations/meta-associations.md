@@ -659,3 +659,40 @@ units. Bands: ρ(STM) ≥ 0.9 → pressure **restates STM**, and Q1-Q3's actions
 → largely redundant, said beside Q1; < 0.7 → distinct. {#m6-q4-bands}
 
 Volume: candidates, held units and crossers a week over 2026-11-11 → 11-25. {#m6-volume}
+
+### Results {#m6-results}
+
+Script `m6_retrieval_pressure.py`, run 2026-11-25 on fresh copies (deleted after); output in
+`run-output-m6-2026-11-25.txt`. Pre-registration `2049188d`. 1,647 hook query units carry
+pressure. Held-out candidates come from 667 units in 4 sessions; no session-cluster interval.
+{#m6-results-note}
+
+| Q | metric (held-out) | result, 95% interval | band | action |
+|---|---|---|---|---|
+| 1 | AUC gain from adding pressure (count, d 0.85) to each baseline; 12,900 candidates, **23 positives** | single AUC: pressure 0.440, STM 0.542, popularity 0.662, rank 0.811. Δ_STM −0.019 [−0.118, +0.073]; Δ_pop −0.200 [−0.342, −0.063]; Δ_rank −0.382 [−0.491, −0.264]; **Δ_all −0.191 [−0.293, −0.084]** | measure more (underpowered: 23 < 30 positives) | do not add pressure as a feature; every interval that excludes 0 is a loss |
+| 2 | mean reciprocal position of the first held item touched, n = 40 units | default (rank) 0.435, pressure 0.553: **Δ +0.118 [−0.038, +0.276]**; STM-score order (reference) 0.828 | measure more | keep 10.2's rank order; STM order is the one to pre-register next |
+| 3 | precision of a later touch within 5 turns after crossing band b; 570 held-out items first delivered as pointer/excerpt (5 pointers) | base 5/570 = 0.009; b 1.5: 2/166 = 0.012 [0.003, 0.043]; b 2.5: 0/69 [0, 0.053]; b 4.0: 0/23 [0, 0.143] | drop (1.5, 2.5); measure more (4.0: 23 crossers) | no tier upgrade |
+| 4 | Spearman ρ of pressure with STM node score and with prompt-term overlap | ρ(STM) **0.094 [0.070, 0.121]**; ρ(overlap) 0.063 [0.013, 0.106] | distinct (< 0.7) | pressure is not STM restated; it just does not predict the touch |
+
+{#m6-table}
+
+- **Variants (Q1, not banded).** No variant reaches the build bar. Δ_all ranges from −0.325
+  (rank-weighted, d 0.70) to +0.018 (`prompt_recall`-only, d 0.95), and single-score AUCs sit at
+  0.354-0.529. Strata: `scan_prompt` 15 positives, AUC(pressure) 0.489; `prompt_recall` 8
+  positives, 0.387.
+- **Why Q1 is not "drop".** The pre-registered order puts underpowered first. With 23 held-out
+  positives every Δ interval excludes a gain, and the bands would otherwise read drop.
+- **Q2 new-touch stratum.** n 13, Δ −0.343.
+- **Q3 cost.** A pointer row is a median 46 B, a full row 639 B, so one upgrade costs 593 B.
+  Upgrades per session: 41.5 at b 1.5, 17.2 at 2.5, 5.8 at 4.0. 81% of held-out candidates
+  already carry pressure > 0.
+- **STM replay.** 612 of 12,900 held-out candidates have a node score above 0.
+- **Volume.** 9,384 candidates a week.
+
+{#m6-results-list}
+
+**Not measured:** use (golds are touches, proximity); the true tier (not logged; byte-inferred,
+and `scan_prompt` excluded); pointer-first items (5 held-out); subject-partitioned STM rings (4
+files; the bare session ring was replayed); pins (not in the ring); session-clustered intervals
+(4 held-out sessions). The STM-order result in Q2 was a reference, not a candidate, so it carries
+no band. {#m6-not-measured}
