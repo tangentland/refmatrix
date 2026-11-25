@@ -75,5 +75,6 @@ Backfill (2026-11-24, post-reset reports 2026-11-15 onward): level is the report
 | b318-r1-B3 | [[bsd-bug318-r1-9954e391]] | BULLSHIT | SA-7 | failed pre-read swallowed; missing pre record falls back to the last milestone's sig | upheld | fold 2 `ee36bb10` (pre errors parked and said; no ring fallback); closed by the confirm-lite fallback probe; merged `4ae4ecef` | 2026-11-25 |
 | b318-r1-G1 | [[bsd-bug318-r1-9954e391]] | GATE | - | mutant M4 (no reverse-priority cut order) survives | upheld | M4 killed by `test_a_digest_over_the_cap_loses_milestones_before_topics_and_arc` (`ee36bb10`); merged `4ae4ecef` | 2026-11-25 |
 | b318-r1-G2 | [[bsd-bug318-r1-9954e391]] | GATE | - | mutant M7 (dedup by terse, not sha) survives | upheld | M7 killed by `test_digest_keeps_one_line_per_sha_and_the_content_verb` (`ee36bb10`); merged `4ae4ecef` | 2026-11-25 |
+| c2-r1-g-1 | [[bsd-c2-r1-9afff800]] | GATE | SA-6 | the boot sweep's young-.tmp keep (`hook_writes.py:327`, 60 s) was unpinned; mutant `c819b066` survived | upheld | fixed `e1421d17` (merged `6b27f219`): `test_the_boot_sweep_keeps_a_young_tmp_and_removes_an_old_one` fails on the mutant (`{'kept': 0, 'removed': 5} == {'kept': 2, 'removed': 3}`) | 2026-11-25 |
 
 {#closed-table}
