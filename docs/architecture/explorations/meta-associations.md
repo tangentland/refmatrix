@@ -338,3 +338,94 @@ golds) was not measured further. {#popularity-note}
   timelines, so they cannot score a post-miss touch; the logged product path was used instead.
 
 {#not-measured-list}
+
+## Pre-registration: candidate 8, activity mode {#prereg-c8}
+
+Added to the brief by L253 (Q87 = a) after the seven above were measured. Written before any
+candidate-8 result was computed; committed alone as the second pre-registration. The first
+pre-registration ([[#prereg]]) stands unchanged. Known before writing: the record shapes, that the
+STM ring stores local wall-clock times (America/Los_Angeles) and holds subagent tool events mixed
+with the main loop's, and C6's finding that memory use is invisible to touches. {#prereg-c8-note}
+
+rel: implements -> [[agent-brief-meta-assoc-measure#candidates-list]]
+
+### Question and data {#c8-question}
+
+Does the agent's activity mode, read from the STM ring at query time, change how likely a
+delivered item of a given kind is to be used, by more than kind alone and more than popularity
+alone? Clusters existing is not the test. Data: fresh `cp -c` copies of the STM rings,
+`recall-events.jsonl`, the transcripts with their `subagents/*.meta.json`, and the memory dir;
+deleted after the run. {#c8-question-text}
+
+### Mode features {#c8-features}
+
+- **Ring event categories (7):** `read`, `search`, `edit`, `bash`, `test`, `agent`, `other`.
+  `Read` → read; `Edit`/`MultiEdit`/`Write`/`NotebookEdit` → edit; `Bash` by its command: `test`
+  when it runs `pytest` or `lane-mini.sh`/`lane-local.sh`; else by the first word after stripping
+  `cd … &&`, `VAR=value`, `timeout N`, `nice`, `sudo -u X`: `search` for `grep`, `rg`, `rmxgrep`,
+  `find`, `ls`, `tree`, and `rmx`/`rmx-master` `context|grep|query|search|neighbors|where|locate|
+  memory recall|memory search`; `read` for `cat`, `sed`, `head`, `tail`, `less`, `wc`, `awk`,
+  `jq`, `diff`; else `bash`. `Agent`, `SendMessage`, `Task*` → agent; `Grep`/`Glob` and the
+  read-only refmatrix MCP tools → search; ring kinds `git`, `say`, `input`, `reason` and anything
+  else → other. The STM ring records no `Agent`/`SendMessage` call, so `agent` is folded into
+  `other` for every window (the ring cannot see it; a limit, not a choice).
+- **Window:** the last 20 ring events of the session at or before the moment; the feature is the
+  six category shares.
+- **Clusters:** k-means (k-means++, `random.Random("m4-8")`, 20 restarts) on train windows (one
+  per ring event before T*, at most 20,000 sampled), k ∈ {3, 4, 5, 6} chosen by mean silhouette on
+  a 3,000-window train sample. Held-out windows take the nearest centroid.
+
+{#c8-features-list}
+
+### Labels and lag (descriptive and banded) {#c8-labels}
+
+- **Labels:** each subagent thread's calls, categorised the same way, give sliding 20-call
+  windows assigned to the nearest centroid; per `agentType`, the share of its windows in its modal
+  cluster, and the normalised mutual information between `agentType` and cluster. Descriptive.
+- **Lag:** synthetic switches between labelled threads: pairs (A, B) of subagent threads with ≥ 40
+  calls whose modal clusters differ; sequence = last 20 calls of A, then the first 40 of B; lag =
+  B calls until the window's cluster first equals B's modal cluster, censored at 40. Median and
+  IQR over up to 500 pairs (`random.Random("m4-8-lag")`).
+- **Labelled pilot leg:** the 2026-11-13 R12 pilot's pair labels lived in that session's scratchpad
+  and are not on disk (searched 2026-11-25); not measured.
+
+{#c8-labels-list}
+
+### Use test on the product path {#c8-use}
+
+- **Units:** deliveries (query unit × delivered key), joined to touch windows exactly as C6;
+  `touched` = the key is touched in the query's window. Mode = the cluster of the session's ring
+  window at the query time. T* = the 60th percentile of delivery times; models are fitted on
+  deliveries before T*, scored on deliveries at or after it.
+- **Kinds:** `memory` (`memory/…`); `ruling` (`workflow/plan-of-plans.md`); `bug row`
+  (`workflow/bug_registry.md`); `doc` (other `.md`); `code` (everything else). Primary analyses
+  exclude `memory` (its use cannot be seen as a touch, C6); memory rates are reported only.
+- **Models:** M0 kind-only `(t_k + 0.5) / (n_k + 1)`; M1 kind × mode, shrunk to M0 with prior
+  strength 20: `(t_km + 20·M0_k) / (n_km + 20)`; P0 popularity = the key's count of touched train
+  windows; P1 = `(P0 + 1) · M1 / M0` (popularity re-weighted by mode).
+- **Metrics:** held-out AUC of each model for `touched`; Δ1 = AUC(M1) − AUC(M0) (mode vs no
+  mode), Δ2 = AUC(P1) − AUC(P0) (mode vs the popularity baseline; the lead's added control).
+  Bootstrap over query units, 2,000 resamples, seed `m4`. Heterogeneity: Pearson χ² of touched ×
+  mode within each kind, summed over kinds, against 1,000 permutations of mode within kind (it
+  includes mode's main effect; the Δs decide). Effect size: per kind, the max / min use rate
+  across modes with ≥ 50 deliveries, Wilson-bounded.
+- **Secondary outcome:** explicit `used` rows of `recall-events.jsonl` (125, from `context` by
+  name, focus notes, memory get by name) counted by kind × mode. Descriptive.
+
+{#c8-use-list}
+
+### Bands for candidate 8 {#c8-bands}
+
+Applied in this order:
+
+1. Fewer than 30 touched held-out deliveries of non-memory kinds, or fewer than 3 modes with ≥ 100
+   held-out deliveries → **measure more**.
+2. Δ1 ≥ 0.03 and Δ2 ≥ 0.03, both 95% lower bounds > 0, heterogeneity p < 0.01, median lag ≤ 10
+   events → **build** (a mode-aware kind prior as its own signal, never folded into
+   `mentions.weight`).
+3. max(Δ1, Δ2) < 0.01, or both 95% upper bounds < 0.02 → **drop**.
+4. Otherwise → **measure more**.
+
+{#c8-bands-list}
+
+Volume: held-out-style evidence a week over 2026-11-11 → 11-25 (deliveries, ring events). {#c8-volume}
