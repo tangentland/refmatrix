@@ -41,7 +41,7 @@ rel: amends -> [[bsd-0661-e2e-memory-bridge]]
 **Actual:** `_gather_queues` does call `_annotate_identity`, but `_queue_alert_loop` publishes only when `hot or pending_refine`, and `hot` is `stale_files > 0 or memory_read_ok is False or serving_legacy_catalog or store_bytes`. `dev_tree` is not in the predicate. A fleet where every daemon runs the wrong tree and nothing is stale publishes nothing. The identity only appears as a passenger on an alert raised for some other reason, once per 1800 s.
 **Evidence:** `grep -n dev_tree src/refmatrix/hub.py` → lines 939, 950, 954, 962 only; none inside the alert loop. Mutation A (`return _annotate_identity(out)` → `return out` on a scratchpad copy): `tests/test_runtime_identity_surface.py` 5/5 still pass (`workflow/review-output/pytest-bsd-plan1-mutA.log`) — nothing tests the wiring or the publish.
 **Fix:** add `or q.get("dev_tree")` to `hot`; add a test that feeds a `dev_tree=True` row through the loop body (extract the `hot` predicate into a function) and asserts a publish. Correct the memory sentence once landed.
-**Pattern match:** YES — [[bsd-impressions#imp-two-paths]] ("which path does production take") and [[bsd-impressions#imp-mock-the-sut]].
+**Pattern match:** YES — [[bsd-impression-anchors#imp-two-paths]] ("which path does production take") and [[bsd-impression-anchors#imp-mock-the-sut]].
 
 rel: contradicts -> [[plan-1-deploy-runtime#q2]]
 
@@ -67,7 +67,7 @@ rel: contradicts -> [[task-1.2-plan-1-deploy-runtime#files]]
 **Actual:** `_daemon_identity` returns `{}` on exception, on `ok=False`, and on a ping without `code_path` (any pre-0.66.3 daemon). `hub_status` prints a flag only when `dev_tree` is truthy, so unknown and verified-clean are the same green row. Live: orderly's daemon (pid 39128, since Sep 13 01:00) answers `version=0.65.0`, no `code_path` — shown as a plain row. The summary discloses orderly and defers it to plan 4.4; task 4.4's acceptance criteria are about adopting an unsupervised daemon and never mention the code path (it is covered only implicitly, by the respawn). "0 flags" is therefore not evidence for the whole fleet.
 **Evidence:** direct ping output in this audit; `hub status` output above. Mutation B (drop `{devflag}` from `hub_status`): all tests pass (`pytest-bsd-plan1-mutB.log`) — the `hub status` surface has no test.
 **Fix:** distinguish three states in the row: `code: <path>`, `[DEV TREE]`, and `[UNVERIFIED v0.65.0]` (or `identity: unknown` in the queue row); add a CliRunner test for `hub status` with `hub_mod.status`, `rpc`, and `_daemon_identity` patched as inputs. Add "orderly reports `code_path` under `~/refmatrix/src`" to task 4.4's requirements.
-**Pattern match:** YES — [[bsd-impressions#imp-silent-memory]] (silent-skip rendered as success).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-silent-memory]] (silent-skip rendered as success).
 
 rel: contradicts -> [[task-1.3-plan-1-deploy-runtime#requirements]]
 
@@ -86,9 +86,9 @@ rel: contradicts -> [[task-1.3-plan-1-deploy-runtime#requirements]]
 **Actual:** `test_hub_queue_rows_carry_dev_tree` monkeypatches `_daemon_identity` and calls `_annotate_identity` directly — it proves a dict copy, not that `_gather_queues` or the alert carry anything (mutation A). No test covers `hub status`. The mock registry has no plan-1 rows; its only catch-all is "monkeypatch.setattr sites (184, unregistered) — plan 6 sweep". The identity tests themselves (`test_upgrade.py`, fake trees + injected prefix/import_file) are honest and do not mock the SUT; `_op_ping` and `daemon status` tests patch `runtime_identity`/`daemon_mod.call` as inputs, which is acceptable.
 **Evidence:** `grep -n -iE "runtime_identity|_daemon_identity|plan-1" workflow/test_mock_registry.md` → empty; mutation logs A and B.
 **Fix:** test `_gather_queues` end-to-end with `discovery.discover_roots`/`daemon_status` and `daemon_mod.call` patched as inputs; CliRunner test for `hub status`; register the three monkeypatch sites (`up.runtime_identity`, `daemon_mod.call`, `hub._daemon_identity`) as `external`/`internal-active` with a graduation note. Correct the summary.
-**Pattern match:** YES — [[bsd-impressions#imp-mock-the-sut]], second run in a row → escalated MEH→SKETCHY.
+**Pattern match:** YES — [[bsd-impression-anchors#imp-mock-the-sut]], second run in a row → escalated MEH→SKETCHY.
 
-rel: contradicts -> [[bsd-impressions#imp-mock-the-sut]]
+rel: contradicts -> [[bsd-impression-anchors#imp-mock-the-sut]]
 
 ### SKETCHY: `verify_editable` passes silently on a finder-style editable install (unanchored deferral) {#s-8}
 

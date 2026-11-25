@@ -97,7 +97,7 @@ the family is "clone-environmental".
 3. Update bug-108 to `fixed by bug-110 + test fix` with this evidence.
 4. Compare failure lists by message, not by name.
 
-**Pattern match:** YES. See [[bsd-impressions#imp-same-name-different-failure]] (new) and
+**Pattern match:** YES. See [[bsd-impression-anchors#imp-same-name-different-failure]] (new) and
 `imp-clean-corpus-hides-a-dead-gate` in memory: a list compared by key hid a changed value.
 
 rel: contradicts -> [[claude#system-dependent-tests]]
@@ -149,7 +149,7 @@ put `cp` on PATH as `false`, or give a `dst` in a read-only dir. Assert two thin
 `{"error": "copy"}` dict comes back, and the old snapshot is unchanged. Add a second test that
 pins the timeout so it becomes `OSError(ETIMEDOUT)`.
 
-**Pattern match:** YES. See [[bsd-impressions#imp-remedy-guards-unpinned]].
+**Pattern match:** YES. See [[bsd-impression-anchors#imp-remedy-guards-unpinned]].
 
 ### MEH: `_rebuild_slot_from` has no callers, and it was patched instead of deleted {#m-1}
 

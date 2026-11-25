@@ -307,7 +307,7 @@ and is what the existing judged harness already handles. {#question-set-lead}
    cached per root, one partition, fixed. Every non-default leg is a DAEMON OP.
 2. **Daemon ops serialize on `_store_lock`**, because `with_partition` is not concurrency-safe on
    one Store. The sweep's wall clock is the SUM of its legs, not the max — the shape already filed
-   twice ([[bsd-impressions#imp-fleet-sum-timeouts]]).
+   twice ([[bsd-impression-anchors#imp-fleet-sum-timeouts]]).
 3. **`daemon.call` defaults to `retries=2`**, tripling any per-leg timeout
    ([[feedback_daemon_call_retries_multiply_timeouts]], the 30 s grep wall).
 
@@ -324,7 +324,7 @@ Adoption into `scan-prompt` is its own task, gated on the measured p95 and on Ga
 - **A leg returns nothing and fusion absorbs it.** Each leg reports its candidate count; a zero is
   an error line, not an empty list ([[feedback_no_silent_failures]]).
 - **The sweep becomes a second way to do retrieval.** If it ships, `context`'s cross-partition story
-  must be the sweep or must be the filter flag — not both ([[bsd-impressions#imp-two-paths]]).
+  must be the sweep or must be the filter flag — not both ([[bsd-impression-anchors#imp-two-paths]]).
 
 ## Tasks {#tasks}
 

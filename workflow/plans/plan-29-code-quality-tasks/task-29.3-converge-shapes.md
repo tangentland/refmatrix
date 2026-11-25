@@ -73,16 +73,16 @@ sightings: {#classes-method}
 
 | id | class | sightings | where | helper | slice |
 |---|---|---|---|---|---|
-| G | a git call's failure is read as a harmless answer ("not found", "clean", "nothing to commit") | 7 | registry bug-212, bug-225, bug-233; [[bsd-impressions#imp-loud-read-silent-skip]], [[bsd-impressions#imp-exit-allowlist-needs-a-probe]], [[bsd-impressions#imp-mutate-the-extension]], [[bsd-impressions#imp-fail-closed-covers-every-call]] | `run_git` | a |
-| Q | an input the evaluator does not understand gets an answer instead of an error | 5 | registry bug-234, bug-236, bug-238, bug-240; [[bsd-impressions#imp-refuse-the-old-spelling]] | the term resolver | b |
-| X | a failure is swallowed with no count and no word | 30 | 25 registry rows tagged `silent-failure` (bug-040 … bug-240); [[bsd-impressions#imp-silent-memory]], [[bsd-impressions#imp-silent-pass-migrates]], [[bsd-impressions#imp-nonfatal-needs-its-report-pinned]], [[bsd-impressions#imp-quiet-branch-premise]], [[bsd-impressions#imp-handler-body-own-try-scope]] | the handler classifier | c |
-| B | a busy daemon is read as an absent one | 8 | [[bsd-pattern-busy-is-not-absent#sites]] (6 sites in 4 plans); [[bsd-impressions#imp-busy-absent-call-tree]], [[bsd-impressions#imp-daemon-down-twin-untested]] | `verbs.require_daemon` (exists) | d |
-| T | a bound stops one call short: a timeout or a retry count left at the library default | 12 | [[bsd-pattern-partial-bound#occurrences]] (5 runs); registry tag `timeout` (bug-030, bug-097, bug-116, bug-177, bug-182); [[bsd-impressions#imp-fleet-sum-timeouts]]; [[bsd-pattern-sibling-render-path#sightings]] row `#s-2` | `Deadline` | e |
-| S | one check or message is shared by callers with different needs | 5 | registry bug-232 with [[bsd-impressions#imp-shared-check-caller-remedy]]; [[bsd-impressions#imp-test-the-advice-in-the-error]], [[bsd-impressions#imp-aim-the-guard-at-the-destination]], [[bsd-impressions#imp-ask-about-the-file-not-the-names]], [[bsd-impressions#imp-shared-probe-placement]] | the refusal's `remedy` parameter; rule [[#r0]] | f |
-| C | "every X passes through here" is claimed with no census of X | 7 | [[bsd-pattern-control-point-claim-without-census]] (4 runs); [[bsd-impressions#imp-loudness-is-a-census]], [[bsd-impressions#imp-collision-column-census]], [[bsd-impressions#imp-scanner-needs-synthetic-positives]] | the census kit | K |
-| R | a correct fix reaches one of its two outputs | 10 | [[bsd-pattern-sibling-render-path#sightings]] (7); [[bsd-impressions#imp-precedence-names-siblings]], [[bsd-impressions#imp-mirror-the-extension]]; registry bug-048 | none of its own | see below |
-| P | an operation's partition is chosen in many places | 10 | registry tag `partition` (9 rows: bug-098, bug-105, bug-111, bug-128, bug-140, bug-145, bug-148, bug-153, bug-158); [[bsd-impressions#imp-scope-vs-every-table]] | one partition-default function (the expression only; plan-23 owns the binding contract) | g |
-| V | a gate or guard that did not run, or cannot fire, reads as clean | 8 | [[bsd-pattern-guard-cannot-fire#sightings]] (4); registry bug-021, bug-068, bug-230; [[bsd-impressions#imp-gate-precondition-vacuous-pass]] | `assert_gate_ran_clean` (exists) | rule [[#r0]] |
+| G | a git call's failure is read as a harmless answer ("not found", "clean", "nothing to commit") | 7 | registry bug-212, bug-225, bug-233; [[bsd-impression-anchors#imp-loud-read-silent-skip]], [[bsd-impression-anchors#imp-exit-allowlist-needs-a-probe]], [[bsd-impression-anchors#imp-mutate-the-extension]], [[bsd-impression-anchors#imp-fail-closed-covers-every-call]] | `run_git` | a |
+| Q | an input the evaluator does not understand gets an answer instead of an error | 5 | registry bug-234, bug-236, bug-238, bug-240; [[bsd-impression-anchors#imp-refuse-the-old-spelling]] | the term resolver | b |
+| X | a failure is swallowed with no count and no word | 30 | 25 registry rows tagged `silent-failure` (bug-040 … bug-240); [[bsd-impression-anchors#imp-silent-memory]], [[bsd-impression-anchors#imp-silent-pass-migrates]], [[bsd-impression-anchors#imp-nonfatal-needs-its-report-pinned]], [[bsd-impression-anchors#imp-quiet-branch-premise]], [[bsd-impression-anchors#imp-handler-body-own-try-scope]] | the handler classifier | c |
+| B | a busy daemon is read as an absent one | 8 | [[bsd-pattern-busy-is-not-absent#sites]] (6 sites in 4 plans); [[bsd-impression-anchors#imp-busy-absent-call-tree]], [[bsd-impression-anchors#imp-daemon-down-twin-untested]] | `verbs.require_daemon` (exists) | d |
+| T | a bound stops one call short: a timeout or a retry count left at the library default | 12 | [[bsd-pattern-partial-bound#occurrences]] (5 runs); registry tag `timeout` (bug-030, bug-097, bug-116, bug-177, bug-182); [[bsd-impression-anchors#imp-fleet-sum-timeouts]]; [[bsd-pattern-sibling-render-path#sightings]] row `#s-2` | `Deadline` | e |
+| S | one check or message is shared by callers with different needs | 5 | registry bug-232 with [[bsd-impression-anchors#imp-shared-check-caller-remedy]]; [[bsd-impression-anchors#imp-test-the-advice-in-the-error]], [[bsd-impression-anchors#imp-aim-the-guard-at-the-destination]], [[bsd-impression-anchors#imp-ask-about-the-file-not-the-names]], [[bsd-impression-anchors#imp-shared-probe-placement]] | the refusal's `remedy` parameter; rule [[#r0]] | f |
+| C | "every X passes through here" is claimed with no census of X | 7 | [[bsd-pattern-control-point-claim-without-census]] (4 runs); [[bsd-impression-anchors#imp-loudness-is-a-census]], [[bsd-impression-anchors#imp-collision-column-census]], [[bsd-impression-anchors#imp-scanner-needs-synthetic-positives]] | the census kit | K |
+| R | a correct fix reaches one of its two outputs | 10 | [[bsd-pattern-sibling-render-path#sightings]] (7); [[bsd-impression-anchors#imp-precedence-names-siblings]], [[bsd-impression-anchors#imp-mirror-the-extension]]; registry bug-048 | none of its own | see below |
+| P | an operation's partition is chosen in many places | 10 | registry tag `partition` (9 rows: bug-098, bug-105, bug-111, bug-128, bug-140, bug-145, bug-148, bug-153, bug-158); [[bsd-impression-anchors#imp-scope-vs-every-table]] | one partition-default function (the expression only; plan-23 owns the binding contract) | g |
+| V | a gate or guard that did not run, or cannot fire, reads as clean | 8 | [[bsd-pattern-guard-cannot-fire#sightings]] (4); registry bug-021, bug-068, bug-230; [[bsd-impression-anchors#imp-gate-precondition-vacuous-pass]] | `assert_gate_ran_clean` (exists) | rule [[#r0]] |
 
 **Classes that get no `src/` helper, and why.** {#classes-no-helper}
 
@@ -104,7 +104,7 @@ sightings: {#classes-method}
   [[plan-review-fable-2026-11-14-queue#dup-2]]) and is not closed here.
 - bug-237 (query cost) goes to 29.1's triage (lead, 2026-11-14) and is not taken here.
 - **Numeric env knobs (bug-188)** are a candidate the queue review names for this task. The
-  ledger has two sightings (the bug-188 row and [[bsd-impressions#imp-pin-the-run-end]]), which
+  ledger has two sightings (the bug-188 row and [[bsd-impression-anchors#imp-pin-the-run-end]]), which
   is not "more than twice", so it is not a slice here. Measured for whoever takes it:
   82 bare `float(…)` / `int(…)` reads of the environment in 20 modules outside `envknob`
   (`census/census_env_knobs.py`, log `census-env-knobs-f3709d2.log`), against 23 `env_float`
@@ -149,22 +149,22 @@ These come from the ledger's record of how convergences fail.
 1. **What differs by caller is a parameter with no default.** A timeout, a remedy text or an
    environment rule that encodes one caller's need is class S again.
 2. **The helper's own promises are tested and mutated before the sites**
-   ([[bsd-impressions#imp-convergence-tests-sites-not-helper]]).
+   ([[bsd-impression-anchors#imp-convergence-tests-sites-not-helper]]).
 3. **Each census has the five parts of the catalog-opener census** in
    `tests/test_bug212_r4_red.py`:
    - a "sees" test: the scanner finds known real sites;
    - a synthetic module with a positive and a negative for every family, aliases included
-     ([[bsd-impressions#imp-scanner-needs-synthetic-positives]]);
+     ([[bsd-impression-anchors#imp-scanner-needs-synthetic-positives]]);
    - no site outside the allowlist;
    - no allowlist entry the scanner no longer sees;
    - keyed on the guarded resource, not on one way of reaching it
-     ([[bsd-impressions#imp-census-the-resource]]).
+     ([[bsd-impression-anchors#imp-census-the-resource]]).
 4. **One rule, one implementation.** The test and the report command import the same scanner
    from `tests/census/`. A count in a summary names the command and the commit.
-5. **The predecessor is deleted** ([[bsd-impressions#imp-rewrite-orphans-predecessor]]). After a
+5. **The predecessor is deleted** ([[bsd-impression-anchors#imp-rewrite-orphans-predecessor]]). After a
    slice, no replaced wrapper is left with a test as its only caller.
 6. **Where each caller calls the helper is checked**: which lock it holds, and whether it runs
-   on a tick or inside a request ([[bsd-impressions#imp-shared-probe-placement]]).
+   on a tick or inside a request ([[bsd-impression-anchors#imp-shared-probe-placement]]).
 7. **No behaviour change rides along.** A site whose behaviour must change gets its own AC and
    its own RED test. Everything else is pinned by a golden recorded at the start commit.
 
@@ -243,7 +243,7 @@ Acceptance:
 - **AC-K2 (the extraction changed nothing):** the bug-212 census reports the same
   `(site, line, family)` set before and after the move, recorded at the start commit.
 - **AC-K3 (re-proven on its bypass):** K-R2's planted open fails the bug-212 test; and the
-  mutation the ledger recorded ([[bsd-impressions#imp-scanner-needs-synthetic-positives]]:
+  mutation the ledger recorded ([[bsd-impression-anchors#imp-scanner-needs-synthetic-positives]]:
   `_store_aliases` returning only `{"Store"}`) fails the synthetic-module test.
 - **AC-K4:** the alias resolver has a synthetic module of its own; returning only the literal
   name fails it.
@@ -736,7 +736,7 @@ and these items stay declared:
   error still yields the default and another exception now propagates.
 - **AC-c5 (each surfaced site on a sync / ingest / memory / hook path):** a test drives the
   failure and asserts the count or the message; deleting the report line fails it
-  ([[bsd-impressions#imp-nonfatal-needs-its-report-pinned]]).
+  ([[bsd-impression-anchors#imp-nonfatal-needs-its-report-pinned]]).
 - **AC-c6 (end state):** unowned silent is 0; `scripts/broad-except-baseline.json` does not exist; every
   entry of the owned list names an existing spec that names the handler; the summary carries the
   c-R5 table with the owned sites as their own column.
@@ -846,7 +846,7 @@ and these items stay declared:
 - **f-R2.** Each of the 4 callers passes its own: `_store_rw` and `verbs.local_write` keep
   today's text; `compact` names untracking only (no daemon runs compact); `migrate-to-duckdb
   --out` says to choose an untracked `--out` path or untrack that file.
-- **f-R3.** The advice is a test case ([[bsd-impressions#imp-test-the-advice-in-the-error]]):
+- **f-R3.** The advice is a test case ([[bsd-impression-anchors#imp-test-the-advice-in-the-error]]):
   for each caller, a test follows the remedy literally and the command then succeeds.
 - **AC-f1:** each caller's refusal text is pinned; none contains another caller's remedy. RED
   at the start commit for `compact` and `migrate-to-duckdb`.

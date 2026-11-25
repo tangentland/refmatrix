@@ -20,6 +20,8 @@
 
 ## Leaderboard (updated every 10 runs) {#leaderboard}
 
+> Frozen at run 54; superseded by the tally by self-audit question (`python3 scripts/bsd-tally.py`, from the `question` column of `OPEN.md` / `CLOSED.md`).
+
 | Author | Commits | BULLSHIT | SKETCHY | MEH | BS Rate |
 |--------|---------|----------|---------|-----|---------|
 | Todd Holley / Fable 5.1 / orchestrator | 32 | 52 | 69 | 77 | 1.63 |

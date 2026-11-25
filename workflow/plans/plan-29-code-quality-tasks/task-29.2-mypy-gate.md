@@ -901,7 +901,7 @@ RED first, by `@ch-test-engineer`, recorded to `workflow/review-output/`; GREEN 
   | the rehash implemented by calling `stamp_derive` | AC-28, AC-24 |
 
 - **The helper's own promises are mutated before the sites**
-  ([[bsd-impressions#imp-convergence-tests-sites-not-helper]]): the gate's exit-code table and
+  ([[bsd-impression-anchors#imp-convergence-tests-sites-not-helper]]): the gate's exit-code table and
   the baseline rules first, the call sites second.
 
 ## Files {#files}

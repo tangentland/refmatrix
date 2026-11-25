@@ -396,21 +396,15 @@ Record as: `{human} / {model} / {agent_profile}`.
 Example: `Jane Dev / Opus 4.8 / orchestrator`.
 Example: `Jane Dev / Sonnet 4.6 / ch-code-reviewer`.
 
-This data feeds the LEADERBOARD in INDEX.md — surfaces which agent profiles
-consistently produce dead code so their instructions can be tuned.
+The author column of `INDEX.md` stays as history.
 
-### Update LEADERBOARD in INDEX.md {#update-leaderboard-in-index-md}
+### Tally by self-audit question {#update-leaderboard-in-index-md}
 
-Every 10 runs (check line count), append or update a leaderboard summary at the
-bottom of INDEX.md:
-```
-## Leaderboard (updated every 10 runs)
-| Author | Commits | BULLSHIT | SKETCHY | MEH | BS Rate |
-```
-BS Rate = BULLSHIT findings / commits. Higher = worse. This surfaces which
-agents or workflows consistently produce dead code so their instructions can
-be tuned. The leaderboard is the reason ch-bsd exists — closing the feedback
-loop between audit findings and instruction quality.
+The by-author Leaderboard in `INDEX.md` is retired (frozen at run 54): it could not tell authors
+apart. For every BULLSHIT, name the `workflow/SELF_AUDIT.md` question that missed it (`SA-1` to
+`SA-8`, or `none: <the question or lint you propose>`). The lead copies it into the `question`
+column of `workflow/bullshit/OPEN.md` / `CLOSED.md` when persisting your report.
+`python3 scripts/bsd-tally.py` derives the tally from those ledgers; never keep it by hand.
 
 ### Update IMPRESSIONS.md {#update-impressions-md}
 
@@ -421,8 +415,9 @@ things to watch for in future runs. Examples:
 - "Third mock this week without registry entry — mock discipline slipping"
 - "CLEAN — event-path wiring improving since the last plan"
 
-Keep IMPRESSIONS.md under 50 lines. If over 50, summarize the oldest 10 into
-one consolidated bullet and delete them.
+The cap is the file: IMPRESSIONS.md stays at 50 lines or fewer (`wc -l`). Over that, fold the
+oldest bullets verbatim into a ledger memory; never delete. The pointer register lives in
+`IMPRESSION_ANCHORS.md` (see the local overlay for the fold procedure).
 
 ### Save impression memory (if available) {#save-impression-memory}
 

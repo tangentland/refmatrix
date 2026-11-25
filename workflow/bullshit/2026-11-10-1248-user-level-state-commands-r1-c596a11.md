@@ -74,7 +74,7 @@ test_session_cli, test_verb_parity).
 **Fix:** one CliRunner test: `init --path <tmp> --no-hooks` under the sandbox HOME, assert both
 files are in `Path.home()/.claude/commands/`, not in `<tmp>/.claude/commands/`, and that the
 other packaged commands are in the project. Prove it RED with mutation E.
-**Pattern match:** YES — [[bsd-impressions#imp-tests-bypass-wiring]]: tests exercise the
+**Pattern match:** YES — [[bsd-impression-anchors#imp-tests-bypass-wiring]]: tests exercise the
 function with injected seams, nothing exercises the call site.
 
 ### SKETCHY: the fleet inventory and the `git rm` step miss trunk copies and land on feature branches {#s-2}
@@ -101,7 +101,7 @@ function with injected seams, nothing exercises the call site.
 (list the worktrees too). Do not stage in a repo you do not own: emit a per-repo command list
 for the user, `git rm` + commit on the trunk, after the trunk is checked out by its owner. Make
 the verify step check the trunk tree, not the working tree.
-**Pattern match:** YES — [[bsd-impressions#imp-deploy-reaches-fleet]] (a fleet action checked
+**Pattern match:** YES — [[bsd-impression-anchors#imp-deploy-reaches-fleet]] (a fleet action checked
 on the checked-out state only).
 
 ### SKETCHY: deleting the fleet copies drops project instructions the user-level text does not carry {#s-3}
@@ -123,7 +123,7 @@ if absent, the handoff file the CLAUDE.md names, e.g. `handoff.md`"), or the cle
 "Status file:" line to each project's CLAUDE.md before the delete. Either way the procedure gets
 a step: diff each group's copy against the user-level text and carry over every
 project-specific line (or record why it is dropped) before the delete.
-**Pattern match:** YES — [[bsd-impressions#imp-copy-measures-the-copy]] (the inventory counted
+**Pattern match:** YES — [[bsd-impression-anchors#imp-copy-measures-the-copy]] (the inventory counted
 the files, not what they say).
 
 ### MEH: the template already describes 26.2/26.3 behaviour, live, ahead of master and the deploy {#m-1}

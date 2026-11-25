@@ -123,7 +123,7 @@ Assert the keyword-only locate case (P4c's shape) needs `(keyword 'held')` in th
 static assertion that the `!hits.length` branch uses `skipNote`. Remove the `if` at `:99` and
 assert the skipped line unconditionally.
 
-**Pattern match:** YES. This is [[bsd-impressions#imp-quoted-line-sibling]], and the
+**Pattern match:** YES. This is [[bsd-impression-anchors#imp-quoted-line-sibling]], and the
 guard-cannot-fire family's test-side twin: the test agrees with the code for the input it
 chose.
 

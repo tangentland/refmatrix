@@ -89,7 +89,9 @@ failing; never red; the lane). {#task-tests}
    (`git merge-base --is-ancestor <sha> master`) or that an L-row ruled moves to `CLOSED.md` with
    that evidence and its F5 outcome (upheld / overruled). Re-check the rest is still open. An open
    BULLSHIT or GATE row on code this release ships holds the release unless an L-row rules it. The
-   release commit body states the counts (closed this release, still open).
+   release commit body states the counts (closed this release, still open). Run
+   `python3 scripts/bsd-tally.py` (BULLSHIT by self-audit question; exit 1 on an unfilled
+   `question` cell) and put its lines in the release commit body.
 2. **Gate on merged `master`:** major → the full suite; minor → the verify set. Compared by E
    line with the previous release's log.
 3. **Deploy:** `git -C ~/refmatrix pull --ff-only origin master`; `rmx daemon restart
@@ -127,5 +129,9 @@ Copy a ch-bsd report to `workflow/bullshit/<UTC-stamp>-<subject>-r<n>-<sha>.md`,
 `INDEX.md` row and `last_run.log` line, and copy any new IMPRESSIONS bullet whole. Update
 `workflow/bullshit/OPEN.md` in the same commit: add a row for every new BULLSHIT, GATE and
 handed-off SKETCHY; move a row to `CLOSED.md` only with its evidence (a fix sha reachable from
-`master`, or an L-row) and its F5 outcome (upheld / overruled) (L216). Lint
+`master`, or an L-row) and its F5 outcome (upheld / overruled) (L216). Every BULLSHIT-level row
+carries the `question` column: the self-audit question ch-bsd named (`SA-1`..`SA-8`, `none:
+<proposal>`, or `unnamed`), copied by the lead; `python3 scripts/bsd-tally.py` fails on an empty
+cell. `IMPRESSIONS.md` is capped at 50 lines (`wc -l`); its pointer register is
+`IMPRESSION_ANCHORS.md`, and the fold is in `.claude/agents/ch-bsd.local.md`. Lint
 (`./scripts/lint-gmd.sh`, 0 errors) before the commit.

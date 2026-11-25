@@ -63,7 +63,7 @@ rel: contradicts -> [[task-2.2-plan-2-hooks-reproducible#requirements]]
 **Why it's bullshit:** Scope shrunk silently (rule 10). The docs are the onboarding surface for other projects; after 0.67.0 they instruct a reader to look in a file that a fresh install leaves empty of hooks. The plan title is "install-hooks produces the whole production config" and the README still describes the 0.65 shape.
 **Evidence:** `git diff cabce24..03f46b8 --stat` has no README/docs entries; `grep -rn settings.local.json README.md docs/` returns six live references.
 **Fix:** Update the README table to the nine events (PreToolUse, PostToolUse, UserPromptSubmit, Stop, SubagentStop, SessionStart×3 matchers, PreCompact) and the target file; make `INTEGRATION.md:95` and the intuition-style doc say `settings.json` and point at `install-hooks --check`. Effort: 20 lines of prose.
-**Pattern match:** YES — [[bsd-plan1-deploy-runtime-cabce24#m-6]] (summary overstates what shipped) and the [[bsd-impressions#imp-summary-claims-bookkeeping]] impression.
+**Pattern match:** YES — [[bsd-plan1-deploy-runtime-cabce24#m-6]] (summary overstates what shipped) and the [[bsd-impression-anchors#imp-summary-claims-bookkeeping]] impression.
 
 rel: contradicts -> [[task-2.3-plan-2-hooks-reproducible#files]]
 
@@ -74,7 +74,7 @@ rel: contradicts -> [[task-2.3-plan-2-hooks-reproducible#files]]
 **Why it's sketchy:** (a) and (c) are silent runtime differences the check is advertised to catch. (b) and (d) may be intentional (foreign hooks are a documented survivor of `--force`), but then the docstring and Q3 overstate the guarantee. Pick one: either report unmanaged entries as informational lines so the operator sees the second author, or compare full ordered entry lists for managed events.
 **Evidence:** Probe in a tmp project after `--apply --force`: duplicate Stop block → `check` True; appended `rmx context foo --degree 2` → True; `timeout` edited → True.
 **Fix:** Compare `(event, matcher, json.dumps(entry, sort_keys=True))` as a multiset; emit `? event/matcher: cmd` lines for unmanaged hooks (non-failing) or gate them behind `--strict`. Update the docstring to whatever is chosen.
-**Pattern match:** YES — [[bsd-impressions#imp-guard-vs-incident-state]] (guard built for the fixed state).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-guard-vs-incident-state]] (guard built for the fixed state).
 
 ### SKETCHY: plan marked `completed` before this gate ran; task specs still `pending` {#s-5}
 
@@ -93,7 +93,7 @@ rel: contradicts -> [[plan-2-hooks-reproducible#execution]]
 **Why it's sketchy:** Cost is fine (0.13 s measured; `add_memory` upserts by name so no row growth). The concern is the branch it schedules: with the daemon down, `focus_summarize` calls `_store().add_memory` on the active slot from a CLI process — the project constraint says store access routes through the daemon — and any failure is a red hook error on every turn. The plan did not decide this; write it down or drop the entry to `stop_promote=False` by default.
 **Evidence:** Prior report's installed-only list (four entries, no Stop promote); `cli.py` no-daemon fallback.
 **Fix:** Either record the decision in the plan's Decisions Log (and make the no-daemon branch a loud refusal like `ingest-gmd --detach` now does), or default `stop_promote` to False.
-**Pattern match:** YES — [[bsd-impressions#imp-two-paths]] (daemon vs direct store).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-two-paths]] (daemon vs direct store).
 
 ### SKETCHY: the new `--detach` guard calls a busy daemon "no daemon" and tells the operator to start one; the SessionStart catch-up is skipped exactly then {#s-11}
 
@@ -102,7 +102,7 @@ rel: contradicts -> [[plan-2-hooks-reproducible#execution]]
 **Why it's sketchy:** The guard is the right idea (no 25 s foreground fallback) and it is loud, but its message is wrong in the busy case and the plan's Q1 decision ("the SessionStart catch-up bridge … cover[s] the store") is false whenever the daemon is mid-write at session start — the common case right after a deploy or a large ingest. Nothing retries; the hook line says to start a daemon that launchd is already supervising.
 **Evidence:** cli.log / this audit's shell transcript; `rmx daemon status` output before and after 20:03:41 (`hub.log:1311 watchdog kickstarted`).
 **Fix:** Distinguish socket-absent from socket-busy in the message ("daemon busy — retry or run without --detach"), and either retry the `ingest_gmd_start` RPC with a longer timeout on the hook path or queue the job through the hub. Effort: small; the state is already visible to `daemon status`.
-**Pattern match:** YES — [[bsd-impressions#imp-two-paths]] (ping-false is also the switch that sends `memory sync-disk` to a direct `Store()` open, which failed on 53244's WAL lock at the same moment; not this diff, plan 4/5 territory).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-two-paths]] (ping-false is also the switch that sends `memory sync-disk` to a direct `Store()` open, which failed on 53244's WAL lock at the same moment; not this diff, plan 4/5 territory).
 
 ### MEH: flags are recorded only through the `claude` path, so `--check` cannot describe what `--no-claude` installs {#m-7}
 

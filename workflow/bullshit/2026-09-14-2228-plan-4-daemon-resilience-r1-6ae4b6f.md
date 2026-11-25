@@ -42,7 +42,7 @@ P1 CLI prints: [green]rebuilt entities[/] rows=None indexes=None constraints=
 ```
 No test drives `repair_entities` through a daemon; `test_rebuild_aborts_on_real_duplicate_groups` calls the store method directly.
 **Fix:** `raise` the `RepairAbort` inside the op (`_handle` then answers `ok:false, error:"repair aborted: …"`; the message matches no fast-exit needle, so the daemon stays up), and add a test that calls the op through a spawned daemon with a store patched to abort. One line.
-**Pattern match:** YES — [[bsd-impressions#imp-quoted-line-sibling]] / [[bsd-impressions#imp-unread-diagnostic-field]] (an `ok:false` shape swallowed inside an `ok:true` envelope; 3rd plan in a row with an error field that a consumer never reads).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-quoted-line-sibling]] / [[bsd-impression-anchors#imp-unread-diagnostic-field]] (an `ok:false` shape swallowed inside an `ok:true` envelope; 3rd plan in a row with an error field that a consumer never reads).
 rel: contradicts -> [[claude#no-silent-failures]]
 
 ### BULLSHIT: the adoption path SIGKILLs a BUSY unsupervised daemon — busy ≠ absent, 4th sighting, in the plan titled "never SIGKILL a working daemon" {#b-2}
@@ -58,7 +58,7 @@ _reap_predecessor → True in 3.54s; predecessor alive=False
 ```
 A stopped process cannot take SIGTERM; it died at 3.5 s, i.e. from the SIGKILL at daemon.py:1103. `test_daemon_adopt` only covers an idle predecessor.
 **Fix:** classify with `discovery.daemon_status` / `heartbeat_age` — `heartbeat_age(root) <= HEARTBEAT_STALE_S` ⇒ alive: send the `stop` op (bounded), then WAIT up to `ADOPT_GRACE_S` for the pid to exit before any reap; only a pid with a stale/absent heartbeat goes to `_reap_predecessor`. Same classifier in `repair-index --entities`: busy ⇒ refuse ("daemon busy; retry"), never a direct writer open.
-**Pattern match:** YES — [[bsd-impressions#imp-busy-absent-verb-layer]] (4th sighting → PATTERN filed: [[bsd-pattern-busy-is-not-absent]]); [[bsd-impressions#imp-fix-at-quoted-line]] (sibling in the same diff).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-busy-absent-verb-layer]] (4th sighting → PATTERN filed: [[bsd-pattern-busy-is-not-absent]]); [[bsd-impression-anchors#imp-fix-at-quoted-line]] (sibling in the same diff).
 rel: contradicts -> [[project-profile#constraints]]
 
 ### BULLSHIT: the 30 s "kill grace" is spent BEFORE any signal — the graceful stop is unreachable from the only state that calls it {#b-3}
@@ -68,7 +68,7 @@ rel: contradicts -> [[project-profile#constraints]]
 **Why it's bullshit:** The plan text: "`_restart` sends graceful `daemon stop` first and only `kickstart -k` after RMX_HUB_KILL_GRACE_S (30)" — the purpose is time to close DuckDB cleanly. The real window between the first signal and SIGKILL is 2 s (hard-coded `deadline2` at daemon.py:5222), on a store whose close was measured in the multi-second range (see `project_daemon_shutdown_lock_leak`). The 30 s env knob guards an idle wait.
 **Evidence:** code as cited; the test fakes `stop_daemon` entirely (`test_hub_watchdog._wd`), so the sequence is asserted on a lambda. Live: hub.log `22:02:02 watchdog graceful stop …refmatrix/.refmatrix: stopped` / `22:02:12 kickstarted`, and launchd for that label records `last exit code = -15` — the daemon left by SIGTERM, with no shutdown line in rmxd.log after 21:52:33.
 **Fix:** in the alive branch send SIGTERM (or the `stop` op when ping answers) FIRST, then wait `RMX_HUB_KILL_GRACE_S` for the pid to exit, then `kickstart -k`. Test with a spawned daemon whose SIGTERM handler sleeps, asserting the wall-clock between the first signal and the kill.
-**Pattern match:** YES — [[bsd-impressions#imp-partial-bound]] (a bound applied to the wrong wait), [[bsd-impressions#imp-tests-bypass-wiring]] (the recorded-lambda test cannot see the order inside `stop_daemon`).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-partial-bound]] (a bound applied to the wrong wait), [[bsd-impression-anchors#imp-tests-bypass-wiring]] (the recorded-lambda test cannot see the order inside `stop_daemon`).
 rel: contradicts -> [[plan-4-daemon-resilience#proposed-approach]]
 
 ### BULLSHIT: cheap fix — the boot repair is triggered by ONE of eight invalidation detectors; the sync-path order of the same incident still loops {#b-4}
@@ -105,7 +105,7 @@ rel: contradicts -> [[claude#no-silent-failures]]
 **Why it's bullshit:** The heartbeat thread, the learn guard, the boot repair and the adoption are "started in a production path" only in processes that imported the code. Five stores — including cliquedb, whose ART drift is the recurring case — still run the ping-only watchdog contract on the daemon side and the pre-0.69 fast-exit on every grep miss.
 **Evidence:** `~/refmatrix/.venv/bin/python` ping of every root (versions/heartbeat ages above); `ps -o lstart` for the five pids = `Sep 14 19:41`; `~/.refmatrix/hub.log` has no relaunch of those labels after 21:54.
 **Fix:** relaunch the five with the deploy binary (`rmx daemon restart --relaunch` in each root — the boot path will run `repair_entity_links_index` as always); make `hub status` print each daemon's `version` and flag any that differs from the hub's. Re-check heartbeat ages after.
-**Pattern match:** YES — [[bsd-impressions#imp-summary-claims-bookkeeping]] (an operational claim in the brief that the ledger contradicts), [[bsd-impressions#imp-unread-diagnostic-field]] (`version` crosses the ping wire and no status row renders it).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-summary-claims-bookkeeping]] (an operational claim in the brief that the ledger contradicts), [[bsd-impression-anchors#imp-unread-diagnostic-field]] (`version` crosses the ping wire and no status row renders it).
 rel: contradicts -> [[claude#before-commit]]
 
 ### SKETCHY: the heartbeat proves the interpreter is scheduled, not that anything is served — a deadlocked 0.69 daemon is now never restarted {#s-7}
@@ -114,7 +114,7 @@ rel: contradicts -> [[claude#before-commit]]
 **What:** The heartbeat thread depends on nothing the serving path does (no pool, no lock, no accept loop). A `Daemon` that never bound a socket ticks it. The watchdog's `wedged-N-misses-heartbeat-Ns` branch is therefore reachable only for a SIGSTOPped process or a pre-0.69 daemon; a daemon deadlocked in its pools (this repo's history: `project_daemon_signal_hang`, the fork-in-threads hang, the `_store_lock` leak) reads as `busy-heartbeat` indefinitely with `restart_count=0`.
 **Evidence:** probe `bsd-plan4-r1-probe-p1-p3.log`: real `ping`/`read_pid`/`heartbeat_age`, heartbeat thread started, pid file = a live pid, NO socket: eight `_check` calls → `['busy-heartbeat-0s' × 8]`, `restarts: 0`, no stop/spawn calls. Live: the refmatrix daemon missed eight consecutive pings over 2.5 min as `busy-heartbeat` — correct today (cli.log shows it working), but the signal could not have told a deadlock apart.
 **Fix (or justify in the plan):** derive the tick from progress the serving path makes — e.g. the dispatcher submits a no-op to `cli_pool` every interval and touches the file on completion (a saturated-but-progressing pool still ticks; a deadlocked one stops), or touch from `_handle` on every answered request plus the idle tick. Then the wedged branch means something for a 0.69 daemon. Record the decision under Q2 either way.
-**Pattern match:** YES — [[bsd-impressions#imp-guard-vs-incident-state]] (a guard built for the fixed state; the wedge state it replaced is no longer detectable).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-guard-vs-incident-state]] (a guard built for the fixed state; the wedge state it replaced is no longer detectable).
 rel: contradicts -> [[plan-4-daemon-resilience#q2]]
 
 ### SKETCHY: unregistered mocks in tasks 4.1, 4.2, 4.4 {#s-8}
@@ -122,7 +122,7 @@ rel: contradicts -> [[plan-4-daemon-resilience#q2]]
 **File:** `tests/test_daemon_learn_guard.py` (patches `dm._learn_grep_hits`, `dm.os._exit`, `_request_snapshot`), `tests/test_repair_entities.py` (patches DuckDB `con.execute` with `fake_execute`, `_log`), `tests/test_daemon_adopt.py` (`_log`), `workflow/test_mock_registry.md`
 **What:** The registry gained one row (watchdog fakes, task 4.3 — correctly described). The `os._exit` fake, the collaborator fake and the DuckDB-connection fake are unregistered; the `execute` fake means the duplicate-detection SQL never meets a real duplicate (task spec 4.2 asked for "duplicate ids … through a raw connection").
 **Fix:** register the three; replace the `execute` fake with a raw-connection duplicate on a UNIQUE-less copy, which is the spec's own recipe.
-**Pattern match:** YES — [[bsd-impressions#imp-registry-2-strikes]] (first strike for plan 4).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-registry-2-strikes]] (first strike for plan 4).
 rel: contradicts -> [[claude#no-mocks]]
 
 ### MEH: adoption is unconditional on `--no-detach`; the spec asked for a supervisor condition {#m-9}
@@ -141,7 +141,7 @@ rel: contradicts -> [[claude#no-mocks]]
 
 **File:** `tests/test_repair_entities.py::test_boot_runs_pending_repair_and_clears_marker`
 **What:** Calls `_run_pending_repair()` on a hand-built `Daemon`; the `serve_forever` call site (inside the `duckdb` guard) is exercised by no test. Probe P5 (`bsd-plan4-r1-probe-p5.log`) did it with a spawned daemon. Add that variant to the suite so the guard placement is under test.
-**Pattern match:** YES — [[bsd-impressions#imp-tests-bypass-wiring]].
+**Pattern match:** YES — [[bsd-impression-anchors#imp-tests-bypass-wiring]].
 
 ### MEH: `stop_daemon` swallows every failure to send `stop` (`except Exception: pass`, daemon.py:5192-5196) — now on the watchdog's restart path {#m-12}
 

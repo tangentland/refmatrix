@@ -62,7 +62,7 @@ Every closure below was verified by rendering or probing in a throwaway project 
 At 20:10:28 a git post-commit `sync --since HEAD~1` (34 s) ran concurrently; at 20:06 a UserPromptSubmit `memory recall` took 24 s and another was never completed (exit/latency null). The daemon log has no per-op timing, so the cause (writer queue behind the detached bridge or a sync, or a slow digest) is not established from logs; what is established is that the hook is foreground, its daemon call may wait up to 60 s, and Claude Code holds the turn end until it returns.
 **Why it's sketchy:** The decision is recorded, which is what #s-6 asked for, but it rests on the one number the production path contradicts. This is [[feedback_measure_the_path_users_run]] in miniature: the cost of a hook is its cost while the daemon is doing what the other hooks make it do.
 **Fix:** Re-decide Q4 with these numbers. Either bound the hook path (`--timeout` on `_memory_daemon_call` of a few seconds, fail loud) or run the promote off the turn like the flush (`( … ) & disown` loses loudness, so log to `rmxd.log`/cli.log instead). Effort: small; the decision is the work.
-**Pattern match:** YES — [[bsd-impressions#imp-guard-vs-incident-state]] (measured/tested on the idle state); [[feedback_measure_the_path_users_run]].
+**Pattern match:** YES — [[bsd-impression-anchors#imp-guard-vs-incident-state]] (measured/tested on the idle state); [[feedback_measure_the_path_users_run]].
 
 rel: contradicts -> [[plan-2-hooks-reproducible#q4]]
 
@@ -70,7 +70,7 @@ rel: contradicts -> [[plan-2-hooks-reproducible#q4]]
 
 **File:** `src/refmatrix/hooks.py:442-448` (`record_flags(... memory_hooks, primer, scan_prompt, search, wrappers, **hook_opts)` — no `claude`), `src/refmatrix/hooks.py` `render_managed` (always renders the claude block), `tests/test_plan2_remedy.py::test_flags_recorded_without_claude` (asserts only that the file exists)
 **What:** Round-1 #m-7 asked for flags to be recorded on every project-scope apply so `--check` could describe a `--no-claude` install. The remedy did exactly the line I suggested and no more: the file is written, but `claude=False` is not in it, so `render_managed` renders the full block and `check()` emits a `+` line for every claude entry. Probe: `install(claude=False, search=True, apply=True)` → `check()` returns `(False, 17 '+' lines)`. Before the remedy the answer was "no rmx-hooks.json — run --apply"; now it is a wrong answer with the same exit code.
-**Why it's sketchy:** The covering test proves the bookkeeping (file exists) and not the behaviour (check is right afterwards) — the [[bsd-impressions#imp-tests-bypass-wiring]] shape. In fairness the recommendation in round 1 was incomplete; the remedy followed it. Filed as SKETCHY, not cheap-fix BULLSHIT, for that reason.
+**Why it's sketchy:** The covering test proves the bookkeeping (file exists) and not the behaviour (check is right afterwards) — the [[bsd-impression-anchors#imp-tests-bypass-wiring]] shape. In fairness the recommendation in round 1 was incomplete; the remedy followed it. Filed as SKETCHY, not cheap-fix BULLSHIT, for that reason.
 **Fix:** Record `claude=claude` in `record_flags`; in `render_managed`, skip `_claude_hook_block` when `flags.get("claude", True)` is False; extend the test to assert `check(proj)[0] is True` after the `--no-claude` apply. Effort: three lines.
 **Pattern match:** YES — 3rd sighting of a guard tested only in the fixed state.
 

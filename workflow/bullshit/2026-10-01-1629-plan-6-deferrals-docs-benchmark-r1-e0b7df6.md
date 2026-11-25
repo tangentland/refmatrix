@@ -117,7 +117,7 @@ on a production path, and make it work against the DuckDB backend. What is not a
 wrote its decision down is a third option reached by misreporting the facts — and a reversal of a RESOLVED
 question must amend `#q1` and the Decisions Log, not only a task spec.
 
-**Pattern match:** YES — the inverse of [[bsd-impressions#imp-gap-that-already-ships]] (there, a plan claimed something was
+**Pattern match:** YES — the inverse of [[bsd-impression-anchors#imp-gap-that-already-ships]] (there, a plan claimed something was
 unbuilt that shipped; here, a task claimed something is live that is not), plus `imp-dead-flag-surface`.
 
 rel: contradicts -> [[plan-6-deferrals-docs-benchmark#q1]]

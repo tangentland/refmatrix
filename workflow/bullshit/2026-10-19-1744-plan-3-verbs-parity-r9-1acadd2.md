@@ -168,7 +168,7 @@ replica but should word the reason through the classifier. `verbs._hub_rpc:1393-
 hub's transport, not a store daemon, and is out of scope. Then make the docstring claim true, or
 narrow it to the call sites it covers.
 
-**Pattern match:** YES. This is [[bsd-impressions#imp-quoted-line-sibling]]: the fix landed on the
+**Pattern match:** YES. This is [[bsd-impression-anchors#imp-quoted-line-sibling]]: the fix landed on the
 quoted leg, and the sibling in the same function kept the wording.
 
 rel: contradicts -> [[task-3.5-r8-remedy#amend-reqs]]
@@ -200,7 +200,7 @@ remaining`, and the poll runs until the SAME deadline. That is about 5 lines, an
 launcher-window fix is its sibling. Pin it with a slow-launcher test. The `sitecustomize` fault
 used here needs no src seam.
 
-**Pattern match:** YES. This is the partial-bound family ([[bsd-impressions#imp-consolidated-0914c]]
+**Pattern match:** YES. This is the partial-bound family ([[bsd-impression-anchors#imp-consolidated-0914c]]
 "partial bounds placed where the diagnosis pointed rather than on every leg").
 
 rel: contradicts -> [[task-3.5-r8-remedy#req-s2]]
