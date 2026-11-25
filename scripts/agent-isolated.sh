@@ -49,6 +49,9 @@ for i in $(seq 1 30); do
   fi
   printf '%s' "$SCR" | LC_ALL=C grep -qE 'Try "|shift\+tab|for shortcuts' && break
 done
-"${T[@]}" send-keys -t "$S" -l "Read the file $D/brief.txt and do what it says. When you are done, write $D/REPORT.md with your report."
+# The test rule rides the typed pointer (2026-11-25): build-b1 followed CLAUDE.md rule 9 and called
+# lane-local.sh, which sudos from tholley and so hit a password prompt as rmxtest3 (and the mini has
+# no key for rmxtestN). An isolated agent already IS a lane: own HOME, no live-store access.
+"${T[@]}" send-keys -t "$S" -l "Read the file $D/brief.txt and do what it says. You already run as an isolated test user, so run tests directly in your clone on a committed sha (PYTHONPATH=$D/refmatrix/src, output to a log); do not call scripts/lane-local.sh or lane-mini.sh. When you are done, write $D/REPORT.md with your report."
 sleep 1; "${T[@]}" send-keys -t "$S" Enter
 echo "agent-isolated: started $S as $U in $D/refmatrix ($BRANCH @ ${SHA:0:8}); peek: scripts/agent-peek.sh $SLOT $LABEL; say: scripts/agent-say.sh $SLOT $LABEL <text|file>; done when $D/REPORT.md exists"

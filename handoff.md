@@ -31,7 +31,7 @@ bug-318, L239) and **the curator fleet rollout** (after H1.a releases, L240). {#
 |---|---|---|---|
 | bsd-c2 → fold-c2 | C2 r1 persisted (`8397b8a5`: 1 GATE, 2 SKETCHY, 4 MEH); fold RED then GREEN (brief `workflow/agents/fold-c2.md`) | `/Volumes/littlebig/refmatrix-c2-fold` (branch `c2-fold` at `9afff800`) | GATE g-1 closes on a killing test seen failing on `c819b066`; then merge C2 (resolve vs master), full suite, release, deploy (L239) |
 | ~~build-h1a~~ | H1.a template reconcile (bug-319) — **merged `ec537111`** | `/Volumes/littlebig/refmatrix-h1a` | done; ships in the C2 release; then the curator fleet rollout, Q70, Q71 |
-| build-b1 | B1 F4/F7 | isolated `rmxtest3` (`scripts/agent-peek.sh 3 build-b1`) | merge; write the F7 memory fold from `workflow/review-output/b1-f7-fold.txt` + bridge |
+| ~~build-b1~~ | B1 F4/F7 — **merged `d4e0ac13`**; fold memory written | isolated `rmxtest3` | done; bridge run by the lead |
 | build-i1a | I1.a contradiction edits | `/Volumes/littlebig/refmatrix-i1a` | merge; apply `workflow/review-output/i1a-memory-edits.md` (memory edits are the lead's) |
 | ~~p1b-review~~ | P1 (b) proportionality review — **merged `ecc5596c`** | `/Volumes/littlebig/refmatrix-p1b` | done; ruling + cuts with the user as Q72-Q77 |
 | green-i1b1 | I1.b1 GREEN (ch-implementer), RED `a07a7b83` + notes `e55961b4` | `/Volumes/littlebig/refmatrix-i1b1-green` @ `39e743a8` (brief `workflow/agents/green-i1b1.md`) | read report; mutations table; one ch-bsd pass in its own clone; merge |
