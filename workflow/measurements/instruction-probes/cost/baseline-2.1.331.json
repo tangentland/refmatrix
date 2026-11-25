@@ -1,0 +1,25 @@
+{
+ "n": 200,
+ "hook": {
+  "median_ms": 3.68,
+  "p95_ms": 4.49,
+  "min_ms": 3.09,
+  "max_ms": 4.66
+ },
+ "floor": {
+  "median_ms": 1.69,
+  "p95_ms": 2.25,
+  "min_ms": 1.52,
+  "max_ms": 2.6
+ },
+ "added_median_ms": 1.99,
+ "band": "median<=10ms: the form stands",
+ "load_avg": [
+  3.14,
+  3.0,
+  3.15
+ ],
+ "machine": "arm64",
+ "command_len": 453,
+ "command_head": "export RMX_INVOCATION_SOURCE=hook PATH=\"$HOME/bin:$HOME/.local/bin:$PATH\"; export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES; export TOKENIZERS_PARALLELISM=false; "
+}
