@@ -1,0 +1,972 @@
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-hook-writes-queue.md
+R  > on the `src/` change, one ch-bsd pass (L165).
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-b1-f4-f7.md
+R  unit (the lead adds the clause to the I1.e row); `bsd-pass` (I1.d) carries D3's sentence
+B  **F7.** `IMPRESSIONS.md` is 404 lines at `160d4633`: 66 run bullets on 90 lines, and a
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-instruction-architecture.md
+R  | T3 | **Procedures with a trigger** — release/deploy (version bump; `git -C ~/refmatrix pull`); lane verify (`lane-local.sh`/pytest); RED/GREEN dispatch (`Agent` with ch-test-engineer / ch-implementer); bsd pass (`Agent` ch-bsd);
+R  lane-verify, dispatch-red-green, bsd-pass, pop-ruling, bug-row) in
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/retriage-2026-11-24.md
+R  | B1 ch-bsd consequence package | **keep**; F4, F5, F7 unchanged. Its severity text gets one home, the `bsd-pass` skill (I1.d) | an agent's `skills:` preload; `ch-bsd.md`, `ORCHESTRATION` `#task` and `CLAUDE.md` then point at it |
+R  Row 16 says "then ch-bsd spec rounds". It was written before L165 (no ch-bsd round on a spec).
+R  | **I1.d** T3 skills and triggers | `release-deploy` (R163, R036 to R039, R045, R196); `lane-verify` (R059 to R062, R194); `brief` (R136); `bsd-pass` (R140, R141); `mutation-loop` (R064, R066); `self-audit` (R145 to R152); `dispat
+R  | **H1.e** the security auditor | the canonical core with its surface checklist; the `ch-security-auditor-<stack>` cells; surface declarations in the overlays; the dispatch trigger on the ch-bsd call and the merge backstop check; 
+R  1. Every row above as recommended, row 16 with no ch-bsd round, two I1 install windows, and
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.a-contradiction-edits.md
+R  | C3 | `CLAUDE.md` `#agent-skill-workflow`; `PLANNING_WORKFLOW` `#default-planning-path` | the "ch-bsd spec rounds" chain is deleted; both point at [[orchestration#planning]] |
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.b-substrate.md
+R  hands, mutations on the `src/` change, one ch-bsd pass at its merge. Tests go through the
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.b0-probes.md
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.b1-units-and-check.md
+R  > in separate hands, mutations, one ch-bsd pass. Waits on nothing. It changes no generated hook
+B  5. **Busy / down:** these legs never call the daemon; AC-4 runs with no daemon up, and RED
+C  5. **Busy / down:** these legs never call the daemon; AC-4 runs with no daemon up, and RED
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.b2-marker-and-ledger.md
+R  > separate hands, mutations, one ch-bsd pass. RED bases on `master` after C2 merges. Its
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.b3-dispatcher.md
+R  > separate hands, mutations, one ch-bsd pass. Waits on b1 and b2, and on the verdicts of P1,
+B  5. **Busy / down:** the dispatcher never calls the daemon. AC-1 and AC-3 run with no daemon
+C  5. **Busy / down:** the dispatcher never calls the daemon. AC-1 and AC-3 run with no daemon
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.c-first-denies.md
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-I1.d-first-skills.md
+R  | `bsd-pass` | T | R140, R141; B1's severity table; F4's cell | the Agent tool with `subagent_type` `ch-bsd` → `#checklist-lead` | `ch-bsd` |
+R  - **AC-3 `bsd-pass` is the one home.** It holds `ch-bsd.md`'s severity table unchanged, the
+R  `bsd-pass#checklist-lead` as well; the same call again → nothing. {#ac-5}
+R  `#severity-levels` and `ch-bsd.local.md`'s one-pass section; [[orchestration#task]] step
+R  `src/refmatrix/templates/skills/{brief,bsd-pass,self-audit}/SKILL.md`;
+R  `bsd-pass` → H1.e; `CLAUDE.md`'s copies of these rules → I1.h. Each is in that row's text
+B  - **AC-7 Then the pointers.** In a commit after AC-1 to AC-5 pass on the branch: `ch-bsd.md`
+C  - **AC-3 `bsd-pass` is the one home.** It holds `ch-bsd.md`'s severity table unchanged, the
+C  - **AC-7 Then the pointers.** In a commit after AC-1 to AC-5 pass on the branch: `ch-bsd.md`
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-10-injection-dedup.md
+H  ## Revision 2026-11-13 (reopening) {#rev-2026-11-13}
+H  ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+H  ## Approval of the L79 amendment (2026-11-14, d9co) {#approval-l79-2026-11-14}
+H  ## Approval of the L83 amendment (2026-11-14, d9co) {#approval-l83-2026-11-14}
+L  rev-round-6
+R  through a ch-bsd spec review, which came back CLEAN at r4 ([[#approval]]). Revision round 6 (2026-11-13,
+R  | L23 | Spec review and merge (plan review, lead) | plan-10 rev 5 gets its ch-bsd spec review, then the revival branch merges to master before any 10.x builds; Q7 and Q11 marked superseded | 2026-11-13 |
+R  - **Review basis:** the joint ch-bsd spec review of spec-wave-t3a and spec-wave-t3b. r1 was DIRTY
+R  1B/10S/10M, r2 DIRTY 0B/2S/8M and r3 DIRTY 0B/3S/3M; r4 (confirm-lite) was final CLEAN at
+R  - **Who approved:** the lead, on the user's pattern (d9co: a CLEAN ch-bsd round over the spec,
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-10-injection-dedup-tasks/task-10.3-plan-10-injection-dedup.md
+H  ## Revision round 6 (2026-11-13, spec wave, spec-t3b) {#rev-round-6}
+L  rev-round-6
+R  > 2026-11-13, [[#rev-round-6]]; ch-bsd spec review next)
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-agent-start-context.md
+R  > [[plan-of-plans#post-mod]]); a ch-bsd spec round precedes approval.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-32-tasks/task-H1.a-reconcile-shipped-files.md
+B  - **AC-5 Run for real.** `rmx init` (the dev `rmx`) in a throwaway project under a sandbox
+C  - **AC-5 Run for real.** `rmx init` (the dev `rmx`) in a throwaway project under a sandbox
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-t0.9-test-isolation.md
+R  > no ch-bsd round. Open decisions: [[#decisions]].
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-t0-suite-trust-sweep.md
+H  ## Revision round r1 (2026-11-13) {#rev-r1}
+H  ## Revision round r2 (2026-11-13) {#rev-r2}
+H  ## Revision round r3 (2026-11-13) {#rev-r3}
+H  ## Revision note (2026-11-15, freshness + 29.4 fold) {#rev-note-fresh}
+H  ### The ten rows of 29.4's fold {#rev-note-fresh-fold}
+H  ### Freshness: what was re-read, and what moved {#rev-note-fresh-cites}
+H  ### Lint run for this revision {#rev-note-fresh-lint}
+H  ## Revision note 2 (2026-11-15, ch-bsd confirm-lite r1; ruling L122) {#rev-note-fresh-2}
+H  ## Revision note 3 (2026-11-15, ch-bsd confirm-lite r2; ruling L123) {#rev-note-fresh-3}
+L  rev-note-fresh
+L  rev-note-fresh-2
+L  rev-note-fresh-3
+L  rev-note-fresh-bug155
+L  rev-note-fresh-choices
+L  rev-note-fresh-proposals
+L  rev-r1
+L  rev-r2
+L  rev-r3
+R  Every review round pays for a test instrument it cannot trust. The 0.82.0 release suite
+R  - **R0.8 One ch-bsd round per sub-task range**, remedied and re-reviewed until CLEAN or MEH-only.
+R  - **Plan-6 closes** when the T0.4 ch-bsd round is CLEAN, as its `#execution` requires
+R  - **Plan-8 closes** when the T0.5 ch-bsd round is CLEAN and R5.6 holds
+R  is kept until T0.6's ch-bsd round closes.
+R  ch-bsd round is CLEAN and its four deferral rows carry the owner "no host plan; backlog (L33)"
+R  A clone is where every branch run and review round happens, so it is the checkout bug-215 and
+R  7. **R7.7 Plan closures.** Plan-15 flips to `completed` when R7.4 is clean and the T0.7 ch-bsd round
+R  | 2026-11-15 | `approved` stands; the text is revised for freshness and the 29.4 fold ([[#rev-note-fresh]]) | ch-architect, on the lead's brief | [[task-29.4-suite-health#fold-deltas]], ruling L121. A ch-bsd confirm-lite on the re
+R  | 2026-11-15 | round 2: ch-bsd confirm-lite r1 (DIRTY 10, 0B/2S/8M) folded whole ([[#rev-note-fresh-2]]); P1 to P8 ruled | the lead (ruling L122); text by ch-architect | [[bsd-spec-t0-fresh-r1-5b04e2d]]. A confirm-lite r2 comes be
+R  | 2026-11-15 | round 3: ch-bsd confirm-lite r2 was MEH-only GO; its four MEHs folded ([[#rev-note-fresh-3]]) | the lead (ruling L123); text by ch-architect | [[bsd-spec-t0-fresh-r2-f6b32e2]]. The lead checks this fold itself; no t
+R  named reason that holds each (a ch-bsd round not yet CLEAN, an unmet deferral owner, or an O5
+R  - Every sub-task's ch-bsd round is CLEAN, or MEH-only where its plan allows.
+B  - A clone with no `.venv-eval` sees a different set. 29.4's stage-0 run at `4c6a0c6` exited 1
+B  - W1-e, the plan-15 clean suite plus r13 #s-1/#m-1/#m-2. {#why-gates}
+B  ### A2 (row 2): plan-29 runs first, and 26.5 is not in flight {#amend-2}
+B  The header's "Depends on queue item 1" and "in parallel with 26.5" are replaced. plan-29 runs
+B  T0.4 → T0.5 run after stage 2, not beside it.
+B  (the symlinked clone), and AC-1.4 runs only the seven pinned files.
+B  - bug-127's test **runs and fails** in a clone with a symlinked `.venv-eval` (2/2 runs, bug-168
+B  `AssertionError: ('grep -rn pat src/', '')`. After the fix, 24/24 pass. The new stand-down test
+B  failing bug-228 run and say which leg spent the time. Stage 0 had no failing run: bug-228 passed
+B  - **Per-trial wall cap.** Every trial runs under a cap derived from R0: `max(3 × T, 300 s)`, where
+B  - **Reproducer found:** ≥ 3 failures in 10 trials at base, each with the row's E line. If fewer
+B  - **Fix proven:** **45 consecutive passes** on the same harness at the same level. A 3/10
+B  not the 45-pass band above and not a shorter band. The fixes are structural (a wall-clock bound
+B  lines, written inside the stage-0 run (ch-bsd r1; ruling L122). That is the R0 count. T0.3's
+B  45-pass band;
+B  - **AC-7.3.** The committed R7.4 run (its `summary.txt`) shows exit 0 for every shard, with the
+B  collected count equal to passed. The committed R7.5 run shows exit 0 for every shard, with
+B  `call` record with outcome `passed` in the R7.4 run's `outcomes.jsonl`
+B  (+ 29.4d; last; R7.4 runs on the sha after its merge). T0.6 is a lane, any time after stage 1.
+C  (the symlinked clone), and AC-1.4 runs only the seven pinned files.
+C  - **AC-7.3.** The committed R7.4 run (its `summary.txt`) shows exit 0 for every shard, with the
+Mn - M1.8 (ch-bsd r1 M2): put the slug derivation back into `scripts/lint-gmd.sh`, beside a
+Mn Mutation M6.1: edit one cited dense figure in README, and the test goes red.
+Mn Mutation M7.2: revert one cause's wording to the old single message, and the test goes red.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality.md
+R  by ch-bsd in four rounds to MEH-only GO ([[bsd-plan29-spec-r4]]; rulings L105-L111 in
+R  plan. That assessment drew on the 0.83.0 review rounds (bug-212, bug-216/227, bug-225, bug-230,
+R  by mutation, ch-bsd review until GO, more test code than source. The code has outgrown its shape:
+R  sibling call sites and makes each review round expensive.
+R  - **The same defect class returns.** Each 0.83.0 fix took 3-7 review rounds, and the findings
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality-tasks/task-29.4-suite-health.md
+H  ## Revision note (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note}
+H  ## Revision note 2 (2026-11-14, after ruling L106) {#rev-note-2}
+H  ## Revision note 3 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-3}
+H  ## Revision note 4 (2026-11-14, round 4: ch-bsd r3 and ruling L110) {#rev-note-4}
+H  ## Revision note 5 (2026-11-14, ch-bsd r4 GO with MEHs; ruling L111) {#rev-note-5}
+H  ## Revision note 6 (2026-11-15, T0's branch met this one) {#rev-note-6}
+H  ## Revision note 7 (2026-11-15, T0's review round; ruling L122) {#rev-note-7}
+Ah AC-7.4
+L  rev-note-6
+R  - **A review round costs an hour**, so rounds run hand-picked "families" instead, and a
+R  invisible in every littlebig review round
+R  | run tier (a) wall, 4 shards | ≤ 5 min | every review round runs the whole of tier (a) |
+R  `#p29-4`). Until then a review round runs tier (a) whole (if [[#r0-bands]] allows), the tier-(b)
+R  - `workflow/TDD_GOVERNANCE.md`: one paragraph: what a review round runs and what the merge gate
+R  skip is added and no test is weakened; sandbox discipline; one ch-bsd round per sub-task
+B  | 2 | "Depends on queue item 1"; "26.5 in parallel" ([[task-t0-suite-trust-sweep#merge-265]]) | plan-29 runs first (L104). 26.5 is not in flight during this task | L104 |
+B  L106; the lead upgrades after the 0.83.1 runs). `.venv-eval` has 1.5.2 at `f3709d2`, below
+B  rule is one function with its own tests. This is the "equal by E line" check that 29.5 runs
+B  ([[task-t0-suite-trust-sweep#t0-3-bands]]): a reproducer is ≥ 3 failures in 10 trials at base, at 3, then 5, then 8
+B  concurrent processes; a fix is proven by 45 consecutive passes at the reproducer's level; at
+B  last shard only (a violation in shard 0 passes, so the test is red). {#ac-12}
+B  | `plan-review-fable-store D5` | duckdb 1.5.3 in `.venv-eval` before baselines; the lead upgrades after the 0.83.1 runs | [[#r0]]: the durations run and every baseline are taken after the upgrade |
+Mn 12. the reaper drops the start-time check (AC-5's reused-pid fixture is signalled);
+Mn 13. the session-start orphan sweep is removed (AC-5's fourth fixture);
+Mn 16. the `Daemon.__init__` wrapper records nothing (AC-5's in-process fixture passes unseen);
+Mn 17. the reaper skips a stopped process (AC-5's SIGSTOP fixture survives);
+Mn 20. the census does not check that the test sets its knob (AC-11);
+Mn 21. the budget-outcome census ignores fixtures (a test that reaches the daemon through a
+Mn 22. the reaper prints `root=` from a sandbox pid file only (AC-5's out-of-sandbox fixture
+Mn 27. `--expect` ignores its phase (AC-3's wrong-phase case passes, so the test is red).
+Mn Mutation:** the runner takes the run's exit code from the last shard only (a violation in shard 0 passes, so the test is red).
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends.md
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends-tasks/task-31.3-ledger-anchor-guard.md
+H  ## Revision 2: the ch-bsd r1 fold (2026-11-15, ruling L133) {#rev-r1}
+H  ## Revision 3: the ch-bsd r2 fold (2026-11-15, ruling L140) {#rev-r2}
+L  rev-r1
+L  rev-r2
+R  > Status: **Approved** by ruling L140 in [[plan-of-plans#rulings]] (ch-bsd confirm-lite r2,
+R  > folded ch-bsd spec review r1 per ruling L133 ([[#rev-r1]]); revision 3 folds r2's `M5`
+Mn | M7 | select ledger docs by filename instead of frontmatter | [[#ac-1]]: its fixture has an arbitrary name |
+Mn | M8 | drop the step from `scripts/lint-gmd.sh`; then: keep it but discard its exit status | [[#ac-5]] (the gate test) |
+Mn | M9 | exit 0 when no ledger doc was found | [[#ac-6]] (`test_no_ledger_doc_exits_2`) |
+Mn | M10 | exit 0 when `IMPRESSIONS.md` is present but not selected | [[#ac-6]] (`test_impressions_md_that_is_not_selected_exits_2`) |
+Mn | M11 | the checker imports `refmatrix` (so it needs the dev interpreter) | [[#ac-5]] (`test_the_ledger_step_does_not_need_the_dev_interpreter`) |
+Mn | M12 | remove the checker's `gate-file` line from the wrapper | [[#ac-9]] (`test_every_file_the_gate_runs_is_declared`), [[#ac-5]] |
+Mn | M13 | the helper hard-codes its file set instead of reading the wrapper | [[#ac-9]] (`test_the_helper_places_exactly_the_declared_files`) |
+Mn | M14 | one helper goes back to copying `lint-gmd.sh` itself | [[#ac-10]] |
+Mn | M16 | the bypass scan reads only `tests/*.py`; then: it ignores `copytree` | [[#ac-10]] (the subdirectory case; the `copytree` cases) |
+Mn | M17 | the sibling-import check is removed | [[#ac-9]] (`test_every_sibling_import_of_a_declared_file_is_declared`) |
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends-tasks/task-31.4-retire-standing-warnings.md
+H  ## Revision 2: the ch-bsd r1 fold (2026-11-15, ruling L133) {#rev-r1}
+H  ## Revision 3: approval (2026-11-15, ruling L140) {#rev-r2}
+L  rev-r1
+L  rev-r2
+R  > Status: **Approved** by ruling L140 in [[plan-of-plans#rulings]] (ch-bsd confirm-lite r2,
+R  > folded ch-bsd spec review r1 per ruling L133 ([[#rev-r1]]). r2 left no finding on this spec;
+B  | `tools/gmd/lint.py` through `scripts/lint-gmd.sh` | `CLAUDE.md` `#before-commit`, [[orchestration#reports]], `tests/test_gmd_lint_requires_version.py`, `tests/test_lint_gmd_memdir_fallback.py`, and every test that builds a gate 
+B  scope, and so are the memory-dir fixes. AC-1 passes there on the repository's 37.
+C  scope, and so are the memory-dir fixes. AC-1 passes there on the repository's 37.
+Mn | M1 | remove `--strict` from `scripts/lint-gmd.sh` | [[#ac-2]] (all four) |
+Mn | M6 | a fifth warn-level rule is added to the linter with no fixture | [[#ac-3]] |
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends-tasks/task-31.1-frontmatter-type-refusal.md
+H  ## Revision 1: fold of ch-bsd r1 (ruling L139) {#rev-r1}
+H  ## Revision 2: fold of ch-bsd r2 (ruling L147) {#rev-r2}
+H  ## Revision 3: fold of ch-bsd r3's MEHs (ruling L149) {#rev-r3}
+L  rev-r1
+L  rev-r2
+L  rev-r3
+R  plain-doc route and is never refused (ch-bsd r1 M2). A second leg makes the GMD pass skip a
+Mn | 8 | the fixture script stops patching (calls the real function) | AC-6's four tests |
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends-tasks/task-31.6-one-wikilink-resolver.md
+H  ## Revision 1: fold of ch-bsd r1 (ruling L139) and of L133, L136 {#rev-r1}
+H  ## Revision 2: fold of ch-bsd r2 (ruling L147) {#rev-r2}
+H  ## Revision 3: fold of ch-bsd r3's MEHs (ruling L149) {#rev-r3}
+L  rev-r1
+L  rev-r2
+L  rev-r3
+B  `master`, queue step 13) specifies exactly this for bug-221, which bug-257 repeats. This
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality-tasks/task-29.1-registry-triage.md
+H  ### Homes proposed since: three reviews and two sibling specs {#homes}
+H  ## Revision note (2026-11-14, second author) {#rev-note}
+H  ## Revision note 2 (2026-11-14) {#rev-note-2}
+H  ## Revision note 3 (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note-3}
+H  ## Revision note 4 (2026-11-14, after ruling L106) {#rev-note-4}
+H  ## Revision note 5 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-5}
+L  homes
+L  homes-new-work
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality-tasks/task-29.5-split-giant-modules.md
+H  ## Revision note (2026-11-14) {#rev-note}
+H  ## Revision note 2 (2026-11-14, after ch-bsd r1 and ruling L105) {#rev-note-2}
+H  ## Revision note 3 (2026-11-14, after ruling L106 and the 29.2 / 29.3 seams) {#rev-note-3}
+H  ## Revision note 4 (2026-11-14, round 2b, ruling L107) {#rev-note-4}
+H  ## Revision note 5 (2026-11-14, the digest's contract) {#rev-note-5}
+H  ## Revision note 6 (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note-6}
+H  ## Revision note 7 (2026-11-14, the pass-module rows' owner; ruling L109) {#rev-note-7}
+H  ## Revision note 8 (2026-11-14, round 4: ch-bsd r3 and ruling L110) {#rev-note-8}
+H  ## Revision note 9 (2026-11-14, ch-bsd r4 GO with MEHs; ruling L111) {#rev-note-9}
+R  names changed** (ch-bsd r2 `#m2`; ruling L108: one mapping paragraph, no extra spec round).
+B  **The gates.** Every commit in phases 1 and 2 passes all of them. Each is generated at the
+B  next commit's "before", so that is about 26 runs: under 9 hours of machine time at 29.4's
+B  | `plan-review-fable-store D5` | duckdb 1.5.3 in `.venv-eval` before baselines (the lead upgrades after the 0.83.1 runs) | [[#r0]] item 13: no golden and no baseline before the upgrade |
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality-tasks/task-29.3-converge-shapes.md
+H  ## Review findings folded on 2026-11-14 {#fold}
+H  ## Revision round 2 (2026-11-14) {#rev-round-2}
+H  ### Round 2b (ruling L107) {#rev-round-2b}
+H  ## Revision round 3 (2026-11-14) {#rev-round-3}
+H  ## Revision round 4 (2026-11-14) {#rev-round-4}
+L  fold
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+R  > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
+R  > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
+R  > Revision round 4 (ruling L110, on ch-bsd spec review r3): [[#rev-round-4]].
+R  | X | a failure is swallowed with no count and no word | 30 | 25 registry rows tagged `silent-failure` (bug-040 … bug-240); [[bsd-impressions#imp-silent-memory]], [[bsd-impressions#imp-silent-pass-migrates]], [[bsd-impressions#imp
+R  | V | a gate or guard that did not run, or cannot fire, reads as clean | 8 | [[bsd-pattern-guard-cannot-fire#sightings]] (4); registry bug-021, bug-068, bug-230; [[bsd-impressions#imp-gate-precondition-vacuous-pass]] | `assert_gat
+R  [[bsd-pattern-prereg-check-unrun-census]] (3 rounds),
+R  - **K-R7: which source-walking tests move onto the kit** (ch-bsd spec review r1 M6, stated once
+R  **c-R9: what is held for `consolidate.py`** (ruling L110, deciding ch-bsd spec review r3 NS3 as
+R  - **Who edits what** (ch-bsd spec review r1 M9). Every allow list, owned list, named list and
+B  | T | a bound stops one call short: a timeout or a retry count left at the library default | 12 | [[bsd-pattern-partial-bound#occurrences]] (5 runs); registry tag `timeout` (bug-030, bug-097, bug-116, bug-177, bug-182); [[bsd-impr
+B  | C | "every X passes through here" is claimed with no census of X | 7 | [[bsd-pattern-control-point-claim-without-census]] (4 runs); [[bsd-impressions#imp-loudness-is-a-census]], [[bsd-impressions#imp-collision-column-census]], [
+B  [[bsd-pattern-tests-prove-existence-not-wiring]] (3 runs),
+B  [[bsd-pattern-handoff-without-sibling-ac]] (5 runs). This spec applies them to itself: every
+B  | daemon RPC bounds | same | 66 calls with a constant op: 31 pass `timeout` and `retries`; 29 pass `timeout` only; 6 pass neither. `daemon.call` defaults to `retries=2`, so 35 calls can take 3 × their timeout |
+B  alone; the detail log lists how each uses the name (57 pass it to a call, 11 return it, 2 only
+B  - **AC-c7 (no regression):** the full suite is equal by E line before and after each group.
+B  because plan-29 runs first (L104); if the linked-store task is built first instead, it does
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality-tasks/task-29.2-mypy-gate.md
+H  ## Review findings folded on 2026-11-14 {#fold}
+H  ## Revision round 2 (2026-11-14) {#rev-round-2}
+H  ### Round 2b (ruling L107) {#rev-round-2b}
+H  ## Revision round 3 (2026-11-14) {#rev-round-3}
+H  ## Revision round 4 (2026-11-14) {#rev-round-4}
+L  fold
+L  fold-cites
+L  rev-l111
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+R  > Revision round 2 (ruling L105, on ch-bsd spec review r1): [[#rev-round-2]].
+R  > Revision round 3 (ruling L108, on ch-bsd spec review r2): [[#rev-round-3]].
+R  > Revision round 4 (ruling L110, on ch-bsd spec review r3): [[#rev-round-4]].
+R  > After ch-bsd spec review r4 (GO, MEH-only), ruling L111: [[#rev-l111]].
+R  **Where an annotation is behaviour, it is kept** (ch-bsd spec review r2 NS2). In the body of a
+R  **A file the normal form cannot be trusted on is refused** (ch-bsd spec review r4 M3; ruling
+R  - **An older stamp that is provably behind still reads behind** (ch-bsd spec review r3 NS1). A
+R  **Standing cost: keeping `raw` fresh** (ch-bsd spec review r2 M9, restated after r3 NS2).
+R  ### R8: `rmx derive rehash` (ch-bsd spec review r2 NB2; ruling L108) {#r8}
+R  - **Rehash rows have a cap and a pruning rule of their own** (ch-bsd spec review r4 M4; ruling
+R  **It writes only when told to** (ch-bsd spec review r3 M5). {#r8-apply}
+R  - **R7 and R8 go first**, as their own RED → GREEN → ch-bsd round, before any annotation edit. Its
+R  These answer ch-bsd spec review r1 M6. 29.5's author confirmed each against 29.5's spec on
+R  round of this spec said it would show in `derive status`; that was wrong (ch-bsd spec review
+R  - **Fields, leg by leg** (ch-bsd spec review r2 M10). An entity is always written as its key
+R  own output (ruling L110; ch-bsd spec review r3 NS1). Those stamps were behind before this
+R  - **It depends on two fixes** (ch-bsd spec review r3 M4).
+R  **Amended by ruling L110** (on ch-bsd spec review r3): the `left` passes join the re-derive; the
+B  and is recorded in `workflow/test_mock_registry.md`. The fixture tree in AC-1 runs the real
+C  and is recorded in `workflow/test_mock_registry.md`. The fixture tree in AC-1 runs the real
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-29-code-quality-tasks/task-29.6-citation-and-pin-repoint.md
+H  ## Revision note (2026-11-14, round 3: ch-bsd r2 and ruling L108) {#rev-note}
+R  > ch-bsd's finding that the citation and pin pass had no task ([[bsd-plan29-spec-r1#b3]]). The
+R  Completed specs, implementation summaries, handoffs, the ch-bsd ledger and `review-output/` keep
+R  - **A cite-only rewrite needs no ch-bsd re-approval** (queue review `#p29-3`). It changes no
+R  ([[#r2]] item 4), and gets a ch-bsd confirm-lite on the changed lines, in one round per
+Mn 3. `--check` ignores `docs/`;
+Mn 7. the tool resolves a citation at the spec's last-change sha (AC-3's fixture writes `::g`);
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends-tasks/task-31.2-learned-evidence-agreement.md
+H  ## Revision 1: fold of ch-bsd r1 (ruling L139) and of L136 {#rev-r1}
+H  ## Revision 2: fold of ch-bsd r2 (ruling L147) {#rev-r2}
+H  ## Revision 3: fold of ch-bsd r3's MEH (ruling L149) {#rev-r3}
+L  rev-r1
+L  rev-r2
+L  rev-r3
+B  the entities of files that are gone before step 3 runs, so in the product such a row has no
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-22-audited-removal-and-repair-tasks/task-22.6-removal-entry-points.md
+H  ## Revision round 3 (2026-10-14) {#rev-round-3}
+H  ## Revision round 5 (2026-10-14) {#rev-round-5}
+H  ## Revision round 6 (2026-10-15) {#rev-round-6}
+H  ## Revision round 7 (2026-10-15) {#rev-round-7}
+H  ## Revision round 8 (2026-10-15) {#rev-round-8}
+H  ## Revision round 9 (2026-10-15) {#rev-round-9}
+H  ## Revision round 10 (2026-10-15) {#rev-round-10}
+H  ## Revision round 11 (2026-10-15) {#rev-round-11}
+H  ## Revision round 12 (2026-10-15) {#rev-round-12}
+H  ## Revision round 13 (2026-10-15) {#rev-round-13}
+H  ## Revision round 14 (2026-10-15) {#rev-round-14}
+H  ## Revision round 17 (2026-11-13) {#rev-round-17}
+H  ## Revision round 20 (2026-11-14) {#rev-round-20}
+H  ## Revision round 19 (2026-11-13) {#rev-round-19}
+H  ## Revision round 18 (2026-11-13) {#rev-round-18}
+H  ## Revision round 16 (2026-10-15) {#rev-round-16}
+Ah AC-1b
+Ah AC-1c
+Ah AC-2
+Ah AC-5
+Ah AC-5b
+Ah AC-7b
+Ah AC-8
+L  rev-round-10
+L  rev-round-11
+L  rev-round-12
+L  rev-round-13
+L  rev-round-14
+L  rev-round-17
+L  rev-round-18
+L  rev-round-19
+L  rev-round-20
+L  rev-round-5
+L  rev-round-6
+L  rev-round-7
+L  rev-round-8
+L  rev-round-9
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bu
+B  live's 1 (the base and variant 1 pass under it, which is why variant 2 exists). Round 13
+Mn Mutation "plain `purge_path`" FAILS it (no manifest row; the sidecar row orphaned). **The file comes back (r7 b-1, d9av).** Continuing the fixture: the file is re-created
+Mn round 7's mutation "log an `evidence` event for a re-attached surviving row" is RETIRED by d9cg, which requires that event and makes it count-neutral by absorption). The 
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+H  ## Revision note 3 (2026-11-15, ch-bsd r2: GO with four MEHs) {#rev-note-3}
+Ah AC-1
+Ah AC-12
+L  rev-note-2
+L  rev-note-3
+R  folded all eight, and [[#rev-note-2]] says where. The confirm-lite r2 was MEH-only (0 BULLSHIT, 0 SKETCHY, 4 MEH), GO
+B  on the size of `facts.log`, and a write fell between 365 of 390 consecutive prompts
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation-tasks/task-30.0-disk-tier-probe.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+L  rev-note-2
+B  it is an upper bound. From the report's numbers it would be 96 × (0.506 − 0.021) = 47 s; R0
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation-tasks/task-30.5-load-bitmap-row-read.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+L  rev-note-2
+B  - **The mask covers 2^32 values as 65,536 run containers**, built and freed per call
+B  the 20 × 34 mix likewise. {#ac-6}
+Mn Mutation 9 fails it. Test: `test_link_many_counts`.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation-tasks/task-30.1-adjacency-mapping-adapter.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+B  > Depends on: plan-29 released. No plan-30 task (30.0 and 30.5 run beside it).
+B  - **A walker reads something the mapping surface does not cover.** AC-2 runs every walker on
+C  - **A walker reads something the mapping surface does not cover.** AC-2 runs every walker on
+Mn 9. A walker ignores `adj` and builds its own → AC-4 (the wrapper is never touched, so the test
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation-tasks/task-30.2-vectorised-adjacency-build.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+H  ## Revision note 3 (2026-11-15, ch-bsd r2) {#rev-note-3}
+L  rev-note-2
+Mn 17. `cached_adjacency`'s key drops `link_weight` → `test_cache_key_varies_by_params`.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation-tasks/task-30.3-disk-tier-fate.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-30-materialisation-tasks/task-30.4-daemon-adjacency-ppr-op.md
+H  ## Revision note 2 (2026-11-15, ch-bsd r1 and ruling L116) {#rev-note-2}
+H  ## Revision note 3 (2026-11-15, ch-bsd r2: GO with four MEHs) {#rev-note-3}
+L  rev-note-2
+L  rev-note-3
+B  1.25 × (K × E + P) as 30.2 measured them. More means something else is retained: that stops
+Mn 22. the reopen has no bound → AC-20 (`test_reopen_is_bounded` fails on its count).
+Mn 28. the provider registers demand → AC-9 (`test_context_walk_registers_no_demand`).
+Mn 33. `open_snapshot_store` accepts `partition=None` → AC-17 (`test_partition_is_required`).
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-dq1-operational-content-out-of-graph.md
+H  ## Revision 8 (2026-11-14, ch-bsd r6 + L71) {#rev-8}
+H  ## Revision 7 (2026-11-14, ch-bsd r5 + L69) {#rev-7}
+H  ## Revision 6 (2026-11-14, ch-bsd r4 + L67) {#rev-6}
+H  ## Revision 5 (2026-11-14, ch-bsd r3 + L61) {#rev-5}
+H  ## History {#history}
+L  history
+L  rev-5
+L  rev-6
+L  rev-7
+L  rev-8
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bu
+Mn Mutation: leave `_operational_ids_cache` out of `_invalidate_content_rank_caches`: FAILS (r3 M4). **On-disk adjacency (r4 M1, r5 M2, r6 M1):** with `_DERIVE_SRC_DIR` poin
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-bug216-denotes-fold-evaluation.md
+H  ## Revision r1 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-r1}
+H  ## Revision r2 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-r2}
+R  - R0 recorded; AC-1 to AC-4 RED then GREEN; AC-5 run and banded; a ch-bsd round over the
+R  **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/1
+B  5. **AC-5 Run once on real data, banded.** R0's probe, then both arms (and FOLD-OFF if R0
+B  user is told and may overturn either one, which would be a dated revision before AC-5 runs.
+B  - R0 recorded; AC-1 to AC-4 RED then GREEN; AC-5 run and banded; a ch-bsd round over the
+C  5. **AC-5 Run once on real data, banded.** R0's probe, then both arms (and FOLD-OFF if R0
+C  user is told and may overturn either one, which would be a dated revision before AC-5 runs.
+C  - R0 recorded; AC-1 to AC-4 RED then GREEN; AC-5 run and banded; a ch-bsd round over the
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-26-memory-organisation.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+H  ## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+H  ## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+L  rev-round-1
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+L  rev-round-5
+L  rev-round-6
+R  rel: derives-from -> [[bsd-plan26-27-spec-review-r1-96feccd]]
+R  rel: derives-from -> [[bsd-plan26-27-spec-review-r2-8af766a]]
+R  rel: derives-from -> [[bsd-plan26-27-spec-review-r3-696c3cb]]
+R  rel: derives-from -> [[bsd-plan26-27-spec-review-r4-f89e640]]
+R  rel: derives-from -> [[bsd-plan26-27-spec-review-r5-3ded49e]]
+R  The bridge's memory walk IS `iter_memory_files`. This was ch-bsd r1 #s3: round 0 left the bridge
+R  Approved on the ch-bsd focused confirm r6-lite at `d396317`
+R  ([[bsd-plan26-27-spec-confirm-r6-lite-d396317]]): MEH-only, 0B/0S/2M. r5 s1, m2 and m6 are closed
+R  rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+B  | 19.3 R1-R8 | 26.7 | Scores: until 19.2 lands, 26.7 runs on 19.3 R7's virtual scores (files only). 19.2 swaps in real scores without touching 26.7. |
+B  Plan 27 runs this same verb on every other dir.
+B  - 26.9 runs in parallel with plan-27 after 26.8 ([[plan-review-2026-11-13#lead]] L10). Neither
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-26-memory-organisation-tasks/task-26.5-memory-organise-verb.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+H  ## Inherited from ch-bsd 26.1 r4 (2026-11-10) {#inherit-261-r4}
+H  ## Inherited from ch-bsd 26.4 r1 (2026-11-13) {#inherit-264-r1}
+H  ## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+H  ## Lines that change under Q8 b (2026-11-13) {#q8-b}
+H  ## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+H  ## Revision round 8 (2026-11-13): bsd-spec-t2 r2 {#rev-round-8}
+H  ## Revision round 9 (2026-11-13): bsd-spec-t2 r3 {#rev-round-9}
+H  ## Revision round 10 (2026-11-13): bsd-spec-t2 r4 {#rev-round-10}
+H  ## Revision round 11 (2026-11-13): bsd-spec-t2 r5 {#rev-round-11}
+H  ## Revision round 12 (2026-11-13): bsd-spec-t2 r6, lead rulings L63 {#rev-round-12}
+H  ## Revision round 13 (2026-11-14): bsd-spec-t2 r7, lead rulings L64 {#rev-round-13}
+H  ## Revision round 14 (2026-11-14): bsd-spec-t2 r8, lead ruling L66 {#rev-round-14}
+L  inherit-moved-derived-265
+L  rev-round-2
+L  rev-round-5
+L  rev-round-6
+L  rev-round-7
+R  [[bsd-plan26-27-spec-review-r5-3ded49e]].
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+Mn - an autouse conftest generator fixture that opens an invocation kills (t)'s fixture-less
+Mn - mapping Y's fixture to A kills (p)'s "dispatched once" assertion, because X's active job
+Mn Mutation: apply-then-render leaves an index of dead links, and the test goes RED.
+Mn Mutation: a path-keyed rollback restores the old top-level copy, recall-state resumes the old handoff, and the test goes RED.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-26-memory-organisation-tasks/task-26.7-memory-index-by-subject.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-13): D-Q2 {#rev-round-3}
+H  ### Lines that change under Q8 b {#q8-b}
+L  ac-e
+L  rev-round-3
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+B  - **AC-0:** 19.3 AC-1 through AC-10 pass in task 23.0's sandbox, on copies of this project's
+C  - **AC-0:** 19.3 AC-1 through AC-10 pass in task 23.0's sandbox, on copies of this project's
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-26-memory-organisation-tasks/task-26.6-compile-subject-hygiene.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+B  | 10–25% | For bare-word winners only, label with two terms: the bare word plus the strongest identifier-shaped co-term at ≥ 0.5× its lift. Then re-grade. |
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-26-memory-organisation-tasks/task-26.8-refmatrix-live-rollout.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+H  ## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+H  ### Lines that change under Q8 b {#q8-b}
+H  ## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+L  counts-reread
+L  rev-round-2
+L  rev-round-5
+L  rev-round-6
+L  rev-round-7
+R  copy ([[bsd-plan26-27-spec-review-r5-3ded49e]]); re-measure on the copy and record.
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-26-memory-organisation-tasks/task-26.9-impression-patterns.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-13): L10 {#rev-round-4}
+L  rev-round-1
+L  rev-round-2
+L  rev-round-4
+R  `@ch-code-reviewer` or `@ch-architect`, NOT by ch-bsd. That review is recorded in this
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+B  > - Live AC-5 runs after 26.8. AC-5 does NOT gate plan-26's close (ch-bsd r1 #m9).
+B  - 149 run reports sit under them as evidence.
+B  `unassigned` ones; the expected count is pre-registered from the measurement (33 run
+C  > - Live AC-5 runs after 26.8. AC-5 does NOT gate plan-26's close (ch-bsd r1 #m9).
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout.md
+H  ## Lines that change under plan-review Q8 b (2026-11-13) {#q8-b}
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+H  ## Revision round 6 (2026-11-13): plan-review folds {#rev-round-6}
+H  ## Revision round 7 (2026-11-13): bsd-spec-t2 {#rev-round-7}
+L  q8-b
+L  rev-round-1
+L  rev-round-2
+L  rev-round-5
+L  rev-round-6
+R  Approved on the ch-bsd focused confirm r6-lite at `d396317`
+R  ([[bsd-plan26-27-spec-confirm-r6-lite-d396317]]): MEH-only, 0B/0S/2M. r5 m6 (the 3ded49e
+R  rel: derives-from -> [[bsd-plan26-27-spec-confirm-r6-lite-d396317]]
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+B  26.9 is NOT a dependency: plan-27 runs in parallel with it after 26.8
+B  - No compile or index design. 27.6 runs plan-26's 26.6 (which builds 19.4) and 26.7 (which builds
+B  drifted goes into the next window's list. Plan-27 runs no `install-hooks` itself. {#q3-rehost}
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.0-organise-merge-from.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+L  rev-round-1
+L  rev-round-2
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.1-fleet-inventory.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+H  ## Revision round 6 (2026-11-13) {#rev-round-6}
+L  rev-round-1
+L  rev-round-3
+L  rev-round-5
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.2a-index-prose-to-memories.md
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+L  rev-round-3
+L  rev-round-4
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.2-viascope2-fold-and-repoint.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+L  rev-round-1
+L  rev-round-5
+B  `~/github/atollogy/bdep/viascope2` checkout IS archived, by AC-8, after AC-5 passes (plan
+B  only after AC-2..AC-5 pass and AC-3 shows no viascope2 path left in viascope's store.
+C  `~/github/atollogy/bdep/viascope2` checkout IS archived, by AC-8, after AC-5 passes (plan
+C  only after AC-2..AC-5 pass and AC-3 shows no viascope2 path left in viascope's store.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.3-thiquet-store-repoint.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+L  rev-round-1
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.4-quiet-dir-migrations.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+L  rev-round-1
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.5-cliquedb-at-session-boundary.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Lines that change under plan-review Q8 b (2026-11-13) {#q8-b}
+H  ## Revision round 7 (2026-11-13) {#rev-round-7}
+H  ## Revision round 8 (2026-11-13) {#rev-round-8}
+L  rev-round-1
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-27-memory-fleet-rollout-tasks/task-27.6-per-store-compile-and-landing.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-13) {#rev-round-4}
+L  rev-round-1
+L  rev-round-3
+L  rev-round-4
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t2 r8 MEH-only (0B/0S/2M), folded at `8ea3230` per L66 with no further round | `workflow/bullshit/2026-11-14-0105-s
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-25-cliquedb-field-report.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+H  ## Revision round 5 (2026-11-09) {#rev-round-5}
+H  ## Revision round 6 (2026-11-13, the plan review's decisions) {#rev-round-6}
+H  ## Revision round 7 (2026-11-13, ch-bsd joint spec review r1; lead ruling L54) {#rev-round-7}
+Ah AC-12b
+Ah AC-14
+Ah AC-16
+Ah AC-18
+Ah AC-3
+Ah AC-6
+Ah AC-7
+Ah AC-9
+L  rev-round-1
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+L  rev-round-5
+L  rev-round-6
+R  2026-11-09 ([[#approval]]); the rest of its build waits on the ordering below. Plan and task specs 25.1-25.4 written; ch-bsd spec review r1 DIRTY 0B/9S/9M
+R  rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+R  - **Review basis:** the r4-lite confirm ([[bsd-plan25-spec-confirm-r4-lite-cdd6720]], DIRTY
+R  goes ahead of 26.7 and plan-27 (D-Q2). 25.1b is added and needs its own ch-bsd round and
+R  rel: derives-from -> [[bsd-plan25-spec-confirm-r4-lite-cdd6720]]
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-25-cliquedb-field-report-tasks/task-25.3-stm-ref-admission-and-helix-repeat.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-13, the plan review: L16, L43) {#rev-round-4}
+L  rev-round-1
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+B  (`d[ceil(0.99 × n) − 1]`, 0-indexed, ascending), and "above" is a strict `degree > p99`; never
+Mn drop the existence check (AC-2 `S/as.sh`)
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-25-cliquedb-field-report-tasks/task-25.2-thin-prompt-gate.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-13, the plan review: L19, L34, L43) {#rev-round-4}
+H  ## Revision round 5 (2026-11-13, ch-bsd joint spec review r1; lead ruling L54) {#rev-round-5}
+L  rev-round-1
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+L  rev-round-5
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-23-bounded-write-harness.md
+H  ## Open after revision {#open-after-revision}
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision round 2 (2026-10-14) {#rev-round-2}
+H  ## Revision round 3 (2026-10-14) {#rev-round-3}
+H  ## Revision round 5 (2026-10-14) {#rev-round-5}
+H  ## Revision round 6 (2026-10-15) {#rev-round-6}
+H  ## Revision round 7 (2026-10-15) {#rev-round-7}
+H  ## Revision round 8 (2026-10-15) {#rev-round-8}
+H  ## Revision round 9 (2026-10-15) {#rev-round-9}
+H  ## Revision round 10 (2026-11-09) {#rev-round-10}
+H  ## Revision round 11 (2026-11-09) {#rev-round-11}
+H  ## Revision round 12 (2026-11-09) {#rev-round-12}
+H  ## Revision round 13 (2026-11-13) {#rev-round-13}
+Ah AC-1
+Ah AC-10
+Ah AC-13
+Ah AC-16b
+Ah AC-2
+Ah AC-3b
+Ah AC-4
+Ah AC-7
+Ah AC-8
+L  open-after-revision
+L  rev-round-10
+L  rev-round-11
+L  rev-round-12
+L  rev-round-13
+L  rev-round-2
+L  rev-round-3
+L  rev-round-5
+L  rev-round-6
+L  rev-round-7
+L  rev-round-8
+L  rev-round-9
+R  [[bsd-plan23-1-2-freshness-confirm-1c0b66a]] (1B/2S/7M) folded: 23.1 and 23.2 BUILD-READY; the
+R  rel: derives-from -> [[bsd-plan23-spec-review-3104a81]]
+R  rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
+B  | [[task-23.4-option-a-measurement]] | Option A measurement #4: one writer thread vs N per-op cursor writers on a cliquet copy, a pinned 20,000-event workload including `bitmap_fragments` upserts, drained to completion with in-pla
+B  **23.5 R9/AC-9 runs after the 26.6 R3 residual (after 26.7)** (round 13, L1); "after 26.6 is
+C  **23.5 R9/AC-9 runs after the 26.6 R3 residual (after 26.7)** (round 13, L1); "after 26.6 is
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-bug185-bulk-gmd-ingest.md
+H  ## Revision round 1 (2026-11-09) {#rev-round-1}
+H  ## Revision round 2 (2026-11-13): freshness against bug-216 {#rev-round-2}
+H  ### Facts re-read {#rev-round-2-facts}
+H  ### What changed {#rev-round-2-changes}
+H  ### Lead inputs folded the same day {#rev-round-2-lead}
+H  ### bsd-spec-t4 r1 folded (2026-11-13) {#rev-round-2-bsd-r1}
+L  open-finish-stop
+L  open-replay-216
+L  rev-round-1
+L  rev-round-2
+L  rev-round-2-facts
+L  rev-round-2-lead
+R  > [[bsd-bug185-spec-r1-da67220]] (0B/4S/5M) folded, see [[#rev-round-1]]; no user decision
+B  - **Baseline:** HEAD's median of 5 runs, measured the same way on the same clone, unprofiled.
+B  - The implementation summary records the 5+5 runs, both medians, the ratio and a per-call
+Mn Mutation: restoring the per-ref `add_concept` + `link` FAILS (the counts diverge). 23.3 AC-4b later asserts the same thing per `bounded_steps` step under 23.2's recorder,
+Mn the clear goes back to count-then-delete. The dropped-row mutation lives in [[#ac-10]] only, whose fixture has a purged source (r2 M3).
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-23-bounded-write-harness-tasks/task-23.2-lock-hold-fixture.md
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision round 2 (2026-11-09) {#rev-round-2}
+H  ## Revision round 3 (2026-11-09) {#rev-round-3}
+H  ## Revision round 4 (2026-11-09) {#rev-round-4}
+H  ## Revision round 5 (2026-11-13) {#rev-round-5}
+L  rev-2026-10-14
+L  rev-round-2
+L  rev-round-3
+L  rev-round-4
+L  rev-round-5
+R  > [[bsd-plan23-fold-additions-a9147d5]] reproduced round 3's census exactly and rates 23.2
+R  > [[bsd-plan23-1-2-freshness-confirm-1c0b66a]]'s m1 folded: the R6 census re-run at `77c9f04`
+R  rel: derives-from -> [[bsd-plan23-spec-review-3104a81#b-3]]
+R  rel: derives-from -> [[bsd-plan23-spec-review-3104a81#s-4]]
+R  rel: derives-from -> [[bsd-plan23-spec-review-3104a81#s-5]]
+R  under its own literal pattern the figure was 14 in 13, [[bsd-plan23-1-2-freshness-confirm-1c0b66a#answers]]
+Mn Mutation: leave `tests/test_derive_stamp.py:179`'s `__import__('threading').Lock()` in place: this AC FAILS (round 2's pattern passed it).
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-23-bounded-write-harness-tasks/task-23.1-queue-and-drain.md
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision round 2 (2026-10-14) {#rev-round-2}
+H  ## Revision round 3 (2026-10-14) {#rev-round-3}
+H  ## Revision round 5 (2026-10-14) {#rev-round-5}
+H  ## Revision round 6 (2026-10-15) {#rev-round-6}
+H  ## Revision round 7 (2026-10-15) {#rev-round-7}
+H  ## Revision round 8 (2026-10-15) {#rev-round-8}
+H  ## Revision round 10 (2026-10-15) {#rev-round-10}
+H  ## Revision round 11 (2026-11-09) {#rev-round-11}
+H  ## Revision round 12 (2026-11-09) {#rev-round-12}
+H  ## Revision round 13 (2026-11-09) {#rev-round-13}
+H  ## Revision round 14 (2026-11-09) {#rev-round-14}
+H  ## Revision round 15 (2026-11-13) {#rev-round-15}
+Ah AC-10
+Ah AC-18
+L  rev-2026-10-14
+L  rev-round-10
+L  rev-round-11
+L  rev-round-12
+L  rev-round-13
+L  rev-round-14
+L  rev-round-15
+L  rev-round-2
+L  rev-round-3
+L  rev-round-5
+L  rev-round-6
+L  rev-round-7
+L  rev-round-8
+R  > [[bsd-plan23-3-5-freshness-62a2465]]. The bug-177 holder named in [[#facts]] round 11 is
+R  > [[bsd-plan23-1-2-freshness-confirm-1c0b66a]] folded, all 10 findings (b-n1, s-n1, s-n2,
+R  > ch-bsd audit closes on, with its five test files; merged in 0.78.0, [[#facts]] round 6). 23.1 does not start before that merge, and
+R  rel: derives-from -> [[bsd-plan23-spec-review-3104a81#findings]]
+R  rel: derives-from -> [[bsd-decision-log-review-a192ba2#s-1]]
+R  rel: derives-from -> [[bsd-decision-log-review-a192ba2#s-3]]
+B  > the three queue tables. Round 6's "Not gated on bug-113 … nothing in 23.1 runs
+B  a per-registrant budget FAILS (the tick takes ~3× the budget).
+B  (ns23-r4-1): with the fall-through, AC-4 run inside an outer `Store.transaction()` puts the
+C  (ns23-r4-1): with the fall-through, AC-4 run inside an outer `Store.transaction()` puts the
+Mn Mutation: `merge_slots`' table handling without the three tables FAILS (the rows are absent, the counter reads 0, the drain re-applies from 0). **Round 12 (s-n2):** the c
+Mn the rebuild's first pass ordering by `ts` alone (the second fixture leaves `v-old`)
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-23-bounded-write-harness-tasks/task-23.3-sync-between-file-yield.md
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision round 2 (2026-10-14) {#rev-round-2}
+H  ## Revision round 3 (2026-10-14) {#rev-round-3}
+H  ## Revision round 5 (2026-10-14) {#rev-round-5}
+H  ## Revision round 6 (2026-11-09) {#rev-round-6}
+H  ## Revision round 7 (2026-11-09) {#rev-round-7}
+H  ## Revision round 8 (2026-11-13): freshness against the revised bug-185 {#rev-round-8}
+H  ### Round 8, continued: bsd-spec-t4 r1 (2026-11-13) {#rev-round-8-r1}
+Ah AC-13
+L  rev-round-2
+L  rev-round-3
+L  rev-round-5
+L  rev-round-6
+L  rev-round-7
+L  rev-round-8
+L  rev-round-8-r1
+R  rel: derives-from -> [[bsd-plan23-spec-review-3104a81#s-3]]
+R  rel: derives-from -> [[bsd-decision-log-review-a192ba2#s-3]]
+B  > AC-4b's hold count is `2 × documents + 1`; the gate narrowed; each document's tail and hash
+B  `st._in_transaction is False` at every release over the AC-1 run. {#ac-2}
+C  > AC-4b's hold count is `2 × documents + 1`; the gate narrowed; each document's tail and hash
+C  `st._in_transaction is False` at every release over the AC-1 run. {#ac-2}
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-23-bounded-write-harness-tasks/task-23.5-read-path-and-holder-bounds.md
+H  ## Revision round 7 (2026-10-15) {#rev-round-7}
+H  ## Revision round 8 (2026-10-15) {#rev-round-8}
+H  ## Revision round 9 (2026-10-15) {#rev-round-9}
+H  ## Revision round 10 (2026-10-15) {#rev-round-10}
+H  ## Revision round 11 (2026-11-09) {#rev-round-11}
+H  ## Revision round 12 (2026-11-09) {#rev-round-12}
+H  ## Revision round 13 (2026-11-09) {#rev-round-13}
+H  ## Revision round 14 (2026-11-13) {#rev-round-14}
+Ah AC-6
+L  rev-round-10
+L  rev-round-11
+L  rev-round-12
+L  rev-round-13
+L  rev-round-14
+L  rev-round-8
+L  rev-round-9
+R  > [[bsd-plan23-17-spec-diffcheck-r10-0dc2da3]] (nm23-r10-1..5, all MEH); see [[#rev-round-10]].
+R  > Revision round 11 (2026-11-09): [[bsd-plan23-1-2-freshness-confirm-1c0b66a#b-n1]] — the
+B  > RED), AC-9 runs through each and asserts each op's own name, marker-ON fixture with a
+B  `HEARTBEAT_STALE_S − 2 × HEARTBEAT_INTERVAL_S` (50 s at the defaults, the same margin as
+B  R9's decision, docstring and bound; AC-9 runs through each. The bullet below describes
+B  10 s (more than 3× the stale window), with `RMX_CLI_WRITER_WAIT_S=1`. During the hold:
+B  logs the clamp line and the effective wait is `stale_s − 2 × interval_s` as returned by
+C  > RED), AC-9 runs through each and asserts each op's own name, marker-ON fixture with a
+C  R9's decision, docstring and bound; AC-9 runs through each. The bullet below describes
+Mn `feedback_mutation_must_fail_not_hang`): the test sets a seam that makes the mirror's `acquire_use()` a BOUNDED acquire (2 s, then it raises `TimeoutError("mirror use-loc
+Mn the test asserting one hard-coded name (`memory_compile_apply`) for every op instead of each op's own: the `memory_compile` run FAILS.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/task-bug218-reinforcement-edge-direction.md
+H  ## Revision 1 (2026-11-13, lead rulings) {#rev-1}
+H  ## Revision 2 (2026-11-13, ch-bsd r1 + lead rulings) {#rev-2}
+H  ## Revision 3 (2026-11-13, ch-bsd r2 + lead rulings) {#rev-3}
+L  rev-1
+L  rev-2
+R  | The spec-wave revisions in this file are approved by the lead on the user's pattern (d9co) after ch-bsd bsd-spec-t56 r7 confirm-lite MEH-only (0B/0S/1M, re-run to `eafd733`), folded at `645aa6c` per L74 with no further round; bu
+B  | `eval/reinforcement_bench.py`, `eval/reinforcement_csn_bench.py` | seed through the writers (R5); AC-7 runs |
+C  | `eval/reinforcement_bench.py`, `eval/reinforcement_csn_bench.py` | seed through the writers (R5); AC-7 runs |
+Mn Mutation: restore `tests/test_reinforcement.py`'s raw helper: FAILS.
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-31-pre-mod-loose-ends-tasks/task-31.5-scan-prompt-block-measure.md
+H  ## Revision 2: the ch-bsd r1 fold (2026-11-15, ruling L133) {#rev-r1}
+H  ## Revision 3: the ch-bsd r2 fold (2026-11-15, ruling L140) {#rev-r2}
+L  rev-r1
+L  rev-r2
+R  > Status: **Approved** by ruling L140 in [[plan-of-plans#rulings]] (ch-bsd confirm-lite r2,
+R  > ch-architect on Fable 5.2, 2026-11-15. Revision 2 folded ch-bsd spec review r1 (DIRTY
+B  4. **At least 200 runs per arm,** capture off and capture on in mode `full` (by the switch and
+Mn | M0-14 | mode `names` builds the skipped bundles anyway; then: the mode file is ignored | [[#ac-0-3]] (`test_names_mode_…`); [[#ac-0-18]] (`test_the_mode_file_selects_th
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-21-agent-context-usage.md
+H  ## Open after revision {#open-after-revision}
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision round 2 (2026-10-14) {#rev-round-2}
+H  ## Revision round 3 (2026-10-14) {#rev-round-3}
+H  ## Revision round 5 (2026-10-14) {#rev-round-5}
+H  ## Revision round 6 (2026-10-15) {#rev-round-6}
+H  ## Revision round 7 (2026-10-15) {#rev-round-7}
+H  ## Revision round 8 (2026-10-15) {#rev-round-8}
+H  ## Revision round 9 (2026-10-15) {#rev-round-9}
+H  ## Revision round 10 (2026-10-15) {#rev-round-10}
+H  ## Revision (2026-11-13, task 21.5 spec rev 3) {#rev-2026-11-13}
+H  ## Revision (2026-11-13, task 21.5 spec rev 4) {#rev-2026-11-13-r4}
+Ah AC-11a
+Ah AC-11e
+Ah AC-11f
+Ah AC-12
+Ah AC-1b
+Ah AC-2b
+Ah AC-4b
+Ah AC-5
+Ah AC-6
+Ah AC-6f
+Ah AC-7
+Ah AC-8
+Ah AC-8b
+Ah AC-8c
+Ah AC-8d
+R  rel: derives-from -> [[bsd-plan21-spec-review-3104a81]]
+R  rel: derives-from -> [[bsd-decision-log-review-a192ba2]]
+R  hand-off, so the replay says nothing about reranked ranking (bsd #s-8). Once grep is passive
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-21-agent-context-usage-tasks/task-21.2-precise-identifier-context.md
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
+Ah AC-3
+Ah AC-6
+Ah AC-8
+L  rev-2026-11-13
+R  rel: derives-from -> [[bsd-plan21-spec-review-3104a81]]
+B  - JSON 2.4x the text form.
+Mn - `is_test_entity` replaced by "every caller" (AC-5: `a` appears under TESTED BY);
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-21-agent-context-usage-tasks/task-21.4-surfaces-and-nl-ranking.md
+H  ## Revision (2026-10-14 decision log) {#rev-2026-10-14}
+H  ## Revision round 2 (2026-10-14) {#rev-round-2}
+H  ## Revision (2026-11-13, the plan review: D-Q3, D-Q5; re-read against bug-216's resolver) {#rev-2026-11-13}
+L  rev-2026-11-13
+L  rev-round-2
+R  rel: derives-from -> [[bsd-plan21-spec-review-3104a81]]
+B  2. **The R2 table** (both routes × hit@1/@5 × the rg baseline × each stratum) is in the
+Mn - one question edited in the redacted fixture (AC-1);
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-21-agent-context-usage-tasks/task-21.5-tool-used-signal.md
+H  ## Revision 2 (2026-11-11, ch-bsd spec r1 + its addendum vs 24.6 r5) {#rev-2}
+H  ## Revision 3 (2026-11-13, ch-bsd spec r2) {#rev-3}
+H  ## Revision 4 (2026-11-13, D-Q4, L35, the R12 pilot; plan-review G16) {#rev-4}
+H  ### Revision r1 of rev 4 (2026-11-13, `bsd-spec-t3c`; lead rulings) {#rev-4-r1}
+H  ### Revision r2 of rev 4 (2026-11-13, `bsd-spec-t3c` r2; lead rulings) {#rev-4-r2}
+L  o-2
+L  o-4
+L  rev-2
+L  rev-3
+L  rev-3-1
+L  rev-4
+R  > Status: **Approved, rev 4 (2026-11-14, [[#approval]]): phase M is approved to build; phase B stays FROZEN until the charter decision** ([[#decision-no-build]]). History: Pending. Rev 2 (2026-11-11) answered ch-bsd spec review r1
+R  `node_type: measurement`, provisional until a ch-bsd round). It gives the counts by
+R  written with the band reading ([[#r14-output]]); a ch-bsd round over it CLEAN or MEH-only; the
+R  **Decision row (2026-11-14):** approved by the lead on the user's pattern (d9co) after ch-bsd `bsd-spec-t3c` r3 came back MEH-only (0B/0S/2M at `c5d1b79`), with both MEHs folded (r3 m1, m2). The ch-bsd rounds were r1 DIRTY 1B/9S/1
+B  files are read from `root`. Production never passes it; AC-15 passes the live root's path
+B  ([[task-28.3-outcome-scorer#r7]]) because plan-28 runs before phase B. Phase B MOVES it into
+B  | `p_w ≥ 0.80` and Wilson lower bound `≥ 0.65` | 19.2 may add a `used_tool` column (a migration, 19.2 R1) counting `Σ w(U)`, weight `w_tool = round(2 × p_w, 1)` |
+C  files are read from `root`. Production never passes it; AC-15 passes the live root's path
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-24-mod-transport.md
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-24-mod-transport-tasks/task-24.0-hook-cost-baseline.md
+H  ## Revision r1 (2026-10-20, ch-bsd cdcfbc3) {#rev-r1}
+H  ## Revision r2 (2026-10-20, ch-bsd r2 03c2d1f) {#rev-r2}
+L  rev-r1
+R  > integration"), revised after ch-bsd [[bsd-plan24-spec-review-cdcfbc3]] ([[#rev-r1]]).
+R  rel: derives-from -> [[bsd-plan24-spec-review-r2-03c2d1f]]
+R  rel: derives-from -> [[bsd-plan24-spec-review-cdcfbc3]]
+
+## /Volumes/littlebig/refmatrix-p1b/workflow/plans/plan-24-mod-transport-tasks/task-24.1-store-runtime-identity.md
+
