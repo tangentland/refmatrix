@@ -188,7 +188,8 @@ def test_a_queued_entry_authored_before_a_rebuild_still_applies():
         d.store.close()
 
 
-@pytest.mark.parametrize("route", ["rebuild", "apply_log_delta", "dump_then_rebuild"])
+@pytest.mark.parametrize("route", ["rebuild", "apply_log_delta", "dump_then_rebuild",
+                                   "tie_rebuild", "tie_apply_log_delta"])
 def test_replay_orders_by_and_keeps_the_authoring_time(tmp_path, monkeypatch, route):
     """R11.3 item 3 (b)(c) and the compaction emit. facts.log holding two `memory_content`
     events for one name whose APPEND order is the opposite of their `updated_at` order (`v-new`
@@ -197,7 +198,14 @@ def test_replay_orders_by_and_keeps_the_authoring_time(tmp_path, monkeypatch, ro
     `ev.get("updated_at", ts)`; `apply_log_delta` -> `_apply_one_event` passes it to
     `add_memory`'s guard). A log written by `dump_catalog_to_log` (compaction) carries
     `updated_at` and its rebuild keeps T. Mutations: the rebuild's first pass ordering by `ts`
-    alone; a replay path not passing `ev.get("updated_at")`; the dump not emitting it."""
+    alone; a replay path not passing `ev.get("updated_at")`; the dump not emitting it.
+
+    `tie_*` (b1b8df4d, the replay tie rule): two events with the SAME authoring time, the later
+    one appended later (26.2's path-refresh event keeps the row's `updated_at`). A log holds
+    only writes that happened, so replay applies a tie in log order and the later event wins
+    through both paths; only a LIVE write skips a tie (one row, one event for a dial and its
+    queued entry). Mutation: the replay guard skipping a tie (`>=` in replay mode) leaves the
+    earlier content on `apply_log_delta`."""
     import json
     import shutil
     import time
@@ -215,12 +223,18 @@ def test_replay_orders_by_and_keeps_the_authoring_time(tmp_path, monkeypatch, ro
             m = s.get_memory("d1")
             assert (m["content"], m["updated_at"]) == ("v1", t), m
             return
-        s.add_memory(name="d1", content="v-new", mtype="note", updated_at=t + 5.0)
+        tie = route.startswith("tie_")
+        s.add_memory(name="d1", content="v-new" if not tie else "v-written", mtype="note",
+                     updated_at=t + 5.0)
         new_ev = _mc_events(s, "d1")[-1]
-        old_ev = {**new_ev, "content": "v-old", "updated_at": t, "ts": new_ev["ts"] + 1.0}
+        if tie:
+            later = {**new_ev, "content": "v-new", "metadata": {"source_path": "/moved.md"},
+                     "ts": new_ev["ts"] + 1.0}
+        else:
+            later = {**new_ev, "content": "v-old", "updated_at": t, "ts": new_ev["ts"] + 1.0}
         with s.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(old_ev, sort_keys=True) + "\n")
-        if route == "rebuild":
+            f.write(json.dumps(later, sort_keys=True) + "\n")
+        if route in ("rebuild", "tie_rebuild"):
             s.rebuild_index_from_log()
             m = s.get_memory("d1")
         else:
