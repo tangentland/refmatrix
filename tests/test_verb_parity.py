@@ -590,6 +590,9 @@ _INTERNAL_SEED = {
     # task-compaction-as-handoff R3b hook plumbing (L204): the generated PreToolUse gate,
     # PostToolUse pull marker, UserPromptSubmit reminder and PreCompact instruction-only form.
     ("handoff", "gate"), ("handoff", "pulled"), ("handoff", "remind"), ("handoff", "precompact"),
+    # task-I1.b1 #d7 (plan-32): `rmx rules replay`, read-only over the STM ring, hook plumbing
+    # beside the dispatcher (`verbs.INTERNAL_CLI`, ADR-0007 #dispatcher).
+    ("rules", "replay"),
 }
 _ACTIONS_SEED = {
     ("memory", "list"): ("rmx_memory", "list"),

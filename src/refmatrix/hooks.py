@@ -37,8 +37,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 from pathlib import Path
+from typing import NamedTuple
 
 from refmatrix.store import WRITER_CATALOG_FILES
 
@@ -633,13 +635,18 @@ def install(
     resume_focus: "int | None" = 15,
     enforce: "bool | None" = None,
 ) -> list[str]:
-    """Return a list of human-readable plan lines. Performs writes if apply=True."""
+    """Return a list of human-readable plan lines. Performs writes if apply=True.
+
+    At project scope the instruction units are compiled FIRST (task-I1.b1 #d3): a refused
+    unit raises `instructions.CompileRefused` before any file is written, so a bad unit never
+    leaves a half-installed project (settings.json and the compiled file stay as they were)."""
     out: list[str] = []
     project_root = project_root.resolve()
     hook_opts = dict(composite_every=composite_every,
                      precompact_checkpoint=precompact_checkpoint,
                      stop_promote=stop_promote, resume_focus=resume_focus,
                      enforce=enforce)
+    artifacts = render_artifacts(project_root) if scope == "project" else None
 
     if git:
         out.extend(_install_git_hooks(project_root, apply=apply, force=force))
@@ -664,6 +671,8 @@ def install(
     if briefing:
         out.extend(_install_briefing(project_root, refmatrix_root,
                                      apply=apply, force=force))
+    if artifacts is not None:
+        out.extend(_install_artifacts(project_root, artifacts, apply=apply, force=force))
     if apply and scope == "project":
         record_flags(project_root, dict(claude=claude, memory_hooks=memory_hooks,
                                         primer=primer, scan_prompt=scan_prompt,
@@ -790,7 +799,11 @@ def check(project_root: Path) -> "tuple[bool, str]":
     """Does `.claude/settings.json` carry exactly the rmx-managed hooks this
     version generates under the recorded flags? Returns (ok, diff). The
     diff lists `- event/matcher: cmd` for installed-only and `+ …` for
-    generated-only entries."""
+    generated-only entries.
+
+    The settings leg only: its text is pinned line for line (bug-170's comparison in
+    `tests/test_repo_hooks_in_sync.py` reads every non-`?` line as drift). `check_all` adds the
+    instruction-artifact legs and is what `rmx install-hooks --check` runs (task-I1.b1)."""
     project_root = Path(project_root)
     fp = project_root / FLAGS_FILE
     if not fp.exists():
@@ -848,6 +861,284 @@ def check(project_root: Path) -> "tuple[bool, str]":
     # but the operator should see the second author.
     info = [f"? {ev}/{m}: {c}" for ev, m, c in foreign]
     return ok, "\n".join(lines + info)
+
+
+# ---- instruction artifacts (task-I1.b1, ADR-0007 #installed-equals-generated, bug-209) -------
+#
+# Until I1.b1 `--check` compared only the settings hook block, so a hand-edited rule, a stale
+# compiled table or a git hook that kept the refmatrix marker over another body (the pre-26.2
+# silent `|| true` one, bug-209) read as "in sync". Every installed file is now one of three
+# classes: generated (equal to its render), drift (a template name whose content differs:
+# shown as a diff) or local (a name the template does not have: listed, its fixtures run).
+# Drift fails for rules, skills, the compiled file and the git hooks; agent and command drift
+# is printed and never fails until H1.c adds backup-before-replace (task-I1.b1 #agents-leg).
+# None of these legs calls the daemon or opens the store.
+
+GIT_HOOK_MARKER_RE = re.compile(r"(?m)^# refmatrix:")
+_DIFF_MAX_LINES = 80
+
+
+def render_artifacts(project_root: Path) -> "dict[str, bytes]":
+    """{project-relative path: bytes} of every instruction artifact `--apply` writes: the
+    packaged rules and skills, and `.claude/rmx-instructions.json` compiled from both layers.
+    Raises `instructions.CompileRefused` (nothing is rendered) on a bad unit."""
+    from refmatrix import instructions
+    layers = instructions.load_layers(project_root)
+    out = {pf.installed: pf.data for pf in layers.packaged if pf.installs}
+    out[instructions.COMPILED_REL] = instructions.compile_layers(layers)
+    return out
+
+
+def _install_artifacts(project_root: Path, artifacts: "dict[str, bytes]", *, apply: bool,
+                       force: bool) -> list[str]:
+    """Write the rendered artifacts. The compiled file is wholly generated, so it is always
+    rewritten when its bytes differ; a packaged rule or skill that exists with other content is
+    replaced only under `--force`, like every other installed file. A project whose layers hold
+    no unit gets no compiled file (bsd-i1b1 r1 #s-1, lead ruling (a): no new file in a consumer
+    repo that has no units); one it already holds is kept current."""
+    from refmatrix import instructions
+    out: list[str] = []
+    for rel, data in sorted(artifacts.items()):
+        target = Path(project_root) / rel
+        current = target.read_bytes() if target.exists() else None
+        if current == data:
+            out.append(f"[green]ok[/] {target} (current)")
+            continue
+        if (rel == instructions.COMPILED_REL and current is None
+                and not json.loads(data)["units"]):
+            out.append(f"[dim]none[/] {target} (no instruction units; nothing to compile)")
+            continue
+        if current is not None and rel != instructions.COMPILED_REL and not force:
+            out.append(f"[yellow]skip[/] {target} (differs from the packaged copy; pass "
+                       "--force to overwrite)")
+            continue
+        out.append(f"[green]write[/] {target}")
+        if apply:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+    return out
+
+
+def _diff_lines(rel: str, want: str, have: str) -> list[str]:
+    import difflib
+    diff = list(difflib.unified_diff(want.splitlines(), have.splitlines(),
+                                     fromfile=f"{rel} (template)", tofile=f"{rel} (installed)",
+                                     lineterm=""))
+    shown = [f"      {ln}" for ln in diff[:_DIFF_MAX_LINES]]
+    if len(diff) > _DIFF_MAX_LINES:
+        shown.append(f"      … {len(diff) - _DIFF_MAX_LINES} more diff lines not shown")
+    return shown
+
+
+def _read_text(path: Path) -> "tuple[str | None, str | None]":
+    """(text, None) or (None, why it could not be read)."""
+    try:
+        return path.read_bytes().decode("utf-8", errors="replace"), None
+    except OSError as e:
+        return None, f"{type(e).__name__}: {e.strerror or e}"
+
+
+def _check_git_hooks(project_root: Path) -> "tuple[bool, list[str]]":
+    """bug-209: each `.git/hooks/<name>` that carries the refmatrix marker equals this
+    version's `GIT_HOOK_SCRIPTS[name]`; a hook without the marker is listed, never failed."""
+    hooks_dir = Path(project_root) / ".git" / "hooks"
+    if not (Path(project_root) / ".git").is_dir():
+        return True, ["  git hooks: no .git directory here, none compared"]
+    if not hooks_dir.is_dir():
+        return True, ["  git hooks: no .git/hooks directory, none compared"]
+    ok, lines = True, []
+    for p in sorted(hooks_dir.iterdir()):
+        if not p.is_file() or p.name.endswith(".sample"):
+            continue
+        rel = f".git/hooks/{p.name}"
+        text, err = _read_text(p)
+        if text is None:
+            ok = False
+            lines.append(f"  unreadable {rel}: cannot read it ({err}), so it cannot be compared")
+            continue
+        if not GIT_HOOK_MARKER_RE.search(text):
+            lines.append(f"  local     {rel} (no refmatrix marker; not compared)")
+            continue
+        want = GIT_HOOK_SCRIPTS.get(p.name)
+        if want is None:
+            ok = False
+            lines.append(f"  drift     {rel}: carries the refmatrix marker, but this version "
+                         "renders no such hook (remove it, or `rmx install-hooks --apply "
+                         "--force`)")
+        elif text != want:
+            ok = False
+            lines.append(f"  drift     {rel} differs from the generated hook "
+                         "(`rmx install-hooks --apply --force`):")
+            lines += _diff_lines(rel, want, text)
+        else:
+            lines.append(f"  generated {rel}")
+    return ok, lines
+
+
+def _check_agents_and_commands(project_root: Path) -> list[str]:
+    """Agents, project commands and the two user-level commands, classed and printed. Never a
+    failure before H1.c (task-I1.b1 #agents-leg). A copy that differs from its template only by
+    its frontmatter `id:` is generated (task-H1.a AC-2)."""
+    from refmatrix import init_agents
+    lines: list[str] = []
+    for kind in ("agents", "commands"):
+        templates = init_agents.packaged_md(kind)
+        d = Path(project_root) / ".claude" / kind
+        if not d.is_dir():
+            continue
+        for p in sorted(d.glob("*.md")):
+            rel = f".claude/{kind}/{p.name}"
+            text, err = _read_text(p)
+            if text is None:
+                lines.append(f"  unreadable {rel}: {err} (printed, not failed until H1.c)")
+                continue
+            if kind == "commands" and p.name in init_agents.USER_LEVEL_COMMANDS:
+                lines.append(f"  drift     {rel}: a project copy of the user-level "
+                             f"/{p.name[:-3]}; remove it so the command is defined once "
+                             "(printed, not failed until H1.c)")
+                continue
+            want = templates.get(p.name)
+            if want is None:
+                lines.append(f"  local     {rel}")
+                continue
+            cls = init_agents.template_copy_class(text, want)
+            if cls == "generated":
+                lines.append(f"  generated {rel}")
+            else:
+                lines.append(f"  drift     {rel} differs from its template "
+                             "(printed, not failed until H1.c):")
+                lines += _diff_lines(rel, want, text)
+    templates = init_agents.packaged_md("commands")
+    user_dir = init_agents.user_commands_dir()
+    for name in sorted(init_agents.USER_LEVEL_COMMANDS):
+        p = user_dir / name
+        shown = f"~/.claude/commands/{name}"
+        if not p.exists():
+            lines.append(f"  not installed {shown} (user-level; `rmx init` installs it)")
+            continue
+        text, err = _read_text(p)
+        if text is None:
+            lines.append(f"  unreadable {shown}: {err} (printed, not failed until H1.c)")
+        elif init_agents.template_copy_class(text, templates[name]) == "generated":
+            lines.append(f"  generated {shown}")
+        else:
+            lines.append(f"  drift     {shown} differs from its template "
+                         "(printed, not failed until H1.c):")
+            lines += _diff_lines(shown, templates[name], text)
+    return lines
+
+
+def check_artifacts(project_root: Path) -> "tuple[bool, str]":
+    """The artifact legs of `--check` (task-I1.b1 #d5): (ok, report). Fails on a refused
+    unit, on drift in a packaged rule or skill (or one missing), on a compiled file that
+    differs from a fresh compile, on a failed fixture of a local unit, and on a refmatrix git
+    hook whose body differs; agents and commands are classed and printed only (D6). Reads
+    files and runs `git` in temp directories for stateful fixtures; never the daemon."""
+    from refmatrix import instructions
+    project_root = Path(project_root)
+    ok = True
+    lines = ["instruction artifacts:"]
+    layers = instructions.load_layers(project_root)
+    compiled: "bytes | None" = None
+    try:
+        compiled = instructions.compile_layers(layers)
+    except instructions.CompileRefused as e:
+        ok = False
+        lines += [f"  refused   {err}" for err in e.errors]
+    # the compiled file
+    crel = instructions.COMPILED_REL
+    cpath = project_root / crel
+    if compiled is not None:
+        n_units = len(json.loads(compiled)["units"])
+        if not cpath.exists() and n_units == 0:
+            # bsd-i1b1 r1 #s-1, lead ruling (a): a project with no units needs no table, so
+            # its absence is the render (spec risk 3: the consumers stay clean).
+            lines.append(f"  generated {crel} (0 units: not written, none needed)")
+        elif not cpath.exists():
+            ok = False
+            lines.append(f"  missing   {crel}: run `rmx install-hooks --apply` to write it")
+        else:
+            try:
+                have = cpath.read_bytes()
+            except OSError as e:
+                ok = False
+                lines.append(f"  unreadable {crel}: {e}")
+            else:
+                if have == compiled:
+                    lines.append(f"  generated {crel} ({n_units} unit(s))")
+                else:
+                    ok = False
+                    lines.append(f"  drift     {crel} is out of sync with its units: run "
+                                 "`rmx install-hooks --apply`")
+    # packaged rules and skills (a local file at a packaged trigger's or check's path is a
+    # refused unit, reported by the compile above: bsd-i1b1 r1 #s-3)
+    for pf in layers.packaged:
+        if not pf.installs:
+            continue
+        target = project_root / pf.installed
+        if not target.exists():
+            ok = False
+            lines.append(f"  missing   {pf.installed}: a packaged file; run "
+                         "`rmx install-hooks --apply`")
+            continue
+        text, err = _read_text(target)
+        if text is None:
+            ok = False
+            lines.append(f"  unreadable {pf.installed}: {err}")
+            continue
+        want = pf.data.decode("utf-8", errors="replace")
+        if target.read_bytes() == pf.data:
+            lines.append(f"  generated {pf.installed}")
+        else:
+            ok = False
+            lines.append(f"  drift     {pf.installed} differs from the packaged copy "
+                         "(`rmx install-hooks --apply --force`; a project's own change goes "
+                         "in a unit of its own):")
+            lines += _diff_lines(pf.installed, want, text)
+    # the local layer: listed; each unit's fixtures run
+    for lf in sorted(layers.local, key=lambda f: f.where):
+        if lf.error is not None:
+            lines.append(f"  local     {lf.where} (refused: {lf.error})")
+            continue
+        if lf.unit is None:
+            lines.append(f"  local     {lf.where} (native: no unit map; not compiled)")
+            continue
+        results = instructions.run_fixtures(lf.unit)
+        bad = [r for r in results if not r.ok]
+        lines.append(f"  local     {lf.where} ({lf.unit.kind} `{lf.unit.id}`; fixtures "
+                     f"{len(results) - len(bad)}/{len(results)} ok)")
+        for r in bad:
+            ok = False
+            lines.append(f"  fixture FAILED {lf.unit.id} {r.side}[{r.index}] ({lf.where}): "
+                         f"{r.reason}")
+    lines += _check_agents_and_commands(project_root)
+    ok_git, git_lines = _check_git_hooks(project_root)
+    ok = ok and ok_git
+    lines += git_lines
+    return ok, "\n".join(lines)
+
+
+class CheckReport(NamedTuple):
+    """`check_all`'s answer: each leg's verdict, so a failure names the leg that drifted
+    (bsd-i1b1 r1 #m-1: a git-hook-only drift was headed `hooks drift …/settings.json`)."""
+    settings_ok: bool
+    artifacts_ok: bool
+    text: str
+
+    @property
+    def ok(self) -> bool:
+        return self.settings_ok and self.artifacts_ok
+
+
+def check_all(project_root: Path) -> CheckReport:
+    """Does every installed instruction artifact equal its render? `check` (the settings hook
+    block) and `check_artifacts` (rules, skills, agents, commands, the two user-level
+    commands, the compiled file, the refmatrix git hooks, the local units' fixtures),
+    ADR-0007 #installed-equals-generated, task-I1.b1 #d5. Both legs always run, so one report
+    names every drifted file. `rmx install-hooks --check` runs this."""
+    ok_s, text_s = check(project_root)
+    ok_a, text_a = check_artifacts(project_root)
+    return CheckReport(ok_s, ok_a, "\n".join(t for t in (text_s, text_a) if t))
 
 
 def _install_git_hooks(project_root: Path, apply: bool, force: bool) -> list[str]:

@@ -3729,6 +3729,10 @@ INTERNAL_CLI: dict[tuple[str, ...], str] = {
                          ("pulled", "PostToolUse(Read) pull marker"),
                          ("remind", "UserPromptSubmit reminder"),
                          ("precompact", "PreCompact instruction with the checkpoint off"))},
+    # task-I1.b1 #d7 (plan-32): read-only over the STM ring, beside the dispatcher's hook
+    # plumbing (ADR-0007 #dispatcher); its logic is `instructions.replay`.
+    ("rules", "replay"): (f"instruction-unit replay over the STM ring, read-only, run by the "
+                          f"lead before a deny ships (task-I1.b1) — {_INTERNAL_DECISION}"),
 }
 
 # The six `_alias` copies: a HIDDEN command running the same callback as a

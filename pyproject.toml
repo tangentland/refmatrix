@@ -31,6 +31,10 @@ dependencies = [
     # instead of the venv (the split that broke imports before).
     "typing_extensions>=4.0",
     "markupsafe>=2.0",
+    # Instruction units (task-I1.b1): a unit's `unit:` map is nested YAML (binds, fixtures with
+    # envelopes), which the minimal frontmatter reader in ingest_gmd cannot parse. Already
+    # installed transitively (transformers, huggingface-hub); requirements.lock pins 6.0.3.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -69,6 +73,12 @@ where = ["src"]
 refmatrix = [
     "templates/agents/*.md",
     "templates/commands/*.md",
+    # instruction units (task-I1.b1, ADR-0007 #units): the packaged layer
+    "templates/triggers/**/*.md",
+    "templates/checks/**/*.md",
+    "templates/rules/**/*.md",
+    "templates/skills/**/*",
+    "templates/practices/**/*",
     "ui/static/*",
     "ui/static/**/*",
 ]
