@@ -92,10 +92,16 @@ def test_rel_attachment_is_unchanged_by_body_anchors(tmp_path):
     assert not by_id["point"].rels
 
 
-def test_the_two_parsers_agree_on_the_ledger_that_exposed_this():
+BSD = REPO / "workflow" / "bullshit"
+IMPRESSION_FILES = ["IMPRESSIONS.md", "IMPRESSION_ANCHORS.md"]
+WINDOW_CAP = 50
+
+
+@pytest.mark.parametrize("name", IMPRESSION_FILES)
+def test_the_two_parsers_agree_on_the_ledger_that_exposed_this(name):
     """The regression that started it: the lint's anchor set and the store's
     node set, over the real file, must not diverge."""
-    p = REPO / "workflow" / "bullshit" / "IMPRESSIONS.md"
+    p = BSD / name
     text = p.read_text()
     # Same shape the linter uses: an id declaration outside code fences.
     written, in_code = set(), False
@@ -116,7 +122,41 @@ def test_the_two_parsers_agree_on_the_ledger_that_exposed_this():
 def test_cited_impression_anchors_resolve_in_the_graph(anchor):
     """Each of these is the target of a `rel:` edge in a committed ch-bsd
     report. A citation that resolves to nothing is a dangling edge whether or
-    not a linter says so."""
-    p = REPO / "workflow" / "bullshit" / "IMPRESSIONS.md"
+    not a linter says so. They live in the register, not the run window."""
+    p = BSD / "IMPRESSION_ANCHORS.md"
     ids = {n.id for n in parse_gmd(p).nodes}
     assert anchor in ids, sorted(i for i in ids if i.startswith("imp-"))[:5]
+
+
+def _over_cap(text: str, cap: int = WINDOW_CAP) -> bool:
+    return len(text.splitlines()) > cap
+
+
+def test_impressions_window_is_under_its_cap():
+    """F7: every run reads the whole window, so the file is the cap (50 lines,
+    `wc -l`). The guard is shown able to fail on a planted 51-line text."""
+    assert _over_cap("x\n" * (WINDOW_CAP + 1)), "the guard cannot fail"
+    assert not _over_cap("x\n" * WINDOW_CAP)
+    n = len((BSD / "IMPRESSIONS.md").read_text().splitlines())
+    assert n <= WINDOW_CAP, f"IMPRESSIONS.md is {n} lines; fold the oldest bullets"
+
+
+def _anchor_problems(text: str) -> list[str]:
+    """Register lines that carry other than exactly one `{#id}`."""
+    bad = []
+    for i, line in enumerate(text.splitlines(), 1):
+        k = len(re.findall(r"\{#[A-Za-z0-9._-]+\}", line))
+        if k > 1 or (k == 0 and line.lstrip().startswith("- `imp-")):
+            bad.append(f"line {i}: {k} anchors")
+    return bad
+
+
+def test_register_lines_carry_one_id_and_no_id_is_in_both_files():
+    planted = "- `imp-a` -> [[m#imp-a]]. {#imp-a} {#imp-b}\n"
+    assert _anchor_problems(planted), "a packed line must fail"
+    reg = (BSD / "IMPRESSION_ANCHORS.md").read_text()
+    win = (BSD / "IMPRESSIONS.md").read_text()
+    assert not _anchor_problems(reg)
+    ids = lambda t: set(re.findall(r"\{#(imp-[A-Za-z0-9._-]+)\}", t))
+    both = sorted(ids(reg) & ids(win))
+    assert not both, f"ids in both the register and the window: {both[:5]}"
