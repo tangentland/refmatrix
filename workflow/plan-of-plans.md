@@ -583,7 +583,7 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q83**. Open: none (Q80-Q82 answered 2026-11-25, L249). Each reply that asks anything ends with the ids still open.
+Next id: **Q84**. Open: Q83. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -601,6 +601,7 @@ Next id: **Q83**. Open: none (Q80-Q82 answered 2026-11-25, L249). Each reply tha
 | Q80 | 2026-11-25 | I1.e: where an open ch-bsd finding (L216) is refused. `OPEN.md` rows do not name a branch or files, so a merge-time check could only make every merge name every open row | **(a, rec)** at release only (`open-findings` check), and add a `branch` cell to `OPEN.md` later if merge-level refusal is still wanted; (b) every merge names every open row now | **answered: a (L249)** |
 | Q81 | 2026-11-25 | I1.e: the context review's two checks (L225) parse the review record, whose format I1.i defines | **(a, rec)** write them in I1.i's spec, as units on I1.e's runner (the clause moves from the I1.e row to I1.i); (b) fix the record format in I1.e now, before I1.i | **answered: a (L249)** |
 | Q82 | 2026-11-25 | I1.f: how the memory-file rules reach a project without the dispatcher, since P7 rules out a user-level rule matching outside the project | **(a, rec)** ship the packaged skill and gates now, keep the `MEMORY-RULES.md` import until H1.f has enabled the last fleet repo, then swap in one pointer line; (b) build a user-level instruction layer now (no spec covers it) | **answered: a (L249)** |
+| Q83 | 2026-11-25 | The user asked how to raise the signal in the weights and whether injected-context use is scored. 21.5 phase B (the use counter) is frozen until plan-28 reports (D-Q4), and the 2026-11-13 usage-weight measurement found the binding constraint is evidence (93 used units). Should a use-observation record start accumulating now: one append-only event per delivered item (session, cue concepts, item, channel, arm delivered/held-out, outcome class, evidence ref), read by nothing in retrieval? | **(a, rec)** yes: admit a small task to the queue (it is outside the freeze line today) that writes the record with a held-out control arm, demote-only, no ranking change; weights derived from it wait on plan-28 and 21.5 phase B; (b) keep the current order, record nothing until 21.5 phase B | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
