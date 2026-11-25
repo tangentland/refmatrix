@@ -69,7 +69,7 @@ local unit can fire. {#goal-body}
   differs from a fresh compile (the file is tracked in git, so a clone carries the table),
   and on a failed fixture. {#d5}
 - **D6 Agents and commands are classed and printed, not yet failed.** This repo's
-  `gmd-curator.md` differs from the template by 56 lines; the nine consumers' copies have not
+  `gmd-curator.md` differs from the template by 47 lines; the nine consumers' copies have not
   been compared, and F6 found ten checksums for `ch-bsd.md`. `--force` still overwrites
   without a backup, so failing on agent drift now would send release step 3 to overwrite
   files in other repos. H1.c turns that drift into an error in the commit that adds

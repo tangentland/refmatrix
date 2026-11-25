@@ -5,7 +5,7 @@ title: "Brief: P1 (b), the proportionality review of every plan and spec still o
 tags: [agent-brief, p1, proportionality, specs, queue, read-only]
 metadata:
   node_type: brief
-  status: drafting
+  status: approved
   created: 2026-11-24
   author: ch-architect (Fable 5.2)
 ---
