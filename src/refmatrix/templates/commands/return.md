@@ -1,6 +1,11 @@
 ---
 description: Return from a soft branch detour — rewind focus to the bookmark
+argument-hint: "[detour label or index]"
+allowed-tools: [Bash]
+model: inherit
 ---
+
+# Return
 
 Snap back from a detour. `$ARGUMENTS` selects which one (a label substring, or
 the index from `rmx focus detours`); empty = the most recent.

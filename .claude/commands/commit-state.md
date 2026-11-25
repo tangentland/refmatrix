@@ -1,6 +1,11 @@
 ---
 description: Commit-state — checkpoint mid-session (proper commits + promote STM), keep going
+argument-hint: "[--undo | optional headline hint]"
+allowed-tools: [Bash, Read, Grep, Glob]
+model: inherit
 ---
+
+# Commit State
 
 Checkpoint progress WITHOUT winding down — the lighter variant of `/save-state`.
 Commit the real work cleanly and snapshot the working memory, then continue.
@@ -21,8 +26,8 @@ Then stop — don't re-commit. Otherwise, make a checkpoint:
 1. **Commit the work properly.** Review the diff, stage only intentional
    changes (tool noise — `.tldr/`, `__pycache__/`, `egg-info/` — stays
    unstaged), and make conventional commit(s), split by logical concern. Use
-   `$ARGUMENTS` as a hint for the headline if given. Deploy only if code that other instances run changed: ff `~/refmatrix` to the sha,
-   `rmx daemon restart --relaunch`, verify `rmx version -v`.
+   `$ARGUMENTS` as a hint for the headline if given. Deploy (promote dev →
+   the live venv) only if code that other instances run changed.
 2. **Promote the STM snapshot** so this checkpoint's state is durable:
    ```
    rmx focus summarize --promote

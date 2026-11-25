@@ -1,6 +1,11 @@
 ---
 description: Save state — handoff the session (commit, promote STM, memory, report)
+argument-hint: "[optional one-line headline for this session]"
+allowed-tools: [Bash, Read, Write, Edit, Grep, Glob]
+model: inherit
 ---
+
+# Save State
 
 "Save state" is a handoff directive: make the work ready for context-clear,
 exit, or pickup by another instance. Not just a summary. **Save state =
@@ -62,11 +67,10 @@ Do all of this, in this order:
    If no goal is active, the block says so (`no active goal`) — never leave a stale one.
    If the project has no status file yet, create it with this block at the top of its body.
 4. **Deploy if code landed** — only if this repo ships a tool that runs from a separate live
-   install: promote dev → live and restart any affected daemon. Otherwise skip. refmatrix:
-   fast-forward the deploy tree to the committed sha (`git -C ~/refmatrix pull --ff-only origin
-   master`), then `rmx daemon restart --relaunch`, and verify with `rmx version -v` (no
-   `[DEV TREE]`). Never `pip install -e` the dev tree into the deploy venv — that makes `rmx`,
-   every daemon and the hub run uncommitted code (2026-09-14).
+   install: promote dev → live the way the project's CLAUDE.md says, restart any affected
+   daemon, and verify the live install runs the committed sha (for rmx itself, `rmx version -v`
+   shows no `[DEV TREE]`). Otherwise skip. Never `pip install -e` the dev tree into the live
+   venv — that makes the live install run uncommitted code (2026-09-14).
 5. **Report** the resume point: branch + HEAD, what shipped, open loose ends,
    the concrete next action, and whether the push is still pending (the user
    pushes).

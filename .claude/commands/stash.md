@@ -1,6 +1,11 @@
 ---
 description: Stash current work — git working tree + focus state — to switch tasks
+argument-hint: "[description] [--branch <name>]"
+allowed-tools: [Bash]
+model: inherit
 ---
+
+# Stash
 
 Stash my current work so I can chase a tangent and restore it later — BOTH the
 in-progress code AND the focus context, paired by a matching label.

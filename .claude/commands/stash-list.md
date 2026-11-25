@@ -1,6 +1,10 @@
 ---
 description: List stashed work — focus task stack + paired git stashes
+allowed-tools: [Bash]
+model: inherit
 ---
+
+# Stash List
 
 Show everything I've stashed so I can pick one to resume (possibly out of
 order):

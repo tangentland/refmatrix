@@ -1,6 +1,11 @@
 ---
 description: Soft branch detour — bookmark focus to chase a related tangent, then return
+argument-hint: "[tangent label]"
+allowed-tools: [Bash]
+model: inherit
 ---
+
+# Detour
 
 I'm about to chase something related but not on-task — a **soft branch detour**.
 No git branch, no stash; just a focus return-point I can rewind to.

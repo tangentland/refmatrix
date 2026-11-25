@@ -1,6 +1,11 @@
 ---
 description: Restore stashed work (focus + code), optionally out of order
+argument-hint: "[desc substring or index] [--branch <name>]"
+allowed-tools: [Bash]
+model: inherit
 ---
+
+# Stash Pop
 
 Restore work I stashed — BOTH the focus context AND the code — optionally a
 specific one. `$ARGUMENTS` selects which: a desc substring, or the index from
