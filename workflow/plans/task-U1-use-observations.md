@@ -56,6 +56,12 @@ happened. It changes no ranking and writes no weight. {#goal-body}
   classes as a test), `agent` (Agent, SendMessage), `other`) and `mode_n`, the events read.
   Read from the ring tail the hook already opens; no text, no path, no classification at
   hook time: clustering is M4's and the report's. {#d2b}
+- **D2c The ring must see spawns, messages and MCP reads** (bug-326, L255). The focus
+  capture matcher (`hooks.py`, `Edit|Write|MultiEdit|NotebookEdit|Read|Bash|Grep|Glob`) never
+  records Agent, SendMessage or MCP calls, so `agent` and the MCP part of `search` would always
+  be 0 (M4 candidate 8 found none). U1 adds `Agent|SendMessage|mcp__refmatrix__.*` to the
+  matcher; for those tools the ring event carries the tool name and kind only (no prompt, no
+  message text). It is a hook-command change: it rides the install window. {#d2c}
 - **D3 A held-out arm, on the two prompt channels only.** A new stage, `held_out`: the item
   was retrieved, ranked and fitted into the budget, then left out of the payload. Nothing
   takes its place. Delivered and held-out rows of a hook-invoked `scan_prompt` or
@@ -132,6 +138,10 @@ new feature, one new file, `tests/test_use_observations.py`. {#acceptance-lead}
   counts in their buckets and `mode_n` 11; with an empty ring, every bucket is 0 and
   `mode_n` is 0; no path or command text appears in the event file.
   `…::test_mode_is_textless_counts[channel]`. {#ac-7b}
+- **AC-7c The ring sees an Agent call, textless.** Through the generated focus hooks, an
+  `Agent` and a `SendMessage` envelope each add one ring event carrying the tool name; their
+  prompt and message text appear nowhere in the ring; the next row's `agent` bucket counts
+  them. `tests/test_stm.py::test_capture_records_spawns_textless[tool]`. {#ac-7c}
 - **AC-8 The schema's readers do not move.** `v` is 1; `row_provenance` classes a `held_out`
   row `attributed`; `rmx telemetry --agent-usage` prints the same counts with and without
   `held_out` rows in the file. `tests/test_task21_1_emitters.py`,
