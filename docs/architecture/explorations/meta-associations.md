@@ -429,3 +429,37 @@ Applied in this order:
 {#c8-bands-list}
 
 Volume: held-out-style evidence a week over 2026-11-11 → 11-25 (deliveries, ring events). {#c8-volume}
+
+## Results: candidate 8, activity mode {#c8-results}
+
+Script `cand8_activity_mode.py`, run 2026-11-25 on fresh copies (deleted after); output in
+`run-output-c8-2026-11-25.txt`. Pre-registration `183c9e9c`. {#c8-results-note}
+
+| # | candidate | metric (held-out) | result, 95% interval | band | action |
+|---|---|---|---|---|---|
+| 8 | activity mode | AUC gain of a kind × mode prior over kind alone (Δ1) and of popularity × mode over popularity (Δ2); non-memory deliveries, n = 3,595, 46 touched | **Δ1 +0.089 [+0.014, +0.166]**; **Δ2 −0.001 [−0.073, +0.061]** (AUC: kind 0.660, kind × mode 0.750, popularity 0.797, popularity × mode 0.796); heterogeneity p 0.059 | measure more | do not build; mode adds nothing over the popularity baseline |
+
+{#c8-table}
+
+- **Clusters.** 63,544 ring events in 71 sessions. Silhouette picked k = 3 (0.274; k 4-6 at
+  0.215-0.234). Centroid shares: mode 0 bash-heavy (bash 0.54), mode 1 read/search (read 0.35,
+  search 0.24), mode 2 non-tool-heavy (other 0.40, the ring's say/input/reason/git events). Every
+  mode appears in all 4 held-out sessions.
+- **Labels.** 331 labelled subagent threads, 173 `agentType` values; the five largest types sit
+  in mode 1 for 0.68-0.81 of their windows; NMI(agentType, mode) 0.077. The modes separate
+  "reading" from "running" and "talking", not one role from another.
+- **Lag.** 500 synthetic switches: median 6 events, IQR [1, 12], 16 censored at 40.
+- **Use by kind × mode** (held-out touched / delivered): doc 2/654, 10/751, 5/1,794 (mode 1 vs
+  mode 2: 4.78, Wilson bounds [1.11, 20.4]); code 3/51, 1/74, 3/86; ruling 1/11, 4/27, 8/44; bug
+  row 2/24, 1/23, 6/56; memory 0/806, 0/849, 5/2,031. Heterogeneity within kind: χ² 15.3,
+  permutation p 0.059.
+- **Bands, in order.** Not underpowered (46 touched ≥ 30; 3 modes ≥ 100). Build fails on Δ2. Drop
+  fails (Δ1 ≥ 0.01, its upper bound 0.166). → measure more.
+- **Secondary outcome.** Of 125 explicit `used` rows, 112 carry no file key; the 13 with one are 1
+  doc and 12 memories, too few to read by mode.
+- **Volume.** 5,720 deliveries with a mode a week; 12,196 ring events a week.
+
+{#c8-results-list}
+
+Could not measure: the 2026-11-13 pilot's labels (not on disk); the `agent` category (the STM
+ring records no `Agent`/`SendMessage` call); session clustering (4 held-out sessions). {#c8-not-measured}
