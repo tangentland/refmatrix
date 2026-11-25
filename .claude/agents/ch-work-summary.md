@@ -85,7 +85,7 @@ Every report (both modes) follows this structure:
 - **Technical constraints**: Language versions, library choices, API compatibility
 - **Architecture constraints**: ADR decisions that bound the implementation
 - **Sequencing constraints**: What must be done before this, what this blocks
-- **Resource constraints**: Docker-only execution, service availability, etc.
+- **Resource constraints**: the project's test-execution environment, service availability, etc.
 
 ### 4. General Aesthetics {#general-aesthetics}
 

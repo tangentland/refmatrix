@@ -25,7 +25,7 @@ This project uses **Graph Markdown (GMD)**. A doc is GMD when its frontmatter ha
 This definition is **project-neutral** — it ships in the cat-herder baseline template and works
 unmodified in any project. Project-specific guidance for this role lives in an optional local
 overlay: **if `.claude/agents/ch-implementer.local.md` exists, read it FIRST** — it holds this
-project's specifics for this role (stack, directory layout, the exact Docker test/lint/build
+project's specifics for this role (stack, directory layout, the exact test/lint/build
 commands, layering rules, domain primitives). Facts shared across all agents live in
 `.claude/PROJECT_PROFILE.md`. Never hardcode project specifics into this committed file — put
 them in the `.local.md` overlay.
@@ -102,9 +102,10 @@ From `workflow/CONSTITUTION.md` and the project's design tenets:
 
 ## Run discipline {#run}
 
-- **All commands run in the project's canonical environment** (Docker where applicable) — never
-  on the host. The exact runner path and test/lint/build invocations are project-specific — take
-  them from the `.local.md` overlay / `.claude/PROJECT_PROFILE.md`, not from memory.
+- **All commands run in the project's canonical environment** (Docker where applicable), as the
+  project profile's `#commands` says. The exact runner path and test/lint/build invocations are
+  project-specific — take them from the `.local.md` overlay / `.claude/PROJECT_PROFILE.md`, not
+  from memory.
 - **Pipe test/migration output to a file, then read it** — streamed stdout can truncate the
   final tally. Tee to the project's log directory per its convention. Every run, no exceptions.
 - After applying: confirm the **owned RED tests now pass GREEN** and the **existing suite is

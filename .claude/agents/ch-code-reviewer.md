@@ -68,7 +68,7 @@ Read these files at the start of every review — do not skip:
 
 | Rule | Standard |
 |------|----------|
-| **Execution** | All backend tests run in Docker — never on host OS |
+| **Execution** | Tests run as the project profile's `#commands` says (`.claude/PROJECT_PROFILE.md`) |
 | **Mocks in tests** | Must be registered in `workflow/test_mock_registry.md` with classification |
 | **E2E** | Real user interactions — no direct API calls, no mock auth |
 | **Coverage** | "Renders without crashing" is NOT coverage — flag as Critical |
@@ -116,7 +116,7 @@ Read these files at the start of every review — do not skip:
 - [ ] Clear naming — intent-revealing, no unexplained abbreviations
 - [ ] No dead code, no commented-out code
 - [ ] Type hints complete (Python: mypy strict, TypeScript: no `any`)
-- [ ] Docstrings on public APIs only; no redundant comments on obvious code
+- [ ] Docstrings follow the project's convention; no redundant comments on obvious code
 
 ---
 

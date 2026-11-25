@@ -6,7 +6,8 @@
   fast read). Writes go through the store under `d._store_lock`.
 - Hooks: change `hooks.py` / `search_hooks.py` templates + tests, then `rmx install-hooks --apply`
   in this repo so `.claude/settings.json` matches; never hand-edit the rmx block.
-- Version bump in `pyproject.toml` AND `src/refmatrix/__init__.py` for every shipped change.
+- The lead bumps the version in the release commit; never on a task branch
+  (`workflow/ORCHESTRATION.md` `#release` step 1).
 - Docstrings carry the WHY and the incident date. No `2>/dev/null`/`|| true` in generated
   memory-path hooks; no bare `except: pass` on write paths.
 - Verify with `.venv-eval/bin/python -m pytest <file> 2>&1 | tee workflow/review-output/<name>.log`.

@@ -55,8 +55,10 @@ There is no container. Two venvs, one rule each:
   scratchpad and open the copy with duckdb `read_only=True` under `.venv-eval`.
 
 ```bash
-# Full suite (~13 min)
+# Full suite
 .venv-eval/bin/python -m pytest -q -p no:cacheprovider 2>&1 | tee workflow/review-output/pytest.log
+# Suite size today (no doc states a count)
+.venv-eval/bin/python -m pytest --collect-only -q -p no:cacheprovider 2>&1 | tail -1
 # One file
 .venv-eval/bin/python -m pytest tests/test_hooks.py -q 2>&1 | tee workflow/review-output/pytest-hooks.log
 # GMD lint (CLAUDE.md + docs/); memory files: python3 tools/gmd/lint.py <path>
@@ -70,10 +72,11 @@ written, grouped and run: [[#test-discipline]].
 
 ### Test Discipline (CRITICAL) {#test-discipline}
 
-The suite is ~4,100 tests and 60 min; the 2026-11-15 audit (`workflow/measurements/test-suite-audit-2026-11-15.md`)
-found it bloated by habit, not by junk: per-round files, 2-4 near-identical variants, tests that
-wait out real timeouts, and 49 tests "proving" busy/down behaviour against a patched value. These
-rules keep it from growing back (L165-L168). Every agent that writes or reviews a test follows them.
+The 2026-11-15 audit (`workflow/measurements/test-suite-audit-2026-11-15.md`) measured the suite
+at ~4,100 tests and 60 min and found it bloated by habit, not by junk: per-round files, 2-4
+near-identical variants, tests that wait out real timeouts, and 49 tests "proving" busy/down
+behaviour against a patched value. These rules keep it from growing back (L165-L168). Every agent
+that writes or reviews a test follows them.
 
 1. **Extend, don't add.** Before writing a test, find the feature's existing test file and the
    tests on the same path (`rmx grep`, the test names). Add a case to it; 2+ variants of one
@@ -125,9 +128,9 @@ outlived their phase, or env-flag-only facades. Mocks live ONLY in `tests/` and 
 
 ### No Silent Failures on Memory Paths (CRITICAL) {#no-silent-failures}
 
-Anything between a memory file and the store — bridges, hooks, save-state, recall — surfaces its
-failure: no `2>/dev/null`, `|| true`, bare `except: pass`, or uncounted `continue`. A skipped file
-is counted and printed.
+Anything between a memory file and the store — bridges, hooks (STM capture included), save-state,
+recall — surfaces its failure: no `2>/dev/null`, `|| true`, bare `except: pass`, or uncounted
+`continue`. A skipped file is counted and printed.
 
 ### No Workarounds (CRITICAL) {#no-workarounds}
 
@@ -229,8 +232,8 @@ Agents: `@ch-architect`, `@ch-alignment`, `@ch-implementer` (TDD GREEN, writes n
 `@ch-performance-tuner`, `@ch-work-summary`, `@gmd-curator`. Definitions are project-neutral;
 overlays in `.claude/agents/<name>.local.md`.
 
-The default planning path is the one in `workflow/ORCHESTRATION.md` `#planning` (ch-architect on
-Fable → ch-bsd spec rounds → lead rulings → user decisions → merge). The SDD chain stays available.
+The default planning path is [[orchestration#planning]] (`workflow/ORCHESTRATION.md`). The SDD
+chain stays available.
 
 Commands: SDD chain `/ch-constitution → /ch-specify → /ch-clarify → /ch-crucible → /ch-plan →
 /ch-tasks → /ch-analyze → /ch-implement`; review `/ch-review` (optional), `/ch-audit`, `/ch-bsd`,
@@ -258,8 +261,10 @@ Continuous Implementation Mode. **The procedure is `workflow/ORCHESTRATION.md`**
 ### Implementation Plans Must Be Pre-Written (CRITICAL) {#plans-pre-written}
 
 Plans live permanently in `workflow/plans/<name>.md`; stage = `metadata.status`
-(`drafting → approved → in-progress → completed`). `approved` requires every task spec under
-`workflow/plans/<name>-tasks/`. Do not write production code for a plan before that gate.
+(`drafting → approved → in-progress → completed`). `approved`: the plan is approved and its next
+task has an approved one-page spec. No production code for a task before that task's spec is
+approved. The five queue items after the one in flight always hold such a spec (L232). The
+definition is [[plan-of-plans#status-lifecycle]].
 
 ### Cleanup Phase (MANDATORY) {#cleanup-phase}
 

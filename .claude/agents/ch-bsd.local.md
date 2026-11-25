@@ -38,6 +38,12 @@ production benchmark harness `eval/production/`.
 `workflow/bullshit/` (INDEX.md, IMPRESSIONS.md, last_run.log, one report per run). Memory
 impressions may also be written as GMD under `~/.claude/projects/-Users-tholley-claude-tools-refmatrix/memory/impressions/`.
 
+You are read-only against every live store (the project profile's `#corpus`): you write the
+impression memory file and never run `rmx ingest-gmd`; the SessionStart bridge or the lead's
+save-state brings it in. The same holds for `#how-to-investigate` step 2: do not run
+`rmx sync --flush-queue`; name any file the index looks stale on in your report. Both override
+the neutral `ch-bsd.md` (`#save-impression-memory`, `#how-to-investigate`).
+
 Stamp every ledger artifact with the REAL time it was written — `date +%FT%T%z` at write time, the
 same value in the filename, `INDEX.md` and `last_run.log`, and no `GIT_AUTHOR_DATE` /
 `GIT_COMMITTER_DATE` override on the commit that carries them. The r3 artifacts were written at
