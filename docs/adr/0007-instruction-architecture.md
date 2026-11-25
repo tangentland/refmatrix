@@ -955,3 +955,27 @@ for the lead's read: {#amend-7}
 - **`paths:` on `bug-registry.md` moves from I1.a to I1.e's commit,** by
   [[#removal-order]]: the always-on file is R158's only delivery until its check is installed
   ([[task-I1.a-contradiction-edits#c6-order]]).
+
+**2026-11-25, spec window 3** (the I1.c to I1.g specs; probe verdicts L240), for the lead's
+read: {#amend-8}
+
+- **T4's second trigger is PostToolUse on `HEAD`, not PreToolUse.** [[#t4-two-triggers]]
+  puts the clone-side commit check on the PreToolUse of a `git commit` call. But
+  `git add … && git commit` and `git commit -a` stage inside the call, so the index before it
+  is not the commit. In a repository with no generated `commit-msg` hook the dispatcher runs
+  the checks on `HEAD` after the call and reports a failure as context; the merge check in
+  the dev tree is the hard stop ([[task-I1.e-first-checks#d4]]).
+- **An inject at SubagentStart is not gated on P1.** P9 showed `additionalContext` from
+  SubagentStart reaching foreground, background and forked agents, so `context` mode on that
+  event needs no fallback ([[task-agent-start-context#d3]]).
+- **The brief's recall is made by the parent.** The SubagentStart envelope carries no task
+  prompt (P9); the parent's PreToolUse on `Agent` does. The recall runs there, bounded, and
+  SubagentStart only reads its result ([[task-agent-start-context#d4]]).
+- **A file-triggered skill is a generated path rule, and the memory-file rules are a
+  project-level skill with gates.** P6: a skill's `paths:` does not load its body. P7: a
+  user-level rule does not match a file outside the project, so [[#user-calls]] 5's
+  user-level trigger has no native form; whether a user-level layer is built is an open
+  decision in [[task-I1.f-rules-and-nested#open]].
+- **For a file tool, `where` and `when` are judged in the directory of `file_path`**
+  ([[task-I1.c-first-denies#d3]]).
+
