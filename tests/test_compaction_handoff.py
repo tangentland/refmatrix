@@ -1350,3 +1350,34 @@ def test_handoff_file_is_cut_to_the_cap_in_reverse_priority_and_says_so(fx):
     assert n <= HANDOFF_MAX, f"bug-318: the handoff file is {n} B > {HANDOFF_MAX}"
     assert re.search(r"omitted to fit 40000 B", body), body[-400:]
     assert body.startswith(PRE_LINE) and "\ngit branch " in body and "savestate_fx01" in body
+
+
+@pytest.mark.parametrize("order", [("commit", "push"), ("push", "commit")])
+def test_digest_keeps_one_line_per_sha_and_the_content_verb(fx, order):
+    """G2/M3: `commit X s` and `push X s` are ONE milestone line, and it is the commit's."""
+    from refmatrix import stm
+    s = stm.Stm(fx.root, SESSION)
+    for verb in order:
+        s.record("git", f"{verb} abc1234 feat: the same commit", refs=[])
+    p, _out = written_handoff(fx, "compact", SESSION)
+    lines = [ln for ln in p.read_text(encoding="utf-8").splitlines() if "abc1234" in ln]
+    assert lines == ["- commit abc1234 feat: the same commit"], lines
+
+
+def test_a_digest_over_the_cap_loses_milestones_before_topics_and_arc(fx):
+    """G1: the digest alone pushes the file over 40,000 B: the cut falls on Milestones
+    (reverse priority) and leaves Top, Topics and Arc."""
+    from refmatrix import stm
+    s = stm.Stm(fx.root, SESSION)
+    for i in range(40):
+        s.record("git", f"commit {i:07x} " + "x" * 440, refs=[])
+    for i in range(LONG_N):
+        f = fx.memdir / f"cah_long_{i}.md"
+        f.write_text(re.sub(r'(?m)^title: ".*"$', 'title: "' + "q" * 3300 + '"',
+                            f.read_text(encoding="utf-8")), encoding="utf-8")
+    p, _out = written_handoff(fx, "compact", SESSION)
+    body = p.read_text(encoding="utf-8")
+    assert len(body.encode("utf-8")) <= HANDOFF_MAX
+    assert "omitted to fit 40000 B" in body
+    assert "## Milestones" not in body, "the milestones are cut first"
+    assert "## Top" in body and "## Topics worked on" in body and "## Arc" in body, body[-900:]

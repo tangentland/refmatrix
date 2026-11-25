@@ -1250,7 +1250,7 @@ class Stm:
             pass
 
     def inflight_begin(self, key: str, *, terse: str, refs: list[str],
-                       detail: str | None = None, sig: str | None = None) -> dict:
+                       detail: str | None = None, sig: dict | None = None) -> dict:
         """Park a tool call as started. Bounded so a runaway session can't grow
         the sidecar without limit."""
         d = self._read_inflight()
@@ -1260,7 +1260,7 @@ class Stm:
         rec = {"t": time.time(), "terse": terse[:500], "refs": refs,
                "detail": (detail or "")[:DETAIL_MAX] or None}
         if sig is not None:
-            rec["sig"] = sig       # bug-318: the git ref state before a ref-moving verb
+            rec["sig"] = sig       # bug-318: {repo: ref state} before the ref-moving verbs
         d[key] = rec
         self._write_inflight(d)
         return rec

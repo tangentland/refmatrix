@@ -442,6 +442,7 @@ def _ss_update_index(memdir: Path, mem_id: str, title: str, hook: str) -> None:
               f"{type(exc).__name__}: {exc}", file=_sys.stderr)
 
 
+_WEAK_VERBS = ("push", "checkout", "switch")
 MILESTONES_MAX = 30          # the digest keeps the newest 30 (bug-318)
 HANDOFF_MAX_BYTES = 40_000   # the handoff file: ~20k tokens at 2 B/token, under the 25k Read cap
 
@@ -484,11 +485,18 @@ def _focus_digest(s) -> str:
         seen: set = set()
         keep: list = []
         for e in reversed(gits):
-            m = re.match(r"^[\w-]+ ([0-9a-f]{7,40}) ", e["terse"])
-            key = m.group(1) if m else e["terse"]
+            m = re.match(r"^([\w-]+) ([0-9a-f]{7,40}) ", e["terse"])
+            key = m.group(2) if m else e["terse"]
             if key not in seen:
                 seen.add(key)
                 keep.append(e)
+            elif m and m.group(1) not in _WEAK_VERBS:
+                # one line per sha, and the verb that carries content (commit, merge, ...)
+                # beats a later push / checkout of the same commit
+                j = next(j for j, k in enumerate(keep)
+                         if (re.match(r"^[\w-]+ ([0-9a-f]{7,40}) ", k["terse"]) or [0, k["terse"]])[1] == key)
+                if re.match(rf"^({'|'.join(_WEAK_VERBS)}) ", keep[j]["terse"]):
+                    keep[j] = e
         L.append("## Milestones")
         if len(keep) > MILESTONES_MAX:
             L.append(f"- … {len(keep) - MILESTONES_MAX} older milestones cut; all of them: "

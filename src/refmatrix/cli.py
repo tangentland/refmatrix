@@ -2060,13 +2060,16 @@ import re as _re_mod
 _GIT_MILESTONE_VERBS = ("commit", "push", "merge", "rebase", "checkout", "switch", "tag",
                         "reset", "revert", "cherry-pick", "pull")
 _GIT_OPT_WITH_ARG = ("-C", "-c", "--git-dir", "--work-tree", "--namespace")
-_GIT_SEGMENT_SPLIT_RE = _re_mod.compile(r"&&|\|\||[;|&()\n`]")
+_GIT_SEGMENT_SPLIT_RE = _re_mod.compile(r"&&|\|\||[;|&\n`]")
+_OPEN, _CLOSE = ["\0("], ["\0)"]       # subshell markers between the simple commands
+_WRAPPERS = ("time", "command", "nohup", "exec", "{", "!", "builtin")
 
 
 def _shell_segments(cmd: str) -> "list[list[str]]":
-    """The simple commands of a shell line as word lists: split on unquoted `&&`, `||`, `;`,
-    `|`, `&`, newlines, parens and backticks; quotes group a word and hide operators; heredoc
-    bodies are skipped. Not a full shell: enough to tell a command from text."""
+    """The simple commands of a shell line as word lists, with `(`/`)` as marker segments:
+    split on unquoted `&&`, `||`, `;`, `|`, `&`, newlines and backticks; quotes group a word and
+    hide operators; heredoc bodies are skipped; a `$(...)` inside double quotes is parsed as its
+    own commands. Not a full shell: enough to tell a command from text."""
     segs: "list[list[str]]" = []
     words: "list[str]" = []
     cur: "list[str]" = []
@@ -2095,7 +2098,20 @@ def _shell_segments(cmd: str) -> "list[list[str]]":
             j = i + 1
             while j < n and cmd[j] != c:
                 j += 2 if (c == '"' and cmd[j] == "\\") else 1
-            cur.append(cmd[i + 1:j]); have = True; i = j + 1; continue
+            body = cmd[i + 1:j]
+            if c == '"':
+                k = body.find("$(")
+                while k >= 0:           # command substitutions inside double quotes
+                    depth, m = 1, k + 2
+                    while m < len(body) and depth:
+                        depth += {"(": 1, ")": -1}.get(body[m], 0)
+                        m += 1
+                    end_seg()
+                    segs.append(_OPEN)
+                    segs.extend(_shell_segments(body[k + 2:m - 1]))
+                    segs.append(_CLOSE)
+                    k = body.find("$(", m)
+            cur.append(body); have = True; i = j + 1; continue
         if cmd.startswith("<<", i) and not cmd.startswith("<<<", i):
             m = _re_mod.match(r"<<-?\s*(['\"]?)([A-Za-z_][\w]*)\1", cmd[i:])
             if m:
@@ -2112,6 +2128,8 @@ def _shell_segments(cmd: str) -> "list[list[str]]":
                         break
             heredocs = []
             continue
+        if c in "()":
+            end_seg(); segs.append(_OPEN if c == "(" else _CLOSE); i += 1; continue
         m = _GIT_SEGMENT_SPLIT_RE.match(cmd, i)
         if m:
             end_seg(); i = m.end(); continue
@@ -2122,40 +2140,64 @@ def _shell_segments(cmd: str) -> "list[list[str]]":
     return segs
 
 
-def _git_milestone_calls(cmd: str) -> "list[tuple[str, str | None]]":
-    """(verb, the last `-C <path>` before it or None) for each ref-moving git verb `cmd` runs
-    as a command, in order."""
-    out = []
-    for w in _shell_segments(cmd):
-        while w and _re_mod.match(r"^[A-Za-z_]\w*=", w[0]):
+def _strip_prefix(w: "list[str]") -> "list[str]":
+    """The command words after env assignments and wrappers (env, sudo, time, command, `{`)."""
+    while w:
+        if _re_mod.match(r"^[A-Za-z_]\w*=", w[0]) or w[0] in _WRAPPERS:
             w = w[1:]
-        if not w or w[0].rsplit("/", 1)[-1] != "git":
+        elif w[0] == "env":
+            w = w[1:]
+            while w and (w[0].startswith("-") or "=" in w[0]):
+                w = w[1:]
+        elif w[0] == "sudo":
+            w = w[1:]
+            while w and w[0].startswith("-"):
+                w = w[2:] if w[0] in ("-u", "-g") else w[1:]
+        else:
+            break
+    return w
+
+
+def _resolve_dir(base: str, path: str) -> str:
+    return os.path.normpath(os.path.join(base, os.path.expanduser(path)))
+
+
+def _git_milestone_calls(cmd: str, cwd: str = "") -> "list[tuple[str, str]]":
+    """(verb, repo dir) for EVERY ref-moving git verb `cmd` runs as a command, in order. The
+    repo is where that call runs: `cwd`, moved by the `cd`/`pushd` before it in the same chain
+    or subshell (a `( ... )` restores it), then by each `-C <path>` of the call (`~` expanded,
+    relative to the directory so far)."""
+    out: "list[tuple[str, str]]" = []
+    here, stack = cwd, []
+    for w in _shell_segments(cmd):
+        if w == _OPEN:
+            stack.append(here); continue
+        if w == _CLOSE:
+            here = stack.pop() if stack else here
             continue
-        k, cdir = 1, None
+        w = _strip_prefix(w)
+        if not w:
+            continue
+        if w[0] in ("cd", "pushd"):
+            args = [a for a in w[1:] if not a.startswith("-")]
+            if args and "$" not in args[0]:
+                here = _resolve_dir(here, args[0])
+            continue
+        if w[0].rsplit("/", 1)[-1] != "git":
+            continue
+        k, repo = 1, here
         while k < len(w) and w[k].startswith("-"):
             if w[k] == "-C" and k + 1 < len(w):
-                cdir = w[k + 1]
+                repo = _resolve_dir(repo, w[k + 1])
             k += 2 if w[k] in _GIT_OPT_WITH_ARG else 1
         if k < len(w) and w[k] in _GIT_MILESTONE_VERBS:
-            out.append((w[k], cdir))
+            out.append((w[k], repo))
     return out
 
 
 def _git_milestone_subcmd(cmd: str) -> str | None:
     c = _git_milestone_calls(cmd)
     return c[0][0] if c else None
-
-
-def _git_call_repo(cmd: str, cwd: str) -> "tuple[str | None, str]":
-    """(first ref-moving verb, the repo it runs in): its `-C <path>` (~ expanded, relative to
-    `cwd`), else `cwd`. `cd X && git ...` is not followed."""
-    c = _git_milestone_calls(cmd)
-    if not c:
-        return None, cwd
-    verb, cdir = c[0]
-    if cdir:
-        cdir = os.path.join(cwd, os.path.expanduser(cdir))
-    return verb, cdir or cwd
 
 
 def _git_ref_sig(repo: str) -> str:
@@ -2174,13 +2216,13 @@ def _git_ref_sig(repo: str) -> str:
 
 
 def _git_head_line(repo: str) -> str:
-    """`<short-sha> <subject>` of HEAD, read from git, never from a command's output."""
+    """`<short-sha> <subject>` of HEAD, read from git, never from a command's output.
+    RAISES when it cannot be read."""
     import subprocess
-    try:
-        r = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h %s", "HEAD"],
-                           capture_output=True, text=True, timeout=5)
-    except Exception:
-        return ""
+    r = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%h %s", "HEAD"],
+                       capture_output=True, text=True, timeout=5)
+    if r.returncode or not r.stdout.strip():
+        raise RuntimeError(f"git log exit {r.returncode} in {repo}")
     return r.stdout.strip()
 
 
@@ -2417,12 +2459,13 @@ def focus_hook(event):
         # post hook can tell a milestone (something moved) from a failed or no-op verb.
         sig = None
         if isinstance(cmd, str):
-            verb, prepo = _git_call_repo(cmd, d.get("cwd") or str(_root().parent))
-            if verb:
+            sig = {}
+            for _verb, prepo in _git_milestone_calls(cmd, d.get("cwd") or str(_root().parent)):
                 try:
-                    sig = _git_ref_sig(prepo)
-                except Exception:  # noqa: BLE001 -- post records an unreadable state visibly
-                    sig = None
+                    sig[prepo] = _git_ref_sig(prepo)
+                except Exception as e:  # noqa: BLE001 -- the post hook records it, visibly
+                    sig[prepo] = f"!{type(e).__name__}"
+            sig = sig or None
         s.inflight_begin(_tool_call_key(d), terse=terse, refs=refs,
                          detail=detail, sig=sig)
         return
@@ -2464,35 +2507,50 @@ def focus_hook(event):
         tool = d.get("tool_name") or "tool"
         ti = d.get("tool_input") or {}
         cmd = ti.get("command")
-        # Git milestones (bug-318): a ref-moving git verb the command ran AND that moved a ref,
-        # recorded as `<verb> <short-sha> <subject>` read from git, never from the output.
-        sub, repo = (_git_call_repo(cmd, d.get("cwd") or str(_root().parent))
-                     if isinstance(cmd, str) else (None, ""))
-        unreadable = None
-        after = None
-        if sub:
+        # Git milestones (bug-318): EVERY ref-moving git call the command ran, each judged in
+        # the repo it ran in; recorded as `<verb> <short-sha> <subject>` read from git, never
+        # from the output. Nothing is guessed (L221: STM capture is a memory path): a state that
+        # cannot be read, before or after, is recorded as such; only a read that shows no
+        # movement drops the event.
+        weak = ("push", "checkout", "switch")
+        calls = (_git_milestone_calls(cmd, d.get("cwd") or str(_root().parent))
+                 if isinstance(cmd, str) else [])
+        per_repo: "dict[str, str]" = {}
+        for verb, repo in calls:       # one event per repo: the verb that carries content
+            if repo not in per_repo or (per_repo[repo] in weak and verb not in weak):
+                per_repo[repo] = verb
+        parked_sig = parked.get("sig") or {}
+        recorded = False
+        for repo, sub in per_repo.items():
+            before = parked_sig.get(repo)
             try:
                 after = _git_ref_sig(repo)
-            except Exception as e:  # noqa: BLE001 -- memory path: said, never dropped (L221)
-                unreadable = type(e).__name__
-            before = parked.get("sig")
-            if before is None:      # no PreToolUse snapshot: the last milestone's state
-                prior = [e.get("sig") for e in s.all_events()
-                         if e.get("kind") == "git" and e.get("sig")]
-                before = prior[-1] if prior else None
-            if unreadable is None and after == before:
-                sub = None
-        if sub and unreadable:
-            s.record("git", f"{sub} (ref state unreadable: {unreadable})"[:300], refs=[],
-                     detail=detail)
-            return
-        if sub:
-            terse = f"{sub} {_git_head_line(repo)}".strip()
+            except Exception as e:  # noqa: BLE001
+                s.record("git", f"{sub} (ref state unreadable: {type(e).__name__})"[:300],
+                         refs=[], detail=detail)
+                recorded = True
+                continue
+            if before is None:
+                s.record("git", f"{sub} (ref state before unknown: no PreToolUse record)"[:300],
+                         refs=[], detail=detail)
+                recorded = True
+                continue
+            if before.startswith("!"):
+                s.record("git", f"{sub} (ref state before unreadable: {before[1:]})"[:300],
+                         refs=[], detail=detail)
+                recorded = True
+                continue
+            if after == before:
+                continue
+            try:
+                terse = f"{sub} {_git_head_line(repo)}"
+            except Exception as e:  # noqa: BLE001
+                terse = f"{sub} (head unreadable: {type(e).__name__})"
             diff_refs: list[str] = []
             if sub in ("commit", "merge", "cherry-pick", "revert"):
                 diff_refs = _git_diff_summary(repo)[1]
-            # detail carries the verbatim git invocation.
-            s.record("git", terse[:300], refs=diff_refs, detail=detail, extra={"sig": after})
+            s.record("git", terse[:300], refs=diff_refs, detail=detail)
+            recorded = True
             # Harvest the WHY from the two channels that are already mandatory,
             # rather than asking the agent to volunteer it (a `focus note` the
             # agent must remember to call is, empirically, not called). A merge
@@ -2512,6 +2570,7 @@ def focus_hook(event):
                         refs=cfiles or diff_refs,
                         detail="\n".join(comments),
                     )
+        if recorded:
             return
         s.record("tool", terse, refs=refs, detail=detail)
 
@@ -14619,8 +14678,9 @@ def _precompact_hook(root: Path, *, save: bool, message: "str | None" = None,
 def _recall_state_handoff(root: Path, memory_dir: "Path | None",
                           max_bytes: "int | None") -> None:
     """`rmx recall-state --handoff`, the SessionStart(compact|clear) entry
-    (task-compaction-as-handoff R3/R3b/R6, L195, 2026-11-24): write the FULL report, byte for
-    byte what `rmx recall-state --session <s>` prints, to `<store>/handoffs/<session>.txt`,
+    (task-compaction-as-handoff R3/R3b/R6, L195, 2026-11-24): write the report, byte for
+    byte what `rmx recall-state --session <s>` prints (over `handoff.HANDOFF_MAX_BYTES`,
+    40,000 B, the fitted report with the cut stated: bug-318), to `<store>/handoffs/<session>.txt`,
     arm the session's read gate, and print only the pointer (path, bytes, "before any other
     action", "authoritative", the active goal). A full handoff measured 45,870 B on
     2026-11-14, over the hook cap and the Bash tool's output cap; a Read carries neither.
@@ -14682,7 +14742,7 @@ def _recall_state_handoff(root: Path, memory_dir: "Path | None",
                    "naming `rmx recall-state` when anything was cut. The SessionStart "
                    "compact|clear hook passes hook_budget's recall_state entry.")
 @click.option("--handoff", "handoff_file", is_flag=True,
-              help="The SessionStart compact|clear hook form: write the FULL report to "
+              help="The SessionStart compact|clear hook form: write the report (over 40,000 B the fitted one, cut stated) to "
                    "<store>/handoffs/<session>.txt (session from the hook envelope on "
                    "stdin), gate the session's tools until that file is Read, and print "
                    "only a pointer to it. If the file cannot be written, the --max-bytes "
