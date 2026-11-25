@@ -33,6 +33,12 @@ value sets; use them verbatim). {#why}
    (the brief, the definition, a read; ch-bsd reads the brief named in its dispatch), and the
    report's "For the lead to persist" OPEN rows carry both cells.
 
+4. **Lead amendment (2026-11-25, bsd-prior's question):** `class` cannot be derived from
+   `prior` + `reach` (a reached prior is a salience miss or a check gap). So a third column,
+   `class`, follows `reach`, with M7's value set; the tally reads it, and checks consistency
+   (`novel` iff `prior` is `none`; `retrieval-miss` iff `reach` is `not-reached`), exiting 1 on a
+   contradiction. Rows before M7 get `pending (M7)` in all three.
+
 {#change-list}
 
 ## How {#how}
