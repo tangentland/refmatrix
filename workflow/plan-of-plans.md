@@ -588,7 +588,7 @@ plan-31 D11+ (specs 31.1 / 31.6 / 31.2, branch `spec-plan31b`); none entered yet
 
 ### Questions to the user {#questions}
 
-Next id: **Q87**. Open: none (Q84-Q86 answered, L252). Each reply that asks anything ends with the ids still open.
+Next id: **Q88**. Open: Q87. Each reply that asks anything ends with the ids still open.
 
 | id | asked | question | options (lead's recommendation first) | status |
 |---|---|---|---|---|
@@ -610,6 +610,7 @@ Next id: **Q87**. Open: none (Q84-Q86 answered, L252). Each reply that asks anyt
 | Q84 | 2026-11-25 | The user asked for other meta-level associations that could carry relevant signal; the lead proposed seven (search-resolution bridges, co-change, error → fix, decision provenance, staleness, corrections, read-depth). Measure them before building any? | **(a, rec)** one read-only M-lane replay over the existing logs (query.log, STM rings, git history, bug registry) on copies, held-out split, go/no-go bands written first, one exploration doc ranking the candidates by measured lift; nothing built; (b) not now | **answered: a (L252)** |
 | Q85 | 2026-11-25 | U1: the held-out rate and where it runs. Dev store, last 14 days: 519 prompts, ~2,000 eligible items a week (7.7 a prompt). 5%: 100 withheld a week, 33% of prompts lose one item, 20-100 weeks to 100 touched-anyway events; 10%: 200 a week, 56% of prompts, 10-50 weeks; 20%: 400 a week, 82%, 5-25 weeks. Never held out: feedback/guardrail memories, term concepts, agent-pulled items, session start, precompact, the handoff, I1 units | **(a, rec)** 10%, dev store only, set after 31.5's capture has its 400 prompts; (b) 5%; (c) 0 (cue and path only, no control arm) | **answered: a (L252)** |
 | Q86 | 2026-11-25 | U1: retention of `recall-events.jsonl` (no reap today; 73.6 MB after 36 days, ~2 MB a day) | **(a, rec)** keep everything; the report prints size and 7-day growth; decide rotation at 1 GiB; (b) a monthly compressed archive built now (changes every reader of a window over a month) | **answered: a (L252)** |
+| Q87 | 2026-11-25 | The user asked whether the agent's behaviour falls into activity clusters (orientation, implementation, debugging, verification, orchestration, planning) that could steer context injection. 19.6's phase axis keys on what the session KNOWS (cold / warm / return / new); an activity mode is a second axis, keyed on what it is DOING (tool mix over the ring tail). Test and record it? | **(a, rec)** add it as M4's candidate 8 (cluster tool-mix windows from copies of the STM rings, with subagent `agent_type` as free labels; test whether the use rate of item kinds differs by mode on the 2026-11-13 labelled pilot) and add a small `mode` feature vector (tool-type counts over the last N ring events) to U1's record so the evidence accrues; nothing steers injection until both report; (b) M4 only, no U1 field; (c) not now | open |
 {#questions-table}
 
 ## Pending bookkeeping (2026-11-15) {#pending-bookkeeping}
