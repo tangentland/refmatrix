@@ -22,7 +22,7 @@ metadata:
 rel: derives-from -> [[bug_registry]]
 rel: derives-from -> [[refmatrix/gmd-spec#block-ids]]
 rel: depends-on -> [[refmatrix/gmd-spec#typed-edges]]
-rel: motivates -> [[bsd-impressions#former-anchors]]
+rel: motivates -> [[bsd-impression-anchors#former-anchors]]
 rel: part-of -> [[pop-finished#goal-2026-11-09]]
 rel: reinforces -> [[feedback_clean_corpus_hides_a_dead_gate]]
 

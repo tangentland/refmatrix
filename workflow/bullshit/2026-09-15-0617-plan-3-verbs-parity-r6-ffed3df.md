@@ -61,7 +61,7 @@ NameError: name 'daemon_mod' is not defined. Did you mean: 'daemon_job'?
 The body prints first, then the command crashes with a Python traceback — so `--degree` is a dead flag on `memory get` and has been since the r5 remedy was deployed. `git show 768f868:src/refmatrix/cli.py` has the import at line 9400; `git show dfc0e62:` does not, and the `daemon_mod.ping` line survives at 9577. The held-writer probe reaches it too (`pytest-bsd-plan3-r6-probe-siblings.log`: 10.1 s, replica rows rendered, then `NameError`). 169 tests pass at HEAD because no test invokes `memory get --degree`, and round 6 rewrote the two sibling twins in the same file without exercising the twin it was copying. I did not catch it in r5 either — the r5 probe ran `memory get` without the flag.
 **Evidence:** `pytest-bsd-plan3-r6-probe-siblings.log`; the live run above; `sed -n 9700,9712p src/refmatrix/cli.py`; `git show 768f868:src/refmatrix/cli.py | grep -n "daemon as daemon_mod"` inside `memory_get` → present, at dfc0e62 → gone.
 **Fix:** restore `from refmatrix import daemon as daemon_mod` in `memory_get` (one line), or route the tail through `_verbs.attach_context` the way the recall twin does. One test: `memory get <name> --degree 1` against a healthy spawned daemon asserting the context block renders and exit is 0. Effort: minutes.
-**Pattern match:** YES — [[bsd-impressions#imp-consolidated-1]] (dead flags — a flag that cannot run), and the tests-prove-existence family: the flag has no test at all.
+**Pattern match:** YES — [[bsd-impression-anchors#imp-consolidated-1]] (dead flags — a flag that cannot run), and the tests-prove-existence family: the flag has no test at all.
 
 rel: contradicts -> [[project-profile#constraints]]
 rel: contradicts -> [[plan-3-verbs-parity#decisions-log]]
@@ -80,7 +80,7 @@ rel: contradicts -> [[plan-3-verbs-parity#decisions-log]]
 That is r5 #b-1's number one command over, and the MCP path is 3× its own stated bound: Q11 says the promote read goes through `_call(retries=0)`, and this `_call` takes the library default. The commit title says "twins"; two of the group's four read paths are bounded, the third waits three minutes and says nothing, the fourth is [[#b-1]].
 **Evidence:** the two probe logs above; `sed -n 9736,9760p src/refmatrix/cli.py`; `sed -n 1098,1106p src/refmatrix/verbs.py`; `grep -n "_verbs.memory(" src/refmatrix/cli.py` → three sites (get, list, search), none of them promote.
 **Fix:** `memory_promote` → `_verbs.memory(root, action="promote", partition=_resolve_partition(), timeout=…)` with the `get` twin's typed busy/absent handling; give the verb's promote read `retries=0` under the action's budget. One `_PingOnlyDaemon` test asserting a typed busy message inside ~30 s. Effort: under an hour — the `get` twin is the template, again.
-**Pattern match:** YES — [[bsd-pattern-partial-bound]] (7th), [[bsd-impressions#imp-verb-bound-twin-bypass]] (the impression written after r5 says: list the twins from the click tree and grep each for the verb call — `promote` is on that list).
+**Pattern match:** YES — [[bsd-pattern-partial-bound]] (7th), [[bsd-impression-anchors#imp-verb-bound-twin-bypass]] (the impression written after r5 says: list the twins from the click tree and grep each for the verb call — `promote` is on that list).
 
 rel: contradicts -> [[bsd-pattern-partial-bound]]
 rel: contradicts -> [[project-profile#constraints]]
@@ -100,7 +100,7 @@ rmx canon find held_row       -> "no live project hosts held_row"
 That is verbatim the r3 #b-2 defect (`rmx locate` turning a busy daemon into "no matches") which this plan fixed for `locate` and left standing one command over: the operator is told a concept exists nowhere when the truth is that the store was busy. The r3 test `test_federated_query_and_concept_carry_skipped` asserts the dict carries the key — existence, not rendering. SKETCHY rather than BULLSHIT because the code is untouched by this diff and Q17's enumeration does not name `canon find`; the commit's universal does.
 **Evidence:** the probe log above; `sed -n 247,264p src/refmatrix/search.py`; `sed -n 3806,3824p src/refmatrix/cli.py`.
 **Fix:** in `canon_find`, echo each `skipped` row to stderr and append "(N stores skipped — see stderr)" to the empty message, exactly as `locate_cmd` does at `cli.py:7752-7763`; give `federated_concept`'s per-root `except` a reason instead of `pass`. One `_SilentDaemon` test asserting the busy pid appears in the output. Effort: minutes.
-**Pattern match:** YES — [[bsd-impressions#imp-consolidated-2]] and the quoted-line-sibling family (5th sighting).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-consolidated-2]] and the quoted-line-sibling family (5th sighting).
 
 rel: contradicts -> [[plan-3-verbs-parity#decisions-log]]
 rel: contradicts -> [[project-profile#constraints]]

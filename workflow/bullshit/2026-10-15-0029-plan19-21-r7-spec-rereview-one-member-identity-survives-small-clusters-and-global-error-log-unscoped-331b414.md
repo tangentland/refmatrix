@@ -204,7 +204,7 @@ it, and round 6's D6 rewrite (a single `t` watermark) builds on it.
 - New AC-4b leg: two sandbox roots, a row for each, and each recall-state reports only its own.
   Two owners: each SessionStart surfaces only its own rows.
 
-**Pattern match:** YES ([[bsd-impressions#imp-log-on-read-is-a-write]] family: a sink's location
+**Pattern match:** YES ([[bsd-impression-anchors#imp-log-on-read-is-a-write]] family: a sink's location
 decides who it reports to).
 
 ### SKETCHY s-3: two new "for one release" legacy reads with no task that removes them {#s-3}
@@ -263,7 +263,7 @@ AC-6c, the mutations; 21.1 R9 "In all three, a miss is recorded exactly as bug-1
   `compose_recall_state`.
 - Add both mutants to the list.
 
-**Pattern match:** YES ([[bsd-impressions#imp-unknown-is-not-absent]]; r6 b-1's "plain terminal
+**Pattern match:** YES ([[bsd-impression-anchors#imp-unknown-is-not-absent]]; r6 b-1's "plain terminal
 records nothing").
 
 ### MEH m-1: the input hook's new file work has no aggregate bound, and "no new daemon calls from hooks" is true but asserted nowhere {#m-1}

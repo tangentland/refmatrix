@@ -53,7 +53,7 @@ rel: evidence-for -> [[plan-1-deploy-runtime#q3]]
 **What:** `test_queue_alert_once_publishes_on_dev_tree` fakes the hub's bus (`publish`, `refinement_queue`) and the Hub instance itself (`_gather_queues`), calling `Hub._queue_alert_once(FakeHub())`. The registry has rows for `runtime_identity`, `daemon.call/ping/served_identity`, and `hub._daemon_identity`; none for `hub.bus` or a fake Hub self (grep for `FakeBus|FakeHub|QuietHub|bus` in the registry: empty).
 **Why it's sketchy:** rule 3 — every mock is classified or it is invisible to the graduation plan. The fake bus is the right shape (the real method body runs; only the process boundary is faked), so the fix is bookkeeping, not a rewrite. Second registry omission in plan 1 (#s-5 round 1 added rows after the fact); a third is BULLSHIT.
 **Fix:** two rows: `hub.bus` (fake publish/refinement_queue) — internal-active, permanent for the alert unit test, real-bus coverage = the hub integration path; `Hub` self with stubbed `_gather_queues` — internal-active, graduated by `test_gather_queues_carries_identity_end_to_end`.
-**Pattern match:** YES — [[bsd-impressions#imp-summary-claims-bookkeeping]] (registry untouched while the surface test lands).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-summary-claims-bookkeeping]] (registry untouched while the surface test lands).
 
 rel: contradicts -> [[test_mock_registry#root]]
 
@@ -74,7 +74,7 @@ rel: contradicts -> [[test_mock_registry#root]]
 **File:** `src/refmatrix/daemon.py` (`_process_identity` fallback), `src/refmatrix/hub.py:1015` (`_hub_identity` fallback); consumers `_annotate_identity` (hub.py:979-995), `_verify_relaunch`, `daemon status`
 **What:** when `runtime_identity()` raises inside a daemon, the ping reports `code_path=refmatrix.__file__`, `dev_tree=False`, `identity_error=<msg>`. Every consumer keys on `code_path`/`dev_tree` only: the hub row is annotated as verified-clean, `daemon status` prints a clean `code:` line, and the relaunch guard passes the dev-tree check on that side (the CLI-side check still fires in the shared-venv incident). Round 2 called the fallback "visible"; on inspection it is visible only in raw JSON. A guard that rewrites "could not compute" into "not a dev tree" is the `except → green` shape one call site over.
 **Fix:** treat `identity_error` like `unknown`: `_annotate_identity` → `identity: "unknown"` (hot); `_verify_relaunch` → raise "identity could not be computed"; `daemon status` → `[UNVERIFIED]` suffix.
-**Pattern match:** YES — [[bsd-impressions#imp-silent-pass-migrates]].
+**Pattern match:** YES — [[bsd-impression-anchors#imp-silent-pass-migrates]].
 
 ## Also reviewed {#also}
 

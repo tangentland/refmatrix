@@ -50,7 +50,7 @@ rel: evidence-for -> [[plan-2-hooks-reproducible]]
 | subject active, `subject_upsert` stalls | **180.2 s** | 1 | `promoted focus_summary_s1 (id=42)` then an uncaught `TimeoutError` |
 
 Call spy: `[('memory_add', {'timeout': 5.0, 'retries': 0}), ('subject_upsert', {'timeout': 60.0, 'retries': 2})]`. Subjects are a shipped, used feature (`focus change-subject`; the live STM has `2739f535….subject.json`). In a subject-bound session the Stop hook's cost on a busy writer is the unbounded 180 s that the 18:06:24 live row already measured, and Claude Code's own 60 s hook limit kills it rather than rmx failing loud. `_subject_link` additionally swallows its timeout silently.
-**Why it's bullshit:** Rule 10, cheap fix: the remedy bounded the line the round-2 finding quoted, not the invariant Q4 was re-decided on. The covering test patches `ping → True` and `call → raise`, so the second call can never be reached and the test cannot fail for this. This is [[bsd-impressions#imp-guard-vs-incident-state]] a third time in three plans and [[bsd-impressions#imp-cost-measured-idle]] a second time: the bound was proved in the one state the test constructs.
+**Why it's bullshit:** Rule 10, cheap fix: the remedy bounded the line the round-2 finding quoted, not the invariant Q4 was re-decided on. The covering test patches `ping → True` and `call → raise`, so the second call can never be reached and the test cannot fail for this. This is [[bsd-impression-anchors#imp-guard-vs-incident-state]] a third time in three plans and [[bsd-impression-anchors#imp-cost-measured-idle]] a second time: the bound was proved in the one state the test constructs.
 **Fix:** Thread `timeout`/`retries` into `_file_under_active_subject` → `_subject_upsert` / `_subject_link` (or give `_memory_daemon_call` a module-level hook budget the Stop path sets once); make the subject-filing failure a loud `ClickException` like the promote's, not `except: pass`; extend the test with a subject set and a `call` that raises only for `subject_upsert`, asserting wall < timeout × 2. Effort: ~10 lines. The invariant is then true for the command, not the line.
 **Pattern match:** YES — guard-for-tested-state (3rd plan), cost-measured-idle (2nd), rule 10.
 
@@ -62,7 +62,7 @@ rel: contradicts -> [[feedback_measure_the_path_users_run]]
 **File:** `src/refmatrix/cli.py:1141` (`if daemon_mod.ping(root):` with defaults — 0.5 s × 3 + backoff), `:1156-1162` (the else branch: "daemon not running for … start it (`rmx daemon start`)")
 **What:** Simulation with a live pid file and a listening socket that never replies (the state `daemon.ping`'s own docstring describes: index rebuild at startup, writer holding the lock, the cliquet "stale pid (socket unreachable)" incident): `focus summarize --promote --timeout 5` → 1.97 s wall, exit 1, "daemon not running … start it". The `--timeout` bound never engages because the branch it guards is not taken; the operator is told to start a daemon that is running. `ingest-gmd --detach` was fixed for exactly this in r2 (#s-11) by consulting `discovery.daemon_status`; `focus summarize` — in the same commit, ten lines from the new timeout code — still uses bare `ping`. Mitigation in fairness: `_op_ping` is served from the cli pool by a dispatcher thread, so this state is rarer than under the old single-threaded accept loop; it is not gone.
 **Fix:** Replace the bare `ping` gate with `daemon_status(root)`: `up` → bounded call; `busy` → "daemon busy pid=N — promote skipped this turn"; else → "not running". Same shape as `ingest-gmd --detach`. Effort: six lines.
-**Pattern match:** YES — [[bsd-impressions#imp-verbatim-fix]] (the fix landed where the finding pointed and nowhere else).
+**Pattern match:** YES — [[bsd-impression-anchors#imp-verbatim-fix]] (the fix landed where the finding pointed and nowhere else).
 
 rel: contradicts -> [[plan-2-hooks-reproducible#q4]]
 
@@ -80,9 +80,9 @@ rel: contradicts -> [[plan-2-hooks-reproducible#q4]]
 
 At the default 10 s budget the SessionStart bridge hook blocks ~16 s (was ~22 s in r2). The loop accounting #m-5 asked for is now honest about the loop; the command is not honest about itself. The test replaces `daemon_status` with a dict and `ping` with `lambda: False` and asserts `elapsed < 2.5` — it measures 1.25 s. To the question "is patching `discovery.daemon_status` the right boundary": no. The patched boundary is exactly the boundary that hides the cost. The pid-file + socket simulation exercises the real classifier and the real ping and is what surfaced both this and #s-2; run it with `RMX_DETACH_WAIT_S=0.5` and mark it slow (~4 s).
 **Fix:** Use `daemon_status` once (drop the gate ping at 8164 or give it `timeout=0.5, retries=0`), start the monotonic clock before `daemon_status`, report the total. Replace the patched test with the simulation. Effort: ten lines.
-**Pattern match:** YES — 2nd sighting of #m-5's shape → SKETCHY per escalation; [[bsd-impressions#imp-mock-the-sut]].
+**Pattern match:** YES — 2nd sighting of #m-5's shape → SKETCHY per escalation; [[bsd-impression-anchors#imp-mock-the-sut]].
 
-rel: contradicts -> [[bsd-impressions#imp-mock-the-sut]]
+rel: contradicts -> [[bsd-impression-anchors#imp-mock-the-sut]]
 
 ### SKETCHY: `discovery.daemon_status` monkeypatch is not in the mock registry {#s-4}
 

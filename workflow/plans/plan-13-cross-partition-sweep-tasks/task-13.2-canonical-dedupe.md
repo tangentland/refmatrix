@@ -39,7 +39,7 @@ rel: depends-on -> [[task-13.1-sweep-verb]]
   similarity threshold here would be an unmeasured calibration.
 - `verbs.merge_scope` (`verbs.py:375-399`) is the shipped ancestor: it dedupes a two-source union by
   name with a round-robin that guarantees the smaller source representation. Reuse its rule; do not
-  write a second one ([[bsd-impressions#imp-two-paths]]).
+  write a second one ([[bsd-impression-anchors#imp-two-paths]]).
 
 ## Acceptance criteria {#acceptance}
 

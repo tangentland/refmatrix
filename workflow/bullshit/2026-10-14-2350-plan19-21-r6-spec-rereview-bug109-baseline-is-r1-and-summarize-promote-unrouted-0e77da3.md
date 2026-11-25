@@ -125,7 +125,7 @@ read: `0760fb7` (r2), `9fe45fa` (r3) and `8cc9c71` (r4). All are merged (`0c7d0e
 **Why it's bullshit:**
 - This is r4 #s-1's defect one level down. The specs moved from "build it" to "extend it", then
   described a version of "it" three rounds old.
-- It is the third sighting of [[bsd-impressions#imp-adopt-by-merge-not-sha]]: plan-23 r4, plan-19/21 r4, and
+- It is the third sighting of [[bsd-impression-anchors#imp-adopt-by-merge-not-sha]]: plan-23 r4, plan-19/21 r4, and
   now this. That escalates it to BULLSHIT.
 - The header's own rule ("the dependency is the merge, not a sha") is broken by the body, which
   cites a sha.
@@ -152,7 +152,7 @@ read: `0760fb7` (r2), `9fe45fa` (r3) and `8cc9c71` (r4). All are merged (`0c7d0e
   - the owner lookup fails, giving an `owner-lookup-failed` row.
 - New mutation: recall-state left reading `<root>/stm/by-pid/`.
 
-**Pattern match:** YES ([[bsd-impressions#imp-adopt-by-merge-not-sha]], r4 impression "a hotfix that lands
+**Pattern match:** YES ([[bsd-impression-anchors#imp-adopt-by-merge-not-sha]], r4 impression "a hotfix that lands
 mid-review becomes the spec's baseline").
 
 ### BULLSHIT b-2: the Stop and PreCompact hooks' `focus summarize --promote`, a durable write every turn, and four more CLI write commands resolve through `_resolve_stm_session` with no purpose stated {#b-2}
@@ -199,7 +199,7 @@ or the newest ring" does not hold for them.
   memory.
 - Mutation: `_resolve_stm_session` with a hard-coded `purpose="read"`.
 
-**Pattern match:** YES ([[bsd-impressions#imp-quoted-line-sibling]]; r4 "to retire a fallback, list its
+**Pattern match:** YES ([[bsd-impression-anchors#imp-quoted-line-sibling]]; r4 "to retire a fallback, list its
 callers with a scan").
 
 ### SKETCHY s-1: the sweep's `abandoned` events bypass 19.0 R2's origin ladder, so a background subagent's long or hung call re-enters the parent's focus {#s-1}

@@ -178,7 +178,7 @@ which recall-state and the SessionStart surfacing report").
   surfaced" (P3's row prints).
 - 19.0 R5's Stop row then holds as written.
 
-**Pattern match:** YES ([[bsd-impressions#imp-log-on-read-is-a-write]] family: a sink's scope
+**Pattern match:** YES ([[bsd-impression-anchors#imp-log-on-read-is-a-write]] family: a sink's scope
 decides who it reports to; this time the scope is too narrow).
 
 ### MEH nm-1: `ps-failed` rows carry `owner` but `owner_start = null`, so no SessionStart surface can ever match them {#nm-1}

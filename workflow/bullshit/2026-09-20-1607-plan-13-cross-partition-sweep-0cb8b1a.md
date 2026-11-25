@@ -114,7 +114,7 @@ gap as MRR parity plus a 0.066 hit@20 deficit, and rebuild the motivation on the
 actually there. If the motivation does not survive the correct numbers, that is the result.
 
 **Pattern match:** YES — [[feedback_read_identifiers_at_write_time]] and my own
-[[bsd-impressions#imp-i-did-it-too]]: a number carried from a prior message instead of re-read from
+[[bsd-impression-anchors#imp-i-did-it-too]]: a number carried from a prior message instead of re-read from
 the file at write time.
 
 rel: contradicts -> [[feedback_read_identifiers_at_write_time]]
@@ -196,7 +196,7 @@ default-off filter all ship), retarget 13.4 from "land session rows" to "measure
 surfaces", and add the cheap experiment that plan should have opened with — run the Layer A harness
 against a store that has both partitions.
 
-**Pattern match:** YES — [[bsd-impressions#imp-two-paths]]: a second way to do X, proposed as if the
+**Pattern match:** YES — [[bsd-impression-anchors#imp-two-paths]]: a second way to do X, proposed as if the
 first did not exist.
 
 rel: contradicts -> [[claude#no-workarounds]]
@@ -416,7 +416,7 @@ the constraint the plan needs: "Not safe under concurrent ops on the same Store 
    read_only=True)` — one partition, fixed. Every leg outside the default partition is a daemon op.
 2. Four daemon ops against one daemon serialize on `_store_lock`, so the sweep's wall clock is the
    SUM of its legs, not the max — the shape already filed as bsd-plan2-r5 #b-1 and
-   [[bsd-impressions#imp-fleet-sum-timeouts]].
+   [[bsd-impression-anchors#imp-fleet-sum-timeouts]].
 3. `daemon.call` defaults to `retries=2`, tripling a per-leg timeout
    ([[feedback_daemon_call_retries_multiply_timeouts]]).
 

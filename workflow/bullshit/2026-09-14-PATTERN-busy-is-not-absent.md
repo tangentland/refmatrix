@@ -34,4 +34,4 @@ A single short `ping(root)` (0.3–0.5 s, often `retries=0`) gates a decision, a
 Any diff that adds a bare `ping(` gate or a `"daemon not running" in str(e)` match is BULLSHIT on sight. The classifier is `discovery.daemon_status` (typed up / busy / absent, 80021a4) — and since plan 4 the daemon's own `heartbeat_age(root)` is a second, socket-free liveness signal that the same plan then ignored in its own adoption path. Probe: the pid-file + listening-socket simulation, or SIGSTOP a spawned tmp daemon, and watch what the false branch does to it.
 
 rel: contradicts -> [[project-profile#constraints]]
-rel: reinforces -> [[bsd-impressions#imp-busy-absent-verb-layer]]
+rel: reinforces -> [[bsd-impression-anchors#imp-busy-absent-verb-layer]]

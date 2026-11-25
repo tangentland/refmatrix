@@ -226,7 +226,7 @@ the two tests to break the real thing: delete `catalog.read.duckdb` under an up-
 (no patching at all) and assert the reason, which is the state the probe used. Effort: under an
 hour; the reason string already exists at `search.py:64`.
 **Pattern match:** YES — the guard-cannot-fire PATTERN filed in plan-4 r3, and
-[[bsd-impressions#imp-consolidated-2]] (a fix at the quoted line while the frame below keeps the
+[[bsd-impression-anchors#imp-consolidated-2]] (a fix at the quoted line while the frame below keeps the
 bug). New shape worth naming: the collaborator's docstring was the contract the test violated.
 
 rel: contradicts -> [[plan-3-verbs-parity#decisions-log]]
@@ -272,7 +272,7 @@ command. One test: the existing `_PingOnlyDaemon` at a patched `global_store_roo
 55 already covers that fixture), asserting the whole command finishes inside the budget. Effort:
 one line plus one test.
 **Pattern match:** YES — [[bsd-pattern-partial-bound]], 8th sighting, and
-[[bsd-impressions#imp-partial-bound]] in its purest form: the bound was put on the leg the finding
+[[bsd-impression-anchors#imp-partial-bound]] in its purest form: the bound was put on the leg the finding
 quoted, and the sibling three lines down kept the cost.
 
 rel: contradicts -> [[bsd-pattern-partial-bound]]
@@ -303,7 +303,7 @@ src/refmatrix/ui/static/app.js`; the two renderers side by side at `cli.py:4245`
 line to `doWhere` (and the concept/query handlers) rendering `r.result?.skipped` as a muted row.
 One UI assertion in the server test, one `CliRunner` assertion per command.
 **Pattern match:** YES — the false-universal family and
-[[bsd-impressions#imp-quoted-line-sibling]].
+[[bsd-impression-anchors#imp-quoted-line-sibling]].
 
 rel: contradicts -> [[project-profile#constraints]]
 
@@ -335,7 +335,7 @@ Saying the arithmetic out loud rather than inflating the blocker count with a do
 **Fix:** seven registry edits, and one real-daemon `--degree` test on the `realdaemon` fixture
 shape my probe used (`Store.init` + two memories + `spawn_daemon_subprocess`, assert the bundle
 renders and the exit is 0) to graduate `answering` for that one case.
-**Pattern match:** YES — [[bsd-impressions#imp-registry-three-strikes]] ("registry untouched + tests
+**Pattern match:** YES — [[bsd-impression-anchors#imp-registry-three-strikes]] ("registry untouched + tests
 added = unregistered on sight").
 
 rel: contradicts -> [[claude#no-mocks]]

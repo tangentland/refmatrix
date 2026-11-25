@@ -171,7 +171,7 @@ that passed on a half-save.
    `pending == []`.
 3. Re-run MB: both tests must fail.
 
-**Pattern match:** YES. [[bsd-impressions#imp-consolidated-r12]] (`imp-zero-on-both-sides`:
+**Pattern match:** YES. [[bsd-impression-anchors#imp-consolidated-r12]] (`imp-zero-on-both-sides`:
 "fixed, 0 now" vacuous on both sides).
 
 rel: contradicts -> [[claude#system-dependent-tests]]
@@ -190,7 +190,7 @@ survives every rotation test (16 passed). No test makes the pre-copy CHECKPOINT 
 **Fix:** a `_bootstrap_rotation_if_needed` test with one slot missing and a store whose
 `_connect().execute("CHECKPOINT")` raises. Assert that the store was closed before the copy
 and that the clone completed.
-**Pattern match:** YES. [[bsd-impressions#imp-remedy-guards-unpinned]]. This is its third
+**Pattern match:** YES. [[bsd-impression-anchors#imp-remedy-guards-unpinned]]. This is its third
 sighting (bug-109 r4, bug-110 r1 #s-2, now), so MEH escalates to SKETCHY.
 
 ### MEH: bug-112's recorded facts are wrong, and the registry rows are still unwritten {#m-1-r2}

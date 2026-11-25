@@ -45,14 +45,23 @@ same value in the filename, `INDEX.md` and `last_run.log`, and no `GIT_AUTHOR_DA
 `01:00:00`; INDEX.md is the evidence trail for WHICH TREE an audit saw, so a forward-dated stamp
 turns "which commits existed when this ran" into a guess (ch-bsd r4 #m-1-r4).
 
-**IMPRESSIONS.md size cap (overrides the base 50-line rule's scope).** The 50-line cap counts the
-run bullets ABOVE `## Former anchors, restored`; that section is exempt. It holds one `{#id}` per
-line, never several: the linter accepts packed ids, but the store ingester registers only the first
+**IMPRESSIONS.md size cap (replaces the base rule's scope).** The cap is the file: `IMPRESSIONS.md`
+is at most 50 lines (`wc -l`; `tests/test_gmd_body_anchors.py::test_impressions_window_is_under_its_cap`
+fails over it). The pointer register is its own file, `workflow/bullshit/IMPRESSION_ANCHORS.md`
+(id `bsd-impression-anchors`), which the cap does not count. Fold procedure: (1) fold the oldest
+bullets verbatim, ids unchanged, into one new `impression_bsd_ledger_*` memory (the lead writes the
+memory and runs the bridge); (2) add one pointer line per folded id to the register, one id per
+line, never several (the linter accepts packed ids, but the store ingester registers only the first
 anchor on a line, so efa5f33's packing made 188 of 200 pointer ids unknown to `rmx` while lint
-stayed green (fixed 2026-11-09). When you fold the oldest bullets into an
-`impression_bsd_ledger_*` memory, add one pointer line per folded id
-(`` - `imp-x` → [[impression_bsd_ledger_<date>#imp-x]]. ``  followed by its anchor), and confirm a
-sample with `rmx context "bsd-impressions#<id>" --no-grep` after the next ingest.
+stayed green, fixed 2026-11-09):
+`` - `imp-x` → [[impression_bsd_ledger_<date>#imp-x]]. `` followed by its anchor; (3) rewrite every
+`[[bsd-impressions#<id>]]` citation of a folded id to `[[bsd-impression-anchors#<id>]]`
+(`./scripts/lint-gmd.sh` reports a missed one as `dangling-anchor`); (4) confirm a sample with
+`rmx context "bsd-impression-anchors#<id>" --no-grep` after the next ingest.
+
+**Findings ledger column.** Name the self-audit question per BULLSHIT (`SA-1`..`SA-8`, or
+`none: <proposal>`); the lead copies it into the `question` column of `OPEN.md` / `CLOSED.md`, and
+`python3 scripts/bsd-tally.py` tallies it (exit 1 on an empty cell).
 
 ## One pass, and close the loop (L165, L166)
 

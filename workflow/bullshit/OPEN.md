@@ -21,15 +21,18 @@ run and carries the rest in its report's "Carried over" section; the lead update
 persisting a report. Keep this file to open rows only. {#rules}
 
 rel: implements -> [[refmatrix/ch-bsd-assessment-2026-11-23#f5]]
+
+The `question` column (after `level`) names the self-audit question ch-bsd said missed a BULLSHIT-level row: `SA-1`..`SA-8` (several allowed), `none: <proposal>`, or `unnamed` (its report names none); `-` for GATE and SKETCHY rows. `python3 scripts/bsd-tally.py` tallies it and exits 1 on an empty or `-` cell in a BULLSHIT-level row. {#question-column}
+
 rel: depends-on -> [[bsd-closed-findings]]
 
-| id | report | level | finding (one line) | consequence | owner / next | opened |
-|---|---|---|---|---|---|---|
-| t02-r1-S4 | [[bsd-reprobe-c7550ad5]] (from 2026-11-15-2009-t02-r1-1121b4e) | SKETCHY (handed off) | `register_spawn` has no adopter; per-test leak attribution missing | no leak unseen (ledger + reaper fail the session); attribution only | T0.9 `#c-kit` (`tests/daemons.py`, `recorded_daemon`) | 2026-11-15 |
-| 294a-r1-s-2 | [[bsd-294a-r1-1bb14a5b]] | SKETCHY (handed off) | 56 of 213 `tier_unit` files spawn a process or connect to a unix socket at runtime; `tier_of` reads source only (bug-305) | no unsafe run (AC-12's live-touch guard fails the run); the unit tier is mis-classified, so it is not the fast, daemon-free tier it claims | T1 tier layout, bug-305 `open` (L197) | 2026-11-24 |
-| t05-c2-MB1d | 2026-11-19-1320-t05-confirm-lite2-521f32b6 | GATE (rated by the lead under P1, L218) | mutation MB1d (`62da64a6`: the memory_brief op's `exclude_mtypes=brief_mod.EXCLUDE_MTYPES` dropped) survives the verify set (53 passed) | the exclusion is unpinned; a later change can drop it silently | bug-295 (open): a killing test or an L-row ruling | 2026-11-19 |
-| b318-r1-S1 | [[bsd-bug318-r1-9954e391]] | SKETCHY (handed off) | part 3 (`## Agents in flight`) not built; handed to the lead | the handoff still lacks in-flight agents; bug-318 cannot close | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
-| c2-r1-g-1 | [[bsd-c2-r1-9afff800]] | GATE | the boot sweep's young-.tmp keep (`hook_writes.py:327`, 60 s) is unpinned; mutant `c819b066` survives | an enqueue during a daemon boot exits 1 (loud); the rule can be dropped silently | C2 fold: a killing test seen failing on the mutant | 2026-11-25 |
+| id | report | level | question | finding (one line) | consequence | owner / next | opened |
+|---|---|---|---|---|---|---|---|
+| t02-r1-S4 | [[bsd-reprobe-c7550ad5]] (from 2026-11-15-2009-t02-r1-1121b4e) | SKETCHY (handed off) | - | `register_spawn` has no adopter; per-test leak attribution missing | no leak unseen (ledger + reaper fail the session); attribution only | T0.9 `#c-kit` (`tests/daemons.py`, `recorded_daemon`) | 2026-11-15 |
+| 294a-r1-s-2 | [[bsd-294a-r1-1bb14a5b]] | SKETCHY (handed off) | - | 56 of 213 `tier_unit` files spawn a process or connect to a unix socket at runtime; `tier_of` reads source only (bug-305) | no unsafe run (AC-12's live-touch guard fails the run); the unit tier is mis-classified, so it is not the fast, daemon-free tier it claims | T1 tier layout, bug-305 `open` (L197) | 2026-11-24 |
+| t05-c2-MB1d | 2026-11-19-1320-t05-confirm-lite2-521f32b6 | GATE (rated by the lead under P1, L218) | - | mutation MB1d (`62da64a6`: the memory_brief op's `exclude_mtypes=brief_mod.EXCLUDE_MTYPES` dropped) survives the verify set (53 passed) | the exclusion is unpinned; a later change can drop it silently | bug-295 (open): a killing test or an L-row ruling | 2026-11-19 |
+| b318-r1-S1 | [[bsd-bug318-r1-9954e391]] | SKETCHY (handed off) | - | part 3 (`## Agents in flight`) not built; handed to the lead | the handoff still lacks in-flight agents; bug-318 cannot close | fix-handoff fold (bug-318), then confirm-lite | 2026-11-25 |
+| c2-r1-g-1 | [[bsd-c2-r1-9afff800]] | GATE | SA-6 | the boot sweep's young-.tmp keep (`hook_writes.py:327`, 60 s) is unpinned; mutant `c819b066` survives | an enqueue during a daemon boot exits 1 (loud); the rule can be dropped silently | C2 fold: a killing test seen failing on the mutant | 2026-11-25 |
 
 {#open-table}
 
