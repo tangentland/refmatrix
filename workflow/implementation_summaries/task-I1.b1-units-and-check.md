@@ -38,7 +38,7 @@ no test was written or edited. {#lead}
   (generated / drift / missing), local units listed with their fixtures run, agents and
   commands (and the two user-level commands) classed and printed only (D6), and every
   `.git/hooks/<name>` with the `# refmatrix:` marker compared with `GIT_HOOK_SCRIPTS`
-  (bug-209). `check_all` = `check` + `check_artifacts`; `rmx install-hooks --check` runs it.
+  (bug-209). `check_all` = `check` + `check_artifacts` (a `CheckReport` per leg since the fold); `rmx install-hooks --check` runs it.
   {#c-hooks}
 - **`src/refmatrix/init_agents.py`.** `without_frontmatter_id` and `template_copy_class`: the
   one src helper for H1.a's id-line rule, used by the agents and commands classifier, so this
@@ -53,7 +53,7 @@ no test was written or edited. {#lead}
   already, `requirements.lock` pins 6.0.3: the unit map is nested YAML, which
   `ingest_gmd._parse_frontmatter` cannot read). {#c-packaging}
 - **This repo.** `.claude/rmx-instructions.json` (no units, trap 12) written by
-  `instructions.compile_project`; `docs/ARCHITECTURE.md`'s CLI tree regenerated
+  `instructions.compile_layers(load_layers(...))` (`compile_project` was deleted by the fold, [[#fold]]); `docs/ARCHITECTURE.md`'s CLI tree regenerated
   (`scripts/gen-cli-tree.py`, trap 11). {#c-repo}
 
 ## Deviation: `hooks.check` keeps its contract {#deviation}
@@ -192,6 +192,30 @@ second --apply: compiled bytes identical (sha256 c7cf7a75…)
 post-merge rewritten to the pre-26.2 body, marker kept → `drift .git/hooks/post-merge` + diff, exit 1
 $ rmx rules replay sample-deny → no STM ring directory; scanned 0 tool events; hits 0; limits line; exit 0
 ```
+
+## Fold of bsd-i1b1 r1 {#fold}
+
+
+RED `4bac1ce9` (12 cases failing at `2f392131`); GREEN `9c7394dd`, `src/` only:
+
+- **b-1** `replay`: each tool bind's `match` keys against what the ring stores
+  (`ring_unmeasurable_keys`, `RING_DROPPED_KEYS`; Bash keeps only `command`); such a bind prints
+  `unmeasurable: bind[i].match.<key> is not stored in the ring` and is left out of the hit count.
+- **b-2** `_parse(layer_dir=…)`: a unit whose `KIND_DIR` is not its directory is refused, both
+  layers; `compile_project` deleted.
+- **s-1** (ruling a): zero units and no compiled file is `generated`; `--apply` writes no compiled
+  file into a project with no units (an existing one is kept current).
+- **s-2**: `PREFILTER_FORBIDDEN` (`"`, `\`, `:`) refused at parse.
+- **s-3**: a local file at a packaged trigger's or check's path is refused
+  (`duplicate path with a packaged unit`); `--check` compares installed rules and skills only.
+- **s-4**: `FIXTURE_MAX_COMMITS = 10`, refused above at parse.
+- **m-1**: `check_all` returns `CheckReport(settings_ok, artifacts_ok, text)`; the CLI heads a
+  failure `hooks drift …settings.json` only when the settings leg drifted, else
+  `instruction artifacts out of sync`.
+
+Fold mutations (logs `i1b1-fmut-<id>.log`, each restored by `git checkout -- src/` in its own
+command, `__pycache__` cleared after the batch): F1-F10 killed; F11 (`--apply` writes a zero-unit
+compiled file) survives, see the fold report. {#fold-body}
 
 ## Self-audit {#self-audit}
 
