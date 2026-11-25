@@ -15,7 +15,8 @@ re-bases `learn_queue` (deferral row D5 in `workflow/deferral_registry.md`).
 
 Nothing on this path is silent (CLAUDE.md #no-silent-failures): an enqueue that cannot write
 raises; an unreadable entry is counted, named in `rmxd.log` and MOVED to `bad/` (never deleted,
-never skipped); a partition whose apply fails is logged and its entries stay for the next drain.
+never skipped); an entry whose apply raises is rolled back on its own, logged and MOVED to
+`bad/` with the reason (bsd-c2 r1 s-1, 2026-11-25), so it never blocks the entries beside it.
 
 The entry (R11.2): `{"op": "memory_add", "partition": <name>, "name": <memory name>, "args":
 <the exact memory_add payload, carrying "updated_at": ts>, "subject": <label> | null, "origin":
@@ -47,6 +48,28 @@ MEMORY_ADD_ARGS = frozenset({"name", "content", "mtype", "tags", "metadata", "pr
 # Its name carries its creation time (`<time_ns:020d>-…`), so the sweep reads the age from the
 # name and leaves a young one for the next boot rather than pull it out from under a writer.
 TMP_SWEEP_MIN_AGE_S = 60.0
+
+
+def _is_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+# The value types `Store.add_memory` takes, per `args` key (bsd-c2 r1 s-1, 2026-11-25). Before
+# them `validate` checked key NAMES only: an `updated_at` of "not-a-number" passed, then raised
+# inside the drain's partition transaction on every tick and rolled back the good entry beside
+# it, and a wrong `tags` / `metadata` / `mtype` / `protected` was stored as-is. A key that is
+# absent takes `add_memory`'s default. No finiteness or range check (lead ruling, C2 fold): a
+# number `add_memory` still cannot take (`updated_at` = 10**400, OverflowError in `float()`) is
+# the residual class, and the drain's per-entry apply is its defence.
+ARG_TYPES: "tuple[tuple[str, Callable[[Any], bool], str], ...]" = (
+    ("updated_at", _is_number, "a number"),
+    ("tags", lambda v: v is None or (isinstance(v, list)
+                                     and all(isinstance(x, str) for x in v)),
+     "a list of strings or null"),
+    ("metadata", lambda v: v is None or isinstance(v, dict), "an object or null"),
+    ("mtype", lambda v: isinstance(v, str), "a string"),
+    ("protected", lambda v: isinstance(v, bool), "a bool"),
+)
 
 
 class UnreadableEntry(ValueError):
@@ -94,6 +117,9 @@ def validate(entry: Any) -> dict:
                               f"{entry['name']!r}")
     if not isinstance(args.get("content"), str):
         raise UnreadableEntry("args.content is missing or not a string")
+    for key, ok, want in ARG_TYPES:
+        if key in args and not ok(args[key]):
+            raise UnreadableEntry(f"args.{key} is not {want}: {args[key]!r}")
     subject = entry.get("subject")
     if subject is not None and not isinstance(subject, str):
         raise UnreadableEntry(f"subject is not a string or null: {subject!r}")
@@ -219,9 +245,12 @@ def coalesce(entries: "list[tuple[Path, dict]]") -> "list[tuple[dict, list[Path]
     return [groups[k] for k in order]
 
 
-def _move_bad(root: Path, path: Path, reason: str, log: Callable[[str], None]) -> bool:
-    """Move an unreadable entry to `bad/` byte for byte and name it in the log. Returns
-    whether it moved; a move that fails is logged and the file stays counted as pending."""
+def _move_bad(root: Path, path: Path, reason: str, log: Callable[[str], None], *,
+              what: str = "unreadable") -> bool:
+    """Move an entry to `bad/` byte for byte and name it, with `reason`, in the log. `what`
+    says why it is set aside: "unreadable" (fails `validate`) or "rejected" (readable, but its
+    apply raised). Returns whether it moved; a move that fails is logged and the file stays
+    counted as pending."""
     b = bad_dir(root)
     try:
         b.mkdir(parents=True, exist_ok=True)
@@ -229,10 +258,10 @@ def _move_bad(root: Path, path: Path, reason: str, log: Callable[[str], None]) -
     except FileNotFoundError:
         return False
     except OSError as exc:
-        log(f"hook_writes: unreadable spool entry {path.name} ({reason}) could NOT be moved "
+        log(f"hook_writes: {what} spool entry {path.name} ({reason}) could NOT be moved "
             f"to {BAD_DIRNAME}/: {exc!r}; it stays in {path.parent} and is counted pending")
         return False
-    log(f"hook_writes: unreadable spool entry {path.name} moved to {b}: {reason}")
+    log(f"hook_writes: {what} spool entry {path.name} moved to {b}: {reason}")
     return True
 
 
@@ -244,20 +273,28 @@ def drain(root: "Path | str", store, *, store_lock, log: Callable[[str], None],
     Reading the spool and moving unreadable files to `bad/` take no store lock. With no
     readable entry the writer is never taken, so an empty spool costs the tick a directory
     listing. Otherwise ONE `store_lock` acquisition covers the batch: entries are coalesced by
-    `(op, partition, name)` with `newest_by_ts`, and each partition is applied in ONE
-    `store.transaction()` -- for each winner `add_memory_checked(**args)` (the authoring-time
-    guard decides, R11.3), then every label in its `subjects` is filed with `upsert_subject` +
+    `(op, partition, name)` with `newest_by_ts`, and each WINNER is applied in its OWN
+    `store.transaction()` -- `add_memory_checked(**args)` (the authoring-time guard decides,
+    R11.3), then every label in its `subjects` is filed with `upsert_subject` +
     `link_part_of` on the row's id, the SAME store methods the `memory_add`, `subject_upsert`
     and `subject_link` ops call. Every store method on this path commits through
-    `_maybe_commit` (no bare `con.commit()` inside the transaction, R11.3 m6). The partition's
+    `_maybe_commit` (no bare `con.commit()` inside the transaction, R11.3 m6). A winner's
     spool files are deleted only AFTER its commit: a crash between the two re-applies them and
     the guard counts them `superseded`.
 
+    WHY one transaction per winner (bsd-c2 r1 s-1, lead ruling, 2026-11-25): with one
+    transaction per partition, an entry that passed `validate` but raised in `add_memory`
+    rolled back every entry of its partition on every drain, and each drain logged another
+    `memory_content` event for the good entries applied before it (bug-248: the event is
+    written before the rollback). Applying the batch and then retrying would log that event
+    once more. Per winner, a raising entry rolls back only itself: its files are MOVED to
+    `bad/` with the reason, named in the log and counted `bad` (`failed` when the move itself
+    fails and the file stays pending). An exception `is_fatal` classifies as a store
+    invalidation is re-raised so the daemon fast-exits as it does for every other write.
+    `failed` also counts the entries left pending when their partition cannot be bound.
+
     `superseded` counts ENTRIES (RED decision 3): each folded into a newer queued entry, plus a
-    winner the guard skipped because the stored row is at least as new. A partition whose
-    apply raises is rolled back, logged, counted `failed` and left in the spool for the next
-    drain; an exception `is_fatal` classifies as a store invalidation is re-raised so the
-    daemon fast-exits as it does for every other write."""
+    winner the guard skipped because the stored row is at least as new."""
     root = Path(root)
     out = {"applied": 0, "superseded": 0, "bad": 0, "failed": 0, "committed": False}
     good, unreadable = read_pending(root)
@@ -272,42 +309,55 @@ def drain(root: "Path | str", store, *, store_lock, log: Callable[[str], None],
     by_part: dict = {}
     for winner, paths in coalesce(good):
         by_part.setdefault(winner["partition"], []).append((winner, paths))
+    rejected = 0
     with store_lock:
         for part, groups in by_part.items():
-            applied = superseded = 0
-            done: list = []
+            left = list(groups)
             try:
-                with store.with_partition(part), store.transaction():
-                    for winner, paths in groups:
-                        superseded += len(paths) - 1
-                        eid, written = store.add_memory_checked(**winner["args"])
+                with store.with_partition(part):
+                    while left:
+                        winner, paths = left[0]
+                        try:
+                            with store.transaction():
+                                eid, written = store.add_memory_checked(**winner["args"])
+                                for label in winner["subjects"]:
+                                    sid = store.upsert_subject(label)["id"]
+                                    store.link_part_of(int(eid), int(sid))
+                        except Exception as exc:  # noqa: BLE001 -- fatal re-raised, else moved
+                            if is_fatal(exc):
+                                raise
+                            left.pop(0)
+                            rejected += len(paths)
+                            reason = f"its apply raised {exc!r}; rolled back on its own"
+                            for p in paths:
+                                if _move_bad(root, p, reason, log, what="rejected"):
+                                    out["bad"] += 1
+                                else:
+                                    out["failed"] += 1
+                            continue
+                        left.pop(0)
+                        out["committed"] = True
+                        out["superseded"] += len(paths) - 1
                         if written:
-                            applied += 1
+                            out["applied"] += 1
                         else:
-                            superseded += 1
-                        for label in winner["subjects"]:
-                            sid = store.upsert_subject(label)["id"]
-                            store.link_part_of(int(eid), int(sid))
-                        done.extend(paths)
+                            out["superseded"] += 1
+                        for p in paths:
+                            try:
+                                p.unlink()
+                            except FileNotFoundError:
+                                pass
             except Exception as exc:  # noqa: BLE001 -- classified: fatal re-raised, else counted
                 if is_fatal(exc):
                     raise
-                n = sum(len(p) for _, p in groups)
+                n = sum(len(p) for _, p in left)
                 out["failed"] += n
                 log(f"hook_writes drain: partition {part!r} FAILED ({exc!r}); its {n} "
-                    f"entr{'y' if n == 1 else 'ies'} stay in {spool_dir(root)} for the next "
-                    f"drain")
-                continue
-            out["committed"] = True
-            out["applied"] += applied
-            out["superseded"] += superseded
-            for p in done:
-                try:
-                    p.unlink()
-                except FileNotFoundError:
-                    pass
+                    f"unapplied entr{'y' if n == 1 else 'ies'} stay in {spool_dir(root)} for "
+                    f"the next drain")
     log(f"hook_writes drain: {out['applied']} applied, {out['superseded']} superseded, "
-        f"{out['bad']} unreadable, {out['failed']} failed")
+        f"{out['bad']} set aside in {BAD_DIRNAME}/ ({rejected} rejected by the apply), "
+        f"{out['failed']} failed")
     return out
 
 
