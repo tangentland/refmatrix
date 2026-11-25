@@ -5,7 +5,7 @@ title: "Task I1.g: agent-start context: the SubagentStart dispatcher entry gives
 tags: [task, plan-32, hooks, subagents, context, recall, instructions]
 metadata:
   node_type: task
-  status: approved-pending
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-14
   updated: 2026-11-25

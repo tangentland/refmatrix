@@ -5,7 +5,7 @@ title: "Task I1.c: the first T1 units: fifteen denies and one gate, each with fi
 tags: [task, plan-32, instructions, deny, units, practice-tdd, local-units]
 metadata:
   node_type: task
-  status: approved-pending
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   updated: 2026-11-25

@@ -5,7 +5,7 @@ title: "Task I1.d: the first seven T3 skills, their gates and agent preloads, an
 tags: [task, plan-32, instructions, skills, gate, preload, practice-tdd, release, local-units]
 metadata:
   node_type: task
-  status: approved-pending
+  status: approved
   plan: plan-32-instruction-architecture
   created: 2026-11-24
   updated: 2026-11-25
