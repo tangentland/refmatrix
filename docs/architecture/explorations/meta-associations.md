@@ -463,3 +463,75 @@ Script `cand8_activity_mode.py`, run 2026-11-25 on fresh copies (deleted after);
 
 Could not measure: the 2026-11-13 pilot's labels (not on disk); the `agent` category (the STM
 ring records no `Agent`/`SendMessage` call); session clustering (4 held-out sessions). {#c8-not-measured}
+
+## M5: the popularity prior {#m5}
+
+Brief [[agent-brief-m5-popularity-prior]] (Q89 = a, L254). In M4 the popularity control beat
+every recall candidate ([[#popularity]]); M5 measures it as a pre-registered candidate.
+
+rel: implements -> [[agent-brief-m5-popularity-prior]]
+rel: derives-from -> [[measurement-injection-already-held-2026-11-13]]
+
+### Pre-registration {#m5-prereg}
+
+Written before any M5 result was computed; committed alone. Known before writing: M4's results,
+the record shapes, and that `scan_prompt` delivers a median 21.5 items a query (IQR 10-30),
+each with a `bytes` value. {#m5-prereg-note}
+
+- **Data.** Fresh `cp -c` copies of `recall-events.jsonl`, the STM rings, the transcripts with
+  `subagents/`, the memory dir; deleted after the run. One project (refmatrix): "per project" is
+  this store only; no second project is measured.
+- **Joins and split.** M4's `m4_common.py` and `build_units` unchanged (thread, file key, touch,
+  window, new-touch gold, [[#defs]]). T* is fixed at M4's C1 value, 2026-11-15 03:13:18 UTC;
+  held-out = units at or after it, through the copy time.
+- **Units.** `scan_prompt` query units. Q1 gold: new-touch golds the unit's own `scan_prompt`
+  query did not retrieve. Q2 gold: all new-touch golds in the window.
+- **The prior.** `P_W(t)` = keys ranked by the number of new touches (a key's first touch by a
+  thread within that thread's previous 200 calls; main loop and subagents) in the W days strictly
+  before t; W ∈ {3, 7, 14}. Ties by key. W* is chosen on train units (best reach@10, ties to the
+  smaller W) and reported on held-out with the other two W beside it. M4's fixed list (train
+  missed golds before T*) is reported as the reference.
+- **Controls.** *Chance*: k keys drawn uniformly from the keys newly touched in the W* days before
+  t (`random.Random("m5")`); *time placebo*: `P_W*` computed at the time of a random held-out unit
+  from another session (`random.Random("m5-time")`).
+
+{#m5-prereg-defs}
+
+#### Q1: reach of what scan-prompt missed {#m5-q1}
+
+Metric: reach@10 of missed golds (k ∈ {5, 10, 20} reported); lift = reach@10(P_W*) −
+reach@10(chance), paired bootstrap over units (2,000, seed `m5`). Recency value = reach@10(P_W*) −
+reach@10(time placebo). Bands: fewer than 30 held-out units → measure more; lift ≥ 10 pp with
+lower bound ≥ 5 pp → **pass** to Q2; lift < 3 pp or upper bound < 5 pp → **drop** (Q2 not
+banded); else measure more. Recency: value ≥ 3 pp with lower bound > 0 → a windowed prior; else a
+static list serves as well (the action says which). {#m5-q1-bands}
+
+#### Q2: blend beside scan-prompt {#m5-q2}
+
+Primary blend, at the query's own budget: with n = the items `scan_prompt` delivered, keep its
+top n − ⌈n/4⌉ by rank and add the prior's top ⌈n/4⌉ keys not already among them. Secondary: the
+8-slot form (its top 6 + the prior's top 2). Metric: Δ = reach(blend) − reach(scan-prompt's n
+items alone) on all new-touch golds, paired bootstrap over units. Cost: payload bytes (each prior
+item costs the median `bytes` of delivered code/doc item lines; dropped items give back their own
+`bytes`), and false reach (the share of the list's keyed items not touched in the window).
+Bands (only if Q1 passes): fewer than 30 held-out units → measure more; Δ ≥ 5 pp, lower bound ≥ 2
+pp, false reach no worse than scan-prompt alone + 5 pp, payload change ≤ +25% → **build** the
+blend; Δ < 2 pp or upper bound < 3 pp → **drop**; else measure more. {#m5-q2-bands}
+
+#### Q3: stability and already held {#m5-q3}
+
+Day-to-day: Jaccard of `P_W*` top-10 at each held-out day's 00:00 UTC with the previous day's.
+Already held: per held-out unit, the share of `P_W*`'s top ⌈n/4⌉ the session had already touched
+(any thread) before the query; also the share delivered earlier in the session by any channel.
+Bands on the mean already-held share (touched or delivered): ≥ 50% → the prior must be deduped
+against the session before delivery; 15-50% → dedupe re-deliveries only; < 15% → no dedupe. {#m5-q3-bands}
+
+#### Q4: who it serves {#m5-q4}
+
+Q1 lift and Q2 Δ split by M4's three activity modes (the ring window at the query; modes re-fitted
+by `cand8_activity_mode.py`'s exact procedure on the new copies, centroids reported to compare with
+M4's) and by the gold's kind (code, doc, ruling, bug row, memory). A stratum is **served** when its
+lift's lower bound > 0 and **not served** when its upper bound < 3 pp; else undetermined. If Q2
+builds and only some modes are served, the action gates the prior to those modes. {#m5-q4-bands}
+
+Volume: held-out-style units a week over 2026-11-11 → 11-25. {#m5-volume}
